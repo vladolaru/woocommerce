@@ -60,18 +60,6 @@ class OrderPaymentStore {
 	}
 
 	/**
-	 * Get the preserved provider order/refund payment meta keys.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @return string[]
-	 */
-	public static function get_payment_meta_keys( ProviderPersistenceVocabulary $persistence_profile ): array {
-		return $persistence_profile->get_preserved_payment_meta_keys();
-	}
-
-	/**
 	 * Read a stable, HPOS-safe projection of an order's payment surface.
 	 *
 	 * The returned structure is intentionally limited to persisted payment state. A1 shadow mode
@@ -97,47 +85,13 @@ class OrderPaymentStore {
 	}
 
 	/**
-	 * Tell whether an order is locked for payment processing.
-	 *
-	 * This preserves the WooPayments lock semantics exactly: a sentinel lock blocks all references,
-	 * while a reference-specific lock blocks only that same reference.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                      $order               Order being checked.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @param string|null                   $payment_reference   Payment reference currently being processed.
-	 * @return bool True when processing is locked.
-	 */
-	public function is_order_payment_locked( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): bool {
-		$processing = $this->read_lock_transient( $persistence_profile->get_order_lock_key( $order ) );
-
-		return $persistence_profile->get_lock_sentinel() === $processing
-			|| ( null !== $payment_reference && $processing === $payment_reference );
-	}
-
-	/**
-	 * Atomically claim the order payment lock for a money-moving operation.
+	 * Claim the order payment lock and record which operation holds it.
 	 *
 	 * Unlike WooPayments-compatible reference checks, native processing uses this as an order-wide
 	 * claim: any active lock value blocks checkout, refund, capture, and cancel from starting.
 	 * WooPayments 11.1.0 locks only intent-driven status updates; this stricter lock is owner-ratified
 	 * money-path hardening (inbox N-270), and log_order_payment_lock_refusal() records each refusal
 	 * the plugin would have allowed. Release the lock with release_order_payment_lock() and the returned token.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                      $order               Order being locked.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @param string|null                   $payment_reference   Payment reference being processed.
-	 * @return string|null The claim token, or null when the lock is held.
-	 */
-	public function claim_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): ?string {
-		return $this->claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment operation' );
-	}
-
-	/**
-	 * Claim the order payment lock and record which operation holds it.
 	 *
 	 * The lock keeps the WooPayments-compatible value, the payment reference, so a plugin request still sees an
 	 * intent it is processing as locked. A holder record names the operation, for the refusal log, and carries a
@@ -272,38 +226,6 @@ class OrderPaymentStore {
 		} catch ( Throwable $exception ) {
 			return;
 		}
-	}
-
-	/**
-	 * Lock an order for payment processing.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                      $order               Order being locked.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @param string|null                   $payment_reference   Payment reference being processed.
-	 */
-	public function lock_order_payment( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference = null ): void {
-		set_transient(
-			$persistence_profile->get_order_lock_key( $order ),
-			$this->get_lock_value( $persistence_profile, $payment_reference ),
-			$persistence_profile->get_lock_ttl_seconds()
-		);
-	}
-
-	/**
-	 * Unlock an order for payment processing, whoever holds the lock.
-	 *
-	 * Pairs with lock_order_payment(); a claimed lock is released with release_order_payment_lock().
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                      $order               Order being unlocked.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 */
-	public function unlock_order_payment( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): void {
-		delete_transient( $persistence_profile->get_order_lock_key( $order ) );
-		delete_transient( $this->get_lock_holder_key( $order, $persistence_profile ) );
 	}
 
 	/**

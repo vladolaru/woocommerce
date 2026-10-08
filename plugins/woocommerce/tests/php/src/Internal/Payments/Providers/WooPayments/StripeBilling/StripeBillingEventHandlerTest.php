@@ -708,7 +708,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
 		$order->save();
-		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock( $order, new WooPaymentsPersistenceVocabulary(), 'pi_rec63CheckoutInFlight' );
+		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $order, new WooPaymentsPersistenceVocabulary(), 'pi_rec63CheckoutInFlight', 'payment operation' );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 
 		try {

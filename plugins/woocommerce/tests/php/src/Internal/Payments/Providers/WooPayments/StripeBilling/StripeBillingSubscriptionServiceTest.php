@@ -852,7 +852,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$renewal_order->update_meta_data( '_wcpay_billing_invoice_id', self::MAIN_INVOICE_ID );
 		$renewal_order->set_status( 'failed' );
 		$renewal_order->save();
-		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal' );
+		wc_get_container()->get( OrderPaymentStore::class )->claim_order_payment_lock_for_operation( $renewal_order, new WooPaymentsPersistenceVocabulary(), 'pi_webhookRecordingTheRenewal', 'payment operation' );
 		$payments_completed = did_action( 'woocommerce_payment_complete' );
 
 		$this->sut->maybe_attempt_payment_for_subscription( $subscription, $this->create_token() );

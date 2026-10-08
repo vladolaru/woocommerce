@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -25,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Exception;
 use InvalidArgumentException;
 use RuntimeException;
@@ -36,6 +36,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsEventIngestor class.
  */
 class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
 
 	use ProviderTextLogAssertions;
 
@@ -190,10 +192,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_payment_method_id', 'pm_123' );
 		$order->save();
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
-		$store->lock_order_payment( $order, $profile, 'pi_123' );
+		$this->hold_order_payment_lock( $order, $profile, 'pi_123' );
 		$failed_overrides = array(
 			'status'             => 'requires_payment_method',
 			'last_payment_error' => array(
@@ -211,7 +212,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		} catch ( OrderPaymentLockRefusedException $exception ) {
 			$refusal = $exception;
 		} finally {
-			$store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'A refused delivery must fail, so the store retries it instead of acknowledging it.' );
@@ -3816,9 +3817,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_refunded_fails_closed_when_order_payment_is_locked(): void {
 		$order   = $this->create_refundable_woopayments_order( '10.00' );
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile = new WooPaymentsPersistenceVocabulary();
-		$store->lock_order_payment( $order, $profile, 'existing_operation' );
+		$this->hold_order_payment_lock( $order, $profile, 'existing_operation' );
 
 		try {
 			$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
@@ -3826,7 +3826,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		} catch ( OrderPaymentLockRefusedException $exception ) {
 			$this->assertSame( $order->get_id(), $exception->get_order_id() );
 		} finally {
-			$store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );
@@ -3977,9 +3977,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->save_meta_data();
-		$store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile = new WooPaymentsPersistenceVocabulary();
-		$store->lock_order_payment( $order, $profile, 'existing_operation' );
+		$this->hold_order_payment_lock( $order, $profile, 'existing_operation' );
 
 		try {
 			$this->sut->process(
@@ -3994,7 +3993,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		} catch ( OrderPaymentLockRefusedException $exception ) {
 			$this->assertSame( $order->get_id(), $exception->get_order_id() );
 		} finally {
-			$store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );

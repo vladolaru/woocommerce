@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -16,6 +17,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsEarlyFraudWarningEventHandler class.
  */
 class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
 
 	/**
 	 * @testdox Should persist a valid created warning before adding its private merchant note.
@@ -395,7 +398,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$store   = new OrderPaymentStore();
 		$profile = new WooPaymentsPersistenceVocabulary();
 		$store->init( new TransientRowLock() );
-		$this->assertNotNull( $store->claim_order_payment_lock( $order, $profile, 'other_operation' ) );
+		$this->assertNotNull( $store->claim_order_payment_lock_for_operation( $order, $profile, 'other_operation', 'payment operation' ) );
 		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( $store, $profile );
 
@@ -412,7 +415,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				)
 			);
 		} finally {
-			$store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 	}
 
@@ -670,7 +673,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( \RuntimeException::class, $failure );
 		$this->assertSame( 'Could not persist early fraud warning note for ID: efw_123', $failure->getMessage() );
-		$this->assertFalse( $store->is_order_payment_locked( $order, $profile, 'early_fraud_warning_efw_123' ) );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $profile, 'early_fraud_warning_efw_123' ) );
 		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 

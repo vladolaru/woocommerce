@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDi
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use ReflectionClass;
 use RuntimeException;
 use WC_Order;
@@ -25,6 +26,8 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsDisputeEventHandler class.
  */
 class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
 
 	/**
 	 * The System Under Test.
@@ -553,7 +556,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$payment_store   = wc_get_container()->get( OrderPaymentStore::class );
 		$profile         = new WooPaymentsPersistenceVocabulary();
 
-		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
+		$this->assertNotNull( $payment_store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_lock_holder', 'payment operation' ) );
 
 		try {
 			try {
@@ -564,7 +567,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 				$this->assertSame( $order->get_id(), $exception->get_order_id() );
 			}
 		} finally {
-			$payment_store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );
@@ -597,7 +600,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
 		$profile       = new WooPaymentsPersistenceVocabulary();
-		$this->assertNotNull( $payment_store->claim_order_payment_lock( $order, $profile, 'pi_lock_holder' ) );
+		$this->assertNotNull( $payment_store->claim_order_payment_lock_for_operation( $order, $profile, 'pi_lock_holder', 'payment operation' ) );
 
 		try {
 			$this->sut->process(
@@ -612,7 +615,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		} catch ( OrderPaymentLockRefusedException $exception ) {
 			$this->assertSame( $order->get_id(), $exception->get_order_id() );
 		} finally {
-			$payment_store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$order = wc_get_order( $order->get_id() );

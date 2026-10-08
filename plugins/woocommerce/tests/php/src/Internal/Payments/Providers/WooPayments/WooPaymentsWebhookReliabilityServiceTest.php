@@ -7,7 +7,6 @@ use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
@@ -17,12 +16,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPaymentsWebhookReliabilityService class.
  */
 class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
 
 	use ProviderTextLogAssertions;
 
@@ -454,10 +456,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->save();
-		$payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$profile       = new WooPaymentsPersistenceVocabulary();
+		$profile = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
-		$payment_store->lock_order_payment( $order, $profile, 'pi_lock_ttl' );
+		$this->hold_order_payment_lock( $order, $profile, 'pi_lock_ttl' );
 		// Shape read by client 11.1.0 class-wc-payments-webhook-processing-service.php:494-519 (object id, currency,
 		// amount, payment_method, charges.data[0]) and :968-1002 (metadata.order_id for the order lookup); status is
 		// the PaymentIntent's own field (Stripe API PaymentIntent object).
@@ -515,7 +516,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			}
 		} finally {
 			// The holder's TTL has run out by the time this attempt is due.
-			$payment_store->unlock_order_payment( $order, $profile );
+			$this->clear_order_payment_lock( $order, $profile );
 		}
 
 		$scheduler->scheduled_jobs = array();
