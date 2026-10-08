@@ -74,7 +74,7 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @var WooPaymentsPersistenceVocabulary|null
 	 */
-	private ?WooPaymentsPersistenceVocabulary $persistence_profile = null;
+	private ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null;
 
 	/**
 	 * Initialize the handler.
@@ -86,15 +86,15 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service Dispute cache service.
 	 * @param WooPaymentsOrderNoteService      $order_note_service    WooPayments order note service.
 	 * @param OrderPaymentStore                $order_payment_store   Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_profile   WooPayments persistence profile.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary   WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_profile = null ): void {
-		$this->legacy_runtime        = $legacy_runtime;
-		$this->api_client            = $api_client;
-		$this->dispute_cache_service = $dispute_cache_service;
-		$this->order_note_service    = $order_note_service;
-		$this->order_payment_store   = $order_payment_store;
-		$this->persistence_profile   = $persistence_profile;
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentStore $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null ): void {
+		$this->legacy_runtime         = $legacy_runtime;
+		$this->api_client             = $api_client;
+		$this->dispute_cache_service  = $dispute_cache_service;
+		$this->order_note_service     = $order_note_service;
+		$this->order_payment_store    = $order_payment_store;
+		$this->persistence_vocabulary = $persistence_vocabulary;
 	}
 
 	/**
@@ -780,7 +780,7 @@ class WooPaymentsDisputeEventHandler {
 		try {
 			return $change( wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order ) );
 		} finally {
-			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_profile(), $lock_token );
+			$this->get_order_payment_store()->release_order_payment_lock( $order, $this->get_persistence_vocabulary(), $lock_token );
 		}
 	}
 
@@ -793,9 +793,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
-		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_profile(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
+		$lock_token = $this->get_order_payment_store()->claim_order_payment_lock_for_operation( $order, $this->get_persistence_vocabulary(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
 		if ( null === $lock_token ) {
-			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_profile(), 'dispute webhook' );
+			$this->get_order_payment_store()->log_order_payment_lock_refusal( $order, $this->get_persistence_vocabulary(), 'dispute webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		}
@@ -919,12 +919,12 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @return WooPaymentsPersistenceVocabulary
 	 */
-	private function get_persistence_profile(): WooPaymentsPersistenceVocabulary {
-		if ( null === $this->persistence_profile ) {
-			$this->persistence_profile = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
+		if ( null === $this->persistence_vocabulary ) {
+			$this->persistence_vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 		}
 
-		return $this->persistence_profile;
+		return $this->persistence_vocabulary;
 	}
 
 	/**

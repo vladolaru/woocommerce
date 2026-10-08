@@ -41,7 +41,7 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceVocabularyInterface;
+	public function get_persistence_vocabulary(): ProviderPersistenceVocabularyInterface;
 
 	/**
 	 * Charge an order through the provider.

@@ -362,13 +362,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *              locked by another holder.
 	 */
 	private function fail_order_unless_settled( WC_Order $order, string $intent_id, ?string $exception_message, string $intent_status ): bool {
-		$persistence_profile = new WooPaymentsPersistenceVocabulary();
-		$order_payment_store = wc_get_container()->get( OrderPaymentStore::class );
-		$lock_token          = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_profile, $intent_id, 'payment status update' );
+		$persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
+		$order_payment_store    = wc_get_container()->get( OrderPaymentStore::class );
+		$lock_token             = $order_payment_store->claim_order_payment_lock_for_operation( $order, $persistence_vocabulary, $intent_id, 'payment status update' );
 		if ( null === $lock_token ) {
 			$order_payment_store->log_order_payment_lock_refusal(
 				$order,
-				$persistence_profile,
+				$persistence_vocabulary,
 				'redirect return failure',
 				WooPaymentsLogger::SOURCE,
 				array(
@@ -386,7 +386,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
-			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_profile );
+			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_vocabulary );
 		} catch ( Throwable $failure ) {
 			// The order should be failed but is not, so support needs this line whatever the logging setting. The client's
 			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
@@ -404,7 +404,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				)
 			);
 		} finally {
-			$order_payment_store->release_order_payment_lock( $order, $persistence_profile, $lock_token );
+			$order_payment_store->release_order_payment_lock( $order, $persistence_vocabulary, $lock_token );
 		}
 
 		return true;

@@ -79,8 +79,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Provider identity exposes the WooPayments persistence profile.
 	 */
-	public function test_provider_identity_exposes_woopayments_persistence_profile(): void {
-		$profile = $this->sut->get_persistence_profile();
+	public function test_provider_identity_exposes_woopayments_persistence_vocabulary(): void {
+		$profile = $this->sut->get_persistence_vocabulary();
 
 		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $profile );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
@@ -90,7 +90,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider contracts keep persistence vocabulary separate from outcome mapping behavior.
 	 */
 	public function test_provider_contract_separates_persistence_vocabulary_from_outcome_mapping(): void {
-		$return_type = ( new \ReflectionMethod( ProviderInterface::class, 'get_persistence_profile' ) )->getReturnType();
+		$return_type = ( new \ReflectionMethod( ProviderInterface::class, 'get_persistence_vocabulary' ) )->getReturnType();
 
 		$this->assertSame( ProviderPersistenceVocabularyInterface::class, (string) $return_type );
 		$this->assertInstanceOf( ProviderOutcomeMetadataMapperInterface::class, $this->sut );

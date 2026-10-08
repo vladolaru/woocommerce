@@ -93,7 +93,7 @@ class PaymentProcessingService {
 	public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
 		$idempotency_key = $this->idempotency->mint_attempt_key();
-		$profile         = $provider->get_persistence_profile();
+		$profile         = $provider->get_persistence_vocabulary();
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
 		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, 'checkout' );
@@ -358,7 +358,7 @@ class PaymentProcessingService {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
-		$profile      = $provider->get_persistence_profile();
+		$profile      = $provider->get_persistence_vocabulary();
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
@@ -712,7 +712,7 @@ class PaymentProcessingService {
 		$order           = $context->get_order();
 		$amount          = $context->get_amount() ?? (float) $order->get_total();
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
-		$profile         = $provider->get_persistence_profile();
+		$profile         = $provider->get_persistence_vocabulary();
 
 		$lock_token = $this->order_payment_store->claim_order_payment_lock_for_operation( $order, $profile, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
@@ -867,7 +867,7 @@ class PaymentProcessingService {
 						$this->get_lifecycle_note_type( $outcome ),
 						$this->get_lifecycle_note_equivalents( $outcome )
 					),
-					$provider->get_persistence_profile()
+					$provider->get_persistence_vocabulary()
 				);
 				return;
 			}
@@ -887,7 +887,7 @@ class PaymentProcessingService {
 					$this->get_lifecycle_note_type( $outcome ),
 					$this->get_lifecycle_note_equivalents( $outcome )
 				),
-				$provider->get_persistence_profile()
+				$provider->get_persistence_vocabulary()
 			);
 			return;
 		}
@@ -918,7 +918,7 @@ class PaymentProcessingService {
 				// suppressed when the outcome asked to preserve the status.
 				$this->should_preserve_order_status( $outcome )
 			),
-			$provider->get_persistence_profile()
+			$provider->get_persistence_vocabulary()
 		);
 	}
 

@@ -73,17 +73,17 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @var ProviderPersistenceVocabularyInterface
 	 */
-	private ProviderPersistenceVocabularyInterface $persistence_profile;
+	private ProviderPersistenceVocabularyInterface $persistence_vocabulary;
 
 	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut                 = wc_get_container()->get( PaymentProcessingService::class );
-		$this->store               = wc_get_container()->get( OrderPaymentStore::class );
-		$this->idempotency         = wc_get_container()->get( PaymentOperationIdempotency::class );
-		$this->persistence_profile = new WooPaymentsPersistenceVocabulary();
+		$this->sut                    = wc_get_container()->get( PaymentProcessingService::class );
+		$this->store                  = wc_get_container()->get( OrderPaymentStore::class );
+		$this->idempotency            = wc_get_container()->get( PaymentOperationIdempotency::class );
+		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 	}
 
 	/**
@@ -317,10 +317,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		try {
 			$first_result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_failed' ), $provider );
-			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_profile, $provider->idempotency_keys[0] ), 'The failed attempt must release the order payment lock.' );
+			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->idempotency_keys[0] ), 'The failed attempt must release the order payment lock.' );
 
 			$second_result = $this->sut->process_checkout( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_succeeded' ), $provider );
-			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_profile, $provider->idempotency_keys[1] ), 'The successful attempt must release the order payment lock.' );
+			$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->idempotency_keys[1] ), 'The successful attempt must release the order payment lock.' );
 		} finally {
 			remove_action( 'woocommerce_payment_complete', $observer );
 		}
@@ -444,7 +444,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $failed_payment_notes, 'The order must carry exactly one failed-payment note (WooCommerce core\'s own status-transition note is separate).' );
 		$this->assertFalse(
-			$this->is_order_payment_lock_held_for( $order, $this->persistence_profile, $provider->last_idempotency_key ),
+			$this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, $provider->last_idempotency_key ),
 			'A failed attempt must release the order payment lock.'
 		);
 	}
@@ -743,7 +743,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @return ProviderPersistenceVocabularyInterface
 			 */
-			public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
+			public function get_persistence_vocabulary(): ProviderPersistenceVocabularyInterface {
 				return new class() implements ProviderPersistenceVocabularyInterface {
 
 					/**
@@ -985,10 +985,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertInstanceOf( RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
-		$lock_token = $this->store->claim_order_payment_lock_for_operation( $order, $this->persistence_profile, 'next_operation', 'payment operation' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
+		$lock_token = $this->store->claim_order_payment_lock_for_operation( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
 		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
-		$this->store->release_order_payment_lock( $order, $this->persistence_profile, $lock_token );
+		$this->store->release_order_payment_lock( $order, $this->persistence_vocabulary, $lock_token );
 	}
 
 	/**
@@ -1636,7 +1636,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_returns_failure_when_order_operation_is_locked(): void {
 		$order = $this->create_woopayments_order( '10.00' );
 		$key   = $this->idempotency->mint_attempt_key();
-		$this->hold_order_payment_lock( $order, $this->persistence_profile, $key );
+		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, $key );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
@@ -1644,7 +1644,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
 		$this->assertSame( 0, $provider->charge_calls );
-		$this->clear_order_payment_lock( $order, $this->persistence_profile );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
 	/**
@@ -1652,7 +1652,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_returns_failure_when_any_order_operation_is_locked(): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$this->hold_order_payment_lock( $order, $this->persistence_profile, 'pi_existing' );
+		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, 'pi_existing' );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
@@ -1660,7 +1660,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'failure', $result['result'], 'WooCommerce recognizes failure, not fail; an unrecognized value costs the shopper the decline message.' );
 		$this->assertSame( 0, $provider->charge_calls );
-		$this->clear_order_payment_lock( $order, $this->persistence_profile );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
 	/**
@@ -1690,7 +1690,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $third_view->get_checkout_order_received_url(), $result['redirect'] );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pi_first', $order->get_transaction_id() );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 	}
 
 	/**
@@ -1717,7 +1717,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'The refusal must leave the held order as it is.' );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 	}
 
 	/**
@@ -1747,7 +1747,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $provider->charge_calls, 'A payment another request started must not be paid again.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 	}
 
 	/**
@@ -1803,7 +1803,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $kept_key ), $sent_keys->getArrayCopy(), 'A submission loaded before the ambiguous attempt must not send a charge.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $second_outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $second_outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the lock.' );
 
 		$retry = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $retry );
@@ -2474,7 +2474,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ), 'No refund metadata is written when the row is missing.' );
 		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-		$this->assertFalse( get_transient( $this->persistence_profile->get_order_lock_key( $order ) ), 'The refusal must release the order payment lock.' );
+		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'The refusal must release the order payment lock.' );
 	}
 
 	/**
@@ -2896,11 +2896,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param WC_Order                               $order               Order object.
 			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
-			 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
-				unset( $order, $event, $persistence_profile );
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
 			}
 		};
@@ -3011,7 +3011,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_and_cancel_use_shared_order_claim(): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$this->hold_order_payment_lock( $order, $this->persistence_profile, 'pi_existing' );
+		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, 'pi_existing' );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
 
@@ -3023,7 +3023,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $provider->capture_calls );
 		$this->assertSame( 0, $provider->cancel_calls );
 
-		$this->clear_order_payment_lock( $order, $this->persistence_profile );
+		$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 	}
 
 	/**
@@ -4556,12 +4556,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @param WC_Order                               $order               Order object.
 			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
-			 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always, to drive the post-charge failure path.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 				// Avoid parameter not used PHPCS errors.
-				unset( $order, $event, $persistence_profile );
+				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );
 			}
 		};

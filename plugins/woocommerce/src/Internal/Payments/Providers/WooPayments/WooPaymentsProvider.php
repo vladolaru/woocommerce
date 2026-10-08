@@ -395,7 +395,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
+	public function get_persistence_vocabulary(): ProviderPersistenceVocabularyInterface {
 		return new WooPaymentsPersistenceVocabulary();
 	}
 

@@ -102,7 +102,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private WooPaymentsPersistenceVocabulary $persistence_profile;
+	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
 
 	/**
 	 * WooPayments account service.
@@ -127,7 +127,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @param PaymentSurfaceDiffer             $differ              Payment-surface differ.
 	 * @param LegacyProxy                      $legacy_proxy        Legacy proxy.
 	 * @param WooPaymentsApiClient             $api_client           WooPayments API client.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_profile  WooPayments persistence profile.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary  WooPayments persistence profile.
 	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
 	 * @param WooPaymentsOrderDataService      $order_data_service   WooPayments order data service.
 	 */
@@ -136,17 +136,17 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		PaymentSurfaceDiffer $differ,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsApiClient $api_client,
-		WooPaymentsPersistenceVocabulary $persistence_profile,
+		WooPaymentsPersistenceVocabulary $persistence_vocabulary,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderDataService $order_data_service
 	): void {
-		$this->arbiter             = $arbiter;
-		$this->differ              = $differ;
-		$this->legacy_proxy        = $legacy_proxy;
-		$this->api_client          = $api_client;
-		$this->persistence_profile = $persistence_profile;
-		$this->account_service     = $account_service;
-		$this->order_data_service  = $order_data_service;
+		$this->arbiter                = $arbiter;
+		$this->differ                 = $differ;
+		$this->legacy_proxy           = $legacy_proxy;
+		$this->api_client             = $api_client;
+		$this->persistence_vocabulary = $persistence_vocabulary;
+		$this->account_service        = $account_service;
+		$this->order_data_service     = $order_data_service;
 	}
 
 	/**
@@ -260,7 +260,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		}
 
 		$start           = microtime( true );
-		$actual          = $this->read_payment_surface( $order, $this->persistence_profile );
+		$actual          = $this->read_payment_surface( $order, $this->persistence_vocabulary );
 		$native_computed = $this->compute_native_projection( $order );
 		if ( null === $native_computed ) {
 			return null;
@@ -284,10 +284,10 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order                               $order               Order to project.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @return array<string,mixed>
 	 */
-	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
+	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): array {
 		return array(
 			'order_id'       => (int) $order->get_id(),
 			'status'         => (string) $order->get_status(),
@@ -295,8 +295,8 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			'transaction_id' => (string) $order->get_transaction_id(),
 			'currency'       => (string) $order->get_currency(),
 			'total'          => (string) $order->get_total(),
-			'meta'           => $this->read_payment_meta( $order, $persistence_profile ),
-			'refunds'        => $this->read_refund_surfaces( $order, $persistence_profile ),
+			'meta'           => $this->read_payment_meta( $order, $persistence_vocabulary ),
+			'refunds'        => $this->read_refund_surfaces( $order, $persistence_vocabulary ),
 		);
 	}
 
@@ -304,12 +304,12 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * Read preserved payment meta from an order or refund object.
 	 *
 	 * @param WC_Abstract_Order                      $order               Order or refund object.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @return array<string,string>
 	 */
-	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
+	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): array {
 		$payment_meta = array();
-		$allowed_keys = array_fill_keys( $persistence_profile->get_preserved_payment_meta_keys(), true );
+		$allowed_keys = array_fill_keys( $persistence_vocabulary->get_preserved_payment_meta_keys(), true );
 
 		foreach ( $order->get_meta_data() as $meta ) {
 			$meta_data = $meta->get_data();
@@ -331,10 +331,10 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * Read stable refund projections for an order.
 	 *
 	 * @param WC_Order                               $order               Order object.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
+	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): array {
 		$refunds = array();
 
 		foreach ( $order->get_refunds() as $refund ) {
@@ -347,7 +347,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 				'amount'    => (string) $refund->get_amount(),
 				'currency'  => (string) $refund->get_currency(),
 				'reason'    => (string) $refund->get_reason(),
-				'meta'      => $this->read_payment_meta( $refund, $persistence_profile ),
+				'meta'      => $this->read_payment_meta( $refund, $persistence_vocabulary ),
 			);
 		}
 
@@ -524,7 +524,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	private function project_surface_from_outcome( WC_Order $order, array $intent, PaymentOutcome $outcome, array $effect_meta ): array {
 		$display_effects = $this->get_projected_display_effects( $outcome );
 		$payment_method  = (string) $order->get_payment_method();
-		$meta            = array_merge( $this->persistence_profile->get_outcome_meta( $outcome ), $effect_meta );
+		$meta            = array_merge( $this->persistence_vocabulary->get_outcome_meta( $outcome ), $effect_meta );
 		if ( ! empty( $display_effects ) ) {
 			$meta = array_merge( $meta, $display_effects['meta'] );
 			if ( '' !== $display_effects['payment_method_id'] ) {
