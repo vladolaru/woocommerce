@@ -432,13 +432,7 @@ final class WooCommerce {
 			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_bootstrap_root_matrix(),
 			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_provider_roots(),
 			static function ( $container ): void {
-				// The plugin's account cache write is where eligibility changes; resolve nothing until it happens.
-				$synchronize = static function ( $first, $value ) use ( $container ): void {
-					unset( $first );
-					$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class )->synchronize_after_plugin_account_cache_write( $value );
-				};
-				add_action( 'add_option_wcpay_account_data', $synchronize, 10, 2 );
-				add_action( 'update_option_wcpay_account_data', $synchronize, 10, 2 );
+				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierSyncController::class )->register();
 				Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode::register_when_enabled( $container );
 			}
 		) )->register(
