@@ -704,14 +704,15 @@ class PaymentsProviders {
 
 		$has_enabled_ecommerce_gateways = $this->has_enabled_ecommerce_gateways();
 
-		// When core provides the PayPal wallet, the wallet suggestion has nothing to offer.
+		// When core provides the PayPal wallet, no PayPal suggestion is shown: core already offers PayPal.
 		$core_provides_paypal_wallet = wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->should_native_register();
+		$paypal_suggestion_ids       = array( ExtensionSuggestions::PAYPAL_WALLET, ExtensionSuggestions::PAYPAL_FULL_STACK );
 
 		// Keep track of the active extensions.
 		$active_extensions = array();
 
 		foreach ( $extensions as $extension ) {
-			if ( $core_provides_paypal_wallet && ExtensionSuggestions::PAYPAL_WALLET === $extension['id'] ) {
+			if ( $core_provides_paypal_wallet && in_array( $extension['id'], $paypal_suggestion_ids, true ) ) {
 				continue;
 			}
 

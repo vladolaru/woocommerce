@@ -1803,17 +1803,17 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Test that the PayPal wallet suggestion goes away when core provides the wallet, and stays when it does not.
+	 * Test that both PayPal suggestions go away when core provides the wallet, and stay when it does not.
 	 *
-	 * @testdox Should drop the PayPal wallet suggestion only when core owns the wallet, and keep the PayPal full-stack suggestion either way.
+	 * @testdox Should drop the PayPal wallet and full-stack suggestions only when core owns the wallet.
 	 *
 	 * @testWith ["__return_true", false]
 	 *           ["__return_false", true]
 	 *
-	 * @param string $native_filter   The callback pinning native ownership on or off.
-	 * @param bool   $expect_wallet   Whether the wallet suggestion is expected.
+	 * @param string $native_filter The callback pinning native ownership on or off.
+	 * @param bool   $expect_paypal Whether the PayPal suggestions are expected.
 	 */
-	public function test_get_extension_suggestions_drops_the_paypal_wallet_when_core_owns_it( string $native_filter, bool $expect_wallet ) {
+	public function test_get_extension_suggestions_drops_the_paypal_suggestions_when_core_owns_the_wallet( string $native_filter, bool $expect_paypal ) {
 		// Arrange.
 		$this->enable_core_paypal_pg();
 		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, $native_filter );
@@ -1872,8 +1872,8 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		$ids = array_column( array_merge( $suggestions['preferred'], $suggestions['other'] ), 'id' );
-		$this->assertSame( $expect_wallet, in_array( ExtensionSuggestions::PAYPAL_WALLET, $ids, true ), 'The wallet suggestion must follow the owner' );
-		$this->assertContains( ExtensionSuggestions::PAYPAL_FULL_STACK, $ids, 'The full-stack suggestion must stay either way' );
+		$this->assertSame( $expect_paypal, in_array( ExtensionSuggestions::PAYPAL_WALLET, $ids, true ), 'The wallet suggestion must follow the owner' );
+		$this->assertSame( $expect_paypal, in_array( ExtensionSuggestions::PAYPAL_FULL_STACK, $ids, true ), 'The full-stack suggestion must follow the owner' );
 
 		// Clean up.
 		$this->unload_core_paypal_pg();
