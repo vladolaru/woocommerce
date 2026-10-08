@@ -681,7 +681,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						 * @param callable $resolver                 Provider resolver.
 						 * @param callable $should_register_gateways Provider gateway check.
 						 */
-						public function add_provider( callable $resolver, callable $should_register_gateways ): void {
+						public function set_provider( callable $resolver, callable $should_register_gateways ): void {
 							unset( $should_register_gateways );
 							$this->provider_resolvers[] = $resolver;
 							$this->events[]             = 'provider-resolver:' . $this->class_name;

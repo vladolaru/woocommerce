@@ -26,7 +26,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_when_builtin_runtime_does_not_own_site(): void {
 		$sut = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true ), static fn(): bool => false );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true ), static fn(): bool => false );
 
 		$sut->register();
 
@@ -40,7 +40,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$calls   = 0;
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider(
+		$sut->set_provider(
 			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
 				++$calls;
 				return new StaticProvider( true, array( $gateway ) );
@@ -64,7 +64,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$owns_gateways = true;
 		$calls         = 0;
 		$sut           = new ProviderGatewaysController();
-		$sut->add_provider(
+		$sut->set_provider(
 			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
 				++$calls;
 				return new StaticProvider( true, array( $gateway ) );
@@ -90,7 +90,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$calls   = 0;
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider(
+		$sut->set_provider(
 			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
 				++$calls;
 				return new StaticProvider( true, array( $gateway ) );
@@ -113,7 +113,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$owns_gateways = true;
 		$calls         = 0;
 		$sut           = new ProviderGatewaysController();
-		$sut->add_provider(
+		$sut->set_provider(
 			static function () use ( &$calls, $gateway ): PaymentGatewayProviderInterface {
 				++$calls;
 				return new StaticProvider( true, array( $gateway ) );
@@ -141,7 +141,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_gateway_when_provider_cannot_process_payments(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( false, array( $gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( false, array( $gateway ) ), static fn(): bool => true );
 
 		$sut->register();
 
@@ -156,7 +156,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$gateway  = $this->create_gateway( 'woocommerce_payments' );
 		$provider = new StaticProvider( false, array( $gateway ) );
 		$sut      = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => $provider, static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => $provider, static fn(): bool => true );
 
 		$sut->register();
 
@@ -170,7 +170,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_contract_provided_gateways_when_builtin_runtime_owns_site(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
 
 		$sut->register();
 
@@ -203,7 +203,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		$primary_gateway   = $this->create_gateway( 'woocommerce_payments' );
 		$secondary_gateway = $this->create_gateway( 'woocommerce_payments_link' );
 		$sut               = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $primary_gateway, $secondary_gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $primary_gateway, $secondary_gateway ) ), static fn(): bool => true );
 
 		$gateways = $sut->add_provider_gateways( array( 'WC_Gateway_BACS' ) );
 
@@ -216,7 +216,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_add_provider_gateways_does_not_duplicate_gateway_instance(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
 
 		$gateways = $sut->add_provider_gateways( array( $gateway ) );
 
@@ -237,7 +237,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 		};
 		$provider_gateway   = $this->create_gateway( 'woocommerce_payments' );
 		$sut                = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
 
 		$this->assertNotSame( get_class( $registered_gateway ), get_class( $provider_gateway ), 'The two gateways must differ in class so only the ID check can match them.' );
 
@@ -252,27 +252,11 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_add_provider_gateways_does_not_add_a_gateway_registered_by_class_name(): void {
 		$provider_gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut              = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $provider_gateway ) ), static fn(): bool => true );
 
 		$gateways = $sut->add_provider_gateways( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ) );
 
 		$this->assertSame( array( 'WC_Gateway_BACS', get_class( $provider_gateway ) ), $gateways, 'WooCommerce instantiates a class-name entry itself, so the provider instance must not be added too.' );
-	}
-
-	/**
-	 * @testdox Should collect gateways from every registered provider.
-	 */
-	public function test_add_provider_gateways_collects_gateways_from_every_provider(): void {
-		$primary_gateway   = $this->create_gateway( 'woocommerce_payments' );
-		$secondary_gateway = $this->create_gateway( 'another_native_provider' );
-		$sut               = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $primary_gateway ) ), static fn(): bool => true );
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $secondary_gateway ), 'another_provider' ), static fn(): bool => true );
-
-		$this->assertSame(
-			array( $primary_gateway, $secondary_gateway ),
-			$sut->add_provider_gateways( array() )
-		);
 	}
 
 	/**
@@ -285,7 +269,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_add_provider_gateways_treats_a_non_array_gateway_list_as_empty( $gateways ): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => true );
 
 		$this->assertSame( array( $gateway ), $sut->add_provider_gateways( $gateways ) );
 	}
@@ -296,7 +280,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	public function test_add_provider_gateways_returns_an_empty_list_for_a_non_array_when_builtin_does_not_own_the_site(): void {
 		$gateway = $this->create_gateway( 'woocommerce_payments' );
 		$sut     = new ProviderGatewaysController();
-		$sut->add_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => false );
+		$sut->set_provider( static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ), static fn(): bool => false );
 
 		$this->assertSame( array(), $sut->add_provider_gateways( null ) );
 	}

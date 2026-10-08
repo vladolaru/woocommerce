@@ -11,9 +11,9 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Payment_Gateway;
 
 /**
- * Adds the gateways of each payment provider to the WooCommerce gateway list while that provider's check passes.
+ * Adds the payment provider's gateways to the WooCommerce gateway list while the provider's check passes.
  *
- * Providers resolve lazily, on the first gateway list build that needs them.
+ * The provider resolves lazily, on the first gateway list build that needs it.
  *
  * @since 11.0.0
  * @internal
@@ -21,28 +21,30 @@ use WC_Payment_Gateway;
 class ProviderGatewaysController implements RegisterHooksInterface {
 
 	/**
-	 * Resolved gateway providers, by provider ID.
+	 * Returns the provider; null once it has run.
 	 *
-	 * @var array<string,PaymentGatewayProviderInterface>
+	 * @var callable|null
+	 * @phpstan-var (callable(): PaymentGatewayProviderInterface)|null
 	 */
-	private array $providers = array();
+	private $resolver = null;
 
 	/**
-	 * Gateway checks of the resolved providers, by provider ID.
+	 * Whether the provider's gateways belong in the gateway list now; null when no provider is set.
 	 *
-	 * @var array<string,callable>
+	 * @var callable|null
+	 * @phpstan-var (callable(): bool)|null
 	 */
-	private array $provider_checks = array();
+	private $should_register_gateways = null;
 
 	/**
-	 * Providers not resolved yet, each with its resolver and its gateway check.
+	 * The resolved provider.
 	 *
-	 * @var array<int,array{resolver:callable,should_register_gateways:callable}>
+	 * @var PaymentGatewayProviderInterface|null
 	 */
-	private array $pending_providers = array();
+	private ?PaymentGatewayProviderInterface $provider = null;
 
 	/**
-	 * Add a gateway provider, resolved only when WooCommerce builds its gateway list while the provider's check passes.
+	 * Set the gateway provider, resolved only when WooCommerce builds its gateway list while the provider's check passes.
 	 *
 	 * Most requests never build the gateway list, so they do not pay for the provider and its payment services. The check
 	 * is consulted at registration and on every gateway list build, so the provider's gateways leave the list when it fails.
@@ -54,18 +56,17 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	 * @phpstan-param callable(): PaymentGatewayProviderInterface $resolver
 	 * @phpstan-param callable(): bool $should_register_gateways
 	 */
-	public function add_provider( callable $resolver, callable $should_register_gateways ): void {
-		$this->pending_providers[] = array(
-			'resolver'                 => $resolver,
-			'should_register_gateways' => $should_register_gateways,
-		);
+	public function set_provider( callable $resolver, callable $should_register_gateways ): void {
+		$this->resolver                 = $resolver;
+		$this->should_register_gateways = $should_register_gateways;
+		$this->provider                 = null;
 	}
 
 	/**
-	 * Register gateway hooks while at least one provider's check passes.
+	 * Register gateway hooks while the provider's check passes.
 	 */
 	public function register() {
-		if ( ! $this->has_provider_with_passing_check() ) {
+		if ( ! $this->provider_check_passes() ) {
 			return;
 		}
 
@@ -75,7 +76,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the gateways of the providers whose check passes to the gateway list.
+	 * Add the provider's gateways to the gateway list while its check passes.
 	 *
 	 * A non-array from an earlier callback becomes an empty list, as WooCommerce's own loop loads nothing from null or a string.
 	 *
@@ -87,64 +88,52 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 			$gateways = array();
 		}
 
-		$this->resolve_providers_with_passing_checks();
+		if ( ! $this->provider_check_passes() ) {
+			return $gateways;
+		}
 
-		foreach ( $this->providers as $provider_id => $provider ) {
-			if ( ! ( $this->provider_checks[ $provider_id ] )() ) {
+		$provider = $this->resolve_provider();
+		if ( null === $provider ) {
+			return $gateways;
+		}
+
+		foreach ( $provider->get_payment_gateways() as $gateway ) {
+			if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
 				continue;
 			}
 
-			foreach ( $provider->get_payment_gateways() as $gateway ) {
-				if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
-					continue;
-				}
-
-				$gateways[] = $gateway;
-			}
+			$gateways[] = $gateway;
 		}
 
 		return $gateways;
 	}
 
 	/**
-	 * Resolve the pending providers whose check passes now; the others wait for a later gateway list build.
+	 * Resolve the provider on first use. A resolver that returns no provider leaves no provider set.
+	 *
+	 * @return PaymentGatewayProviderInterface|null
 	 */
-	private function resolve_providers_with_passing_checks(): void {
-		$pending                 = $this->pending_providers;
-		$this->pending_providers = array();
-		foreach ( $pending as $entry ) {
-			if ( ! ( $entry['should_register_gateways'] )() ) {
-				$this->pending_providers[] = $entry;
-				continue;
-			}
-
-			$provider = ( $entry['resolver'] )();
+	private function resolve_provider(): ?PaymentGatewayProviderInterface {
+		if ( null === $this->provider && null !== $this->resolver ) {
+			$provider       = ( $this->resolver )();
+			$this->resolver = null;
 			if ( $provider instanceof PaymentGatewayProviderInterface ) {
-				$this->providers[ $provider->get_id() ]       = $provider;
-				$this->provider_checks[ $provider->get_id() ] = $entry['should_register_gateways'];
+				$this->provider = $provider;
+			} else {
+				$this->should_register_gateways = null;
 			}
 		}
+
+		return $this->provider;
 	}
 
 	/**
-	 * Tell whether the check of any added provider, resolved or not, passes now.
+	 * Tell whether a provider is set and its check passes now.
 	 *
 	 * @return bool
 	 */
-	private function has_provider_with_passing_check(): bool {
-		foreach ( $this->provider_checks as $should_register_gateways ) {
-			if ( $should_register_gateways() ) {
-				return true;
-			}
-		}
-
-		foreach ( $this->pending_providers as $entry ) {
-			if ( ( $entry['should_register_gateways'] )() ) {
-				return true;
-			}
-		}
-
-		return false;
+	private function provider_check_passes(): bool {
+		return null !== $this->should_register_gateways && ( $this->should_register_gateways )();
 	}
 
 	/**

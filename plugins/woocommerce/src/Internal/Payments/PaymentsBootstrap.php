@@ -200,7 +200,7 @@ final class PaymentsBootstrap {
 		 * @var ProviderGatewaysController $registry
 		 */
 		$registry = $container->get( ProviderGatewaysController::class );
-		$registry->add_provider(
+		$registry->set_provider(
 			static function () use ( $container, $provider_root ) {
 				/**
 				 * Payment gateway provider.

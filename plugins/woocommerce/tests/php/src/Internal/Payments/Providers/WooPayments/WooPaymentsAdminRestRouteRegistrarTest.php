@@ -233,7 +233,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 					 * @param callable $resolver                 Provider resolver.
 					 * @param callable $should_register_gateways Provider gateway check.
 					 */
-					public function add_provider( callable $resolver, callable $should_register_gateways ): void {
+					public function set_provider( callable $resolver, callable $should_register_gateways ): void {
 						unset( $resolver, $should_register_gateways );
 					}
 				};
