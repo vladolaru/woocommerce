@@ -152,7 +152,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'debug',
 			'an open dispute',
 			array(
-				'source'     => 'order-payments-webhook',
+				'source'     => 'order-payments',
 				'order_id'   => $order->get_id(),
 				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
 				'reason'     => 'open_dispute',
@@ -412,7 +412,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'debug',
 			'the payment note is already on the order',
 			array(
-				'source'     => 'order-payments-webhook',
+				'source'     => 'order-payments',
 				'order_id'   => $order->get_id(),
 				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
 				'reason'     => 'success_note_exists',
@@ -1232,7 +1232,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'warning',
 			'order payment lock refused: order ',
 			array(
-				'source'            => 'order-payments-webhook',
+				'source'            => 'order-payments',
 				'order_id'          => $order->get_id(),
 				'payment_reference' => 'pi_webhook',
 				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,
