@@ -255,6 +255,83 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event skipped because another request already completed the order does not repeat the status change when its stale caller saves.
+	 */
+	public function test_unlocked_success_note_skip_does_not_repeat_the_status_change_when_a_stale_caller_saves(): void {
+		// The skip leaves the caller's order object as client 11.1.0 includes/class-wc-payments-order-service.php:2863-2879 does: its replay guard reads a clone.
+		$stale_order = $this->create_woopayments_order();
+		$stale_order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
+		$stale_order->save();
+		$order_id = $stale_order->get_id();
+
+		$webhook_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $webhook_order );
+		$this->sut->apply( $webhook_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
+		$webhook_order->set_date_paid( time() - HOUR_IN_SECONDS );
+		$webhook_order->save();
+		$persisted_date_paid = $webhook_order->get_date_paid();
+		$this->assertNotNull( $persisted_date_paid );
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order_id ) );
+
+		$status_change_note         = sprintf( 'Order status changed from %1$s to %2$s.', wc_get_order_status_name( 'pending' ), wc_get_order_status_name( 'processing' ) );
+		$status_change_notes_before = $this->countOrderNotesMatching( $stale_order, $status_change_note );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_success', 'payment operation' ) );
+		try {
+			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
+			$pending_to_processing_before = did_action( 'woocommerce_order_status_pending_to_processing' );
+			$status_changed_before        = did_action( 'woocommerce_order_status_changed' );
+			$stale_order->save();
+		} finally {
+			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( $pending_to_processing_before, did_action( 'woocommerce_order_status_pending_to_processing' ), 'The stale caller save must not fire the pending to processing transition again.' );
+		$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
+		$this->assertSame( $status_change_notes_before, $this->countOrderNotesMatching( $stale_order, $status_change_note ), 'The stale caller save must not add a second status change note.' );
+		$this->assertSame( 'wc-processing', $this->get_persisted_order_status( $order_id ), 'The stale caller save must keep the persisted status.' );
+
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertNotNull( $order->get_date_paid() );
+		$this->assertSame( $persisted_date_paid->getTimestamp(), $order->get_date_paid()->getTimestamp(), 'The stale caller save must not move the paid date.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
+	 * @testdox A completed event skipped because of a persisted dispute does not record a status change when its stale caller saves.
+	 */
+	public function test_unlocked_dispute_skip_does_not_record_a_status_change_when_a_stale_caller_saves(): void {
+		$stale_order = $this->create_woopayments_order();
+		$order_id    = $stale_order->get_id();
+
+		$dispute_order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $dispute_order );
+		$dispute_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_caller' ) );
+		$dispute_order->update_status( 'on-hold' );
+		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $order_id ) );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_dispute', 'payment operation' ) );
+		try {
+			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_dispute' ), $this->persistence_vocabulary );
+			$pending_to_on_hold_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
+			$status_changed_before     = did_action( 'woocommerce_order_status_changed' );
+			$stale_order->save();
+		} finally {
+			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( $pending_to_on_hold_before, did_action( 'woocommerce_order_status_pending_to_on-hold' ), 'The stale caller save must not fire the pending to on-hold transition again.' );
+		$this->assertSame( $status_changed_before, did_action( 'woocommerce_order_status_changed' ), 'The stale caller save must not fire a status change.' );
+		$this->assertSame( 'wc-on-hold', $this->get_persisted_order_status( $order_id ), 'The stale caller save must keep the dispute hold.' );
+
+		$order = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( array( 'dp_stale_caller' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'The stale caller save must keep the persisted open disputes.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ) );
+	}
+
+	/**
 	 * @testdox A completed event sees a dispute hold that another request persisted after this request cached the order.
 	 */
 	public function test_success_sees_a_dispute_persisted_by_another_request_after_the_order_was_cached(): void {

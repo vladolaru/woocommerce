@@ -346,25 +346,28 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Synchronize state whose stale caller-side changes could overwrite a completed-event skip.
+	 * Bring the persisted status and open disputes onto a caller's order object that a skipped completed event found stale.
+	 *
+	 * A caller whose object matches the persisted order keeps it untouched. A diverging object is read again in place,
+	 * so a later save by the caller cannot write its stale status or dispute meta, and no status transition is recorded
+	 * that the save would fire again (a second status email and note, a moved paid date). Its unsaved changes are discarded.
 	 *
 	 * @param WC_Order                               $order                       Caller-owned order object.
 	 * @param WC_Order                               $completed_event_order       Freshly read order used by the completed-event guard.
 	 * @param string                                 $completed_event_skip_reason Completed-event skip reason.
-	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary         Provider persistence vocabulary.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary      Provider persistence vocabulary.
 	 */
 	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
-		$order->set_status( $completed_event_order->get_status() );
+		$is_stale = $order->get_status() !== $completed_event_order->get_status();
 
-		if ( 'open_dispute' !== $completed_event_skip_reason ) {
-			return;
+		if ( ! $is_stale && 'open_dispute' === $completed_event_skip_reason ) {
+			$open_dispute_ids_meta_key = $persistence_vocabulary->get_open_dispute_ids_meta_key();
+			$is_stale                  = $order->get_meta( $open_dispute_ids_meta_key, true ) !== $completed_event_order->get_meta( $open_dispute_ids_meta_key, true );
 		}
 
-		$open_dispute_ids_meta_key = $persistence_vocabulary->get_open_dispute_ids_meta_key();
-		$order->update_meta_data(
-			$open_dispute_ids_meta_key,
-			$completed_event_order->get_meta( $open_dispute_ids_meta_key, true )
-		);
+		if ( $is_stale ) {
+			$this->reread_order_from_data_store( $order );
+		}
 	}
 
 	/**
