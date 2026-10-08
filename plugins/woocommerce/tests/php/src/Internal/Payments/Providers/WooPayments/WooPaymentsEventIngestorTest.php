@@ -4449,6 +4449,132 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded pays an unpaid order whose payment method is another gateway, as the client does.
+	 *
+	 * Client 11.1.0 resolves the order by intent ID or metadata with no gateway check
+	 * (class-wc-payments-webhook-processing-service.php:974-1000), writes the intent meta (:510-569) and completes the
+	 * payment through update_order_status_from_intent() (:582), which skips only paid or locked orders. The webhook
+	 * never changes the order's payment method.
+	 */
+	public function test_succeeded_intent_pays_an_unpaid_order_of_another_gateway(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_payment_method_title( 'Direct bank transfer' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'pi_123', $order->get_transaction_id() );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'bacs', $order->get_payment_method() );
+		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded on an order already paid by another gateway records the intent with one note, keeps the order's status and logs the mismatch.
+	 *
+	 * Client 11.1.0 writes the intent meta on any resolved order (class-wc-payments-webhook-processing-service.php:510-569)
+	 * and then skips paid orders (class-wc-payments-order-service.php:2747-2764, :2863-2879). Native records the
+	 * succeeded intent with one note, so the merchant can see and refund the second charge.
+	 */
+	public function test_succeeded_intent_on_an_order_paid_by_another_gateway_is_recorded_once_without_paying_it_again(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_status( 'processing' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
+
+		$this->sut->process( $event );
+
+		$mismatch_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', ' )
+			)
+		);
+		$this->assertCount( 1, $mismatch_lines, 'One warning line per event on a gateway mismatch.' );
+		$context = $logger->contexts[ $mismatch_lines[0] ];
+		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'payment_intent.succeeded', $context['applied_operation'] );
+		$this->assertSame( 'bacs', $context['payment_method'] );
+
+		// A redelivery under another event ID must not add a second note.
+		$this->sut->process( array_replace( $event, array( 'id' => 'evt_123_redelivered' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id(), 'An order paid by another gateway must not be marked paid again.' );
+		$this->assertSame( 'bacs', $order->get_payment_method() );
+		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+	}
+
+	/**
+	 * Client 11.1.0 reads the order again before deciding it is unpaid (class-wc-payments-order-service.php:2863-2879), and
+	 * another gateway's status change never takes the order payment lock.
+	 *
+	 * @testdox Recording a succeeded intent reads the order under the lock, so an order another gateway just marked paid is not paid again.
+	 */
+	public function test_succeeded_intent_reads_the_order_again_under_the_lock(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'bacs' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$stale = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $stale );
+		// The merchant confirms the bank transfer after the event resolved the order.
+		$confirmed = wc_get_order( $order->get_id() );
+		$confirmed->set_status( 'processing' );
+		$confirmed->save();
+		$payment_completions = did_action( 'woocommerce_payment_complete' );
+		$event               = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
+
+		$this->sut->record_succeeded_payment_intent( $stale, $event['data']['object'] );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id(), 'An order paid in the meantime must not be marked paid again.' );
+		$this->assertSame( $payment_completions, did_action( 'woocommerce_payment_complete' ) );
+	}
+
+	/**
+	 * Intent overrides giving the first charge a card payment method, so the event names a WooPayments display title.
+	 *
+	 * Stripe API Charge `payment_method_details` with its `type` (read by client 11.1.0 at
+	 * class-wc-payments-webhook-processing-service.php:584) and the card's `brand` and `last4`.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_card_charge_overrides(): array {
+		return array(
+			'charges' => array(
+				'data' => array(
+					array(
+						'payment_method_details' => array(
+							'type' => 'card',
+							'card' => array(
+								'brand' => 'visa',
+								'last4' => '4242',
+							),
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox The container resolves the ingestor with its event handlers injected.
 	 */
 	public function test_container_injects_event_handlers(): void {

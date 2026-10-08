@@ -128,7 +128,7 @@ class WooPaymentsRefundEventHandler {
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
-		$order             = $this->get_order_for_charge_id( $charge_id, $charge );
+		$order             = $this->get_order_for_charge_id( $charge_id, 'charge.refunded', $charge );
 
 		if ( $charge_amount < 0 || $refund_amount < 0 || $refunded_amount > (float) $order->get_total() ) {
 			throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
@@ -172,7 +172,7 @@ class WooPaymentsRefundEventHandler {
 		$currency       = $this->get_required_string( $refund, 'currency' );
 		$status         = $this->get_required_string( $refund, 'status' );
 		$balance_txn_id = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
-		$order          = $this->get_order_for_charge_id( $charge_id );
+		$order          = $this->get_order_for_charge_id( $charge_id, 'charge.refund.updated' );
 
 		// Each branch looks the local refund up again on the order read under the lock, as charge.refunded does: a WP
 		// Admin refund of the same platform refund links its row while it holds the lock.
@@ -447,17 +447,22 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Resolve a WooPayments order by charge ID.
+	 * Resolve the order of a charge ID, whatever its payment method, as client 11.1.0 does (webhook processing service :1108-1119).
 	 *
 	 * @param string              $charge_id    Charge ID.
+	 * @param string              $event_type   Event type, for the payment method mismatch warning.
 	 * @param array<string,mixed> $event_object Provider object.
 	 * @return WC_Order
-	 * @throws RuntimeException When the charge does not resolve to a WooPayments order.
+	 * @throws RuntimeException When the charge resolves to no order, or to one whose key does not match the event.
 	 */
-	private function get_order_for_charge_id( string $charge_id, array $event_object = array() ): WC_Order {
+	private function get_order_for_charge_id( string $charge_id, string $event_type, array $event_object = array() ): WC_Order {
 		$order = $this->get_order_by_payment_meta( '_charge_id', $charge_id );
-		if ( ! $order instanceof WC_Order || ! $this->is_woopayments_order( $order ) || ! $this->does_order_key_match_event_object( $order, $event_object ) ) {
+		if ( ! $order instanceof WC_Order || ! $this->does_order_key_match_event_object( $order, $event_object ) ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
+		}
+
+		if ( ! $this->is_woopayments_order( $order ) ) {
+			$this->order_payment_store->log_order_payment_method_mismatch( $order, $event_type );
 		}
 
 		return $order;

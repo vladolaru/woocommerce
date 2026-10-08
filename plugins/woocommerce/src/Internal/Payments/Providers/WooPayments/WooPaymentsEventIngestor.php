@@ -346,12 +346,15 @@ class WooPaymentsEventIngestor {
 		}
 
 		$order = $this->get_order_for_event_object( $event_type, $event_object );
-		if ( ! $order instanceof WC_Order || ! $this->is_woopayments_order( $order ) ) {
+		if ( ! $order instanceof WC_Order ) {
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
+		// Like client 11.1.0 (webhook processing service :974-1000), the event applies whatever the order's gateway; the
+		// paid-order checks, made on the order read again under its payment lock, keep an order paid elsewhere from being paid again.
 		if ( 'payment_intent.succeeded' === $event_type ) {
+			$this->log_payment_method_mismatch( $order, $event_type );
 			$this->record_succeeded_payment_intent( $order, $event_object );
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
@@ -363,6 +366,7 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
+		$this->log_payment_method_mismatch( $order, $event_type );
 		$this->apply_lifecycle_event( $order, $lifecycle_event );
 
 		// Expiries change what the uncaptured-transactions badge counts; the plugin
@@ -424,7 +428,7 @@ class WooPaymentsEventIngestor {
 	 * gone, instead of acknowledging an event that was never applied. Owner decision O15 keeps the lock itself, and its
 	 * warning line, as they are.
 	 *
-	 * @param WC_Order              $order           WooPayments order the event belongs to.
+	 * @param WC_Order              $order           Order the event belongs to.
 	 * @param PaymentLifecycleEvent $lifecycle_event Lifecycle event to apply.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock.
 	 */
@@ -442,7 +446,7 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param WC_Order            $order          WooPayments order the intent belongs to.
+	 * @param WC_Order            $order          Order the intent belongs to, whatever its payment method.
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is recorded.
 	 */
@@ -458,8 +462,13 @@ class WooPaymentsEventIngestor {
 		}
 
 		try {
+			// Decide on what the order is now: another gateway marks an order paid without taking this lock.
+			$this->lifecycle_service->reread_order_from_data_store( $order );
 			$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
-			$this->apply_completed_payment_method_display_title( $order, $payment_intent );
+			// The client's webhook never retitles an order, so an order of another gateway keeps its payment method.
+			if ( $this->is_woopayments_order( $order ) ) {
+				$this->apply_completed_payment_method_display_title( $order, $payment_intent );
+			}
 			$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 			$this->repair_recurring_order_token( $order, $payment_intent );
 			$this->lifecycle_service->apply_unlocked( $order, $lifecycle_event, $profile );
@@ -480,7 +489,7 @@ class WooPaymentsEventIngestor {
 	 * Intent, charge and payment method IDs, the event's currency and the mandate are written when set; the fee and net
 	 * are written whenever the event yields them, zero included.
 	 *
-	 * @param WC_Order            $order          WooPayments order the intent belongs to.
+	 * @param WC_Order            $order          Order the intent belongs to.
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	private function write_succeeded_payment_intent_meta( WC_Order $order, array $payment_intent ): void {
@@ -1388,6 +1397,18 @@ class WooPaymentsEventIngestor {
 			} catch ( Throwable $logger_exception ) {
 				unset( $logger_exception );
 			}
+		}
+	}
+
+	/**
+	 * Log one warning when an event applies to an order whose payment method is another gateway.
+	 *
+	 * @param WC_Order $order      Order the event applies to.
+	 * @param string   $event_type Event type.
+	 */
+	private function log_payment_method_mismatch( WC_Order $order, string $event_type ): void {
+		if ( ! $this->is_woopayments_order( $order ) ) {
+			wc_get_container()->get( OrderPaymentStore::class )->log_order_payment_method_mismatch( $order, $event_type );
 		}
 	}
 

@@ -861,6 +861,64 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.dispute.created event holds the order its charge resolves to, whatever the order's payment method.
+	 *
+	 * Client 11.1.0 looks the order up with order_from_charge_id() and no gateway check
+	 * (class-wc-payments-webhook-processing-service.php:712-724), then records the dispute and holds the order.
+	 */
+	public function test_dispute_created_applies_to_an_order_of_another_gateway(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( 'bacs' );
+		$order->update_meta_data( '_charge_id', 'ch_bacs_created' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_bacs_created', 'needs_response' );
+		$event['charge'] = 'ch_bacs_created';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_bacs_created' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.updated event on an order paid by another gateway keeps its status, adds one note and logs the mismatch.
+	 *
+	 * Client 11.1.0 notes the update on the charge's order whatever its gateway
+	 * (class-wc-payments-webhook-processing-service.php:712-724).
+	 */
+	public function test_dispute_updated_on_an_order_paid_by_another_gateway_logs_the_mismatch(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( 'bacs' );
+		$order->update_meta_data( '_charge_id', 'ch_bacs_updated' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_bacs_updated', 'needs_response' );
+		$event['charge'] = 'ch_bacs_updated';
+		$logger          = RecordingWcLogger::install();
+
+		$this->sut->process( 'charge.dispute.updated', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment dispute has been updated' ) );
+		$mismatch_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', ' )
+			)
+		);
+		$this->assertCount( 1, $mismatch_lines );
+		$context = $logger->contexts[ $mismatch_lines[0] ];
+		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'charge.dispute.updated', $context['applied_operation'] );
+		$this->assertSame( 'bacs', $context['payment_method'] );
+	}
+
+	/**
 	 * Create an order suitable for dispute processing.
 	 *
 	 * @return \WC_Order

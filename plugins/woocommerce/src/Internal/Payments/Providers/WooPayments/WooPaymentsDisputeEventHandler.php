@@ -129,13 +129,18 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Dispute object.
-	 * @throws RuntimeException When the disputed order cannot be resolved.
+	 * @throws RuntimeException When the disputed charge resolves to no order.
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		$charge_id = $this->get_required_string( $event_object, 'charge' );
 		$order     = $this->get_order_by_payment_meta( '_charge_id', $charge_id );
-		if ( ! $order instanceof WC_Order || ! $this->is_woopayments_order( $order ) ) {
+		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
+		}
+
+		// Like client 11.1.0 (webhook processing service :712-724), the dispute applies whatever the order's payment method.
+		if ( ! $this->is_woopayments_order( $order ) ) {
+			$this->get_order_payment_store()->log_order_payment_method_mismatch( $order, $event_type );
 		}
 		$balance_transaction_id = (string) $order->get_meta( '_wcpay_payment_transaction_id', true );
 
