@@ -215,6 +215,8 @@ prepare_state() {
 	set_option_json 'wcpay_account_data' "$account" || return 1
 	set_option_json 'woocommerce_woocommerce_payments_settings' "$settings" || return 1
 	if [[ "$MODE" == local && "$state" == active_plugin ]]; then
+		# A store the WooPayments extension ran on carries its version option; WooCommerce refuses to activate the extension on a store without that evidence.
+		set_option_json 'woocommerce_woocommerce_payments_version' '"11.1.0"' || return 1
 		store_wp plugin activate woocommerce-payments-reference > /dev/null || return 1
 	fi
 }
