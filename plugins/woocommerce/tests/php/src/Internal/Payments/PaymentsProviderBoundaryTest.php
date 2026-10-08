@@ -10,7 +10,7 @@ use WC_Unit_Test_Case;
  * allow-listed files may use or name `Providers\WooPayments` classes (see the
  * `woocommerce-native-payments` skill).
  */
-class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
+class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 
 	private const PAYMENTS_DIRECTORY = 'src/Internal/Payments/';
 
