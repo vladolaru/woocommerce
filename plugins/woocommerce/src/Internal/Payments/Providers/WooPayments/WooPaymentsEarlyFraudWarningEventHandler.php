@@ -94,7 +94,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 
 		$warning = $this->get_warning_data( $event_object );
 		$order   = $this->get_order_for_charge_id( $warning['charge'] );
-		if ( ! $order instanceof WC_Order || ! $this->is_woopayments_order( $order ) ) {
+		// Like client 11.1.0 (webhook processing service :867-901), the warning applies to the order the charge resolves to,
+		// whatever its gateway now.
+		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
 		}
 
@@ -107,7 +109,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 
 		try {
 			$fresh_order = wc_get_order( $order->get_id() );
-			if ( ! $fresh_order instanceof WC_Order || ! $this->is_woopayments_order( $fresh_order ) || $warning['charge'] !== (string) $fresh_order->get_meta( '_charge_id', true ) ) {
+			if ( ! $fresh_order instanceof WC_Order || $warning['charge'] !== (string) $fresh_order->get_meta( '_charge_id', true ) ) {
 				throw new RuntimeException( esc_html( sprintf( 'WooPayments order did not match early fraud warning charge ID: %s', $warning['charge'] ) ) );
 			}
 
@@ -127,6 +129,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 			$persisted_warning = $persisted_order instanceof WC_Order ? $this->get_existing_warning( $persisted_order ) : null;
 			if ( ! $persisted_order instanceof WC_Order || $state !== $persisted_warning ) {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning ID: %s', $warning['id'] ) ) );
+			}
+			if ( ! $this->is_woopayments_order( $persisted_order ) ) {
+				$this->get_order_payment_store()->log_order_payment_method_mismatch( $persisted_order, $event_type );
 			}
 
 			$note_candidates = $this->get_note_service()->format_early_fraud_warning_note_candidates( $warning['charge'], $warning['actionable'], $warning['fraud_type'] );

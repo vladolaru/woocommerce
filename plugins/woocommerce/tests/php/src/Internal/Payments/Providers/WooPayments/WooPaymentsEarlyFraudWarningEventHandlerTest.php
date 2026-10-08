@@ -47,6 +47,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $legacy_marker_keys, $before_add );
 			}
 		};
+		$logger       = RecordingWcLogger::install();
 		$handler      = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init( null, null, $note_service );
 
@@ -76,6 +77,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $notes );
 		$this->assertStringContainsString( 'Made with stolen card', $notes[0]->content );
 		$this->assertTrue( $note_service->saw_persisted_warning );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ), 'A WooPayments order logs no gateway mismatch.' );
 	}
 
 	/**
@@ -296,32 +298,67 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject missing matching and non-WooPayments orders as retryable failures.
-	 *
-	 * @dataProvider unmatched_order_provider
-	 *
-	 * @param bool $create_order Whether to create a non-WooPayments matching order.
+	 * @testdox Should reject a warning whose charge matches no order as a retryable failure.
 	 */
-	public function test_rejects_unmatched_orders( bool $create_order ): void {
-		$order = $create_order ? $this->create_woopayments_order() : null;
-		if ( null !== $order ) {
-			$order->set_payment_method( 'cheque' );
-			$order->save();
-		}
-		$charge_id = null !== $order ? 'ch_early_warning' : 'ch_unknown';
-		$handler   = new WooPaymentsEarlyFraudWarningEventHandler();
+	public function test_rejects_unmatched_orders(): void {
+		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$handler->init();
 
 		$this->expectException( \RuntimeException::class );
 		$handler->process(
 			'radar.early_fraud_warning.created',
 			array(
-				'charge'     => $charge_id,
+				'charge'     => 'ch_unknown',
 				'id'         => 'efw_123',
 				'actionable' => true,
 				'created'    => 123,
 			)
 		);
+	}
+
+	/**
+	 * Client 11.1.0 resolves the order from the charge with no gateway check (class-wc-payments-webhook-processing-service.php:867-901).
+	 *
+	 * @testdox Should store a warning on the order its charge resolves to whatever the order's gateway, logging the mismatch once.
+	 */
+	public function test_stores_a_warning_on_an_order_of_another_gateway(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'cheque' );
+		$order->save();
+		$logger  = RecordingWcLogger::install();
+		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler->init();
+
+		// An update with no stored warning stores nothing, so it logs nothing either.
+		$handler->process(
+			'radar.early_fraud_warning.updated',
+			array(
+				'charge'     => 'ch_early_warning',
+				'id'         => 'efw_123',
+				'actionable' => true,
+				'created'    => 123,
+			)
+		);
+		$handler->process(
+			'radar.early_fraud_warning.created',
+			array(
+				'charge'     => 'ch_early_warning',
+				'id'         => 'efw_123',
+				'actionable' => true,
+				'created'    => 123,
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'efw_123', $order->get_meta( '_wcpay_early_fraud_warning', true )['efw_id'] ?? null );
+		$this->assertSame( 'cheque', $order->get_payment_method() );
+		$mismatch_lines = array_filter(
+			$logger->lines,
+			static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', applied radar.early_fraud_warning.created' )
+		);
+		$this->assertCount( 1, $mismatch_lines );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ), 'The update that stored nothing logs nothing.' );
 	}
 
 	/**
@@ -808,16 +845,6 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$handler->process( 'radar.early_fraud_warning.created', $this->valid_event_object() );
 
 		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
-	 * @return array<string,array{bool}>
-	 */
-	public function unmatched_order_provider(): array {
-		return array(
-			'unknown charge'        => array( false ),
-			'non-WooPayments order' => array( true ),
-		);
 	}
 
 	/**
