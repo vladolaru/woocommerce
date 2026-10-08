@@ -183,4 +183,27 @@ class UpdateShippingEndpointTest extends WalletTestCase {
 		$this->assertFalse( $response['success'] );
 		$this->assertSame( array( 'message' => 'Could not validate nonce.' ), $response['data'] );
 	}
+
+	/**
+	 * The v5 shipping callbacks call these Store API URLs from the browser. Plain permalinks serve the REST API at
+	 * ?rest_route=, and a site can move the REST prefix, so the URLs come from rest_url(), not a /wp-json/ path.
+	 *
+	 * @testdox Should build the Store API cart URLs with rest_url(): permalink structure "$structure".
+	 * @testWith [""]
+	 *           ["/%postname%/"]
+	 *
+	 * @param string $structure The permalink structure.
+	 */
+	public function test_store_api_urls_follow_the_rest_url( string $structure ): void {
+		$this->set_permalink_structure( $structure );
+
+		$this->assertSame(
+			array(
+				'select_shipping_rate' => rest_url( 'wc/store/v1/cart/select-shipping-rate' ),
+				'cart'                 => rest_url( 'wc/store/v1/cart/' ),
+				'update_customer'      => rest_url( 'wc/store/v1/cart/update-customer' ),
+			),
+			UpdateShippingEndpoint::store_api_urls()
+		);
+	}
 }

@@ -939,6 +939,8 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 		$current_context = $this->context->context();
 
 		$this->request_data->enqueue_nonce_fix();
+		$store_api_urls = UpdateShippingEndpoint::store_api_urls();
+
 		$localize = array(
 			'url'                                  => add_query_arg( $url_params, 'https://www.paypal.com/sdk/js' ),
 			'url_params'                           => $url_params,
@@ -1008,11 +1010,11 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 				),
 				'update_customer_shipping'       => array(
 					'shipping_options'       => array(
-						'endpoint' => home_url( UpdateShippingEndpoint::WC_STORE_API_ENDPOINT . 'select-shipping-rate' ),
+						'endpoint' => $store_api_urls['select_shipping_rate'],
 					),
 					'shipping_address'       => array(
-						'cart_endpoint'            => home_url( UpdateShippingEndpoint::WC_STORE_API_ENDPOINT ),
-						'update_customer_endpoint' => home_url( UpdateShippingEndpoint::WC_STORE_API_ENDPOINT . 'update-customer' ),
+						'cart_endpoint'            => $store_api_urls['cart'],
+						'update_customer_endpoint' => $store_api_urls['update_customer'],
 					),
 					'wp_rest_nonce'          => wp_create_nonce( 'wc_store_api' ),
 					'update_shipping_method' => \WC_AJAX::get_endpoint( 'update_shipping_method' ),

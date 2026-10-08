@@ -24,8 +24,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\Ses
  * Patches the PayPal order with the cart's current shipping methods.
  */
 class UpdateShippingEndpoint implements EndpointInterface {
-	const ENDPOINT              = 'ppc-update-shipping';
-	const WC_STORE_API_ENDPOINT = '/wp-json/wc/store/v1/cart/';
+	const ENDPOINT           = 'ppc-update-shipping';
+	const WC_STORE_API_ROUTE = 'wc/store/v1/cart/';
 
 	/**
 	 * The request data.
@@ -80,6 +80,21 @@ class UpdateShippingEndpoint implements EndpointInterface {
 		$this->purchase_unit_factory = $purchase_unit_factory;
 		$this->session_handler       = $session_handler;
 		$this->logger                = $logger;
+	}
+
+	/**
+	 * The Store API cart URLs the v5 shipping callbacks call from the browser.
+	 *
+	 * Built with rest_url(), so plain permalinks (?rest_route=) and a moved REST prefix work.
+	 *
+	 * @return array{select_shipping_rate: string, cart: string, update_customer: string}
+	 */
+	public static function store_api_urls(): array {
+		return array(
+			'select_shipping_rate' => rest_url( self::WC_STORE_API_ROUTE . 'select-shipping-rate' ),
+			'cart'                 => rest_url( self::WC_STORE_API_ROUTE ),
+			'update_customer'      => rest_url( self::WC_STORE_API_ROUTE . 'update-customer' ),
+		);
 	}
 
 	/**
