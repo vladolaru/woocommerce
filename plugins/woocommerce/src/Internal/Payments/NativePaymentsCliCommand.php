@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use WP_CLI;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class NativePaymentsCliCommand implements RegisterHooksInterface {
+class NativePaymentsCliCommand {
 
 	/**
 	 * WooPayments status report.
@@ -28,35 +28,14 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 	private WooPaymentsStatusReport $status_report;
 
 	/**
-	 * WP-CLI adapter.
-	 *
-	 * @var NativePaymentsCliAdapter|null
-	 */
-	private ?NativePaymentsCliAdapter $cli_adapter = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsStatusReport       $status_report Status report service.
-	 * @param NativePaymentsCliAdapter|null $cli_adapter Optional WP-CLI adapter.
+	 * @param WooPaymentsStatusReport $status_report Status report service.
 	 */
-	final public function init( WooPaymentsStatusReport $status_report, ?NativePaymentsCliAdapter $cli_adapter = null ): void {
+	final public function init( WooPaymentsStatusReport $status_report ): void {
 		$this->status_report = $status_report;
-		$this->cli_adapter   = $cli_adapter;
-	}
-
-	/**
-	 * Register the WP-CLI command when WP-CLI is available.
-	 */
-	public function register(): void {
-		$cli_adapter = $this->get_cli_adapter();
-		if ( ! $cli_adapter->is_available() ) {
-			return;
-		}
-
-		$cli_adapter->add_command( 'wc-native-payments', $this );
 	}
 
 	/**
@@ -73,7 +52,8 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 		unset( $args, $assoc_args );
 
 		foreach ( $this->get_status_lines() as $line ) {
-			$this->line( $line );
+			// @phpstan-ignore-next-line class.notFound
+			WP_CLI::line( $line );
 		}
 	}
 
@@ -117,27 +97,5 @@ class NativePaymentsCliCommand implements RegisterHooksInterface {
 			'Last webhook fetch: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
 			'Note: ' . (string) $data['native_enabled_note'],
 		);
-	}
-
-	/**
-	 * Write a line through WP-CLI.
-	 *
-	 * @param string $line Line to output.
-	 */
-	private function line( string $line ): void {
-		$this->get_cli_adapter()->line( $line );
-	}
-
-	/**
-	 * Get the WP-CLI adapter.
-	 *
-	 * @return NativePaymentsCliAdapter
-	 */
-	private function get_cli_adapter(): NativePaymentsCliAdapter {
-		if ( null === $this->cli_adapter ) {
-			$this->cli_adapter = new NativePaymentsCliAdapter();
-		}
-
-		return $this->cli_adapter;
 	}
 }
