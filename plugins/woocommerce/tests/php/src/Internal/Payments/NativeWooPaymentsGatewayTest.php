@@ -758,14 +758,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should only place express gateways in the payment-method list when both placement controls are enabled.
+	 * Client 11.1.0 offers an express gateway in the list only with both placement controls on (class-wc-payment-gateway-wcpay.php:881-887)
+	 * and only when the method is among the methods enabled at checkout (:941, :4778-4810), which the Apple Pay toggle never writes.
+	 *
+	 * @testdox Should place an express gateway in the payment-method list only with both placement controls on and the method enabled at checkout.
 	 */
 	public function test_express_gateway_availability_requires_payment_method_list_placement(): void {
 		$this->activate_native_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
 		$this->assertNotNull( $definition );
 
-		$canonical_settings = array( 'express_checkout_in_payment_methods' => 'no' );
+		$canonical_settings = array(
+			'express_checkout_in_payment_methods' => 'no',
+			'upe_enabled_payment_method_ids'      => array( 'card', 'apple_pay' ),
+		);
 		$feature_flag       = '1';
 		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -809,7 +815,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->assertFalse( $gateway->is_available(), 'The dynamic checkout feature flag must also be enabled.' );
 
 			$feature_flag = '1';
-			$this->assertTrue( $gateway->is_available(), 'Both placement controls should expose the express gateway.' );
+			$this->assertTrue( $gateway->is_available(), 'Both placement controls should expose a method enabled at checkout.' );
+
+			// The Apple Pay toggle enables its gateway but never adds apple_pay to the methods enabled at checkout.
+			$canonical_settings['upe_enabled_payment_method_ids'] = array( 'card' );
+			$this->assertFalse( $gateway->is_available(), 'A method missing from the methods enabled at checkout is not offered, placement or not.' );
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $split_settings );
 			remove_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
@@ -818,12 +828,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should never offer express gateways in admin, as the client never does, while card and an enabled Klarna stay offered.
+	 * Client 11.1.0 skips the placement check in admin (class-wc-payment-gateway-wcpay.php:881) but still requires the methods enabled at
+	 * checkout (:941): Amazon Pay, whose toggle writes amazon_pay to that list, is offered; Apple Pay and Google Pay, whose toggles never do, are not.
+	 *
+	 * @testdox In admin, an express gateway is offered only when it is enabled at checkout, whatever the placement, while card and an enabled Klarna stay offered.
 	 */
 	public function test_express_gateways_are_unavailable_in_admin_regardless_of_placement(): void {
 		$this->activate_native_tier();
 		$registry           = new WooPaymentsPaymentMethodRegistry();
-		$canonical_settings = array( 'express_checkout_in_payment_methods' => 'no' );
+		$canonical_settings = array(
+			'express_checkout_in_payment_methods' => 'no',
+			'upe_enabled_payment_method_ids'      => array( 'card', 'klarna', 'amazon_pay' ),
+		);
 		$feature_flag       = '0';
 		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -833,8 +849,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			array(
 				'country'          => 'US',
 				'capabilities'     => array(
-					'card_payments'   => 'active',
-					'klarna_payments' => 'active',
+					'card_payments'       => 'active',
+					'klarna_payments'     => 'active',
+					'amazon_pay_payments' => 'active',
 				),
 				'store_currencies' => array( 'default' => 'usd' ),
 			)
@@ -889,9 +906,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$canonical_settings['express_checkout_in_payment_methods'] = $setting;
 				$feature_flag = $flag;
 
-				foreach ( array( 'apple_pay', 'google_pay', 'amazon_pay' ) as $payment_method_id ) {
-					$this->assertFalse( $gateways[ $payment_method_id ]->is_available(), "{$payment_method_id} must not be offered in admin ({$placement})." );
+				foreach ( array( 'apple_pay', 'google_pay' ) as $payment_method_id ) {
+					$this->assertFalse( $gateways[ $payment_method_id ]->is_available(), "{$payment_method_id} is never enabled at checkout, so never offered in admin ({$placement})." );
 				}
+				$this->assertTrue( $gateways['amazon_pay']->is_available(), "Amazon Pay enabled at checkout is offered in admin ({$placement})." );
 				$this->assertTrue( $gateways['card']->is_available(), "Card stays offered in admin ({$placement})." );
 				$this->assertTrue( $gateways['klarna']->is_available(), "An enabled Klarna stays offered in admin ({$placement})." );
 			}

@@ -578,11 +578,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		// Express methods are never offered in admin (for example, the Subscriptions payment-method select):
-		// the client's express gateways fail its enabled-at-checkout list check there.
+		// An express method is offered as a list gateway only when it is among the methods enabled at checkout, which the Apple Pay and
+		// Google Pay toggles never write, and outside admin only with list placement on (client 11.1.0
+		// `includes/class-wc-payment-gateway-wcpay.php:881-887`, `:941`).
 		if (
 			$this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT )
-			&& ( is_admin() || ! $this->is_express_checkout_in_payment_methods_enabled() )
+			&& (
+				( ! is_admin() && ! $this->is_express_checkout_in_payment_methods_enabled() )
+				|| ! in_array( $this->get_payment_method_id(), (array) $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array() ), true )
+			)
 		) {
 			return false;
 		}
