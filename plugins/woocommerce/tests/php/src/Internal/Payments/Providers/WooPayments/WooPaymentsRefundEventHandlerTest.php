@@ -258,7 +258,6 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			$this->assertCount( 1, $refund_notes );
 			$this->assertSame( $synchronous_note, $refund_notes[0]->content );
 			$this->assertSame( hash( 'sha256', 'refund:re_123:created_successful' ), get_comment_meta( $refund_notes[0]->id, WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY, true ) );
-			$this->assertSame( '', $order->get_meta( '_wc_native_woopayments_refund_note_' . md5( 're_123|created_successful' ), true ) );
 		} finally {
 			false === $previous_enabled_currencies
 				? delete_option( 'wcpay_multi_currency_enabled_currencies' )

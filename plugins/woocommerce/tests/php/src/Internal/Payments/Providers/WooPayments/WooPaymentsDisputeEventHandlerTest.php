@@ -231,21 +231,18 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy dispute markers backfill the unified identity onto the existing note.
+	 * @testdox An existing dispute note gets the unified identity backfilled instead of a second note.
 	 */
-	public function test_legacy_dispute_marker_backfills_unified_identity(): void {
+	public function test_existing_dispute_note_backfills_unified_identity(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$order->save();
 
-		$note              = 'Legacy dispute note';
-		$dispute_id        = 'dp_legacy';
-		$status            = 'needs_response';
-		$note_type         = 'created_dispute';
-		$legacy_note_id    = $order->add_order_note( $note );
-		$legacy_marker_key = '_wc_native_woopayments_dispute_note_' . md5( $dispute_id . '|' . $status . '|' . $note_type );
-		$order->update_meta_data( $legacy_marker_key, 'yes' );
-		$order->save_meta_data();
+		$note           = 'Legacy dispute note';
+		$dispute_id     = 'dp_legacy';
+		$status         = 'needs_response';
+		$note_type      = 'created_dispute';
+		$legacy_note_id = $order->add_order_note( $note );
 
 		$this->assertFalse(
 			$this->invoke_private(
@@ -260,21 +257,20 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox New dispute identities suppress changed-content replay without legacy marker writes.
+	 * @testdox New dispute identities suppress changed-content replay and run the side effect once.
 	 */
 	public function test_new_dispute_identity_suppresses_replay_and_runs_side_effect_once(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$order->save();
 
-		$dispute_id        = 'dp_new';
-		$status            = 'needs_response';
-		$note_type         = 'created_dispute';
-		$before_add_calls  = 0;
-		$before_add        = static function () use ( &$before_add_calls ): void {
+		$dispute_id       = 'dp_new';
+		$status           = 'needs_response';
+		$note_type        = 'created_dispute';
+		$before_add_calls = 0;
+		$before_add       = static function () use ( &$before_add_calls ): void {
 			++$before_add_calls;
 		};
-		$legacy_marker_key = '_wc_native_woopayments_dispute_note_' . md5( $dispute_id . '|' . $status . '|' . $note_type );
 
 		$this->assertTrue(
 			$this->invoke_private(
@@ -292,7 +288,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertCount( 1, $notes );
 		$this->assertSame( 1, $before_add_calls );
-		$this->assertSame( '', $order->get_meta( $legacy_marker_key, true ) );
 		$this->assertSame(
 			hash( 'sha256', 'dispute:' . $dispute_id . '|' . $status . '|' . $note_type ),
 			get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true )

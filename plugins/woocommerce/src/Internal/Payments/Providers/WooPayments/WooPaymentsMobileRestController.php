@@ -1395,7 +1395,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$note_candidates[0],
 			'',
 			$note_candidates,
-			array(),
 			static function () use ( $order ): void {
 				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
 					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_failed' );
@@ -1424,7 +1423,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$note_candidates[0],
 			'',
 			$note_candidates,
-			array(),
 			static function () use ( $order ): void {
 				if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
 					$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review_expired' );

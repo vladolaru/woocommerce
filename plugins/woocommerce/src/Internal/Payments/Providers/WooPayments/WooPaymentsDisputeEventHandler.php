@@ -28,13 +28,6 @@ use WC_Order_Refund;
 class WooPaymentsDisputeEventHandler {
 
 	/**
-	 * Prefix for legacy dispute order-note structural dedupe markers.
-	 *
-	 * @var string
-	 */
-	private const DISPUTE_NOTE_MARKER_PREFIX = '_wc_native_woopayments_dispute_note_';
-
-	/**
 	 * Meta key recording the charge's disputes that are still open.
 	 *
 	 * @var string
@@ -764,7 +757,6 @@ class WooPaymentsDisputeEventHandler {
 			$note,
 			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
 			$equivalent_notes,
-			array( $this->get_dispute_note_marker_key( $dispute_id, $event_status, $note_type ) ),
 			$before_add
 		);
 	}
@@ -894,18 +886,6 @@ class WooPaymentsDisputeEventHandler {
 		$order->save();
 
 		return $remaining;
-	}
-
-	/**
-	 * Get the structural dedupe marker key for a dispute note.
-	 *
-	 * @param string $dispute_id   Provider dispute ID.
-	 * @param string $event_status Provider dispute status.
-	 * @param string $note_type    Stable note type.
-	 * @return string
-	 */
-	private function get_dispute_note_marker_key( string $dispute_id, string $event_status, string $note_type ): string {
-		return self::DISPUTE_NOTE_MARKER_PREFIX . md5( $dispute_id . '|' . $event_status . '|' . $note_type );
 	}
 
 	/**

@@ -385,15 +385,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A legacy success marker with an existing equivalent note backfills its stable identity before lifecycle mutation.
+	 * @testdox A payment success replay with an existing equivalent note backfills its stable identity before lifecycle mutation.
 	 */
-	public function test_payment_success_replay_with_a_legacy_marker_and_existing_note_backfills_identity(): void {
+	public function test_payment_success_replay_with_an_existing_equivalent_note_backfills_identity(): void {
 		$order       = $this->create_woopayments_order();
 		$note        = 'Core payment success note.';
 		$plugin_note = 'Plugin payment success note.';
-		$marker_key  = '_wc_native_payments_note_' . md5( 'pi_legacy_existing|completed|payment_success' );
 		$order->add_order_note( $plugin_note );
-		$order->update_meta_data( $marker_key, 'yes' );
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->update_status( 'on-hold' );
 		$order->save();
@@ -415,10 +413,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A legacy replay marker must prevent a completed event from changing status.' );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A legacy replay marker must prevent lifecycle metadata mutation.' );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $plugin_note ), 'A legacy replay marker must not duplicate the existing equivalent note.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A legacy replay marker must not add the Core note.' );
+		$this->assertSame( 'on-hold', $order->get_status(), 'An existing equivalent note must prevent a completed event from changing status.' );
+		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'An existing equivalent note must prevent lifecycle metadata mutation.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $plugin_note ), 'A replay must not duplicate the existing equivalent note.' );
+		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A replay must not add the Core note.' );
 
 		$notes = array_values(
 			array_filter(
@@ -428,39 +426,6 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $notes );
 		$this->assertSame( hash( 'sha256', 'payment_lifecycle:pi_legacy_existing|completed|payment_success' ), get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ), 'Canonical persisted-note detection must backfill the stable identity.' );
-	}
-
-	/**
-	 * @testdox A legacy success marker without a note skips lifecycle mutation without adding a note.
-	 */
-	public function test_payment_success_replay_with_a_legacy_marker_without_a_note_keeps_existing_order_state(): void {
-		$order      = $this->create_woopayments_order();
-		$note       = 'Core payment success note.';
-		$marker_key = '_wc_native_payments_note_' . md5( 'pi_legacy_marker|completed|payment_success' );
-		$order->update_meta_data( $marker_key, 'yes' );
-		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
-		$order->update_status( 'on-hold' );
-		$order->save();
-
-		$event = new PaymentLifecycleEvent(
-			PaymentLifecycleEvent::STATUS_COMPLETED,
-			'pi_legacy_marker',
-			array(
-				'_intent_id'        => 'pi_legacy_marker',
-				'_intention_status' => 'succeeded',
-			),
-			array(),
-			$note,
-			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS
-		);
-
-		$this->sut->apply( $order, $event, $this->persistence_profile );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A legacy replay marker must prevent a completed event from changing status.' );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A legacy replay marker must prevent lifecycle metadata mutation.' );
-		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A legacy replay marker without a note must not add the Core note.' );
 	}
 
 	/**
@@ -635,15 +600,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$order      = wc_get_order( $order->get_id() );
-		$marker_key = '_wc_native_payments_note_' . md5( "{$payment_reference}|{$event_status}|{$note_type}" );
+		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status(), "{$event_status} must not downgrade a paid order." );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ), "{$event_status} must not overwrite successful lifecycle metadata." );
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ), "{$event_status} must not delete payment fee metadata." );
 		$this->assertSame( '8.77', $order->get_meta( '_wcpay_net', true ), "{$event_status} must not delete payment net metadata." );
-		$this->assertSame( '', $order->get_meta( $marker_key, true ), "{$event_status} must not persist a lifecycle note marker." );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), "{$event_status} must not add a late lifecycle note." );
 	}
 
@@ -676,14 +639,12 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$order      = wc_get_order( $stale_order->get_id() );
-		$marker_key = '_wc_native_payments_note_' . md5( 'pi_failed_late|failed|' . $note_type );
+		$order = wc_get_order( $stale_order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( '1.23', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '', $order->get_meta( $marker_key, true ) );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ) );
 	}
 
@@ -885,14 +846,12 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$order             = wc_get_order( $order->get_id() );
-		$legacy_marker_key = '_wc_native_payments_note_' . md5( 'pi_started|started|payment_started' );
 		$expected_identity = hash( 'sha256', 'payment_lifecycle:pi_started|started|payment_started' );
 		$notes             = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 1, $notes );
 		$this->assertSame( $expected_identity, get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ) );
-		$this->assertSame( '', $order->get_meta( $legacy_marker_key, true ) );
 
 		$this->apply_event_unlocked(
 			$order,
@@ -914,14 +873,11 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy lifecycle markers backfill the unified identity onto an equivalent note.
+	 * @testdox An existing equivalent lifecycle note gets the unified identity backfilled instead of a second note.
 	 */
-	public function test_legacy_lifecycle_marker_backfills_unified_identity(): void {
-		$order             = $this->create_woopayments_order();
-		$legacy_note_id    = $order->add_order_note( 'Payment started.' );
-		$legacy_marker_key = '_wc_native_payments_note_' . md5( 'pi_legacy|started|payment_started' );
-		$order->update_meta_data( $legacy_marker_key, 'yes' );
-		$order->save_meta_data();
+	public function test_equivalent_lifecycle_note_backfills_unified_identity(): void {
+		$order          = $this->create_woopayments_order();
+		$legacy_note_id = $order->add_order_note( 'Payment started.' );
 
 		$this->apply_event_unlocked(
 			$order,

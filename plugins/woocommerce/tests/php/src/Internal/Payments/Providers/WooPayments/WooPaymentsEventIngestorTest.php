@@ -792,7 +792,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertContains( hash( 'sha256', 'payment_lifecycle:pi_123|completed|payment_success' ), $note_identities );
-		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_123|completed|payment_success' ), true ) );
 	}
 
 	/**
@@ -1767,7 +1766,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Zahlung' ) );
-		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_standard_failure|failed|payment_failed' ), true ) );
 	}
 
 	/**
@@ -1826,7 +1824,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Terminalzahlung' ) );
-		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'pi_terminal_failure|failed|payment_failed' ), true ) );
 	}
 
 	/**
@@ -2247,7 +2244,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'ch_expired_plugin_note', $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Autorisierung' ) );
-		$this->assertSame( '', $order->get_meta( '_wc_native_payments_note_' . md5( 'ch_expired_plugin_note|capture_expired|capture_expired' ), true ) );
 	}
 
 	/**

@@ -201,8 +201,7 @@ class OrderPaymentLifecycleService {
 				$order,
 				(string) $note,
 				$this->get_note_identity( $event, (string) $note ),
-				$event->get_note_equivalents(),
-				array( $this->get_note_marker_key( $event, (string) $note ) )
+				$event->get_note_equivalents()
 			);
 		}
 	}
@@ -342,8 +341,7 @@ class OrderPaymentLifecycleService {
 				$order,
 				$note,
 				$this->get_note_identity( $event, $note ),
-				$event->get_note_equivalents(),
-				array( $this->get_note_marker_key( $event, $note ) )
+				$event->get_note_equivalents()
 			)
 		) {
 			return null;
@@ -433,19 +431,6 @@ class OrderPaymentLifecycleService {
 			&& '' !== $payment_reference
 			&& $payment_reference === (string) $order->get_transaction_id()
 			&& $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ) );
-	}
-
-	/**
-	 * Get the legacy idempotency marker key for a lifecycle note.
-	 *
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
-	 * @return string
-	 */
-	private function get_note_marker_key( PaymentLifecycleEvent $event, string $note ): string {
-		$note_key = $event->get_note_type() ?? $note;
-
-		return '_wc_native_payments_note_' . md5( (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note_key );
 	}
 
 	/**

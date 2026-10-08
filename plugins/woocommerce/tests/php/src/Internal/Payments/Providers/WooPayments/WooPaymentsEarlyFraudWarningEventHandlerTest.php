@@ -33,18 +33,17 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @param WC_Order      $order              Order object.
-			 * @param string        $note               Note content.
-			 * @param string        $identity           Stable private note identity.
-			 * @param string[]      $equivalent_notes   Equivalent note renderings.
-			 * @param string[]      $legacy_marker_keys Legacy order-meta marker keys.
-			 * @param callable|null $before_add         Callback invoked before insertion.
+			 * @param WC_Order      $order            Order object.
+			 * @param string        $note             Note content.
+			 * @param string        $identity         Stable private note identity.
+			 * @param string[]      $equivalent_notes Equivalent note renderings.
+			 * @param callable|null $before_add       Callback invoked before insertion.
 			 */
-			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array(), ?callable $before_add = null ): bool {
+			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
 				$persisted_order             = wc_get_order( $order->get_id() );
 				$this->saw_persisted_warning = $persisted_order instanceof WC_Order && 'efw_123' === ( $persisted_order->get_meta( '_wcpay_early_fraud_warning', true )['efw_id'] ?? '' );
 
-				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $legacy_marker_keys, $before_add );
+				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $before_add );
 			}
 		};
 		$logger       = RecordingWcLogger::install();
@@ -605,14 +604,13 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @param WC_Order      $order              Order object.
-			 * @param string        $note               Note content.
-			 * @param string        $identity           Stable private note identity.
-			 * @param string[]      $equivalent_notes   Equivalent note renderings.
-			 * @param string[]      $legacy_marker_keys Legacy order-meta marker keys.
-			 * @param callable|null $before_add         Callback invoked before insertion.
+			 * @param WC_Order      $order            Order object.
+			 * @param string        $note             Note content.
+			 * @param string        $identity         Stable private note identity.
+			 * @param string[]      $equivalent_notes Equivalent note renderings.
+			 * @param callable|null $before_add       Callback invoked before insertion.
 			 */
-			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array(), ?callable $before_add = null ): bool {
+			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
 				throw new \RuntimeException( 'Note persistence failed.' );
 			}
 		};
@@ -649,14 +647,13 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * {@inheritDoc}
 			 *
-			 * @param WC_Order      $order              Order object.
-			 * @param string        $note               Note content.
-			 * @param string        $identity           Stable private note identity.
-			 * @param string[]      $equivalent_notes   Equivalent note renderings.
-			 * @param string[]      $legacy_marker_keys Legacy order-meta marker keys.
-			 * @param callable|null $before_add         Callback invoked before insertion.
+			 * @param WC_Order      $order            Order object.
+			 * @param string        $note             Note content.
+			 * @param string        $identity         Stable private note identity.
+			 * @param string[]      $equivalent_notes Equivalent note renderings.
+			 * @param callable|null $before_add       Callback invoked before insertion.
 			 */
-			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array(), ?callable $before_add = null ): bool {
+			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
 				return false;
 			}
 		};
@@ -828,14 +825,13 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				/**
 				 * {@inheritDoc}
 				 *
-				 * @param WC_Order      $order              Order object.
-				 * @param string        $note               Note content.
-				 * @param string        $identity           Stable private note identity.
-				 * @param string[]      $equivalent_notes   Equivalent note renderings.
-				 * @param string[]      $legacy_marker_keys Legacy order-meta marker keys.
-				 * @param callable|null $before_add         Callback invoked before insertion.
+				 * @param WC_Order      $order            Order object.
+				 * @param string        $note             Note content.
+				 * @param string        $identity         Stable private note identity.
+				 * @param string[]      $equivalent_notes Equivalent note renderings.
+				 * @param callable|null $before_add       Callback invoked before insertion.
 				 */
-				public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), array $legacy_marker_keys = array(), ?callable $before_add = null ): bool {
+				public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
 					throw new \RuntimeException( 'Note persistence failed.' );
 				}
 			};

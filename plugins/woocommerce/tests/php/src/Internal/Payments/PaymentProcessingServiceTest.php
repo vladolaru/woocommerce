@@ -3404,7 +3404,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					static fn( object $note ): bool => str_contains( (string) $note->content, 'pi_canceled_de' )
 				)
 			);
-			$marker_key     = '_wc_native_payments_note_' . md5( 'pi_canceled_de|canceled|capture_canceled' );
 
 			$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 			$this->assertSame( 'cancelled', $order->get_status() );
@@ -3413,7 +3412,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
 			$this->assertCount( 1, $matching_notes );
 			$this->assertSame( $plugin_note, $matching_notes[0]->content );
-			$this->assertSame( '', $order->get_meta( $marker_key, true ), 'A plugin-owned note must not acquire a native lifecycle marker.' );
 		} finally {
 			remove_filter( 'gettext', $translation_filter, 10 );
 			restore_current_locale();
