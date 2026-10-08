@@ -13,13 +13,13 @@ use WC_Unit_Test_Case;
 use WP_REST_Request;
 
 /**
- * Tests for the native WooPayments E2E mu-plugin bootstrap.
+ * Tests for the WooPayments end-to-end test helper mu-plugin.
  */
 class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
-	 * services resolved while native was forced on, and the opt-in constant overrides.
+	 * services resolved while the built-in WooPayments was forced on, and the opt-in constant overrides.
 	 */
 	public function tearDown(): void {
 		$GLOBALS['wp_rest_server'] = null;
@@ -36,7 +36,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 		$this->load_bootstrap();
 
 		// wp-env defines the constant for every environment including this container; state the absent precondition on the
-		// layer that decides, so the case stays reachable on a machine configured to run the native E2E suite.
+		// layer that decides, so the case stays reachable on a machine configured to run the WooPayments E2E suite.
 		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
 
 		$this->assertFalse(
@@ -61,7 +61,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 		$this->assertTrue(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
 			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, false ),
-			'The mu-plugin filter must enable native payments before the arbiter resolves ownership.'
+			'The mu-plugin filter must enable the built-in WooPayments before the arbiter resolves ownership.'
 		);
 	}
 
@@ -78,7 +78,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
 			$arbiter->get_runtime_owner(),
-			'Plugin-wins ownership must remain authoritative when the standalone plugin is active.'
+			'Extension-wins ownership must remain authoritative when the WooPayments extension is active.'
 		);
 	}
 
@@ -96,7 +96,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			WooPaymentsRuntimeArbiter::OWNER_NONE,
 			$arbiter->get_runtime_owner(),
-			'The host-controlled kill switch must disable E2E native ownership.'
+			'The host-controlled kill switch must disable E2E built-in ownership.'
 		);
 	}
 
@@ -207,7 +207,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 		$response = rest_do_request( $request );
 		$data     = $response->get_data();
 
-		$this->assertSame( 200, $response->get_status(), 'Exact native saved-card evidence should be readable.' );
+		$this->assertSame( 200, $response->get_status(), 'Exact saved-card evidence should be readable.' );
 		$this->assertSame( 'cus_exact', $data['provider_customer_id'], 'Evidence must name the exact provider customer.' );
 		$this->assertArrayNotHasKey(
 			'provider_default_payment_method_id',
@@ -253,7 +253,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse(
 			has_action( 'admin_post_wc_native_payments_e2e_cutover' ),
-			'The pilot must drive the product-owned WooPaymentsCutoverController instead of an MU-plugin surrogate.'
+			'The cutover must run through WooPaymentsCutoverController, not a mu-plugin action.'
 		);
 	}
 
@@ -403,7 +403,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * Load and activate the same file that wp-env maps into the mu-plugins directory.
 	 *
 	 * The file deliberately skips its own registration under PHPUnit, so that
-	 * merely being loaded as an mu-plugin cannot force native payments ownership
+	 * merely being loaded as an mu-plugin cannot force built-in WooPayments ownership
 	 * onto unrelated tests. This class is the one that wants it active, so it
 	 * registers explicitly. A fresh instance per call is correct because the
 	 * WordPress test case restores the hook registry between tests, which drops

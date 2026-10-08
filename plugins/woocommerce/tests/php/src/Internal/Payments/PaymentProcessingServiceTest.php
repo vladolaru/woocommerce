@@ -142,13 +142,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should let core's cart-clearing hook empty a matching cart once the shopper's browser loads a completed checkout's redirect URL.
 	 *
-	 * Oracle: WooPayments client 11.1.0 `class-wc-payment-gateway-wcpay.php:2229-2231` empties the cart
-	 * itself inside `process_payment()`, before returning its success result. Native does not: its
+	 * WooPayments client 11.1.0 `class-wc-payment-gateway-wcpay.php:2229-2231` empties the cart
+	 * itself inside `process_payment()`, before returning its success result. The runtime does not: its
 	 * redirect (proved above) only points at the order-received URL, and the cart is cleared later, once
 	 * the shopper's browser actually loads that URL and core's `wc_clear_cart_after_payment()`
 	 * (`includes/wc-cart-functions.php:175-231`, hooked on `template_redirect`) reads its `order-received`
 	 * query var and matching `key`. `WooPaymentsTokenizedCartSessionController` is registered as it would
-	 * be in production to prove native adds no filter that blocks this for a standard (non-tokenized)
+	 * be in production to prove the runtime adds no filter that blocks this for a standard (non-tokenized)
 	 * checkout — only a tokenized-product order-received request gets that filter (see that class's own
 	 * test coverage).
 	 */
@@ -203,7 +203,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should let core's cart-clearing hook empty the cart through the order-awaiting-payment session branch once the order is paid.
 	 *
-	 * Oracle: `includes/wc-cart-functions.php:198-207` (`wc_clear_cart_after_payment()`), the branch the
+	 * `includes/wc-cart-functions.php:198-207` (`wc_clear_cart_after_payment()`) is the branch the
 	 * Store API's checkout flow relies on instead of the order-received query var branch: it reads
 	 * `WC()->session->order_awaiting_payment`, set by `WC_Checkout::process_checkout()`
 	 * (`includes/class-wc-checkout.php:1163`) when the order is created, and clears the cart only once
@@ -391,12 +391,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
 	 *
-	 * Outcome shape matches the recorded REC-1 `generic_decline` envelope (`Fixtures/rec-1-intention-declines.json`)
+	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/rec-1-intention-declines.json`)
 	 * as `WooPaymentsProviderGatewayAdapterTest::test_native_charge_decline_envelope_maps_each_card_code` proves
 	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
 	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
 	 * fraud meta box `allow` for a `card_error` decline (`:1372`). A plain checkout decline is not the card-testing
-	 * or rate-limiter refusal path (F2); native matches the client here.
+	 * or rate-limiter refusal path.
 	 */
 	public function test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta(): void {
 		$order           = $this->create_woopayments_order( '10.01' );
@@ -653,7 +653,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should return a redirect result without completing the order for redirect outcomes.
 	 *
-	 * Oracle: WooPayments client 11.1.0 `class-wc-payments-order-service.php:417-426`: a
+	 * WooPayments client 11.1.0 `class-wc-payments-order-service.php:417-426`: a
 	 * `requires_action` intent for a non-offline method with no error calls `mark_payment_started()`,
 	 * which leaves the order at its pending status and writes no charge id.
 	 */
@@ -2533,7 +2533,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A refund with no refund row on the order is refused before the provider call, writes nothing, and releases the lock.
 	 *
 	 * Client 11.1.0 sends the refund first and then returns `wcpay_edit_order_refund_not_found`
-	 * (class-wc-payment-gateway-wcpay.php:3003-3007). Native refuses first so no money moves; the
+	 * (class-wc-payment-gateway-wcpay.php:3003-3007). The runtime refuses first so no money moves; the
 	 * WooPayments gateway maps the neutral code to the client's.
 	 */
 	public function test_process_refund_without_a_refund_row_is_refused_before_the_provider_call(): void {
@@ -2608,11 +2608,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A refund outcome adopts an equivalent note and backfills its provider-neutral structural identity.
 	 */
 	public function test_process_refund_adopts_equivalent_note_and_backfills_structural_identity(): void {
-		$identity    = 'refund:re_structural:created_successful';
-		$native_note = 'A refund of $10.99 was successfully processed. (<code>re_structural</code>)';
-		$locale_note = 'A refund of 10,99 $ was successfully processed. (<code>re_structural</code>)';
-		$order       = $this->create_woopayments_order( '10.99' );
-		$refund      = wc_create_refund(
+		$identity     = 'refund:re_structural:created_successful';
+		$runtime_note = 'A refund of $10.99 was successfully processed. (<code>re_structural</code>)';
+		$locale_note  = 'A refund of 10,99 $ was successfully processed. (<code>re_structural</code>)';
+		$order        = $this->create_woopayments_order( '10.99' );
+		$refund       = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),
 				'amount'         => 10.99,
@@ -2623,9 +2623,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->add_order_note( $locale_note );
 
 		$effect_data = array(
-			PaymentOutcome::DATA_REFUND_NOTE             => $native_note,
+			PaymentOutcome::DATA_REFUND_NOTE             => $runtime_note,
 			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY    => $identity,
-			PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $native_note, $locale_note ),
+			PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $runtime_note, $locale_note ),
 			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY => '_test_provider_note_identity',
 		);
 		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_structural', '', '', '', $effect_data ) );
@@ -2652,11 +2652,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Mixed equivalent-note values are filtered while valid structural identity remains usable.
 	 */
 	public function test_process_refund_filters_mixed_equivalent_notes_before_structural_adoption(): void {
-		$identity    = 'refund:re_mixed_equivalents:created_successful';
-		$native_note = 'Native refund note. (<code>re_mixed_equivalents</code>)';
-		$locale_note = 'Localized refund note. (<code>re_mixed_equivalents</code>)';
-		$order       = $this->create_woopayments_order( '3.25' );
-		$refund      = wc_create_refund(
+		$identity     = 'refund:re_mixed_equivalents:created_successful';
+		$runtime_note = 'Native refund note. (<code>re_mixed_equivalents</code>)';
+		$locale_note  = 'Localized refund note. (<code>re_mixed_equivalents</code>)';
+		$order        = $this->create_woopayments_order( '3.25' );
+		$refund       = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),
 				'amount'         => 3.25,
@@ -2674,9 +2674,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'',
 				'',
 				array(
-					'refund_note'                   => $native_note,
+					'refund_note'                   => $runtime_note,
 					'refund_note_identity'          => $identity,
-					'refund_note_equivalents'       => array( $native_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
+					'refund_note_equivalents'       => array( $runtime_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
 					'refund_note_identity_meta_key' => '_test_provider_note_identity',
 				)
 			)
@@ -2703,10 +2703,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Numeric equivalent-note values are not coerced into persisted-note content matches.
 	 */
 	public function test_process_refund_does_not_coerce_numeric_equivalent_note_candidates(): void {
-		$identity    = 'refund:re_numeric_equivalent:created_successful';
-		$native_note = 'Native refund note. (<code>re_numeric_equivalent</code>)';
-		$order       = $this->create_woopayments_order( '3.50' );
-		$refund      = wc_create_refund(
+		$identity     = 'refund:re_numeric_equivalent:created_successful';
+		$runtime_note = 'Native refund note. (<code>re_numeric_equivalent</code>)';
+		$order        = $this->create_woopayments_order( '3.50' );
+		$refund       = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),
 				'amount'         => 3.50,
@@ -2724,7 +2724,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'',
 				'',
 				array(
-					'refund_note'                   => $native_note,
+					'refund_note'                   => $runtime_note,
 					'refund_note_identity'          => $identity,
 					'refund_note_equivalents'       => array( 42 ),
 					'refund_note_identity_meta_key' => '_test_provider_note_identity',
@@ -2735,14 +2735,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50 ), $provider );
 
 		$this->assertTrue( $result );
-		$native_notes = array_values(
+		$runtime_notes = array_values(
 			array_filter(
 				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-				static fn( $note ): bool => $native_note === $note->content
+				static fn( $note ): bool => $runtime_note === $note->content
 			)
 		);
-		$this->assertCount( 1, $native_notes );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $native_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertCount( 1, $runtime_notes );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $runtime_notes[0]->id, '_test_provider_note_identity', true ) );
 		$this->assertSame( array(), get_comment_meta( $coercion_trap_note_id ) );
 	}
 
@@ -3105,7 +3105,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A refund refused by the order payment lock should log one warning naming the holder; a free lock logs nothing.
 	 *
 	 * WooPayments 11.1.0 takes no lock on refunds (WC_Payments_Utils::is_order_locked() guards only
-	 * intent-driven status updates), so this refusal is native-only and must be visible in the logs.
+	 * intent-driven status updates); the payments runtime refuses it, so the refusal must be visible in the logs.
 	 */
 	public function test_refund_refused_by_the_order_payment_lock_logs_one_warning(): void {
 		$order  = $this->create_woopayments_order( '10.00' );
@@ -3414,7 +3414,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$plugin_note     = sprintf(
 				WooPaymentsHtmlUtils::escape_interpolated_html(
 					/* translators: %1$s: transaction ID, %2$s: transaction URL. */
-					__( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
+					__( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the WooPayments extension catalog.
 					array(
 						'strong' => '<strong>',
 						'a'      => '<a href="%2$s" target="_blank" rel="noopener noreferrer">',
@@ -3884,7 +3884,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_free_trial', $order->get_meta( '_stripe_customer_id', true ) );
 		// Client 11.1.0 creates no intent for a $0 order paid with a saved card (gw:1688).
 		$this->assertSame( $use_saved_token ? '' : 'seti_free_trial', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( $use_saved_token ? '' : 'succeeded', $order->get_meta( '_intention_status', true ), 'No intent, no intention status (V615: client order 51 has none).' );
+		$this->assertSame( $use_saved_token ? '' : 'succeeded', $order->get_meta( '_intention_status', true ), 'No intent, no intention status.' );
 		$this->assertSame( 'Visa credit card', $subscription->get_payment_method_title() );
 		$this->assertSame( 'pm_free_trial', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_free_trial', $subscription->get_meta( '_stripe_customer_id', true ) );
@@ -3944,7 +3944,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a checkout context for a completed PaymentIntent lifecycle test.
 	 *
-	 * Scheduled contexts use the same saved-token marker and order-attached token routing as native renewals.
+	 * Scheduled contexts use the same saved-token marker and order-attached token routing as subscription renewals.
 	 *
 	 * @param WC_Order $order                        Payment order.
 	 * @param bool     $scheduled_subscription_payment Whether this is a scheduled subscription renewal.
@@ -4041,7 +4041,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$api_client       = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient {
 			/**
-			 * Tell the adapter to use its native SetupIntent transport.
+			 * Tell the adapter its API transport is available for the SetupIntent.
 			 *
 			 * @return bool
 			 */
@@ -4195,7 +4195,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Use the native transport.
+			 * Report the API transport as available.
 			 *
 			 * @return bool
 			 */

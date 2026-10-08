@@ -424,7 +424,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A payment success event skips an equivalent success note rendered by the WooPayments extension before lifecycle mutation.
 	 */
 	public function test_payment_success_replay_with_a_woopayments_extension_equivalent_note_keeps_existing_order_state(): void {
-		// An additional currency makes the native (explicit-currency) and plugin (suffix-free) renderings differ.
+		// An additional currency makes the built-in (explicit-currency) and WooPayments extension (suffix-free) renderings differ.
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$order           = $this->create_woopayments_order();
@@ -455,10 +455,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed payment-success event must not re-complete a plugin-owned order.' );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed payment-success event must not re-complete an order the WooPayments extension paid.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A replayed payment-success event must not overwrite lifecycle metadata.' );
 		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed payment-success event must not add payment metadata.' );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $note_candidates[1] ), 'The plugin-written success note must remain the only equivalent note.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $note_candidates[1] ), 'The success note the WooPayments extension wrote must remain the only equivalent note.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note_candidates[0] ), 'A replayed payment-success event must not add the Core rendering.' );
 	}
 
@@ -466,10 +466,10 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A payment success replay with an existing equivalent note backfills its stable identity before lifecycle mutation.
 	 */
 	public function test_payment_success_replay_with_an_existing_equivalent_note_backfills_identity(): void {
-		$order       = $this->create_woopayments_order();
-		$note        = 'Core payment success note.';
-		$plugin_note = 'Plugin payment success note.';
-		$order->add_order_note( $plugin_note );
+		$order         = $this->create_woopayments_order();
+		$note          = 'Core payment success note.';
+		$existing_note = 'Plugin payment success note.';
+		$order->add_order_note( $existing_note );
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->update_status( 'on-hold' );
 		$order->save();
@@ -484,7 +484,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			array(),
 			$note,
 			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
-			array( $plugin_note )
+			array( $existing_note )
 		);
 
 		$this->sut->apply( $order, $event, $this->persistence_vocabulary );
@@ -493,13 +493,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'An existing equivalent note must prevent a completed event from changing status.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'An existing equivalent note must prevent lifecycle metadata mutation.' );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $plugin_note ), 'A replay must not duplicate the existing equivalent note.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $existing_note ), 'A replay must not duplicate the existing equivalent note.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note ), 'A replay must not add the Core note.' );
 
 		$notes = array_values(
 			array_filter(
 				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-				static fn( $order_note ): bool => $plugin_note === (string) $order_note->content
+				static fn( $order_note ): bool => $existing_note === (string) $order_note->content
 			)
 		);
 		$this->assertCount( 1, $notes );

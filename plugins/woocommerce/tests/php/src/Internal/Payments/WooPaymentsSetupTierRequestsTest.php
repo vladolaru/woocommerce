@@ -28,12 +28,12 @@ use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
 /**
- * Tests what a connected or active native store registers on real requests: the gateway on a connected store, and
+ * Tests what a connected or active store registers on real requests: the gateway on a connected store, and
  * the scheduled-action handlers under WP-CLI.
  *
  * The client registers its gateway whether or not it is enabled (client 11.1.0 `includes/class-wc-payments.php:730`)
  * and attaches its scheduled-action handlers whenever it loads, WP-CLI included (`includes/class-wc-payments.php:603,657`).
- * Each case boots the native payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
+ * Each case boots the payments bootstrap for one request; tearDown undoes what that boot leaves for the rest of
  * the process.
  */
 class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
@@ -46,7 +46,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	private array $outbound_requests = array();
 
 	/**
-	 * Payment gateways before the case booted the native bootstrap.
+	 * Payment gateways before the case booted the payments bootstrap.
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -72,8 +72,8 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Undo what one booted request leaves for the rest of the process: the gateway list rebuilt with native gateways, the
-	 * container's replacements and resolved roots, the REST routes and the two static one-time hook flags.
+	 * Undo what one booted request leaves for the rest of the process: the gateway list rebuilt with the WooPayments gateways, the
+	 * container's replacements and resolved classes, the REST routes and the two static one-time hook flags.
 	 */
 	public function tearDown(): void {
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
@@ -97,13 +97,13 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider gateway_availability_cases
 	 *
 	 * @param string $label     Case label.
-	 * @param string $state     Stored native tier.
+	 * @param string $tier     Stored setup tier.
 	 * @param string $enabled   The card gateway's enabled setting.
 	 * @param bool   $available Whether checkout must offer the gateway.
 	 */
-	public function test_gateway_is_registered_and_offered_only_in_the_active_tier( string $label, string $state, string $enabled, bool $available ): void {
+	public function test_gateway_is_registered_and_offered_only_in_the_active_tier( string $label, string $tier, string $enabled, bool $available ): void {
 		unset( $label );
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		// Only the account readiness is stubbed, so an enabled gateway would be available; the gateway itself stays real.
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )->onlyMethods( array( 'can_process_payments' ) )->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
@@ -144,7 +144,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_active_store_offers_the_gateway_only_when_the_account_can_take_payments( string $label, bool $details_submitted, bool $payments_enabled, bool $available ): void {
 		unset( $label );
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		add_filter(
 			'pre_option_woocommerce_woocommerce_payments_settings',
 			static fn() => array(
@@ -186,7 +186,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox A connected store keeps the saved-card hooks on requests that never build the gateway list.
 	 */
 	public function test_connected_store_keeps_the_saved_card_hooks(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::CONNECTED );
 
 		$this->run_bootstrap( '__return_false' );
 
@@ -200,13 +200,13 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider session_link_requests
 	 *
 	 * @param string $label    Case label.
-	 * @param string $state    Stored native tier.
+	 * @param string $tier    Stored setup tier.
 	 * @param string $request  Request class: 'front', 'admin' or 'rest'.
 	 * @param bool   $expected Whether the init callback is attached.
 	 */
-	public function test_sift_session_link_is_hooked_on_page_requests( string $label, string $state, string $request, bool $expected ): void {
+	public function test_sift_session_link_is_hooked_on_page_requests( string $label, string $tier, string $request, bool $expected ): void {
 		unset( $label );
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		if ( 'admin' === $request ) {
 			set_current_screen( 'dashboard' );
 		}
@@ -222,7 +222,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox An active store clears the session's processing-order marker on the order-received page of a front request.
 	 */
 	public function test_active_front_request_clears_processing_order_marker_on_order_received(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 
 		$this->run_bootstrap( '__return_false' );
 
@@ -235,10 +235,10 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider saved_token_requests
 	 *
 	 * @param string $label   Case label.
-	 * @param string $state   Stored native tier.
+	 * @param string $tier   Stored setup tier.
 	 * @param string $request Request class: 'cron', 'cli', 'admin' or 'front'.
 	 */
-	public function test_saved_sepa_token_loads_on_every_request_of_a_set_up_store( string $label, string $state, string $request ): void {
+	public function test_saved_sepa_token_loads_on_every_request_of_a_set_up_store( string $label, string $tier, string $request ): void {
 		unset( $label );
 		$token = new WooPaymentsSepaToken();
 		$token->set_token( 'pm_test_sepa' );
@@ -246,7 +246,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$token->set_user_id( 1 );
 		$token->set_last4( '3000' );
 		$token->save();
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		if ( 'cron' === $request ) {
 			add_filter( 'wp_doing_cron', '__return_true' );
 		} elseif ( 'cli' === $request ) {
@@ -262,18 +262,18 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Action Scheduler run under WP-CLI on a $state store reaches the order-tracking handler.
-	 * @dataProvider set_up_states
+	 * @testdox An Action Scheduler run under WP-CLI on a $tier store reaches the order-tracking handler.
+	 * @dataProvider set_up_tiers
 	 *
-	 * @param string $state Stored native tier.
+	 * @param string $tier Stored setup tier.
 	 */
-	public function test_action_scheduler_run_under_wp_cli_reaches_the_handler( string $state ): void {
+	public function test_action_scheduler_run_under_wp_cli_reaches_the_handler( string $tier ): void {
 		Constants::set_constant( 'WP_CLI', true );
 		$order = new WC_Order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->update_meta_data( '_payment_method_id', 'pm_test_cli' );
 		$order->save();
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		// Client 11.1.0 includes/class-wc-payments-action-scheduler-service.php:195-201 reads only 'result' === 'success' from this response.
 		$api_client->expects( $this->once() )->method( 'track_order' )->willReturn( array( 'result' => 'success' ) );
@@ -284,7 +284,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		ActionScheduler::runner()->process_action( $action_id, 'WP CLI' );
 
 		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertSame( 'yes', wc_get_order( $order->get_id() )->get_meta( WooPaymentsOrderTrackingService::NEW_ORDER_TRACKING_COMPLETE_META_KEY ), 'The native handler must have tracked the order.' );
+		$this->assertSame( 'yes', wc_get_order( $order->get_id() )->get_meta( WooPaymentsOrderTrackingService::NEW_ORDER_TRACKING_COMPLETE_META_KEY ), 'The handler must have tracked the order.' );
 	}
 
 	/**
@@ -292,14 +292,14 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider page_request_action_runs
 	 *
 	 * @param string $label   Case label.
-	 * @param string $state   Stored native tier.
+	 * @param string $tier   Stored setup tier.
 	 * @param string $request How the action runs: 'alternate_wp_cron' on a front page, or 'admin_run' from Tools > Scheduled Actions.
 	 */
-	public function test_scheduled_action_run_inside_a_page_request_reaches_the_handler( string $label, string $state, string $request ): void {
+	public function test_scheduled_action_run_inside_a_page_request_reaches_the_handler( string $label, string $tier, string $request ): void {
 		unset( $label );
 		$hook = WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK;
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		if ( 'admin_run' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
@@ -319,16 +319,16 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$action_id = as_enqueue_async_action( $hook, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 		ActionScheduler::runner()->process_action( $action_id, 'alternate_wp_cron' === $request ? 'WP Cron' : 'Admin List Table' );
 
-		$this->assertTrue( $handler_attached, 'The native handler must be attached before Action Scheduler runs the action.' );
+		$this->assertTrue( $handler_attached, 'The handler must be attached before Action Scheduler runs the action.' );
 		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The native handler must have run.' );
+		$this->assertSame( 'no_affected_orders', get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY ), 'The handler must have run.' );
 	}
 
 	/**
 	 * @testdox The Settings > Payments toggle moves a connected store to active when it creates the settings, and back to connected when it updates them.
 	 */
 	public function test_classic_toggle_keeps_the_tier_in_step_with_the_gateway(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::CONNECTED );
 		// A connected store has an account that can take payments; without one the gateway needs setup and WooCommerce refuses the toggle, as for the client.
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( true );
@@ -351,17 +351,17 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		$this->toggle_gateway();
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_settings' )['enabled'] ?? null );
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_state(), 'Enabling the gateway must make the store active.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, $this->stored_tier(), 'Enabling the gateway must make the store active.' );
 
 		$this->toggle_gateway();
-		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_state(), 'Disabling the gateway must make the store connected again.' );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier(), 'Disabling the gateway must make the store connected again.' );
 	}
 
 	/**
 	 * @testdox The payment gateways REST route moves a connected store to active, and back to connected.
 	 */
 	public function test_rest_update_keeps_the_tier_in_step_with_the_gateway(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::CONNECTED );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::CONNECTED );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -382,7 +382,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			$response = rest_do_request( $request );
 
 			$this->assertSame( 200, $response->get_status() );
-			$this->assertSame( $expected, $this->stored_state() );
+			$this->assertSame( $expected, $this->stored_tier() );
 		}
 	}
 
@@ -400,7 +400,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->handle_settings_updated( array(), array( 'enabled' => 'yes' ) );
 
-		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_state(), 'The plugin owns this option too; native must not rewrite its tier.' );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier(), 'The WooPayments extension owns this option too; the built-in WooPayments must not rewrite its tier.' );
 	}
 
 	/** @return array<string,array{string,string,string,bool}> */
@@ -435,10 +435,10 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider on_hold_email_requests
 	 *
 	 * @param string $label   Case label.
-	 * @param string $state   Stored native tier.
+	 * @param string $tier   Stored setup tier.
 	 * @param string $request Request class the email is sent from.
 	 */
-	public function test_on_hold_email_carries_multibanco_instructions( string $label, string $state, string $request ): void {
+	public function test_on_hold_email_carries_multibanco_instructions( string $label, string $tier, string $request ): void {
 		unset( $label );
 		$order = new WC_Order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' );
@@ -448,7 +448,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_multibanco_url', 'https://pay.stripe.com/multibanco/voucher' );
 		$order->update_meta_data( '_wcpay_multibanco_expiry', (string) ( time() + DAY_IN_SECONDS ) );
 		$order->save();
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		$this->arrange_request( $request );
 
 		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
@@ -465,16 +465,16 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @dataProvider style_change_requests
 	 *
 	 * @param string $label   Case label.
-	 * @param string $state   Stored native tier.
+	 * @param string $tier   Stored setup tier.
 	 * @param string $request Request class the change happens in.
 	 * @param string $hook    Hook WordPress or WooCommerce fires for the change.
 	 */
-	public function test_style_change_invalidates_the_appearance_cache( string $label, string $state, string $request, string $hook ): void {
+	public function test_style_change_invalidates_the_appearance_cache( string $label, string $tier, string $request, string $hook ): void {
 		unset( $label );
 		update_option( 'wcpay_styles_cache_version', 'cached-version', true );
-		// Only the native listener is under test; core's own callbacks on these hooks write unrelated state.
+		// Only the WooPayments listener is under test; core's own callbacks on these hooks write unrelated state.
 		remove_all_actions( $hook );
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		$this->arrange_request( $request );
 
 		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
@@ -485,21 +485,21 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A plugin (de)activated over REST on a $state store refreshes the WooPay incompatible-extension warning and adapted extensions.
-	 * @dataProvider set_up_states
+	 * @testdox A plugin (de)activated over REST on a $tier store refreshes the WooPay incompatible-extension warning and adapted extensions.
+	 * @dataProvider set_up_tiers
 	 *
-	 * @param string $state Stored native tier.
+	 * @param string $tier Stored setup tier.
 	 */
-	public function test_plugin_activation_over_rest_refreshes_the_woopay_extension_state( string $state ): void {
-		// The platform-synced lists the daily compatibility check stores (option names shared with the WooPayments plugin).
+	public function test_plugin_activation_over_rest_refreshes_the_woopay_extension_state( string $tier ): void {
+		// The platform-synced lists the daily compatibility check stores (option names shared with the WooPayments extension).
 		update_option( 'woopay_incompatible_extensions', array( 'incompatible-extension' ) );
 		update_option( 'woopay_adapted_extensions', array( 'adapted-extension' ) );
 		delete_option( 'woopay_invalid_extension_found' );
 		delete_option( 'woopay_enabled_adapted_extensions' );
-		// Only the native listener is under test; core's own callbacks on these hooks write unrelated state.
+		// Only the WooPayments listener is under test; core's own callbacks on these hooks write unrelated state.
 		remove_all_actions( 'activated_plugin' );
 		remove_all_actions( 'deactivated_plugin' );
-		$this->arrange_native_owner( $state );
+		$this->arrange_builtin_owner( $tier );
 		$this->arrange_request( 'rest' );
 		$this->run_bootstrap( '__return_true' );
 
@@ -568,7 +568,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/** @return array<string,array{string}> */
-	public static function set_up_states(): array {
+	public static function set_up_tiers(): array {
 		return array(
 			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
 			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
@@ -622,7 +622,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 *
 	 * @return string
 	 */
-	private function stored_state(): string {
+	private function stored_tier(): string {
 		wp_cache_delete( WooPaymentsSetupTier::OPTION_NAME, 'options' );
 		wp_cache_delete( 'alloptions', 'options' );
 		return (string) get_option( WooPaymentsSetupTier::OPTION_NAME );
@@ -679,20 +679,20 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Make native the payments owner with the given stored tier.
+	 * Make the built-in WooPayments the payments owner with the given stored tier.
 	 *
-	 * @param string $state Stored native tier.
+	 * @param string $tier Stored setup tier.
 	 */
-	private function arrange_native_owner( string $state ): void {
+	private function arrange_builtin_owner( string $tier ): void {
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $tier, true );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
 
 	/**
-	 * Run the native payments bootstrap with the WooPayments root matrix, as WooCommerce does when it loads.
+	 * Run the payments bootstrap with the WooPayments class lists, as WooCommerce does when it loads.
 	 *
 	 * @param callable $is_rest_api_request Whether the request is a REST request.
 	 */

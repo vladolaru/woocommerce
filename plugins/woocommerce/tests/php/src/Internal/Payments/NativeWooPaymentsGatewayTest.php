@@ -80,18 +80,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Make native the payments owner, which the renewal handlers require.
+	 * Make the built-in WooPayments the payments owner, which the renewal handlers require.
 	 */
-	private function make_native_own_payments(): void {
+	private function make_builtin_own_payments(): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
-	 * Make native the payments owner in the active tier, the only tier where the gateway is offered at checkout.
+	 * Make the built-in WooPayments the payments owner in the active tier, the only tier where the gateway is offered at checkout.
 	 */
-	private function activate_native_tier(): void {
-		$this->make_native_own_payments();
+	private function activate_builtin_tier(): void {
+		$this->make_builtin_own_payments();
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 	}
@@ -226,7 +226,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide the gateway when the account's customer-supported currencies exclude the store currency
 	 */
 	public function test_gateway_availability_follows_account_customer_supported_currencies(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$supported_currencies = array( 'usd' );
 		$account_service      = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -291,7 +291,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		string $currency,
 		bool $expected
 	): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
@@ -351,7 +351,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
@@ -398,7 +398,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
 	 */
 	public function test_gateway_availability_recalculates_for_currency_and_payment_method_definition_changes(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$registry              = new WooPaymentsPaymentMethodRegistry();
 		$card_definition       = $registry->get( 'card' );
 		$bancontact_definition = $registry->get( 'bancontact' );
@@ -466,7 +466,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should offer the P24 gateway only for the client's P24 currencies and keep its Polish shopper rule.
 	 */
 	public function test_p24_gateway_availability_follows_client_currencies_and_shopper_country(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'p24' );
 		$this->assertNotNull( $definition );
 
@@ -521,7 +521,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		array $expected_shopper_countries,
 		string $account_default_currency = 'usd'
 	): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
 		$this->assertNotNull( $definition );
 
@@ -685,7 +685,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply provider readiness and explicit account capability state at availability time.
 	 */
 	public function test_gateway_availability_requires_provider_and_capability_readiness(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$account_data    = array(
 			'country'      => 'US',
 			'capabilities' => array( 'card_payments' => 'restricted' ),
@@ -765,7 +765,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should place an express gateway in the payment-method list only with both placement controls on and the method enabled at checkout.
 	 */
 	public function test_express_gateway_availability_requires_payment_method_list_placement(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
 		$this->assertNotNull( $definition );
 
@@ -835,7 +835,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox In admin, an express gateway is offered only when it is enabled at checkout, whatever the placement, while card and an enabled Klarna stay offered.
 	 */
 	public function test_express_gateways_are_unavailable_in_admin_regardless_of_placement(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$registry           = new WooPaymentsPaymentMethodRegistry();
 		$canonical_settings = array(
 			'express_checkout_in_payment_methods' => 'no',
@@ -929,7 +929,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply definition amount limits to split gateway availability.
 	 */
 	public function test_split_gateway_availability_respects_definition_amount_limits(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'affirm' );
 		$this->assertNotNull( $definition );
 
@@ -970,7 +970,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Live checkout requires HTTPS while test mode remains available over HTTP.
 	 */
 	public function test_gateway_availability_requires_https_only_in_live_mode(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
@@ -1029,7 +1029,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox BNPL order-pay availability requires a usable address and Affirm shopper name.
 	 */
 	public function test_bnpl_order_pay_availability_validates_address_and_affirm_name(): void {
-		$this->activate_native_tier();
+		$this->activate_builtin_tier();
 		$registry            = new WooPaymentsPaymentMethodRegistry();
 		$affirm_definition   = $registry->get( 'affirm' );
 		$afterpay_definition = $registry->get( 'afterpay_clearpay' );
@@ -1248,7 +1248,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register subscription renewal handlers when subscriptions are supported.
 	 */
 	public function test_subscription_support_registers_subscription_handlers(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		$gateway = new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1375,7 +1375,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave a card subscription on automatic renewal because card is a reusable native method.
+	 * @testdox Should leave a card subscription on automatic renewal because card is a reusable method.
 	 *
 	 * Mirrors client 11.1.0 `tr:1399-1401` (`maybe_force_subscription_to_manual`): a reusable gateway
 	 * (card, Amazon Pay) returns before touching `requires_manual_renewal` or the original-method meta.
@@ -1424,7 +1424,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should attach base subscription renewal handlers once across gateway instances.
 	 */
 	public function test_subscription_handler_registration_is_idempotent_across_gateway_instances(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1464,10 +1464,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should process Amazon Pay scheduled subscription renewals through the native gateway handler.
+	 * @testdox Should process Amazon Pay scheduled subscription renewals through the gateway handler.
 	 */
 	public function test_amazon_pay_scheduled_subscription_payment_hook_reaches_gateway_handler(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		$user_id = self::factory()->user->create();
 		$order   = $this->create_order();
 		$order->set_customer_id( $user_id );
@@ -1507,7 +1507,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Unusable saved renewal methods fail through the native lifecycle with an actionable note.
+	 * @testdox Unusable saved renewal methods fail through the payment lifecycle with an actionable note.
 	 */
 	public function test_scheduled_subscription_payment_fails_unusable_saved_method_with_actionable_note(): void {
 		$user_id = self::factory()->user->create();
@@ -1521,7 +1521,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
-			 * Last native request.
+			 * Last API request.
 			 *
 			 * @var array<string,mixed>
 			 */
@@ -1659,7 +1659,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register WooPayments failed-renewal authentication emails when subscriptions are supported.
 	 */
 	public function test_subscription_support_registers_failed_renewal_authentication_emails(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1695,7 +1695,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should register WooPayments failed-renewal authentication emails only once across gateway instances.
 	 */
 	public function test_subscription_email_registration_is_idempotent_across_gateway_instances(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1735,7 +1735,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should update retry rules for failed renewals that need authentication.
 	 */
 	public function test_failed_renewal_authentication_email_updates_retry_rules(): void {
-		$this->make_native_own_payments();
+		$this->make_builtin_own_payments();
 		new class() extends NativeWooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
@@ -1998,7 +1998,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox A customer-action hook callback that throws a $throwable_class leaves the renewal pending and fails the scheduled action.
 	 *
 	 * Client 11.1.0 `gw:1921` runs the hook without a catch, so the throwable reaches Action Scheduler before
-	 * `mark_payment_failed()` (monitor ruling 2026-10-04 (2)). Native logs it whatever the logging setting.
+	 * `mark_payment_failed()`. The gateway logs it whatever the logging setting.
 	 *
 	 * @testWith ["RuntimeException"]
 	 *           ["TypeError"]
@@ -2058,7 +2058,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A customer-action hook callback that throws $_dataName is logged by the platform's status and code, never a message.
 	 *
-	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text.
+	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not WooCommerce's own text.
 	 *
 	 * @dataProvider hook_platform_failures
 	 *
@@ -2180,9 +2180,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should save setup-intent payment methods from the account add-payment-method form.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The SetupIntent is now REC-3DS-5's real succeeded
-	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_completed`):
-	 * a My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
+	 * The SetupIntent is a recorded succeeded 3DS challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * `my_account_setup_intent_challenge_completed`): a My Account add-payment-method SetupIntent that succeeded after a
+	 * hosted 3DS challenge.
 	 */
 	public function test_add_payment_method_saves_successful_setup_intent_token(): void {
 		$user_id = self::factory()->user->create();
@@ -2222,8 +2222,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should refuse to save a payment method from a non-succeeded SetupIntent.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. REC-3DS-5 failed
-	 * (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_failed`): a My
+	 * The SetupIntent is a recorded failed 3DS challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * `my_account_setup_intent_challenge_failed`): a My
 	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
 	 * challenge. `add_payment_method()` returns its error before ever calling the token service
 	 * (`NativeWooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
@@ -2267,7 +2267,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load one recorded REC-3DS-2/3/5 manual-run entry's response body by pair key.
+	 * Load one recorded manual 3DS entry's response body by pair key.
 	 *
 	 * @param string $pair Fixture pair key.
 	 * @return array{body:array<string,mixed>}
@@ -2285,7 +2285,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->fail( "REC-3DS manual fixture has no entry for pair '$pair'." );
+		$this->fail( "The manual 3DS fixture has no entry for pair '$pair'." );
 	}
 
 	/**
@@ -2397,7 +2397,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject setup intents whose customer belongs to another user and not create a token.
 	 *
-	 * The customer check is native's own; its notice reuses the client's non-succeeded copy verbatim,
+	 * The customer check is the gateway's own; its notice reuses the client's non-succeeded copy verbatim,
 	 * with no trailing period (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4448`).
 	 */
 	public function test_add_payment_method_rejects_setup_intent_owned_by_another_customer(): void {
@@ -2457,7 +2457,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should refuse to save a setup intent without a customer to bind it to: $_dataName.
 	 *
 	 * The client refuses a user with no stored WooPayments customer before it reads the intent, with its "not able"
-	 * copy (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4434-4439`). Native also refuses an intent without a
+	 * copy (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4434-4439`). The gateway also refuses an intent without a
 	 * customer, with the non-succeeded copy its customer comparison already uses (`:4448`).
 	 *
 	 * @dataProvider setup_intent_without_customer_provider
@@ -2536,8 +2536,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should refuse a setup intent it cannot save with the client's copy: $_dataName.
 	 *
-	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
-	 * method. Please try again later", with no trailing period. Native uses that copy for a succeeded
+	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
+	 * method. Please try again later", with no trailing period. The gateway uses that copy for a succeeded
 	 * intent without a payment method, a token that cannot be created, and an unexpected non-API exception
 	 * (where the client shows the exception's own text).
 	 *
@@ -2593,7 +2593,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should show the client's filtered message when the setup intent lookup fails with an API error: $_dataName.
 	 *
-	 * Oracle: client 11.1.0 `class-wc-payment-gateway-wcpay.php:4467-4468` passes every exception through
+	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4467-4468` passes every exception through
 	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`) and logs it at info
 	 * level (`:4471`).
 	 *
@@ -2687,7 +2687,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject add-payment-method requests with invalid fraud-prevention tokens before reading the setup intent.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:4578-4586` refuses without touching
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:4578-4586` refuses without touching
 	 * the session token; the only rotation is `wc-payment-api/class-wc-payments-api-client.php:2956`,
 	 * after a `fraudulent` or `wcpay_card_testing_prevention` API decline.
 	 */
@@ -2765,7 +2765,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array(), $translated, 'Native gateway construction must not call translation APIs before init.' );
+		$this->assertSame( array(), $translated, 'Gateway construction must not call translation APIs before init.' );
 	}
 
 	/**
@@ -2862,7 +2862,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep an order whose intent already succeeded when the client reports a payment method creation error.
 	 *
-	 * Oracle: WooPayments 11.1.0 throws the client error inside process_payment()'s try (`gw:1664-1666`), so the catch's
+	 * WooPayments 11.1.0 throws the client error inside process_payment()'s try (`gw:1664-1666`), so the catch's
 	 * succeeded-intent check (`gw:1283-1304`) runs before the failed status (`gw:1326-1327`) and the failure note.
 	 * The order is still pending here: the earlier duplicate checks found no paid status and no attached PaymentIntent.
 	 */
@@ -2931,7 +2931,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should process payments through the native processing service.
+	 * @testdox Should process payments through the payment processing service.
 	 */
 	public function test_process_payment_delegates_to_processing_service(): void {
 		$order                     = $this->create_order();
@@ -2951,7 +2951,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A plugin-origin saved card reaches native checkout unchanged and accepts the recorded successful outcome.
+	 * @testdox A saved card the WooPayments extension wrote reaches checkout unchanged and accepts the recorded successful outcome.
 	 */
 	public function test_process_payment_reuses_plugin_origin_saved_card(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
@@ -2970,7 +2970,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_total( '10.99' );
 		$order->save();
 
-		// Oracle: WooPayments 11.1.0 writes this saved-card/customer shape, and the read-only :8082 capture recorded its native reuse as a succeeded, captured USD 10.99 payment.
+		// WooPayments 11.1.0 writes this saved-card/customer shape; reusing it is recorded as a succeeded, captured USD 10.99 payment.
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_history_use', '', 'pm_plugin_history', 'cus_plugin_history' );
 		$gateway                   = new NativeWooPaymentsGateway();
@@ -2988,7 +2988,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A customer-present early renewal reuses the exact plugin-origin subscription-shaped order and saved card under the recorded successful outcome.
+	 * @testdox A customer-present early renewal reuses the exact subscription-shaped order and saved card the WooPayments extension wrote, under the recorded successful outcome.
 	 */
 	public function test_process_payment_reuses_plugin_origin_subscription_card_for_early_renewal(): void {
 		$this->ensure_wcs_renewal_subscriptions_double();
@@ -3012,7 +3012,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$subscription = wc_create_order( array( 'customer_id' => $user_id ) );
 		if ( ! $subscription instanceof WC_Order ) {
-			throw new \RuntimeException( 'Could not create a plugin-shaped historical subscription.' );
+			throw new \RuntimeException( 'Could not create the historical subscription.' );
 		}
 		$subscription->set_parent_id( $parent_order->get_id() );
 		$subscription->set_currency( 'USD' );
@@ -3044,7 +3044,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal_order->update_meta_data( '_subscription_renewal', $subscription->get_id() );
 		$renewal_order->save();
 
-		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() preserves this renewal relationship, and the read-only :8082 provider family recorded a succeeded, captured USD 9.99 renewal on the same historical customer and Visa 4242 method.
+		// WooPayments 11.1.0 OrderService::get_payment_metadata() preserves this renewal relationship; the renewal is recorded as a succeeded, captured USD 9.99 payment on the same historical customer and Visa 4242 method.
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_subscription_renewal', '', 'pm_plugin_subscription', 'cus_plugin_subscription' );
 		$gateway                   = new NativeWooPaymentsGateway();
@@ -3204,7 +3204,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject checkout requests with invalid or absent fraud-prevention tokens before creating a payment context, on the card gateway and every split redirect gateway.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` reads one shared
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` reads one shared
 	 * `Fraud_Prevention_Service::get_instance()` regardless of which gateway ID is processing.
 	 * `:1221` reads `null` when the POST field is absent (`isset($_POST[...]) ? ... : null`), and
 	 * `fraud-prevention/class-fraud-prevention-service.php:172-174` refuses a non-string token
@@ -3346,7 +3346,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should admit a checkout request whose fraud-prevention token matches the session.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` and
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` and
 	 * `fraud-prevention/class-fraud-prevention-service.php:168-177`: a token that hashes equal to the
 	 * session's is admitted without regenerating it.
 	 */
@@ -3380,7 +3380,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should admit a matching fraud-prevention token on split redirect gateways.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227`: `process_payment`
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227`: `process_payment`
 	 * reads one shared `Fraud_Prevention_Service::get_instance()`, not a per-gateway one, so a matching
 	 * token admits the checkout identically whichever split gateway ID is processing.
 	 *
@@ -3460,18 +3460,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retry a plugin-era failed intent on order pay.
+	 * @testdox Should retry a failed intent the WooPayments extension left on order pay.
 	 *
-	 * Oracle: WooPayments 11.1.0 commit f85392666c9b543cd24dbbf903e0dbe4cb2c5cee,
+	 * WooPayments 11.1.0 commit f85392666c9b543cd24dbbf903e0dbe4cb2c5cee,
 	 * WC_Payment_Gateway_WCPay::process_payment(), and
 	 * Duplicate_Payment_Prevention_Service::check_payment_intent_attached_to_order_succeeded().
 	 *
-	 * @dataProvider plugin_failed_intent_order_pay_cases
+	 * @dataProvider extension_failed_intent_order_pay_cases
 	 *
 	 * @param bool   $card_testing_protection_enabled Whether card-testing protection is enabled.
 	 * @param string $fraud_prevention_token          Posted fraud-prevention token.
 	 */
-	public function test_process_payment_retries_plugin_failed_intent_on_order_pay( bool $card_testing_protection_enabled, string $fraud_prevention_token ): void {
+	public function test_process_payment_retries_an_extension_failed_intent_on_order_pay( bool $card_testing_protection_enabled, string $fraud_prevention_token ): void {
 		$order = $this->create_order();
 		$order->set_status( 'failed' );
 		$order->update_meta_data( '_intent_id', 'pi_plugin_failed' );
@@ -3540,11 +3540,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Plugin-era failed intent recovery cases for order pay.
+	 * Recovery cases for a failed intent the WooPayments extension left, on order pay.
 	 *
 	 * @return array<string,array{bool,string}>
 	 */
-	public static function plugin_failed_intent_order_pay_cases(): array {
+	public static function extension_failed_intent_order_pay_cases(): array {
 		return array(
 			'card-testing protection disabled' => array( false, 'tampered-token' ),
 			'card-testing protection enabled'  => array( true, '0123456789abcdef' ),
@@ -3554,7 +3554,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject checkout before creating a payment context when the failed-transaction limiter is active.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1229-1234` throws
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1229-1234` throws
 	 * `rate_limiter_enabled`; the catch marks the order `failed` (`:1326-1327`) and adds the rate-limiter
 	 * note (`:1403-1421`) with the order total through the explicit-price formatter, which leaves a
 	 * single-currency price unsuffixed.
@@ -3605,10 +3605,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should suffix the rate-limiter note amount with the order currency in a multi-currency store.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1418` passes the total through
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1418` passes the total through
 	 * `WC_Payments_Explicit_Price_Formatter::get_explicit_price()`, which appends ` <currency code>`
 	 * when customer multi-currency is on and more than one currency is enabled
-	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`). Native reads core Multi-Currency.
+	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`). The gateway reads core Multi-Currency.
 	 */
 	public function test_process_payment_rate_limiter_note_uses_explicit_price_in_multi_currency_store(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
@@ -3644,8 +3644,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should omit the explicit currency from the rate-limiter note while Multi-Currency is off.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payments-explicit-price-formatter.php:167-172` returns the bare price
-	 * when Multi-Currency is off, even with enabled currencies left in the option. Native reads core Multi-Currency.
+	 * WooPayments 11.1.0 `class-wc-payments-explicit-price-formatter.php:167-172` returns the bare price
+	 * when Multi-Currency is off, even with enabled currencies left in the option. The gateway reads core Multi-Currency.
 	 */
 	public function test_process_payment_rate_limiter_note_omits_explicit_price_when_multi_currency_is_off(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
@@ -3681,7 +3681,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a paid order and return success when checkout is refused after the intent succeeded: $_dataName.
 	 *
-	 * Oracle: WooPayments 11.1.0 throws these refusals inside process_payment()'s try
+	 * WooPayments 11.1.0 throws these refusals inside process_payment()'s try
 	 * (`class-wc-payment-gateway-wcpay.php:1206-1233`, `class-duplicate-payment-prevention-service.php:131-139`).
 	 * The catch checks the intention status first (`gw:1283`); when it is `succeeded` it adds the
 	 * downstream-error note, logs a warning and returns success with the return URL (`gw:1284-1304`),
@@ -3772,7 +3772,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a paid checkout order and return success when post-payment processing throws.
 	 *
-	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531`
+	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531`
 	 * (WOOPMNT-6145): when process_payment_for_order() throws after the intent succeeded, the catch
 	 * (`class-wc-payment-gateway-wcpay.php:1283-1304`) keeps the order status, adds the downstream-error
 	 * note, logs a warning and returns success with get_return_url().
@@ -3801,7 +3801,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a subscription and return success when its payment-method change throws after the intent succeeded.
 	 *
-	 * Oracle: WooPayments 11.1.0 runs a subscription payment-method change through the same
+	 * WooPayments 11.1.0 runs a subscription payment-method change through the same
 	 * process_payment() try (`class-wc-payment-gateway-wcpay.php:1201-1282`, flagged at `:1637`), so the
 	 * succeeded-intent catch (`:1283-1304`) covers it too; only the failed-status branch below it
 	 * excludes the change (`:1326`).
@@ -3837,10 +3837,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a paid order and return success when a step after the payment throws.
 	 *
-	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145):
+	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145):
 	 * when the payment step throws after the intent succeeded, the catch (`class-wc-payment-gateway-wcpay.php:1283-1304`)
 	 * keeps the order status, adds the downstream-error note, logs a warning and returns success with get_return_url().
-	 * Native runs the real processing service here: the provider's post-lifecycle step throws after the order is paid.
+	 * The test runs the real processing service: the provider's post-lifecycle step throws after the order is paid.
 	 */
 	public function test_process_payment_post_lifecycle_failure_after_payment_keeps_order_and_returns_success(): void {
 		$order      = $this->create_order();
@@ -3876,7 +3876,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 writes `Logger::exception( 'Error occurred during the payment process.', $e )` with the class, code and
 	 * trace before its succeeded-intent check (`class-wc-payment-gateway-wcpay.php:1274`, `includes/class-logger.php:100-112`),
-	 * behind the debug setting; a PHP error, which fatals there, is written whatever the setting (review 34 F4). The
+	 * behind the debug setting; a PHP error, which fatals there, is written whatever the setting. The
 	 * succeeded-intent warning and the success answer stay as they are.
 	 *
 	 * @testWith ["TypeError", "no", true]
@@ -3922,9 +3922,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a charged order and return success when applying the charge fails before the order records it.
 	 *
-	 * Oracle: WooPayments 11.1.0 attaches the succeeded intent to the order before any later step can throw
+	 * WooPayments 11.1.0 attaches the succeeded intent to the order before any later step can throw
 	 * (`class-wc-payments-order-service.php:1230-1249`), so its catch (`class-wc-payment-gateway-wcpay.php:1283-1304`)
-	 * always sees the succeeded status. Native records it while applying the outcome; when that fails first, the
+	 * always sees the succeeded status. The runtime records it while applying the outcome; when that fails first, the
 	 * handed-back outcome must still count as a succeeded intent.
 	 */
 	public function test_process_payment_effect_failure_before_order_records_charge_keeps_order_and_returns_success(): void {
@@ -3980,11 +3980,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox A PHP error applying a $outcome_status renewal outcome is rethrown: $rethrown; the renewal ends $expected_status.
 	 *
 	 * Client 11.1.0 catches only API_Exception around the renewal payment (`trait-wc-payment-gateway-wcpay-subscriptions.php:426`),
-	 * so a PHP error escapes to Action Scheduler, which fails the action (monitor ruling 2026-10-04 on renewal apply errors).
-	 * Native logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal. A renewal
+	 * so a PHP error escapes to Action Scheduler, which fails the action.
+	 * The gateway logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal. A renewal
 	 * that needs customer action is the exception: it still runs the requires-action handling, which fails the renewal and
-	 * fires the authentication hook, as the client does for that outcome (gw:1921), instead of the scheduled action failing
-	 * (review 35 F7).
+	 * fires the authentication hook, as the client does for that outcome (gw:1921), instead of the scheduled action failing.
 	 *
 	 * @testWith ["completed", true, "pending"]
 	 *           ["requires_customer_action", false, "failed"]
@@ -4039,7 +4038,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should fail the order, add the failure note and return failure when post-payment processing throws before the intent succeeded.
 	 *
-	 * Oracle: WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a succeeded intent
+	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4594`: without a succeeded intent
 	 * the guard (`class-wc-payment-gateway-wcpay.php:1283`) does not fire; the catch fails the order (`:1326-1327`), adds
 	 * the failed-payment note because the payment was attempted (`:1354-1401`), shows the message as an error notice
 	 * (`:1425`) and returns a failure (`:1436-1439`).
@@ -4108,7 +4107,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should fail the order without the failure note when checkout throws before the payment is attempted.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326-1327` fails the order when the payment
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326-1327` fails the order when the payment
 	 * information was never prepared, and adds the failed-payment note only when it was (`:1354`); the notice
 	 * (`:1425`) and the failure return (`:1436-1439`) are the same.
 	 */
@@ -4158,7 +4157,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep a subscription's status but add the failure note when its payment-method change throws before the intent succeeded.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326` does not fail a subscription whose
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1326` does not fail a subscription whose
 	 * payment method is being changed; the failed-payment note (`:1354-1401`), the notice (`:1425`) and the
 	 * failure return (`:1436-1439`) still apply.
 	 */
@@ -4201,7 +4200,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should fail the order with the mismatch as its note when the attached intent's amount no longer matches.
 	 *
-	 * Oracle: WooPayments 11.1.0 throws the mismatch (`class-duplicate-payment-prevention-service.php:131-139`);
+	 * WooPayments 11.1.0 throws the mismatch (`class-duplicate-payment-prevention-service.php:131-139`);
 	 * without a succeeded intent on the order, the catch fails the order with the message as the status note
 	 * (`class-wc-payment-gateway-wcpay.php:1324-1325`), shows it as a notice (`:1425`) and returns a failure.
 	 */
@@ -4249,9 +4248,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An exception applying an authorized outcome still fails the order, as the plugin's catch does.
+	 * @testdox An exception applying an authorized outcome still fails the order, as the WooPayments extension's catch does.
 	 *
-	 * Client 11.1.0 `gw:1272-1327` fails an order whose intent has not succeeded; only a PHP error leaves it (ruling 2026-10-04 (4)).
+	 * Client 11.1.0 `gw:1272-1327` fails an order whose intent has not succeeded; only a PHP error leaves it.
 	 */
 	public function test_process_payment_exception_applying_authorized_outcome_fails_order(): void {
 		$order    = $this->create_order();
@@ -4275,8 +4274,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox When the duplicate guard's intent lookup throws a $throwable_class, checkout charges: $charges.
 	 *
 	 * Client 11.1.0 `src/Internal/Service/DuplicatePaymentPreventionService.php:100` catches only exceptions: an exception
-	 * lets checkout go on, a PHP Error fatals and charges nothing. Native refuses instead of the fatal and leaves the order
-	 * pending (monitor ruling 2026-10-04 (1)).
+	 * lets checkout go on, a PHP Error fatals and charges nothing. The gateway refuses instead of the fatal and leaves the order
+	 * pending.
 	 *
 	 * @testWith ["Error", false]
 	 *           ["RuntimeException", true]
@@ -4331,10 +4330,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A PHP error applying a $outcome_status outcome at $stage leaves the order $expected_status, with the generic notice.
 	 *
-	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals and
-	 * leaves the order as it was. Native keeps an order whose payment is authorized for reconciliation and logs the
-	 * error whatever the logging setting (monitor ruling 2026-10-04 (4)); any other unsucceeded outcome fails the order
-	 * as the plugin does for an exception. The error's text stays out of the shopper notice either way. An order that already
+	 * The WooPayments extension's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals and
+	 * leaves the order as it was. The gateway keeps an order whose payment is authorized for reconciliation and logs the
+	 * error whatever the logging setting; any other unsucceeded outcome fails the order
+	 * as the WooPayments extension does for an exception. The error's text stays out of the shopper notice either way. An order that already
 	 * shows the authorization is covered by test_process_payment_php_error_after_order_shows_authorization().
 	 *
 	 * @testWith ["authorized", "operation_effects", "pending"]
@@ -4376,14 +4375,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A PHP error after the order went on hold for $intent ends checkout with $result.
 	 *
-	 * The plugin's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals with the
-	 * order on hold; a retry then creates a new order and authorizes the card again. Native answers as it does for an
+	 * The WooPayments extension's catch takes only exceptions (`class-wc-payment-gateway-wcpay.php:1272`), so a PHP error fatals with the
+	 * order on hold; a retry then creates a new order and authorizes the card again. The gateway answers as it does for an
 	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
-	 * order is bound to another intent (monitor ruling 2026-10-04 on review 34 F2). The error is logged whatever the setting.
+	 * order is bound to another intent. The error is logged whatever the setting.
 	 * A Multibanco voucher also puts the order on hold but its intent is `requires_action`, so it keeps the refusal: the
 	 * shopper is returned to checkout with the generic error, while the voucher stays on the on-hold order and expires if
-	 * unpaid (review 35 F7, review 37 F5). When the fresh read itself throws, the original error is still logged
-	 * and checkout keeps the refusal instead of letting the read failure escape (review 35 F3).
+	 * unpaid. When the fresh read itself throws, the original error is still logged
+	 * and checkout keeps the refusal instead of letting the read failure escape.
 	 *
 	 * @testWith ["its intent", "success"]
 	 *           ["another intent", "failure"]
@@ -4652,7 +4651,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Store API legacy checkout converts a failed native provider notice to one safe route exception.
+	 * @testdox Store API legacy checkout converts a failed provider notice to one safe route exception.
 	 */
 	public function test_store_api_legacy_checkout_surfaces_failed_provider_shopper_notice(): void {
 		wc_clear_notices();
@@ -4701,7 +4700,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		try {
 			( new StoreApiLegacy() )->process_legacy_payment( $context, $result );
-			$this->fail( 'A failed native provider outcome should surface its shopper notice through the Store API.' );
+			$this->fail( 'A failed provider outcome should surface its shopper notice through the Store API.' );
 		} catch ( RouteException $exception ) {
 			$this->assertSame( 'woocommerce_rest_payment_error', $exception->getErrorCode() );
 			$this->assertSame( 'Error: Your card has insufficient funds.', $exception->getMessage() );
@@ -5573,7 +5572,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should process refunds through the native processing service.
+	 * @testdox Should process refunds through the payment processing service.
 	 */
 	public function test_process_refund_delegates_to_processing_service(): void {
 		$order = $this->create_order();
@@ -5639,7 +5638,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should refuse a refund amount outside the order total without a platform call: $_dataName.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932-2938` returns
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932-2938` returns
 	 * `invalid-amount` before any request when the amount is negative or above the order total.
 	 *
 	 * @dataProvider invalid_refund_amount_provider
@@ -5683,7 +5682,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a refund that rounds to 0.00 without the amount check: $_dataName.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2926-2930` returns `true` when
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2926-2930` returns `true` when
 	 * `sprintf( '%0.2f', $amount )` is `'0.00'`, before the amount check at `:2932-2938`, so a refund of
 	 * 0.004 on a zero-total order is not `invalid-amount` even though it is above the total.
 	 *
@@ -5718,7 +5717,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a refund of exactly the order total.
 	 *
-	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932` refuses only an amount
+	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2932` refuses only an amount
 	 * strictly above the order total, so a full refund still reaches the platform.
 	 */
 	public function test_process_refund_accepts_the_full_order_total(): void {
@@ -5863,7 +5862,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should refuse a refund with no refund row before the platform call, returning the client's refund-not-found error.
 	 *
 	 * Client 11.1.0 refunds first and then returns `wcpay_edit_order_refund_not_found` after tracking the
-	 * success (class-wc-payment-gateway-wcpay.php:2979, :3003-3007). Native keeps the code and message but
+	 * success (class-wc-payment-gateway-wcpay.php:2979, :3003-3007). The gateway keeps the code and message but
 	 * refuses before any money moves, so it records neither the success event nor a failure.
 	 */
 	public function test_process_refund_without_a_refund_row_is_refused_before_the_platform_call(): void {
@@ -5960,7 +5959,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve native dependencies when WooCommerce instantiates the gateway directly.
+	 * @testdox Should resolve its dependencies when WooCommerce instantiates the gateway directly.
 	 */
 	public function test_process_payment_resolves_dependencies_without_explicit_init(): void {
 		$order   = $this->create_order();
@@ -6330,7 +6329,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 save_payment_method_checkbox() hides the checkbox when it is forced or when
 	 * should_use_stripe_platform_on_checkout_page() holds (gw:1146), and that predicate is false for every gateway but card
-	 * (gw:1174-1176). Ported from the client's test_save_payment_method_checkbox_displayed and
+	 * (gw:1174-1176). Covers the cases of the client's test_save_payment_method_checkbox_displayed and
 	 * test_save_payment_method_checkbox_not_displayed_when_stripe_platform_account_used, and
 	 * test_should_not_use_stripe_platform_on_checkout_page_for_non_card (tests/unit/test-class-wc-payment-gateway-wcpay.php:1754-1758, 1893-1944).
 	 *
@@ -6471,7 +6470,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose recommended payment methods for the settings provider list.
 	 */
-	public function test_get_recommended_payment_methods_delegates_to_native_api_client(): void {
+	public function test_get_recommended_payment_methods_delegates_to_the_api_client(): void {
 		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
 
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
@@ -6594,7 +6593,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a paid order carrying the provider identifiers native writes.
+	 * Create a paid order carrying the provider identifiers the gateway writes.
 	 *
 	 * @param string $intention_status Provider intention status meta.
 	 * @param string $intent_id        Provider intent ID meta.
@@ -6616,7 +6615,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * A succeeded payment links the admin order page to its transaction details.
 	 *
-	 * Native writes `_transaction_id` on every paid order, so WooCommerce renders the
+	 * The gateway writes `_transaction_id` on every paid order, so WooCommerce renders the
 	 * identifier on the order page either way; answering `get_transaction_url()` is
 	 * what makes it the link the merchant had before switching runtimes.
 	 */
@@ -7455,7 +7454,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox When the token repair throws a $throwable_class, the renewal ends $status and the throwable propagates: $propagates.
 	 *
 	 * Client 11.1.0 trait:538 catches only exceptions: an exception fails the renewal for a missing token (trait:413-418),
-	 * a PHP Error reaches the scheduled action and leaves the renewal pending (monitor ruling 2026-10-04 (3)).
+	 * a PHP Error reaches the scheduled action and leaves the renewal pending.
 	 *
 	 * @testWith ["RuntimeException", "failed", false]
 	 *           ["TypeError", "pending", true]
@@ -7519,8 +7518,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 fetches the payment method without a catch (`class-wc-payments-token-service.php:136`) and the repair
 	 * catches only Exception (trait:538), so the PHP error reaches Action Scheduler instead of failing the renewal with
-	 * "No saved payment method found" (review 34 F1, monitor ruling 2026-10-04 (3)). The error is logged once, by the
-	 * repair (review 35 F8).
+	 * "No saved payment method found". The error is logged once, by the
+	 * repair.
 	 */
 	public function test_scheduled_subscription_payment_token_repair_payment_method_fetch_php_error(): void {
 		$this->ensure_wcs_renewal_subscriptions_double();

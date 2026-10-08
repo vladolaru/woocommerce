@@ -139,32 +139,32 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$resolvers = $container->get( ProviderGatewaysController::class )->provider_resolvers;
 		$this->assertCount( 1, $resolvers );
 		$provider = $resolvers[0]();
-		$this->assertSame( WooPaymentsProvider::class, $provider->get_recorded_class_name(), 'The resolver must build the provider root that follows the registry.' );
+		$this->assertSame( WooPaymentsProvider::class, $provider->get_recorded_class_name(), 'The resolver must build the listed provider class.' );
 	}
 
-	/** @testdox Should resolve and register each explicit connected REST root once in order. */
-	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
+	/** @testdox Should resolve and register each listed connected REST class once in order. */
+	public function test_register_resolves_connected_rest_classes_once_in_order(): void {
 		$container = $this->make_container( WooPaymentsSetupTier::CONNECTED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_true' );
 
 		$this->assertSame( $this->expected_events( WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['rest'] ), $container->events );
-		$this->assertSame( array_values( array_unique( $container->resolved ) ), $container->resolved, 'Each explicit root should be resolved once.' );
+		$this->assertSame( array_values( array_unique( $container->resolved ) ), $container->resolved, 'Each listed class should be resolved once.' );
 	}
 
 	/**
-	 * @testdox A $request request on a $state store registers the cron roots it lacks once, when Action Scheduler first runs an action in it.
-	 * @dataProvider page_request_cron_root_gaps
+	 * @testdox A $request request on a $state store registers the cron classes it lacks once, when Action Scheduler first runs an action in it.
+	 * @dataProvider page_request_cron_class_gaps
 	 *
-	 * @param string            $state         Native state.
-	 * @param string            $request       Request type.
-	 * @param array<int,string> $missing_roots Cron roots the request lacks, in cron order.
+	 * @param string            $state           Setup tier.
+	 * @param string            $request         Request type.
+	 * @param array<int,string> $missing_classes Cron classes the request lacks, in cron order.
 	 */
-	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $state, string $request, array $missing_roots ): void {
-		$request_roots = WooPaymentsProvider::get_classes_by_setup_tier()[ $state ][ $request ] ?? array();
-		$container     = $this->make_container( $state, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
-		$sut           = $this->make_bootstrap();
+	public function test_page_request_registers_its_missing_cron_classes_once_when_an_action_runs( string $state, string $request, array $missing_classes ): void {
+		$request_classes = WooPaymentsProvider::get_classes_by_setup_tier()[ $state ][ $request ] ?? array();
+		$container       = $this->make_container( $state, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$sut             = $this->make_bootstrap();
 		if ( 'admin' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
@@ -172,14 +172,14 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_false' );
 		set_current_screen( 'front' );
 
-		$this->assertSame( $this->expected_events( $request_roots ), $container->events, 'Loading must register only the request roots.' );
+		$this->assertSame( $this->expected_events( $request_classes ), $container->events, 'Loading must register only the request classes.' );
 		do_action( 'action_scheduler_before_execute', 1, 'WP Cron' );
 		do_action( 'action_scheduler_before_execute', 2, 'WP Cron' );
-		$this->assertSame( $this->expected_events( $request_roots, $missing_roots ), $container->events, 'The first action must register the missing cron roots, once.' );
+		$this->assertSame( $this->expected_events( $request_classes, $missing_classes ), $container->events, 'The first action must register the missing cron classes, once.' );
 	}
 
 	/** @return array<string,array{string,string,array<int,string>}> */
-	public static function page_request_cron_root_gaps(): array {
+	public static function page_request_cron_class_gaps(): array {
 		return array(
 			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
 			'active front'    => array(
@@ -205,8 +205,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		);
 	}
 
-	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron root. */
-	public function test_adds_no_action_scheduler_listener_when_no_cron_root_is_missing(): void {
+	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron class. */
+	public function test_adds_no_action_scheduler_listener_when_no_cron_class_is_missing(): void {
 		$cases = array(
 			'disabled front'  => array( WooPaymentsSetupTier::DISABLED, '__return_false', false ),
 			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, '__return_false', true ),
@@ -341,9 +341,9 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox The payments and Multi-Currency bootstrap makes no WC() call in a $request request with the $theme theme in the $state tier.
 	 * @dataProvider bootstrap_request_themes
 	 *
-	 * @param string $request Request class: front, ajax, rest, admin, cron or cli.
+	 * @param string $request Request type: front, ajax, rest, admin, cron or cli.
 	 * @param string $theme   Active theme stylesheet and template.
-	 * @param string $state   Native payments tier.
+	 * @param string $state   Setup tier.
 	 */
 	public function test_bootstrap_makes_no_wc_call( string $request, string $theme, string $state ): void {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
@@ -457,26 +457,26 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build expected facade events from a literal root list.
+	 * Build expected facade events from a literal class list.
 	 *
-	 * @param array<int,string> $roots           Explicit roots.
-	 * @param array<int,string> $on_demand_roots Roots registered later, when Action Scheduler runs an action.
+	 * @param array<int,string> $classes           Listed classes.
+	 * @param array<int,string> $on_demand_classes Classes registered later, when Action Scheduler runs an action.
 	 * @return array<int,string>
 	 */
-	private function expected_events( array $roots, array $on_demand_roots = array() ): array {
+	private function expected_events( array $classes, array $on_demand_classes = array() ): array {
 		$events = array(
 			'get:' . MultiCurrencyRuntimeArbiter::class,
 		);
 
-		foreach ( array_merge( $roots, $on_demand_roots ) as $root ) {
-			if ( is_a( $root, PaymentGatewayProviderInterface::class, true ) ) {
+		foreach ( array_merge( $classes, $on_demand_classes ) as $class_name ) {
+			if ( is_a( $class_name, PaymentGatewayProviderInterface::class, true ) ) {
 				$events[] = 'get:' . ProviderGatewaysController::class;
 				$events[] = 'provider-resolver:' . ProviderGatewaysController::class;
 				$events[] = 'register:' . ProviderGatewaysController::class;
 				continue;
 			}
-			$events[] = 'get:' . $root;
-			$events[] = 'register:' . $root;
+			$events[] = 'get:' . $class_name;
+			$events[] = 'register:' . $class_name;
 		}
 
 		return $events;
@@ -485,8 +485,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a container that records explicit resolution and registration order.
 	 *
-	 * @param string $state                Native state.
-	 * @param string $owner                Native runtime owner.
+	 * @param string $state                Setup tier.
+	 * @param string $owner                WooPayments runtime owner.
 	 * @param string $multi_currency_owner Multi-Currency runtime owner.
 	 * @param bool   $configured           Whether additional currencies are configured.
 	 * @param bool   $historical           Whether historical Multi-Currency orders exist.
@@ -521,8 +521,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			/**
 			 * Initialize the recording container.
 			 *
-			 * @param string $state                Native state.
-			 * @param string $owner                Native runtime owner.
+			 * @param string $state                Setup tier.
+			 * @param string $owner                WooPayments runtime owner.
 			 * @param string $multi_currency_owner Multi-Currency runtime owner.
 			 * @param bool   $configured           Whether additional currencies are configured.
 			 * @param bool   $historical           Whether historical Multi-Currency orders exist.
@@ -551,7 +551,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						/**
 						 * Initialize the owner stub.
 						 *
-						 * @param string $owner Native runtime owner.
+						 * @param string $owner WooPayments runtime owner.
 						 */
 						public function __construct( string $owner ) {
 							$this->owner = $owner;
@@ -571,7 +571,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Resolve a recording service for every explicit root.
+			 * Resolve a recording service for every listed class.
 			 *
 			 * @param string $class_name Class name.
 			 * @return object Recording service.
@@ -640,8 +640,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						 *
 						 * @param string            $class_name Class name.
 						 * @param array<int,string> $events     Recorded events.
-						 * @param string            $state                Native state.
-						 * @param string            $owner                Native runtime owner.
+						 * @param string            $state                Setup tier.
+						 * @param string            $owner                WooPayments runtime owner.
 						 * @param string            $multi_currency_owner Multi-Currency runtime owner.
 						 */
 						public function __construct( string $class_name, array &$events, string $state, string $owner, string $multi_currency_owner ) {
@@ -657,7 +657,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 							return $this->class_name;
 						}
 
-						/** Return the configured Multi-Currency or native owner. */
+						/** Return the configured Multi-Currency or WooPayments owner. */
 						public function get_runtime_owner(): string {
 							return MultiCurrencyRuntimeArbiter::class === $this->class_name ? $this->multi_currency_owner : $this->owner;
 						}

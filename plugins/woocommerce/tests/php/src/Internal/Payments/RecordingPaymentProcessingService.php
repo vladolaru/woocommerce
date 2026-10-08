@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 
 /**
- * Recording processing service for native gateway tests.
+ * Recording processing service for gateway tests.
  */
 class RecordingPaymentProcessingService extends PaymentProcessingService {
 

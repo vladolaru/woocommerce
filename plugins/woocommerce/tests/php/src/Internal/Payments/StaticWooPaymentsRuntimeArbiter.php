@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 class StaticWooPaymentsRuntimeArbiter extends WooPaymentsRuntimeArbiter {
 
 	/**
-	 * Whether native should register.
+	 * Whether the built-in WooPayments owns the site.
 	 *
 	 * @var bool
 	 */
@@ -20,14 +20,14 @@ class StaticWooPaymentsRuntimeArbiter extends WooPaymentsRuntimeArbiter {
 	/**
 	 * Constructor.
 	 *
-	 * @param bool $is_builtin_owner Whether native should register.
+	 * @param bool $is_builtin_owner Whether the built-in WooPayments owns the site.
 	 */
 	public function __construct( bool $is_builtin_owner ) {
 		$this->is_builtin_owner = $is_builtin_owner;
 	}
 
 	/**
-	 * Tell whether core-native code may perform mutating registration for this site.
+	 * Tell whether built-in WooPayments code may register for this site.
 	 *
 	 * @return bool
 	 */

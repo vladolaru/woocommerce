@@ -98,7 +98,7 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	}
 
 	/**
-	 * Get the provider persistence profile.
+	 * Get the provider persistence vocabulary.
 	 *
 	 * @return ProviderPersistenceVocabularyInterface
 	 */

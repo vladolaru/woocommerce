@@ -288,7 +288,7 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should remain resolvable by the WooCommerce runtime container.
 	 */
-	public function test_runtime_container_can_resolve_registry(): void {
+	public function test_runtime_container_resolves_the_controller(): void {
 		$this->assertInstanceOf(
 			ProviderGatewaysController::class,
 			wc_get_container()->get( ProviderGatewaysController::class )

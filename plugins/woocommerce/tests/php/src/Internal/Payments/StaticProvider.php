@@ -62,7 +62,7 @@ class StaticProvider implements PaymentGatewayProviderInterface {
 	}
 
 	/**
-	 * Tell whether the provider can currently process native money operations.
+	 * Tell whether the provider can currently process money operations.
 	 *
 	 * @return bool
 	 */
