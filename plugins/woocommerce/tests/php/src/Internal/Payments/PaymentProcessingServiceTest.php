@@ -2974,7 +2974,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
 			}
@@ -4610,7 +4610,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always, to drive the post-charge failure path.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );

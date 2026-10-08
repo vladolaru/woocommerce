@@ -73,7 +73,7 @@ class OrderPaymentLifecycleService {
 		}
 
 		try {
-			$this->apply_unlocked( $order, $event, $persistence_vocabulary );
+			$this->apply_under_lock( $order, $event, $persistence_vocabulary );
 		} finally {
 			if ( null !== $lock_token ) {
 				$this->order_payment_lock->release( $order, $persistence_vocabulary, $lock_token );
@@ -167,7 +167,7 @@ class OrderPaymentLifecycleService {
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 */
-	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {

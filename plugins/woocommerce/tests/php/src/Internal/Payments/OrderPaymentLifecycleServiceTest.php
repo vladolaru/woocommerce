@@ -107,14 +107,14 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A normal completed event preserves unsaved changes owned by its caller.
 	 */
-	public function test_unlocked_completed_event_preserves_caller_owned_unsaved_changes(): void {
+	public function test_under_lock_completed_event_preserves_caller_owned_unsaved_changes(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_customer_note( 'Checkout note saved with payment completion.' );
 		$order->update_meta_data( '_caller_owned_unsaved_meta', 'preserve this value' );
 
 		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'pi_caller_changes', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $order, $this->completed_event( 'pi_caller_changes' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $order, $this->completed_event( 'pi_caller_changes' ), $this->persistence_vocabulary );
 		} finally {
 			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
 		}
@@ -192,7 +192,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed event refreshes disputed state when its caller already owns the order payment lock.
 	 */
-	public function test_unlocked_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
+	public function test_under_lock_success_after_dispute_created_through_a_second_order_instance_keeps_on_hold(): void {
 		$stale_order = $this->create_woopayments_order();
 
 		$fresh_order = clone $stale_order;
@@ -203,13 +203,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		 */
 		$data_store = $fresh_order->get_data_store();
 		$data_store->read( $fresh_order );
-		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_unlocked' ) );
+		$fresh_order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_stale_under_lock' ) );
 		$fresh_order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$fresh_order->update_status( 'on-hold' );
 
-		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_unlocked', 'payment operation' ) );
+		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_under_lock', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_unlocked' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_under_lock' ), $this->persistence_vocabulary );
 		} finally {
 			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
 		}
@@ -218,7 +218,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'on-hold', $order->get_status(), 'A success event must refresh and preserve a dispute hold while its caller owns the payment lock.' );
-		$this->assertSame( array( 'dp_stale_unlocked' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
+		$this->assertSame( array( 'dp_stale_under_lock' ), $order->get_meta( '_wcpay_open_dispute_ids', true ), 'A success event must preserve freshly persisted open disputes.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A skipped success event must not update lifecycle metadata.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, 'Payment complete.' ), 'A skipped success event must not add a completion note.' );
 	}
@@ -226,7 +226,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed-event skip synchronizes persisted dispute state before a stale caller saves.
 	 */
-	public function test_unlocked_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute(): void {
+	public function test_under_lock_success_skip_prevents_a_stale_caller_save_from_overwriting_a_dispute(): void {
 		$stale_order = $this->create_woopayments_order();
 		$fresh_order = wc_get_order( $stale_order->get_id() );
 
@@ -239,7 +239,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$stale_order->update_meta_data( '_wcpay_open_dispute_ids', array() );
 		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_save', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_save' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_save' ), $this->persistence_vocabulary );
 			$stale_order->save();
 		} finally {
 			$this->clear_order_payment_lock( $stale_order, $this->persistence_vocabulary );
@@ -257,7 +257,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed event skipped because another request already completed the order does not repeat the status change when its stale caller saves.
 	 */
-	public function test_unlocked_success_note_skip_does_not_repeat_the_status_change_when_a_stale_caller_saves(): void {
+	public function test_under_lock_success_note_skip_does_not_repeat_the_status_change_when_a_stale_caller_saves(): void {
 		// The skip leaves the caller's order object as client 11.1.0 includes/class-wc-payments-order-service.php:2863-2879 does: its replay guard reads a clone.
 		$stale_order = $this->create_woopayments_order();
 		$stale_order->add_product( \WC_Helper_Product::create_simple_product(), 1 );
@@ -278,7 +278,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_success', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_success' ), $this->persistence_vocabulary );
 			$pending_to_processing_before = did_action( 'woocommerce_order_status_pending_to_processing' );
 			$status_changed_before        = did_action( 'woocommerce_order_status_changed' );
 			$stale_order->save();
@@ -301,7 +301,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed event skipped because of a persisted dispute does not record a status change when its stale caller saves.
 	 */
-	public function test_unlocked_dispute_skip_does_not_record_a_status_change_when_a_stale_caller_saves(): void {
+	public function test_under_lock_dispute_skip_does_not_record_a_status_change_when_a_stale_caller_saves(): void {
 		$stale_order = $this->create_woopayments_order();
 		$order_id    = $stale_order->get_id();
 
@@ -313,7 +313,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $this->persistence_vocabulary, 'pi_stale_dispute', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_stale_dispute' ), $this->persistence_vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_stale_dispute' ), $this->persistence_vocabulary );
 			$pending_to_on_hold_before = did_action( 'woocommerce_order_status_pending_to_on-hold' );
 			$status_changed_before     = did_action( 'woocommerce_order_status_changed' );
 			$stale_order->save();
@@ -516,7 +516,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$this->assertSame( 'processing', $order->get_status() );
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -758,7 +758,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_before_order_object_save', $observer );
 
 		try {
-			$this->apply_event_unlocked( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
+			$this->apply_event_under_lock( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
 		} finally {
 			remove_action( 'woocommerce_before_order_object_save', $observer );
 		}
@@ -898,7 +898,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$stale_order->update_meta_data( '_provider_open_dispute_ids', array() );
 		$this->assertNotNull( $this->order_payment_lock->claim( $stale_order, $vocabulary, 'pi_custom_stale_save', 'payment operation' ) );
 		try {
-			$this->sut->apply_unlocked( $stale_order, $this->completed_event( 'pi_custom_stale_save' ), $vocabulary );
+			$this->sut->apply_under_lock( $stale_order, $this->completed_event( 'pi_custom_stale_save' ), $vocabulary );
 			$stale_order->save();
 		} finally {
 			$this->clear_order_payment_lock( $stale_order, $vocabulary );
@@ -960,7 +960,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -988,7 +988,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( __( 'Payment complete.', 'woocommerce' ) );
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_COMPLETED,
@@ -1012,7 +1012,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_lifecycle_note_identity_uses_note_type_instead_of_rendered_note_content(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -1032,7 +1032,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $notes );
 		$this->assertSame( $expected_identity, get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ) );
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -1058,7 +1058,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order          = $this->create_woopayments_order();
 		$legacy_note_id = $order->add_order_note( 'Payment started.' );
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -1088,7 +1088,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_different_lifecycle_note_types_are_each_written_once(): void {
 		$order = $this->create_woopayments_order();
 
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -1099,7 +1099,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 				'payment_started'
 			)
 		);
-		$this->apply_event_unlocked(
+		$this->apply_event_under_lock(
 			wc_get_order( $order->get_id() ),
 			new PaymentLifecycleEvent(
 				PaymentLifecycleEvent::STATUS_STARTED,
@@ -1188,7 +1188,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws \RuntimeException Always.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 				unset( $order, $event, $persistence_vocabulary );
 				throw new \RuntimeException( 'Simulated lifecycle failure.' );
 			}
@@ -1280,13 +1280,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Apply an unlocked lifecycle event with the WooPayments profile.
+	 * Apply a lifecycle event under the caller's lock with the WooPayments profile.
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 */
-	private function apply_event_unlocked( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		$this->sut->apply_unlocked( $order, $event, $this->persistence_vocabulary );
+	private function apply_event_under_lock( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$this->sut->apply_under_lock( $order, $event, $this->persistence_vocabulary );
 	}
 
 	/**

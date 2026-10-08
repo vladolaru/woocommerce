@@ -841,7 +841,7 @@ class PaymentProcessingService {
 			// the provider effects carry the capture-expired note when the re-fetched intent
 			// came back canceled, and the order goes to failed like the charge.expired webhook.
 			if ( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED === $this->get_lifecycle_note_type( $outcome ) ) {
-				$this->lifecycle_service->apply_unlocked(
+				$this->lifecycle_service->apply_under_lock(
 					$order,
 					new PaymentLifecycleEvent(
 						PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
@@ -861,7 +861,7 @@ class PaymentProcessingService {
 			// the attempted operation was capture or cancellation.
 			$meta = $this->get_failed_capture_or_cancel_outcome_meta( $outcome, $provider );
 
-			$this->lifecycle_service->apply_unlocked(
+			$this->lifecycle_service->apply_under_lock(
 				$order,
 				new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_STARTED,
@@ -888,7 +888,7 @@ class PaymentProcessingService {
 	 * @param ProviderInterface $provider Provider.
 	 */
 	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
-		$this->lifecycle_service->apply_unlocked(
+		$this->lifecycle_service->apply_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				$this->get_lifecycle_status( $outcome ),

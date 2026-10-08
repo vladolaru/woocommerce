@@ -1199,8 +1199,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'message' => 'Your card was declined.',
 			),
 		);
-		$lifecycle                  = $this->getMockBuilder( OrderPaymentLifecycleService::class )->onlyMethods( array( 'apply_unlocked' ) )->getMock();
-		$lifecycle->method( 'apply_unlocked' )->willThrowException( new \RuntimeException( 'Database write failed.' ) );
+		$lifecycle                  = $this->getMockBuilder( OrderPaymentLifecycleService::class )->onlyMethods( array( 'apply_under_lock' ) )->getMock();
+		$lifecycle->method( 'apply_under_lock' )->willThrowException( new \RuntimeException( 'Database write failed.' ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, null, $lifecycle );

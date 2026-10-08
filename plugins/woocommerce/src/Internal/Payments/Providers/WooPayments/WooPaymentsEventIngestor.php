@@ -471,7 +471,7 @@ class WooPaymentsEventIngestor {
 			}
 			$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 			$this->repair_recurring_order_token( $order, $payment_intent );
-			$this->lifecycle_service->apply_unlocked( $order, $lifecycle_event, $vocabulary );
+			$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $vocabulary );
 		} finally {
 			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}

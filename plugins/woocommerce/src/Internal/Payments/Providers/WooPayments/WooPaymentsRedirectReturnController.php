@@ -386,7 +386,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				return false;
 			}
 
-			$this->lifecycle_service->apply_unlocked( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_vocabulary );
+			$this->lifecycle_service->apply_under_lock( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_vocabulary );
 		} catch ( Throwable $failure ) {
 			// The order should be failed but is not, so support needs this line whatever the logging setting. The client's
 			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
