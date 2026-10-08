@@ -1,6 +1,6 @@
 <?php
 /**
- * PaymentOperationIdempotency class file.
+ * PaymentOperationKeys class file.
  */
 
 declare( strict_types = 1 );
@@ -26,7 +26,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class PaymentOperationIdempotency {
+class PaymentOperationKeys {
 
 	/**
 	 * Mint a fresh idempotency key for a single payment attempt.

@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
-use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationKeys;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -64,9 +64,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Payment operation idempotency service.
 	 *
-	 * @var PaymentOperationIdempotency
+	 * @var PaymentOperationKeys
 	 */
-	private $idempotency;
+	private $operation_keys;
 
 	/**
 	 * Persistence profile used by the recording WooPayments provider.
@@ -82,7 +82,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->sut                    = wc_get_container()->get( PaymentProcessingService::class );
 		$this->store                  = wc_get_container()->get( OrderPaymentLock::class );
-		$this->idempotency            = wc_get_container()->get( PaymentOperationIdempotency::class );
+		$this->operation_keys         = wc_get_container()->get( PaymentOperationKeys::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 	}
 
@@ -577,7 +577,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut->init(
 			$this->store,
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			$this->idempotency
+			$this->operation_keys
 		);
 
 		switch ( $operation ) {
@@ -600,14 +600,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 			case 'capture':
 				$outcome                  = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
+				$expected_idempotency_key = $this->operation_keys->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 				break;
 
 			default:
 				$outcome                  = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
-				$expected_idempotency_key = $this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 10.0, 'USD' );
+				$expected_idempotency_key = $this->operation_keys->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'cancel', 10.0, 'USD' );
 				$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 				$this->assertSame( 'https://pay.example.test/code', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null, 'The failed outcome carries the error code the exception provides.' );
 		}
@@ -1635,7 +1635,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_checkout_returns_failure_when_order_operation_is_locked(): void {
 		$order = $this->create_woopayments_order( '10.00' );
-		$key   = $this->idempotency->mint_attempt_key();
+		$key   = $this->operation_keys->mint_attempt_key();
 		$this->hold_order_payment_lock( $order, $this->persistence_vocabulary, $key );
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) );
@@ -3101,11 +3101,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$retry_key = $retry_provider->last_idempotency_key;
 
 		$this->assertSame(
-			$this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.00, 'USD' ),
+			$this->operation_keys->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.00, 'USD' ),
 			$first_key
 		);
 		$this->assertSame(
-			$this->idempotency->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.00, 'USD' ),
+			$this->operation_keys->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.00, 'USD' ),
 			$second_key
 		);
 		$this->assertNotSame( $first_key, $second_key );
@@ -4519,7 +4519,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut->init(
 			$this->store,
 			$lifecycle_service,
-			$this->idempotency
+			$this->operation_keys
 		);
 
 		return $sut;

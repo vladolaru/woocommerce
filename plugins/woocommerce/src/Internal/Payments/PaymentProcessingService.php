@@ -37,9 +37,9 @@ class PaymentProcessingService {
 	/**
 	 * Payment operation idempotency service.
 	 *
-	 * @var PaymentOperationIdempotency
+	 * @var PaymentOperationKeys
 	 */
-	private PaymentOperationIdempotency $idempotency;
+	private PaymentOperationKeys $operation_keys;
 
 	/**
 	 * Initialize the class instance.
@@ -48,16 +48,16 @@ class PaymentProcessingService {
 	 *
 	 * @param OrderPaymentLock             $order_payment_store Order payment store.
 	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
-	 * @param PaymentOperationIdempotency  $idempotency          Payment operation idempotency service.
+	 * @param PaymentOperationKeys         $operation_keys      Payment operation idempotency service.
 	 */
 	final public function init(
 		OrderPaymentLock $order_payment_store,
 		OrderPaymentLifecycleService $lifecycle_service,
-		PaymentOperationIdempotency $idempotency
+		PaymentOperationKeys $operation_keys
 	): void {
 		$this->order_payment_store = $order_payment_store;
 		$this->lifecycle_service   = $lifecycle_service;
-		$this->idempotency         = $idempotency;
+		$this->operation_keys      = $operation_keys;
 	}
 
 	/**
@@ -92,7 +92,7 @@ class PaymentProcessingService {
 	 */
 	public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
-		$idempotency_key = $this->idempotency->mint_attempt_key();
+		$idempotency_key = $this->operation_keys->mint_attempt_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
@@ -366,7 +366,7 @@ class PaymentProcessingService {
 
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
 		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
-		$idempotency_key = $this->idempotency->mint_attempt_key();
+		$idempotency_key = $this->operation_keys->mint_attempt_key();
 		$lock_token      = $this->order_payment_store->claim( $order, $vocabulary, $idempotency_key, 'refund' );
 		if ( null === $lock_token ) {
 			$this->order_payment_store->log_refusal( $order, $vocabulary, 'refund' );
@@ -711,7 +711,7 @@ class PaymentProcessingService {
 	private function run_provider_order_operation( PaymentOperationContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
 		$order         = $context->get_order();
 		$amount        = $context->get_amount() ?? (float) $order->get_total();
-		$operation_key = $this->idempotency->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
+		$operation_key = $this->operation_keys->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
 		$vocabulary    = $provider->get_persistence_vocabulary();
 
 		$lock_token = $this->order_payment_store->claim( $order, $vocabulary, $operation_key, $operation );

@@ -3,20 +3,20 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationKeys;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the PaymentOperationIdempotency class.
+ * Tests for the PaymentOperationKeys class.
  */
-class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
+class PaymentOperationKeysTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should mint a fresh key for every payment attempt.
 	 */
 	public function test_mints_a_fresh_key_for_every_attempt(): void {
-		$sut = new PaymentOperationIdempotency();
+		$sut = new PaymentOperationKeys();
 
 		$first  = $sut->mint_attempt_key();
 		$second = $sut->mint_attempt_key();
@@ -28,7 +28,7 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 	 * @testdox Should mint attempt keys in the UUID v4 shape the platform-proven client sends.
 	 */
 	public function test_mints_attempt_keys_as_uuid4(): void {
-		$sut = new PaymentOperationIdempotency();
+		$sut = new PaymentOperationKeys();
 
 		$this->assertMatchesRegularExpression(
 			'/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
@@ -41,7 +41,7 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 	 */
 	public function test_changes_key_when_operation_changes(): void {
 		$order = wc_create_order();
-		$sut   = new PaymentOperationIdempotency();
+		$sut   = new PaymentOperationKeys();
 
 		$this->assertNotSame(
 			$sut->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 20.00, 'USD' ),
@@ -55,7 +55,7 @@ class PaymentOperationIdempotencyTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_amount_distinguishes_partial_capture_keys(): void {
 		$order = wc_create_order();
-		$sut   = new PaymentOperationIdempotency();
+		$sut   = new PaymentOperationKeys();
 
 		$first       = $sut->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 4.25, 'USD' );
 		$second      = $sut->derive_operation_key( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'capture', 5.75, 'USD' );
