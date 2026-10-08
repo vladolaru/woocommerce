@@ -462,7 +462,7 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		if ( ! $this->is_woopayments_order( $order ) ) {
-			$this->order_payment_lock->log_order_payment_method_mismatch( $order, $event_type );
+			$this->order_payment_lock->log_payment_method_mismatch( $order, $event_type );
 		}
 
 		return $order;

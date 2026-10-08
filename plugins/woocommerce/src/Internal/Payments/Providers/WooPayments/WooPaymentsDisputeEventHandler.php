@@ -133,7 +133,7 @@ class WooPaymentsDisputeEventHandler {
 
 		// Like client 11.1.0 (webhook processing service :712-724), the dispute applies whatever the order's payment method.
 		if ( ! $this->is_woopayments_order( $order ) ) {
-			$this->get_order_payment_lock()->log_order_payment_method_mismatch( $order, $event_type );
+			$this->get_order_payment_lock()->log_payment_method_mismatch( $order, $event_type );
 		}
 		$balance_transaction_id = (string) $order->get_meta( '_wcpay_payment_transaction_id', true );
 

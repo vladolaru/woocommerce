@@ -170,7 +170,7 @@ class OrderPaymentLock {
 	 * @param string      $applied_operation Operation being applied, such as the event type.
 	 * @param string|null $source            Log source, when the caller logs to its own file.
 	 */
-	public function log_order_payment_method_mismatch( WC_Order $order, string $applied_operation, ?string $source = null ): void {
+	public function log_payment_method_mismatch( WC_Order $order, string $applied_operation, ?string $source = null ): void {
 		try {
 			$payment_method = (string) $order->get_payment_method();
 			wc_get_logger()->warning(

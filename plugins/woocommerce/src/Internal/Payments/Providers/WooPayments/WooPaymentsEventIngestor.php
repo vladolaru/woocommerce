@@ -1408,7 +1408,7 @@ class WooPaymentsEventIngestor {
 	 */
 	private function log_payment_method_mismatch( WC_Order $order, string $event_type ): void {
 		if ( ! $this->is_woopayments_order( $order ) ) {
-			wc_get_container()->get( OrderPaymentLock::class )->log_order_payment_method_mismatch( $order, $event_type );
+			wc_get_container()->get( OrderPaymentLock::class )->log_payment_method_mismatch( $order, $event_type );
 		}
 	}
 
