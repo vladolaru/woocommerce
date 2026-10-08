@@ -283,4 +283,18 @@ class PayPalPaymentMethodTest extends WalletTestCase {
 		$this->assertSame( 'paypal', $data['fundingSource'] );
 		$this->assertSame( 'Pay now', $data['placeOrderButtonLabel'] );
 	}
+
+	/**
+	 * @testdox Should register the v5 checkout block script with WooCommerce translations and return its handle.
+	 */
+	public function test_registers_the_checkout_block_script_with_translations(): void {
+		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'checkout-block.js' )->andReturn( 'https://example.com/assets/checkout-block.js' );
+
+		$handles = $this->create_testee( array(), false, false )->get_payment_method_script_handles();
+
+		$this->assertSame( array( 'ppcp-checkout-block' ), $handles );
+		$script = wp_scripts()->registered['ppcp-checkout-block'] ?? null;
+		$this->assertNotNull( $script, 'The block script must be registered' );
+		$this->assertSame( 'woocommerce', $script->textdomain, 'The bundle has translatable strings of its own' );
+	}
 }

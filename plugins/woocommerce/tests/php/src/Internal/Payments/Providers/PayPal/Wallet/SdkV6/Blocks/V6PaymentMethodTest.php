@@ -97,13 +97,13 @@ class V6PaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the block script with the webpack dependencies and version and return its handle.
+	 * @testdox Should register the block script with the webpack dependencies, version and WooCommerce translations and return its handle.
 	 */
 	public function test_get_payment_method_script_handles_passes_through_webpack_dependencies_and_version(): void {
 		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'checkout-block.js' )->andReturn( 'https://example.com/assets/checkout-block.js' );
 		$this->asset_getter->shouldReceive( 'get_asset_data' )->with( 'checkout-block.js', '1.0.0' )->andReturn(
 			array(
-				'dependencies' => array( 'wp-data', 'wp-element' ),
+				'dependencies' => array( 'wp-data', 'wp-element', 'wp-i18n' ),
 				'version'      => 'deadbeef',
 			)
 		);
@@ -114,8 +114,9 @@ class V6PaymentMethodTest extends WalletTestCase {
 		$script = wp_scripts()->registered['wc-ppcp-sdk-v6-blocks'] ?? null;
 		$this->assertNotNull( $script, 'The block script must be registered' );
 		$this->assertSame( 'https://example.com/assets/checkout-block.js', $script->src );
-		$this->assertSame( array( 'wp-data', 'wp-element' ), $script->deps );
+		$this->assertSame( array( 'wp-data', 'wp-element', 'wp-i18n' ), $script->deps );
 		$this->assertSame( 'deadbeef', $script->ver );
+		$this->assertSame( 'woocommerce', $script->textdomain, 'The bundle has translatable strings of its own' );
 	}
 
 	/**

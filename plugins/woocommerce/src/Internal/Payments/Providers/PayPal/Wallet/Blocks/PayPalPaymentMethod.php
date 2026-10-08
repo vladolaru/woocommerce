@@ -188,6 +188,7 @@ class PayPalPaymentMethod extends AbstractPaymentMethodType {
 			$this->version,
 			true
 		);
+		wp_set_script_translations( 'ppcp-checkout-block', 'woocommerce' );
 
 		return array( 'ppcp-checkout-block' );
 	}
