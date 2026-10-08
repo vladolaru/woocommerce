@@ -740,6 +740,50 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Event meta is in the database before the order save that applies a $event_status event: $expected.
+	 * @dataProvider meta_saved_before_order_save_provider
+	 *
+	 * @param string $event_status Lifecycle event status.
+	 * @param bool   $expected     Whether the meta is persisted before the order save.
+	 */
+	public function test_event_meta_is_saved_before_the_order_save_for_every_status_but_started( string $event_status, bool $expected ): void {
+		$order          = $this->create_woopayments_order();
+		$order_id       = $order->get_id();
+		$meta_persisted = null;
+		$observer       = function ( $saved_order ) use ( $order_id, &$meta_persisted ): void {
+			if ( null === $meta_persisted && $saved_order instanceof WC_Order && $saved_order->get_id() === $order_id ) {
+				$meta_persisted = $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' );
+			}
+		};
+		add_action( 'woocommerce_before_order_object_save', $observer );
+
+		try {
+			$this->apply_event_unlocked( $order, new PaymentLifecycleEvent( $event_status, 'pi_probe', array( '_lifecycle_probe' => 'saved' ) ) );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $observer );
+		}
+
+		$this->assertSame( $expected, $meta_persisted );
+		$this->assertTrue( $this->is_order_meta_persisted( $order_id, '_lifecycle_probe' ), 'Every event saves its meta by the end.' );
+	}
+
+	/**
+	 * Every lifecycle status and whether its meta is saved before the order save.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public static function meta_saved_before_order_save_provider(): array {
+		return array(
+			'completed'       => array( PaymentLifecycleEvent::STATUS_COMPLETED, true ),
+			'authorized'      => array( PaymentLifecycleEvent::STATUS_AUTHORIZED, true ),
+			'failed'          => array( PaymentLifecycleEvent::STATUS_FAILED, true ),
+			'canceled'        => array( PaymentLifecycleEvent::STATUS_CANCELED, true ),
+			'capture expired' => array( PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED, true ),
+			'started'         => array( PaymentLifecycleEvent::STATUS_STARTED, false ),
+		);
+	}
+
+	/**
 	 * @testdox Started events add a note without changing order status.
 	 */
 	public function test_started_event_adds_note_without_status_change(): void {
@@ -1369,6 +1413,26 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 		return (string) $wpdb->get_var( $wpdb->prepare( "SELECT post_status FROM {$wpdb->posts} WHERE ID = %d", $order_id ) );
 		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Tell whether an order meta key is stored in the database, bypassing every cache.
+	 *
+	 * @param int    $order_id Order ID.
+	 * @param string $meta_key Meta key.
+	 * @return bool
+	 */
+	private function is_order_meta_persisted( int $order_id, string $meta_key ): bool {
+		global $wpdb;
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- The assertion must see the database, not a cache.
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			$meta_table = OrdersTableDataStore::get_meta_table_name();
+			return null !== $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$meta_table} WHERE order_id = %d AND meta_key = %s", $order_id, $meta_key ) );
+		}
+
+		return null !== $wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s", $order_id, $meta_key ) );
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 	}
 
 	/**

@@ -224,21 +224,14 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether lifecycle metadata needs to be saved before status-transition hooks run.
 	 *
+	 * Every status but started changes the order status, and callbacks on that change may load the order again, so the
+	 * event's meta is saved first.
+	 *
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
 	 * @return bool
 	 */
 	private function should_save_meta_before_status_transition( PaymentLifecycleEvent $event ): bool {
-		return in_array(
-			$event->get_status(),
-			array(
-				PaymentLifecycleEvent::STATUS_COMPLETED,
-				PaymentLifecycleEvent::STATUS_AUTHORIZED,
-				PaymentLifecycleEvent::STATUS_FAILED,
-				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
-				PaymentLifecycleEvent::STATUS_CANCELED,
-			),
-			true
-		);
+		return PaymentLifecycleEvent::STATUS_STARTED !== $event->get_status();
 	}
 
 	/**
