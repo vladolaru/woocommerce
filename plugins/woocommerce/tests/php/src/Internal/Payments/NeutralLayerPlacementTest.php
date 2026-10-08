@@ -20,7 +20,6 @@ class NeutralLayerPlacementTest extends WC_Unit_Test_Case {
 	 * Neutral-layer files that may reference the WooPayments provider, relative to `src/Internal/Payments/`.
 	 */
 	private const ALLOWED_FILES = array(
-		'NativePaymentsCliCommand.php',
 		'OrderPaymentLifecycleService.php',
 	);
 

@@ -135,7 +135,7 @@ expect_readiness_failure 'client' 'client-disabled' \
 assert_failed_before_callback_proof 'client-disabled' \
 	'A disabled client runtime must fail before callback proof.'
 assert_stderr_contains 'client-disabled' \
-	'client readiness requires runtime_owner=extension and native_enabled=false'
+	'client readiness requires runtime_owner=extension and builtin_enabled=false'
 
 CLIENT_DIAGNOSTICS="$TEST_ROOT/client-diagnostics"
 CLIENT_COMMAND_LOG="$TEST_ROOT/client-commands.log"
@@ -158,7 +158,7 @@ fi
 if grep -Fq "$NATIVE_STORE" "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not probe the native store.'
 fi
-if grep -Eq 'wc-native-payments status|/wc-native-payments-e2e/v1/status|config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$CLIENT_COMMAND_LOG"; then
+if grep -Eq 'wc woopayments status|/wc-native-payments-e2e/v1/status|config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not invoke native commands.'
 fi
 if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Eq 'WooPaymentsAccountSessionRestController|register_routes|account_routes_callback|has_action\( "rest_api_init"'; then
@@ -187,7 +187,7 @@ if ! grep -Fq 'created' "$TEST_ROOT/client-diagnostics/client/customer.txt"; the
 fi
 jq -e '
 	.runtime_owner == "extension" and
-	.native_enabled == false and
+	.builtin_enabled == false and
 	.wpcom_blog_id == 1 and
 	.account_connected == true and
 	.callback_probe.registered == true and
@@ -242,7 +242,7 @@ fi
 if grep -Fq 'docker compose' "$NATIVE_COMMAND_LOG"; then
 	fail 'Native readiness must not invoke client commands.'
 fi
-if ! grep -Fq "$NATIVE_STORE	pnpm exec wp-env --config .wp-env.e2e.json run cli wp --user=1 wc-native-payments status" "$NATIVE_COMMAND_LOG"; then
+if ! grep -Fq "$NATIVE_STORE	pnpm exec wp-env --config .wp-env.e2e.json run cli wp --user=1 wc woopayments status" "$NATIVE_COMMAND_LOG"; then
 	fail 'Native readiness must invoke WP-CLI through the explicit native wp-env config.'
 fi
 if grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Eq 'pnpm exec wp-env run|pnpm exec wp-env --config=[^ ]'; then
@@ -259,7 +259,7 @@ if grep -Eq 'config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$NATIVE_COMMAND_LO
 fi
 jq -e '
 	.runtime_owner == "builtin" and
-	.native_enabled == true and
+	.builtin_enabled == true and
 	.wpcom_blog_id == 2 and
 	.account_connected == true and
 	.callback_probe.registered == true and
@@ -314,7 +314,7 @@ expect_readiness_failure 'native' 'disabled' \
 if grep -Eq 'config (set|delete) E2E_WOOPAYMENTS_NATIVE' "$TEST_ROOT/disabled-commands.log"; then
 	fail 'Readiness must not set E2E_WOOPAYMENTS_NATIVE.'
 fi
-assert_stderr_contains 'disabled' 'runtime_owner=builtin and native_enabled=true'
+assert_stderr_contains 'disabled' 'runtime_owner=builtin and builtin_enabled=true'
 
 expect_readiness_failure 'native' 'callback' \
 	'A failed native callback probe must fail closed.' \
@@ -343,7 +343,7 @@ expect_readiness_failure 'native' 'provider-free-disabled' \
 	E2E_FAKE_LIST_TAGS='woopayments-native' \
 	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts
 assert_stderr_contains 'provider-free-disabled' \
-	'runtime_owner=builtin and native_enabled=true'
+	'runtime_owner=builtin and builtin_enabled=true'
 
 # Arguments that collect a provider-tagged test keep the full gates.
 run_setup 'native' 'provider-args' \

@@ -7,7 +7,7 @@ readonly DIAGNOSTICS_DIR="${E2E_WOOPAYMENTS_DIAGNOSTICS_DIR:?E2E_WOOPAYMENTS_DIA
 readonly WPCOM_LOCAL_BIN="${E2E_WPCOM_LOCAL_BIN:-wpcom-local}"
 readonly CLIENT_ACCOUNT_REQUEST_CODE='$request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "account_id" => is_array( $data ) ? (string) ( $data["account_id"] ?? "" ) : "", "test_mode" => is_array( $data ) ? (bool) ( $data["test_mode"] ?? false ) : false ) );'
 readonly NATIVE_ACCOUNT_REQUEST_CODE='$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "register_routes" ); $account_session_rest_controller->register(); if ( false === has_action( "rest_api_init", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" ); $response = rest_do_request( $request ); $data = $response->get_data(); echo wp_json_encode( array( "status" => $response->get_status(), "is_error" => $response->is_error(), "account_id" => is_array( $data ) ? (string) ( $data["account_id"] ?? "" ) : "", "test_mode" => is_array( $data ) ? (bool) ( $data["test_mode"] ?? false ) : false ) );'
-readonly CLIENT_RUNTIME_STATUS_CODE='if ( ! function_exists( "is_plugin_active" ) ) { require_once ABSPATH . "wp-admin/includes/plugin.php"; } $plugin_active = is_plugin_active( "woocommerce-payments/woocommerce-payments.php" ); $account = $plugin_active && class_exists( "WC_Payments" ) ? WC_Payments::get_account_service()->get_cached_account_data() : array(); $account = is_array( $account ) ? $account : array(); $settings = get_option( "woocommerce_woocommerce_payments_settings", array() ); $settings = is_array( $settings ) ? $settings : array(); $methods = $settings["upe_enabled_payment_method_ids"] ?? array(); $methods = is_array( $methods ) ? array_values( array_map( "strval", array_filter( $methods, "is_scalar" ) ) ) : array(); echo wp_json_encode( array( "site_url" => get_site_url(), "wpcom_blog_id" => class_exists( "Jetpack_Options" ) ? (int) Jetpack_Options::get_option( "id" ) : 0, "runtime_owner" => $plugin_active ? "extension" : "none", "native_enabled" => false, "account_id" => (string) ( $account["account_id"] ?? "" ), "account_connected" => ! empty( $account["account_id"] ), "gateway_enabled" => "yes" === ( $settings["enabled"] ?? "no" ), "test_mode" => "yes" === ( $settings["test_mode"] ?? "no" ), "enabled_payment_methods" => $methods, "last_webhook_fetch" => 0, "callback_probe" => array( "registered" => false, "reachable" => false, "wpcom_blog_id" => 0 ) ) );'
+readonly CLIENT_RUNTIME_STATUS_CODE='if ( ! function_exists( "is_plugin_active" ) ) { require_once ABSPATH . "wp-admin/includes/plugin.php"; } $plugin_active = is_plugin_active( "woocommerce-payments/woocommerce-payments.php" ); $account = $plugin_active && class_exists( "WC_Payments" ) ? WC_Payments::get_account_service()->get_cached_account_data() : array(); $account = is_array( $account ) ? $account : array(); $settings = get_option( "woocommerce_woocommerce_payments_settings", array() ); $settings = is_array( $settings ) ? $settings : array(); $methods = $settings["upe_enabled_payment_method_ids"] ?? array(); $methods = is_array( $methods ) ? array_values( array_map( "strval", array_filter( $methods, "is_scalar" ) ) ) : array(); echo wp_json_encode( array( "site_url" => get_site_url(), "wpcom_blog_id" => class_exists( "Jetpack_Options" ) ? (int) Jetpack_Options::get_option( "id" ) : 0, "runtime_owner" => $plugin_active ? "extension" : "none", "builtin_enabled" => false, "account_id" => (string) ( $account["account_id"] ?? "" ), "account_connected" => ! empty( $account["account_id"] ), "gateway_enabled" => "yes" === ( $settings["enabled"] ?? "no" ), "test_mode" => "yes" === ( $settings["test_mode"] ?? "no" ), "enabled_payment_methods" => $methods, "last_webhook_fetch" => 0, "callback_probe" => array( "registered" => false, "reachable" => false, "wpcom_blog_id" => 0 ) ) );'
 readonly NATIVE_RUNTIME_STATUS_CODE='$request = new WP_REST_Request( "GET", "/wc-native-payments-e2e/v1/status" ); $response = rest_do_request( $request ); echo wp_json_encode( $response->get_data() );'
 readonly SHOPPER_FIXTURE_CODE='update_option( "woocommerce_coming_soon", "no" ); $login = "customer"; $user = get_user_by( "login", $login ); if ( ! $user ) { $created = wp_insert_user( array( "user_login" => $login, "user_email" => "customer@woocommercecoree2etestsuite.com", "user_pass" => "password", "first_name" => "Jane", "last_name" => "Smith", "role" => "customer" ) ); if ( is_wp_error( $created ) ) { fwrite( STDERR, $created->get_error_message() ); exit( 1 ); } echo "created"; } else { wp_set_password( "password", $user->ID ); echo "reused"; }'
 readonly THEME_STATUS_CODE='echo wp_json_encode( array( "active_theme_exists" => wp_get_theme()->exists() ) );'
@@ -18,14 +18,14 @@ case "$WCPAY_RUNTIME" in
 		readonly STORE_DIR="${E2E_WOOPAYMENTS_CLIENT_STORE_DIR:?E2E_WOOPAYMENTS_CLIENT_STORE_DIR is required}"
 		readonly STORE_URL="${E2E_WOOPAYMENTS_CLIENT_STORE_URL:-http://localhost:8082}"
 		readonly EXPECTED_RUNTIME_OWNER='extension'
-		readonly EXPECTED_NATIVE_ENABLED='false'
+		readonly EXPECTED_BUILTIN_ENABLED='false'
 		;;
 	native)
 		readonly STORE_NAME='native'
 		readonly STORE_DIR="${E2E_WOOPAYMENTS_NATIVE_STORE_DIR:?E2E_WOOPAYMENTS_NATIVE_STORE_DIR is required}"
 		readonly STORE_URL="${E2E_WOOPAYMENTS_NATIVE_STORE_URL:-http://store8889.localhost:8889}"
 		readonly EXPECTED_RUNTIME_OWNER='builtin'
-		readonly EXPECTED_NATIVE_ENABLED='true'
+		readonly EXPECTED_BUILTIN_ENABLED='true'
 		readonly WP_ENV_CONFIG="${E2E_WOOPAYMENTS_WP_ENV_CONFIG:?E2E_WOOPAYMENTS_WP_ENV_CONFIG is required}"
 		;;
 	*)
@@ -151,7 +151,7 @@ collect_store_diagnostics() {
 			"$WPCOM_LOCAL_BIN" --json store doctor > "$output_dir/wpcom-store-doctor.json"
 		fi
 		if [[ "$store_name" == 'native' ]]; then
-			run_store_wp "$store_name" --user=1 wc-native-payments status > "$output_dir/native-payments-status.txt"
+			run_store_wp "$store_name" --user=1 wc woopayments status > "$output_dir/native-payments-status.txt"
 			run_store_wp_json "$store_name" --user=1 eval "$NATIVE_RUNTIME_STATUS_CODE" > "$output_dir/runtime-status.json"
 			run_store_wp_json "$store_name" --user=1 eval "$NATIVE_ACCOUNT_REQUEST_CODE" > "$output_dir/account.json"
 		else
@@ -239,10 +239,10 @@ collect_store_diagnostics "$STORE_NAME" "$STORE_DIR"
 runtime_status_path="$DIAGNOSTICS_DIR/$STORE_NAME/runtime-status.json"
 if ! jq -e \
 	--arg owner "$EXPECTED_RUNTIME_OWNER" \
-	--argjson native_enabled "$EXPECTED_NATIVE_ENABLED" \
-	'.runtime_owner == $owner and .native_enabled == $native_enabled' \
+	--argjson builtin_enabled "$EXPECTED_BUILTIN_ENABLED" \
+	'.runtime_owner == $owner and .builtin_enabled == $builtin_enabled' \
 	"$runtime_status_path" > /dev/null; then
-	echo "WooPayments $STORE_NAME readiness requires runtime_owner=$EXPECTED_RUNTIME_OWNER and native_enabled=$EXPECTED_NATIVE_ENABLED." >&2
+	echo "WooPayments $STORE_NAME readiness requires runtime_owner=$EXPECTED_RUNTIME_OWNER and builtin_enabled=$EXPECTED_BUILTIN_ENABLED." >&2
 	exit 1
 fi
 

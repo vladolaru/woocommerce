@@ -1,19 +1,19 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsCliCommand;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCLICommand;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the NativePaymentsCliCommand class.
+ * Tests for the WooPaymentsCLICommand class.
  */
-class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
+class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Expected option key for the native failed-webhook fetch timestamp.
@@ -47,7 +47,7 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, '__return_true' );
 		$this->seed_connected_store();
 
-		$lines = wc_get_container()->get( NativePaymentsCliCommand::class )->get_status_lines();
+		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
 		$this->assertStringContainsString( 'Owner: builtin', $text );
@@ -68,7 +68,7 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$this->seed_connected_store();
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 
-		$lines = wc_get_container()->get( NativePaymentsCliCommand::class )->get_status_lines();
+		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
 		$this->assertStringContainsString( 'Multi-currency: enabled (rate provider: woopayments, unavailable)', $text );

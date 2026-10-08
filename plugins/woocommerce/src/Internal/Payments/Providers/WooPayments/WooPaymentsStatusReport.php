@@ -242,10 +242,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
-			'native_enabled'          => $this->arbiter->is_native_runtime_enabled(),
-			'native_enabled_source'   => $this->get_native_enabled_source(),
-			'native_enabled_filter'   => NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
-			'native_enabled_note'     => $this->get_native_enabled_note(),
+			'builtin_enabled'         => $this->arbiter->is_native_runtime_enabled(),
+			'builtin_enabled_source'  => $this->get_native_enabled_source(),
+			'builtin_enabled_filter'  => NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED,
+			'builtin_enabled_note'    => $this->get_native_enabled_note(),
 			'preflight_failures'      => $this->get_preflight_failures(),
 			'account_id'              => $this->get_account_service()->get_account_id(),
 			'account_connected'       => $account_connected,
@@ -287,20 +287,20 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			),
 			'native_enabled'               => array(
 				'label' => __( 'Native runtime enabled', 'woocommerce' ),
-				'value' => $this->format_enabled( (bool) $data['native_enabled'] ),
+				'value' => $this->format_enabled( (bool) $data['builtin_enabled'] ),
 			),
 			'native_enabled_filter'        => array(
 				'label' => __( 'Native enabled filter', 'woocommerce' ),
 				'value' => sprintf(
 					/* translators: 1: filter name, 2: resolution source. */
 					__( '%1$s (source: %2$s)', 'woocommerce' ),
-					(string) $data['native_enabled_filter'],
-					(string) $data['native_enabled_source']
+					(string) $data['builtin_enabled_filter'],
+					(string) $data['builtin_enabled_source']
 				),
 			),
 			'native_enabled_note'          => array(
 				'label' => __( 'Native enabled note', 'woocommerce' ),
-				'value' => (string) $data['native_enabled_note'],
+				'value' => (string) $data['builtin_enabled_note'],
 			),
 			'preflight_failures'           => array(
 				'label' => __( 'Cutover preflight failures', 'woocommerce' ),

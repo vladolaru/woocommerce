@@ -307,10 +307,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$data = $this->get_sut()->get_status_data();
 
 		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $data['runtime_owner'] );
-		$this->assertTrue( $data['native_enabled'] );
-		$this->assertSame( 'filter', $data['native_enabled_source'] );
-		$this->assertSame( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $data['native_enabled_filter'] );
-		$this->assertStringContainsString( 'mu-plugin', $data['native_enabled_note'] );
+		$this->assertTrue( $data['builtin_enabled'] );
+		$this->assertSame( 'filter', $data['builtin_enabled_source'] );
+		$this->assertSame( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $data['builtin_enabled_filter'] );
+		$this->assertStringContainsString( 'mu-plugin', $data['builtin_enabled_note'] );
 		$this->assertSame( 'acct_native_test', $data['account_id'] );
 		$this->assertTrue( $data['account_connected'] );
 		$this->assertTrue( $data['gateway_enabled'] );

@@ -1,24 +1,23 @@
 <?php
 /**
- * NativePaymentsCliCommand class file.
+ * WooPaymentsCLICommand class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use WP_CLI;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Read-only WP-CLI diagnostics for native payments ownership.
+ * Prints the WooPayments status report as `wp wc woopayments status`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class NativePaymentsCliCommand {
+class WooPaymentsCLICommand {
 
 	/**
 	 * WooPayments status report.
@@ -39,11 +38,11 @@ class NativePaymentsCliCommand {
 	}
 
 	/**
-	 * Print native payments status.
+	 * Print the WooPayments status.
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp wc-native-payments status
+	 *     wp wc woopayments status
 	 *
 	 * @param array<int,string>        $args Positional args.
 	 * @param array<string,string|int> $assoc_args Associative args.
@@ -58,7 +57,7 @@ class NativePaymentsCliCommand {
 	}
 
 	/**
-	 * Get formatted native payments status lines.
+	 * Get the formatted status lines.
 	 *
 	 * @return string[]
 	 */
@@ -76,12 +75,12 @@ class NativePaymentsCliCommand {
 			'Owner: ' . (string) $data['runtime_owner'],
 			sprintf(
 				'Native enabled: %s',
-				(bool) $data['native_enabled'] ? 'yes' : 'no'
+				(bool) $data['builtin_enabled'] ? 'yes' : 'no'
 			),
 			sprintf(
 				'Filter: %s (source: %s)',
-				(string) $data['native_enabled_filter'],
-				(string) $data['native_enabled_source']
+				(string) $data['builtin_enabled_filter'],
+				(string) $data['builtin_enabled_source']
 			),
 			'Preflight failures: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
 			sprintf(
@@ -95,7 +94,7 @@ class NativePaymentsCliCommand {
 			'WooPay: ' . ( (bool) $data['woopay']['enabled'] ? 'enabled' : 'disabled' ) . ' (' . ( empty( $woopay_locations ) ? 'no locations enabled' : implode( ', ', $woopay_locations ) ) . ')',
 			'Multi-currency: ' . ( ! empty( $multi_currency['enabled'] ) ? 'enabled' : 'disabled' ) . ' (rate provider: ' . $rate_provider . ', ' . $rate_available . ')',
 			'Last webhook fetch: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
-			'Note: ' . (string) $data['native_enabled_note'],
+			'Note: ' . (string) $data['builtin_enabled_note'],
 		);
 	}
 }
