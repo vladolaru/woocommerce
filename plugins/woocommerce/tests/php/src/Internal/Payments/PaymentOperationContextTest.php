@@ -3,22 +3,22 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the PaymentContext class.
+ * Tests for the PaymentOperationContext class.
  */
-class PaymentContextTest extends WC_Unit_Test_Case {
+class PaymentOperationContextTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox PaymentContext exposes neutral order, gateway, payment, and provider payload data.
+	 * @testdox PaymentOperationContext exposes neutral order, gateway, payment, and provider payload data.
 	 */
 	public function test_exposes_neutral_payment_context_data(): void {
 		$order = wc_create_order();
 
-		$context = new PaymentContext(
+		$context = new PaymentOperationContext(
 			$order,
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'card',
@@ -45,7 +45,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 	public function test_checkout_factory_preserves_payment_and_provider_data(): void {
 		$order = wc_create_order();
 
-		$context = PaymentContext::for_checkout(
+		$context = PaymentOperationContext::for_checkout(
 			$order,
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			'pm_123',
@@ -70,7 +70,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 	public function test_refund_factory_exposes_amount_and_reason(): void {
 		$order = wc_create_order();
 
-		$context = PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 7.25, 'Requested by customer' );
+		$context = PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 7.25, 'Requested by customer' );
 
 		$this->assertSame(
 			array(
@@ -88,7 +88,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 	public function test_capture_and_cancel_factories_expose_provider_data(): void {
 		$order = wc_create_order();
 
-		$capture = PaymentContext::for_capture(
+		$capture = PaymentOperationContext::for_capture(
 			$order,
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			4.25,
@@ -96,7 +96,7 @@ class PaymentContextTest extends WC_Unit_Test_Case {
 				'include_level3' => true,
 			)
 		);
-		$cancel  = PaymentContext::for_cancel(
+		$cancel  = PaymentOperationContext::for_cancel(
 			$order,
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(

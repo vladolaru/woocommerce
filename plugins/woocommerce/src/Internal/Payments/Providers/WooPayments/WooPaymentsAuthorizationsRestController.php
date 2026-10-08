@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -253,8 +253,8 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		$this->add_fraud_outcome_manual_entry( $order, 'capture' === $action ? 'approve' : 'block' );
 
 		$outcome = 'capture' === $action
-			? $this->processing_service->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $capture_amount ), $this->provider )
-			: $this->processing_service->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
+			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $capture_amount ), $this->provider )
+			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
 
 		// The merchant's audit entry is kept whatever the platform answered: the client's capture and cancel save the order on
 		// failure too (class-wc-payment-gateway-wcpay.php capture_charge and cancel_authorization).

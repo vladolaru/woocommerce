@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -581,11 +581,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Record the stock decision, then answer as the recording service does.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return PaymentOutcome
 			 */
-			public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->reduces_stock = (bool) apply_filters( 'woocommerce_payment_complete_reduce_order_stock', true, $context->get_order_id() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 				return parent::process_checkout_outcome( $context, $provider );
 			}

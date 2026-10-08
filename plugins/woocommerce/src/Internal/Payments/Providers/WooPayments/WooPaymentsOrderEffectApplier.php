@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -89,12 +89,12 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Apply a typed WooPayments effect plan.
 	 *
-	 * @param PaymentContext             $context Payment context.
+	 * @param PaymentOperationContext    $context Payment context.
 	 * @param PaymentOutcome             $outcome Provider outcome.
 	 * @param WooPaymentsOrderEffectPlan $plan    WooPayments effect plan.
 	 * @return PaymentOutcome
 	 */
-	public function apply( PaymentContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+	public function apply( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				if ( $plan->should_apply_token_effects() ) {
@@ -221,12 +221,12 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Enrich an outcome for lifecycle application without persisting order effects.
 	 *
-	 * @param PaymentContext             $context Payment context.
+	 * @param PaymentOperationContext    $context Payment context.
 	 * @param PaymentOutcome             $outcome Provider outcome.
 	 * @param WooPaymentsOrderEffectPlan $plan    WooPayments effect plan.
 	 * @return PaymentOutcome
 	 */
-	public function enrich_outcome_for_lifecycle( PaymentContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
+	public function enrich_outcome_for_lifecycle( PaymentOperationContext $context, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): PaymentOutcome {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				return $this->merge_effect_data_into_outcome(
@@ -901,12 +901,12 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Apply saved or newly created token effects.
 	 *
-	 * @param PaymentContext $context      Payment context.
-	 * @param PaymentOutcome $outcome      Provider outcome.
-	 * @param bool           $is_recurring Whether recurring token persistence is required.
+	 * @param PaymentOperationContext $context      Payment context.
+	 * @param PaymentOutcome          $outcome      Provider outcome.
+	 * @param bool                    $is_recurring Whether recurring token persistence is required.
 	 * @return array{outcome:PaymentOutcome,payment_method_details:array<string,mixed>}
 	 */
-	private function apply_token_effects( PaymentContext $context, PaymentOutcome $outcome, bool $is_recurring ): array {
+	private function apply_token_effects( PaymentOperationContext $context, PaymentOutcome $outcome, bool $is_recurring ): array {
 		$payment_data      = $context->get_payment_data();
 		$payment_method_id = $outcome->get_payment_method_id();
 		$customer_id       = $outcome->get_customer_id();

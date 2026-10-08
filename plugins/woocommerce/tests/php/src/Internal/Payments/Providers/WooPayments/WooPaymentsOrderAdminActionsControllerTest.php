@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
@@ -326,7 +326,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service->expects( $this->once() )
 			->method( 'capture' )
 			->willReturnCallback(
-				static function ( PaymentContext $context ) use ( &$last_capture_context ): PaymentOutcome {
+				static function ( PaymentOperationContext $context ) use ( &$last_capture_context ): PaymentOutcome {
 					$last_capture_context = $context;
 					$context->get_order()->add_order_note( 'Shared capture success note.' );
 					$context->get_order()->update_meta_data( '_intention_status', 'succeeded' );
@@ -341,7 +341,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
 		do_action( 'woocommerce_order_action_capture_charge', $order );
 
-		$this->assertInstanceOf( PaymentContext::class, $last_capture_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $last_capture_context );
 		$this->assertSame( $order->get_id(), $last_capture_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_capture_context->get_gateway_id() );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
@@ -360,7 +360,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service->expects( $this->once() )
 			->method( 'cancel' )
 			->willReturnCallback(
-				static function ( PaymentContext $context ) use ( &$last_cancel_context ): PaymentOutcome {
+				static function ( PaymentOperationContext $context ) use ( &$last_cancel_context ): PaymentOutcome {
 					$last_cancel_context = $context;
 
 					return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_cancel' );
@@ -372,7 +372,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
 		do_action( 'woocommerce_order_action_cancel_authorization', $order );
 
-		$this->assertInstanceOf( PaymentContext::class, $last_cancel_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $last_cancel_context );
 		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_cancel_context->get_gateway_id() );
 	}
@@ -387,7 +387,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service->expects( $this->once() )
 			->method( 'capture' )
 			->willReturnCallback(
-				static function ( PaymentContext $context ) use ( &$last_capture_context ): PaymentOutcome {
+				static function ( PaymentOperationContext $context ) use ( &$last_capture_context ): PaymentOutcome {
 					$last_capture_context = $context;
 
 					return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture' );
@@ -407,7 +407,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertInstanceOf( PaymentContext::class, $last_capture_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $last_capture_context );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
 		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
 	}
@@ -479,7 +479,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service->expects( $this->once() )
 			->method( 'cancel' )
 			->willReturnCallback(
-				static function ( PaymentContext $context ) use ( &$last_cancel_context ): PaymentOutcome {
+				static function ( PaymentOperationContext $context ) use ( &$last_cancel_context ): PaymentOutcome {
 					$last_cancel_context = $context;
 
 					return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_cancel' );
@@ -499,7 +499,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertInstanceOf( PaymentContext::class, $last_cancel_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $last_cancel_context );
 		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
 	}
 
@@ -524,39 +524,39 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * @param PaymentContext $context       Payment context.
-			 * @param string         $operation_key Idempotency key.
+			 * @param PaymentOperationContext $context       Payment context.
+			 * @param string                  $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 				return $this->recorder->cancel( $context, $operation_key );
 			}
 
 			/**
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 				return $this->recorder->refund( $context, $idempotency_key );
 			}
 
 			/**
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation.
 			 * @return PaymentOutcome
 			 */
-			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 				return $outcome;
 			}
 
 			/**
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation.
 			 */
-			public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+			public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 			}
 		};
 		$this->sut          = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
@@ -788,7 +788,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		// provider/adapter/API client stack (fed the same recorded response again),
 		// and prove the client's note-once dedup (os:1663) for real.
 		$second_outcome = wc_get_container()->get( PaymentProcessingService::class )->capture(
-			PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (float) $order->get_total() ),
+			PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (float) $order->get_total() ),
 			$provider
 		);
 
@@ -891,11 +891,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the fixed capture outcome.
 			 *
-			 * @param PaymentContext $context       Payment context.
-			 * @param string         $operation_key Idempotency key.
+			 * @param PaymentOperationContext $context       Payment context.
+			 * @param string                  $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 				unset( $context, $operation_key );
 
 				return $this->fixed_outcome;
@@ -904,11 +904,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the fixed cancel outcome.
 			 *
-			 * @param PaymentContext $context       Payment context.
-			 * @param string         $operation_key Idempotency key.
+			 * @param PaymentOperationContext $context       Payment context.
+			 * @param string                  $operation_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 				unset( $context, $operation_key );
 
 				return $this->fixed_outcome;
@@ -917,12 +917,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Preserve the fixed outcome through provider-effect application.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
 			 * @return PaymentOutcome
 			 */
-			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 				unset( $context, $operation );
 
 				return $outcome;
@@ -931,11 +931,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Skip post-lifecycle effects for the fixed outcome.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
 			 */
-			public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+			public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 				unset( $context, $outcome, $operation );
 			}
 		};

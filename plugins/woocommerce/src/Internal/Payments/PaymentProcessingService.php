@@ -65,12 +65,12 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return array<string,string>
 	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 */
-	public function process_checkout( PaymentContext $context, ProviderInterface $provider ): array {
+	public function process_checkout( PaymentOperationContext $context, ProviderInterface $provider ): array {
 		$outcome = $this->process_checkout_outcome( $context, $provider );
 
 		return $this->format_checkout_result( $context, $context->get_order(), $outcome );
@@ -84,13 +84,13 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return PaymentOutcome
 	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 * @throws Throwable When applying an unreferenced unsuccessful charge outcome fails.
 	 */
-	public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+	public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
 		$idempotency_key = $this->idempotency->mint_attempt_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
@@ -349,12 +349,12 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return bool|WP_Error
 	 * @throws Throwable When applying an unreferenced unsuccessful refund outcome fails.
 	 */
-	public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
+	public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
@@ -631,11 +631,11 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 		return $this->run_provider_order_operation( $context, $provider, 'capture' );
 	}
 
@@ -644,23 +644,23 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 		return $this->run_provider_order_operation( $context, $provider, 'cancel' );
 	}
 
 	/**
 	 * Charge a provider and normalize exceptions.
 	 *
-	 * @param PaymentContext    $context         Payment context.
-	 * @param ProviderInterface $provider        Provider.
-	 * @param string            $idempotency_key Key minted fresh for this payment attempt.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param ProviderInterface       $provider        Provider.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
-	private function charge_provider( PaymentContext $context, ProviderInterface $provider, string $idempotency_key ): PaymentOutcome {
+	private function charge_provider( PaymentOperationContext $context, ProviderInterface $provider, string $idempotency_key ): PaymentOutcome {
 		try {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
@@ -674,11 +674,11 @@ class PaymentProcessingService {
 	/**
 	 * Tell whether a zero-total checkout still needs a provider-owned setup operation.
 	 *
-	 * @param PaymentContext    $context  Payment context.
-	 * @param ProviderInterface $provider Provider.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param ProviderInterface       $provider Provider.
 	 * @return bool
 	 */
-	private function should_call_provider_for_zero_total_checkout( PaymentContext $context, ProviderInterface $provider ): bool {
+	private function should_call_provider_for_zero_total_checkout( PaymentOperationContext $context, ProviderInterface $provider ): bool {
 		if ( ! $provider->supports_zero_amount_setup( $context ) ) {
 			return false;
 		}
@@ -689,10 +689,10 @@ class PaymentProcessingService {
 	/**
 	 * Tell whether checkout context carries an existing saved payment token.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return bool
 	 */
-	private function has_saved_payment_token( PaymentContext $context ): bool {
+	private function has_saved_payment_token( PaymentOperationContext $context ): bool {
 		$payment_data  = $context->get_payment_data();
 		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 
@@ -702,13 +702,13 @@ class PaymentProcessingService {
 	/**
 	 * Run a capture/cancel provider operation under the shared order lock.
 	 *
-	 * @param PaymentContext    $context   Payment context.
-	 * @param ProviderInterface $provider  Provider.
-	 * @param string            $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param ProviderInterface       $provider  Provider.
+	 * @param string                  $operation Operation name.
 	 * @return PaymentOutcome
 	 * @throws Throwable When applying an unreferenced unsuccessful provider outcome fails.
 	 */
-	private function run_provider_order_operation( PaymentContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
+	private function run_provider_order_operation( PaymentOperationContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
 		$order         = $context->get_order();
 		$amount        = $context->get_amount() ?? (float) $order->get_total();
 		$operation_key = $this->idempotency->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
@@ -812,13 +812,13 @@ class PaymentProcessingService {
 	/**
 	 * Apply optional provider-owned effects after transport and before the generic lifecycle.
 	 *
-	 * @param PaymentContext    $context   Payment context.
-	 * @param PaymentOutcome    $outcome   Provider outcome.
-	 * @param ProviderInterface $provider  Provider.
-	 * @param string            $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Provider outcome.
+	 * @param ProviderInterface       $provider  Provider.
+	 * @param string                  $operation Operation name.
 	 * @return PaymentOutcome
 	 */
-	private function apply_provider_operation_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): PaymentOutcome {
+	private function apply_provider_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): PaymentOutcome {
 		if ( ! $provider instanceof ProviderOperationEffectApplierInterface ) {
 			return $outcome;
 		}
@@ -829,12 +829,12 @@ class PaymentProcessingService {
 	/**
 	 * Apply optional provider-owned effects after the generic lifecycle.
 	 *
-	 * @param PaymentContext    $context   Payment context.
-	 * @param PaymentOutcome    $outcome   Applied provider outcome.
-	 * @param ProviderInterface $provider  Provider.
-	 * @param string            $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Applied provider outcome.
+	 * @param ProviderInterface       $provider  Provider.
+	 * @param string                  $operation Operation name.
 	 */
-	private function apply_provider_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): void {
+	private function apply_provider_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): void {
 		if ( ! $provider instanceof ProviderPostLifecycleEffectApplierInterface ) {
 			return;
 		}
@@ -1083,12 +1083,12 @@ class PaymentProcessingService {
 	/**
 	 * Format a WooCommerce checkout result from an outcome.
 	 *
-	 * @param PaymentContext $context Payment context.
-	 * @param WC_Order       $order   Order object.
-	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param WC_Order                $order   Order object.
+	 * @param PaymentOutcome          $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
-	private function format_checkout_result( PaymentContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
+	private function format_checkout_result( PaymentOperationContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			return array(
 				// 'failure', not 'fail'. WooCommerce recognizes exactly

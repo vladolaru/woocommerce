@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -103,7 +103,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_adapter( $gateway );
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_123' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_123' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertSame( '#wcpay-confirm-pi:123:secret:nonce', $outcome->get_redirect_url() );
@@ -126,7 +126,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
 		$this->assertSame( 'https://example.test/redirect', $outcome->get_redirect_url() );
@@ -150,7 +150,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway );
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_manual' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_manual' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
 		$this->assertSame( 'pi_manual', $outcome->get_provider_payment_id() );
@@ -171,7 +171,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
 		$this->assertArrayHasKey( 'checkout_redirect', $outcome->get_data() );
@@ -191,7 +191,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'legacy_process_payment_failed', $outcome->get_data()['error_code'] );
@@ -411,7 +411,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -473,7 +473,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -525,7 +525,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 
@@ -588,9 +588,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_reused' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
-		$ambiguous_outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_reused' ), 'key_a' );
+		$ambiguous_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_reused' ), 'key_a' );
 		$sut->finalize_charge_idempotency_key( $order, $ambiguous_outcome );
-		$sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_reused' ), 'key_b' );
+		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_reused' ), 'key_b' );
 
 		$this->assertSame( array( 'key_a', 'key_a' ), $api_client->keys );
 	}
@@ -633,9 +633,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_new_key' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
-		$declined_outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_d' );
+		$declined_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_d' );
 		$sut->finalize_charge_idempotency_key( $order, $declined_outcome );
-		$success_outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_e' );
+		$success_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_e' );
 		$sut->finalize_charge_idempotency_key( $order, $success_outcome );
 		$fresh_order = wc_get_order( $order->get_id() );
 
@@ -686,12 +686,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_after_decline' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
-		$sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_after_decline' ), 'key_declined' );
+		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_after_decline' ), 'key_declined' );
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
 		$this->assertSame( '', $fresh_order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 
-		$sut->charge( PaymentContext::for_checkout( $fresh_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_after_decline' ), 'key_next' );
+		$sut->charge( PaymentOperationContext::for_checkout( $fresh_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_after_decline' ), 'key_next' );
 
 		$this->assertSame( array( 'key_declined', 'key_next' ), $api_client->keys );
 	}
@@ -744,7 +744,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut    = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
 		$logger = RecordingWcLogger::install();
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_card' ), 'key_fresh' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_card' ), 'key_fresh' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$warnings = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_contains( $line[1], 'charge idempotency key' ) ) );
@@ -845,10 +845,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_kept_key' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
 
-		$failed = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_kept_key' ), 'key_first' );
+		$failed = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_kept_key' ), 'key_first' );
 		$sut->finalize_charge_idempotency_key( $order, $failed );
 		$attempts = $http_client->request_count;
-		$sut->charge( PaymentContext::for_checkout( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_kept_key' ), 'key_resubmit' );
+		$sut->charge( PaymentOperationContext::for_checkout( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_kept_key' ), 'key_resubmit' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $failed->get_status() );
 		$this->assertArrayNotHasKey( '_wcpay_definitive_charge_failure', $failed->get_data() );
@@ -892,8 +892,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_different_order' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
-		$sut->charge( PaymentContext::for_checkout( $first_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_a' );
-		$sut->charge( PaymentContext::for_checkout( $second_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_c' );
+		$sut->charge( PaymentOperationContext::for_checkout( $first_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_a' );
+		$sut->charge( PaymentOperationContext::for_checkout( $second_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_c' );
 
 		$this->assertSame( array( 'key_a', 'key_c' ), $api_client->keys );
 	}
@@ -933,7 +933,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_setup_failure' );
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_setup_failure' ), 'key_setup' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_setup_failure' ), 'key_setup' );
 		$sut->finalize_charge_idempotency_key( $order, $outcome );
 		$fresh_order = wc_get_order( $order->get_id() );
 
@@ -964,7 +964,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		try {
-			$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_pre_dispatch_failure' ), 'key_pre_dispatch' );
+			$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_pre_dispatch_failure' ), 'key_pre_dispatch' );
 			$sut->finalize_charge_idempotency_key( $order, $outcome );
 			$fresh_order = wc_get_order( $order->get_id() );
 
@@ -2377,7 +2377,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @return PaymentOutcome
 	 */
 	private function charge_attempt( WooPaymentsProviderGatewayAdapter $sut, WC_Order $order, string $pm, string $attempt_key, array $provider_data = array(), array $payment_data = array() ): PaymentOutcome {
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $pm, $payment_data, $provider_data ), $attempt_key );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $pm, $payment_data, $provider_data ), $attempt_key );
 		$sut->finalize_charge_idempotency_key( $order, $outcome );
 
 		return $outcome;
@@ -2763,7 +2763,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -2812,7 +2812,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -2865,7 +2865,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
 
@@ -2931,7 +2931,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order   = $this->create_woopayments_order( '25.00' );
 		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$meta    = $outcome->get_data()[ PaymentOutcome::DATA_META ] ?? array();
 
 		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'With the AVS rule enabled, an incorrect_zip decline is an AVS block.' );
@@ -2948,7 +2948,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$order   = $this->create_woopayments_order( '25.00' );
 		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
 
@@ -3053,7 +3053,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
@@ -3119,7 +3119,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_platform',
@@ -3202,7 +3202,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			null,
 			$this->create_account_service( false, array( 'manual_capture' => 'yes' ) )
 		);
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_manual_native' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_manual_native' ), 'key_charge' );
 
 		$this->assertSame( 'manual', $api_client->last_request_data['capture_method'] ?? null );
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
@@ -3275,7 +3275,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_notification' );
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
-		$sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_notification' ), 'key_notification' );
+		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_notification' ), 'key_notification' );
 
 		$expected_note = sprintf(
 			'The customer must authorize this payment via a notification sent to them by the bank which issued their card. The authorization must be completed before %1$s at %2$s, when the charge will be attempted.',
@@ -3337,7 +3337,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_no_notification' );
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
-		$sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_no_notification' ), 'key_no_notification' );
+		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_no_notification' ), 'key_no_notification' );
 
 		$notes    = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$matching = array_filter(
@@ -3418,7 +3418,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$this->create_account_service( false, array( 'manual_capture' => 'yes' ) )
 		);
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_renewal_native',
@@ -3482,7 +3482,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
@@ -3573,7 +3573,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_recreated' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'cus_recreated', $outcome->get_customer_id() );
@@ -3640,7 +3640,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_change',
@@ -3675,7 +3675,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$this->create_real_customer_service( $api_client )
 		);
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_change',
@@ -3708,7 +3708,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_ordinary' ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_ordinary' ),
 			'key_ordinary_real'
 		);
 
@@ -3748,7 +3748,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),
 			'key_recovery_real'
 		);
 
@@ -3858,7 +3858,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -3942,7 +3942,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -4023,7 +4023,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
 				'pm_sepa'
@@ -4136,7 +4136,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $method,
 				'pm_' . $method
@@ -4254,7 +4254,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_card'
@@ -4343,7 +4343,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		try {
 			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service )
-				->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ), 'key_charge' );
+				->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ), 'key_charge' );
 		} finally {
 			remove_filter( 'clean_url', $clean_url, 10 );
 		}
@@ -4428,7 +4428,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -4511,7 +4511,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -4601,7 +4601,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -4724,7 +4724,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ) ), $api_client, $customer_service, null, $account_service );
 		$sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$this->create_woopayments_order( '50.00' ),
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'ctoken_express',
@@ -4787,7 +4787,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service, $account_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -4940,7 +4940,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_geolocate_ip', $geolocate_filter );
 		try {
 			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, $token_service )->charge(
-				PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method, $payment_data, $provider_data ),
+				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method, $payment_data, $provider_data ),
 				'key_subscription_composition'
 			);
 		} finally {
@@ -5074,7 +5074,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -5188,7 +5188,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$this->create_account_service( false, array( 'manual_capture' => 'yes' ) )
 		);
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -5232,7 +5232,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			new WooPaymentsPaymentMethodRegistry()
 		);
 		$request = $request_builder->charge_request_data(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' ),
 			'pm_sepa',
 			'cus_plugin_subscription',
 			false
@@ -5321,7 +5321,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		try {
 			$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 			$outcome = $sut->charge(
-				PaymentContext::for_checkout(
+				PaymentOperationContext::for_checkout(
 					$order,
 					WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 					'',
@@ -5420,7 +5420,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$outcome                  = $this->create_adapter( $gateway, $api_client, $customer_service )->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -5597,7 +5597,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				'woocommerce_payments_sepa_debit',
 				'',
@@ -5694,7 +5694,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_request',
@@ -5786,7 +5786,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_request',
@@ -5840,7 +5840,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_declined' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_declined' ), 'key_declined' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_declined' ), 'key_declined' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -5918,7 +5918,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_rec1' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), 'key_rec1' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), 'key_rec1' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -6025,7 +6025,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1_checkout' ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1_checkout' ),
 			$provider
 		);
 
@@ -6548,7 +6548,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_settlement_exchange_rate_order_meta' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, null, $order_data_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_before_enrichment' ), 'key_before_enrichment' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_before_enrichment' ), 'key_before_enrichment' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'pi_before_enrichment', $outcome->get_provider_payment_id() );
@@ -6590,7 +6590,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -6835,7 +6835,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -6903,7 +6903,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_zero_action',
@@ -6975,7 +6975,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
 		$outcome = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_platform',
@@ -7067,7 +7067,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut          = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
 		$outcome      = $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_zero',
@@ -7101,10 +7101,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$sut     = $this->create_adapter( $gateway );
 
-		$success = $sut->refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
+		$success = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$gateway->refund_result = new WP_Error( 'refund_failed', 'Refund failed.' );
-		$failure                = $sut->refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
+		$failure                = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $success->get_status() );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $failure->get_status() );
@@ -7143,7 +7143,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
+		$outcome = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 're_native', $outcome->get_provider_payment_id() );
@@ -7182,7 +7182,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$outcome = $this->create_adapter( $gateway, $api_client )->refund(
-			PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ),
+			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ),
 			'key_refund_effect_boundary'
 		);
 
@@ -7223,7 +7223,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
+		$outcome = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 're_failed', $outcome->get_provider_payment_id() );
@@ -7290,7 +7290,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider              = $this->create_provider_over_fake_transport( $http_client, $account_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
-			PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (float) $amount, $reason ),
+			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (float) $amount, $reason ),
 			$provider
 		);
 
@@ -7362,7 +7362,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$provider               = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( true ) );
 		$processing_service     = wc_get_container()->get( PaymentProcessingService::class );
-		$context                = PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' );
+		$context                = PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' );
 
 		$failed_refund = $this->create_local_refund_row( $order );
 		$first_result  = $processing_service->process_refund( $context, $provider );
@@ -7573,7 +7573,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa' ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa' ),
 			$provider
 		);
 
@@ -7703,7 +7703,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service, $token_service, $order_effect_applier );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa', array( 'save_payment_method' => true ) ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa', array( 'save_payment_method' => true ) ),
 			$provider
 		);
 
@@ -7773,7 +7773,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_checkout(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'',
@@ -7893,7 +7893,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider              = $this->create_provider_over_fake_transport( $http_client, $account_service );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
-			PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 100.00, $reason ),
+			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 100.00, $reason ),
 			$provider
 		);
 		$this->assertTrue( $result );
@@ -7968,7 +7968,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_adapter( $gateway );
 
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'pi_captured', $outcome->get_provider_payment_id() );
@@ -7999,7 +7999,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_adapter( $gateway, null, null, null, $this->create_account_service( false ) );
 
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_live' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_live' );
 
 		$this->assertSame( 'prod', $outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
 		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
@@ -8022,7 +8022,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_adapter( $gateway );
 
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_failed' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_failed' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertNotEmpty( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
@@ -8068,7 +8068,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
@@ -8100,7 +8100,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$outcome = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
-			->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, null, $provider_data ), 'key_capture_fee' );
+			->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, null, $provider_data ), 'key_capture_fee' );
 
 		$plan = $outcome->get_effect_plan();
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
@@ -8156,7 +8156,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
@@ -8227,7 +8227,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		try {
 			$this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
-				->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount ), 'key_capture_level3' );
+				->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount ), 'key_capture_level3' );
 		} finally {
 			wc_get_container()->reset_replacement( WooPaymentsLevel3Service::class );
 		}
@@ -8318,7 +8318,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_settlement_exchange_rate_order_meta' );
 
 		$sut     = $this->create_adapter( $gateway, $api_client, null, null, null, $order_data_service );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
@@ -8387,7 +8387,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8434,7 +8434,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status(), 'A transport failure on an intent the provider already canceled is a completed cancel, as in the plugin.' );
 		$plan = $outcome->get_effect_plan();
@@ -8472,7 +8472,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$plan = $outcome->get_effect_plan();
@@ -8503,7 +8503,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertNull( $outcome->get_effect_plan() );
@@ -8545,7 +8545,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$plan = $outcome->get_effect_plan();
@@ -8575,7 +8575,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$plan = $outcome->get_effect_plan();
@@ -8610,7 +8610,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'failed', $outcome->get_effect_plan()->get_provider_result()['status'] );
@@ -8694,7 +8694,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			)
 		);
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
@@ -8738,7 +8738,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->capture( PaymentContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
@@ -8760,7 +8760,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_adapter( $gateway );
 
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 		$this->assertSame( 'pi_canceled', $outcome->get_provider_payment_id() );
@@ -8804,7 +8804,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
@@ -8842,7 +8842,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$outcome = $this->create_adapter( $gateway, $api_client )->cancel(
-			PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 			'key_cancel_failed'
 		);
 
@@ -8884,7 +8884,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter( $gateway, $api_client );
-		$outcome = $sut->cancel( PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
+		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
 		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
@@ -8897,7 +8897,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order();
 		$sut   = $this->create_adapter( null );
 
-		$outcome = $sut->charge( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'] );
@@ -8958,7 +8958,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ) ), $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		return $sut->charge(
-			PaymentContext::for_checkout(
+			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'pm_platform',

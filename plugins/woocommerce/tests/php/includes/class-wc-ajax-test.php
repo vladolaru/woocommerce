@@ -10,7 +10,7 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Orders\CouponsController;
 use Automattic\WooCommerce\Internal\Orders\TaxesController;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -3393,7 +3393,7 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 				}
 
 				return wc_get_container()->get( PaymentProcessingService::class )->process_refund(
-					PaymentContext::for_refund( $order, $this->id, (float) $amount, (string) $reason ),
+					PaymentOperationContext::for_refund( $order, $this->id, (float) $amount, (string) $reason ),
 					$this->provider
 				);
 			}

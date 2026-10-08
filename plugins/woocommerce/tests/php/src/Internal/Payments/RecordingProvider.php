@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
@@ -88,10 +88,10 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Tell whether a zero-total checkout reaches charge().
 	 *
-	 * @param PaymentContext $context Checkout payment context.
+	 * @param PaymentOperationContext $context Checkout payment context.
 	 * @return bool
 	 */
-	public function supports_zero_amount_setup( PaymentContext $context ): bool {
+	public function supports_zero_amount_setup( PaymentOperationContext $context ): bool {
 		unset( $context );
 
 		return $this->supports_zero_amount_setup;
@@ -138,11 +138,11 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Charge an order through the provider.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Deterministic idempotency key.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Deterministic idempotency key.
 	 * @return PaymentOutcome
 	 */
-	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		++$this->charge_calls;
 		$this->last_idempotency_key = $idempotency_key;
 
@@ -152,11 +152,11 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Capture a previously authorized payment through the provider.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Deterministic idempotency key.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Deterministic idempotency key.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		++$this->capture_calls;
 		$this->last_idempotency_key = $operation_key;
 
@@ -166,11 +166,11 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Cancel a previously authorized payment through the provider.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Deterministic idempotency key.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Deterministic idempotency key.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		++$this->cancel_calls;
 		$this->last_idempotency_key = $operation_key;
 
@@ -180,11 +180,11 @@ class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMap
 	/**
 	 * Refund a payment through the provider.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this refund call.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this refund call.
 	 * @return PaymentOutcome
 	 */
-	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		++$this->refund_calls;
 		$this->last_idempotency_key = $idempotency_key;
 

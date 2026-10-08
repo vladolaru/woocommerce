@@ -22,9 +22,9 @@ interface ProviderPostLifecycleEffectApplierInterface {
 	/**
 	 * Apply provider-specific effects after the generic lifecycle has persisted its result.
 	 *
-	 * @param PaymentContext $context   Payment context.
-	 * @param PaymentOutcome $outcome   Applied provider outcome.
-	 * @param string         $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Applied provider outcome.
+	 * @param string                  $operation Operation name.
 	 */
-	public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void;
+	public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void;
 }

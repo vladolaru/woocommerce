@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
@@ -379,10 +379,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * Always true: like client 11.1.0, charge() creates a setup intent only when the payment saves a new
 	 * payment method and otherwise completes the order without an intent (class-wc-payment-gateway-wcpay.php:1688, 1983-2005).
 	 *
-	 * @param PaymentContext $context Checkout payment context.
+	 * @param PaymentOperationContext $context Checkout payment context.
 	 * @return bool
 	 */
-	public function supports_zero_amount_setup( PaymentContext $context ): bool {
+	public function supports_zero_amount_setup( PaymentOperationContext $context ): bool {
 		unset( $context );
 
 		return true;
@@ -474,22 +474,22 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Charge an order through WooPayments.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
-	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		return $this->get_gateway_adapter()->charge( $context, $idempotency_key );
 	}
 
 	/**
 	 * Capture an authorized WooPayments charge.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		$outcome = $this->get_gateway_adapter()->capture( $context, $operation_key );
 		// Plugin 11.1.0 records this after every capture attempt (`WC_Payment_Gateway_WCPay::capture_charge()`).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
@@ -500,34 +500,34 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Cancel an authorized WooPayments charge.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		return $this->get_gateway_adapter()->cancel( $context, $operation_key );
 	}
 
 	/**
 	 * Refund a WooPayments charge.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this refund call.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this refund call.
 	 * @return PaymentOutcome
 	 */
-	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		return $this->get_gateway_adapter()->refund( $context, $idempotency_key );
 	}
 
 	/**
 	 * Apply a request-scoped WooPayments effect plan.
 	 *
-	 * @param PaymentContext $context   Payment context.
-	 * @param PaymentOutcome $outcome   Provider outcome.
-	 * @param string         $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Provider outcome.
+	 * @param string                  $operation Operation name.
 	 * @return PaymentOutcome
 	 */
-	public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 		unset( $operation );
 
 		$plan = $outcome->get_effect_plan();
@@ -544,11 +544,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * After a charge it also retires the order's charge idempotency key once the outcome is definitive,
 	 * through WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key().
 	 *
-	 * @param PaymentContext $context   Payment context.
-	 * @param PaymentOutcome $outcome   Applied provider outcome.
-	 * @param string         $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Applied provider outcome.
+	 * @param string                  $operation Operation name.
 	 */
-	public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+	public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 		$plan = $outcome->get_effect_plan();
 		if (
 			$plan instanceof WooPaymentsOrderEffectPlan

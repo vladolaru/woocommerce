@@ -1,6 +1,6 @@
 <?php
 /**
- * PaymentContext class file.
+ * PaymentOperationContext class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class PaymentContext {
+class PaymentOperationContext {
 
 	/**
 	 * Order being acted on.

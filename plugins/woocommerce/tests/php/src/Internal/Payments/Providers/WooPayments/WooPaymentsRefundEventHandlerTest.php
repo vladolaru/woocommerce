@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
@@ -205,12 +205,12 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				/**
 				 * Apply the real WooPayments refund effects.
 				 *
-				 * @param PaymentContext $context   Payment context.
-				 * @param PaymentOutcome $outcome   Provider outcome.
-				 * @param string         $operation Operation name.
+				 * @param PaymentOperationContext $context   Payment context.
+				 * @param PaymentOutcome          $outcome   Provider outcome.
+				 * @param string                  $operation Operation name.
 				 * @return PaymentOutcome
 				 */
-				public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 					unset( $operation );
 
 					return $this->effect_applier->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_refund( $this->provider_result ) );
@@ -218,7 +218,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			};
 			$processing_service = wc_get_container()->get( PaymentProcessingService::class );
 
-			$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+			$this->assertTrue( $processing_service->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
 			$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 			$synchronous_notes = array_values(
 				array_filter(
@@ -403,12 +403,12 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Apply the real WooPayments refund effects.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
 			 * @return PaymentOutcome
 			 */
-			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 				unset( $operation );
 
 				return $this->effect_applier->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_refund( $this->provider_result ) );
@@ -416,7 +416,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		};
 		$processing_service = wc_get_container()->get( PaymentProcessingService::class );
 
-		$this->assertTrue( $processing_service->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ), $provider ) );
+		$this->assertTrue( $processing_service->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ), $provider ) );
 
 		$synchronous_notes = array_values(
 			array_filter(
@@ -479,12 +479,12 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Apply the real WooPayments refund effects.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
 			 * @return PaymentOutcome
 			 */
-			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 				unset( $operation );
 
 				return $this->effect_applier->apply(
@@ -501,7 +501,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
 
 		$this->sut->process(
 			'charge.refund.updated',

@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -931,7 +931,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		try {
 			$outcome = $this->get_processing_service()->process_checkout_outcome(
-				PaymentContext::for_checkout(
+				PaymentOperationContext::for_checkout(
 					$renewal_order,
 					$this->id,
 					'',
@@ -1852,7 +1852,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $client_error_result;
 		}
 
-		$context                        = PaymentContext::for_checkout(
+		$context                        = PaymentOperationContext::for_checkout(
 			$order,
 			$this->id,
 			$this->get_request_payment_method_id(),
@@ -1952,7 +1952,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$result = $this->get_processing_service()->process_refund(
-			PaymentContext::for_refund( $order, $this->id, $refund_amount, (string) $reason ),
+			PaymentOperationContext::for_refund( $order, $this->id, $refund_amount, (string) $reason ),
 			$this->get_provider()
 		);
 
@@ -2537,12 +2537,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Format a WooCommerce checkout result from an outcome.
 	 *
-	 * @param PaymentContext $context Payment context.
-	 * @param WC_Order       $order   Order object.
-	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param WC_Order                $order   Order object.
+	 * @param PaymentOutcome          $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
-	private static function format_checkout_result( PaymentContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
+	private static function format_checkout_result( PaymentOperationContext $context, WC_Order $order, PaymentOutcome $outcome ): array {
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			return array(
 				'result'         => 'failure',
@@ -2766,12 +2766,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Carry an order-pay save choice across the local confirmation redirect.
 	 *
-	 * @param PaymentContext       $context Payment context.
-	 * @param WC_Order             $order   Order being paid.
-	 * @param array<string,string> $result  Native checkout result.
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param WC_Order                $order   Order being paid.
+	 * @param array<string,string>    $result  Native checkout result.
 	 * @return array<string,string>
 	 */
-	private function maybe_add_order_pay_save_intent_to_confirmation_redirect( PaymentContext $context, WC_Order $order, array $result ): array {
+	private function maybe_add_order_pay_save_intent_to_confirmation_redirect( PaymentOperationContext $context, WC_Order $order, array $result ): array {
 		if (
 			! isset( $_POST['woocommerce_pay'] ) // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			|| ! ( $context->get_payment_data()['save_payment_method'] ?? false )

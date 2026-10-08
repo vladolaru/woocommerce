@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
@@ -120,14 +120,14 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the native WooPayments charge request payload.
 	 *
-	 * @param PaymentContext $context            Payment context.
-	 * @param string         $payment_credential Payment method or confirmation token.
-	 * @param string         $customer_id        Customer ID.
-	 * @param bool           $is_recurring       Whether recurring handling is required.
+	 * @param PaymentOperationContext $context            Payment context.
+	 * @param string                  $payment_credential Payment method or confirmation token.
+	 * @param string                  $customer_id        Customer ID.
+	 * @param bool                    $is_recurring       Whether recurring handling is required.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When an Afterpay order has no usable shipping or billing address.
 	 */
-	public function charge_request_data( PaymentContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
+	public function charge_request_data( PaymentOperationContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
 		$payment_data         = $context->get_payment_data();
 		$provider_data        = $context->get_provider_data();
@@ -285,13 +285,13 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the native WooPayments setup-intent request payload.
 	 *
-	 * @param PaymentContext $context            Payment context.
-	 * @param string         $payment_credential Payment method or confirmation token.
-	 * @param string         $customer_id        Customer ID.
-	 * @param bool           $is_recurring       Whether recurring handling is required.
+	 * @param PaymentOperationContext $context            Payment context.
+	 * @param string                  $payment_credential Payment method or confirmation token.
+	 * @param string                  $customer_id        Customer ID.
+	 * @param bool                    $is_recurring       Whether recurring handling is required.
 	 * @return array<string,mixed>
 	 */
-	public function setup_intent_request_data( PaymentContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
+	public function setup_intent_request_data( PaymentOperationContext $context, string $payment_credential, string $customer_id, bool $is_recurring ): array {
 		$order                = $context->get_order();
 		$provider_data        = $context->get_provider_data();
 		$is_renewal           = ! empty( $provider_data['scheduled_subscription_payment'] );
@@ -424,10 +424,10 @@ class WooPaymentsIntentRequestBuilder {
 	 * The purchase size prefers the live cart and falls back to the order's
 	 * item count, which covers pay-for-order and off-session renewals.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return array<string,mixed>
 	 */
-	private static function fingerprint_metadata( PaymentContext $context ): array {
+	private static function fingerprint_metadata( PaymentOperationContext $context ): array {
 		$provider_data = $context->get_provider_data();
 		$fingerprint   = isset( $provider_data['fingerprint'] ) && is_scalar( $provider_data['fingerprint'] )
 			? (string) $provider_data['fingerprint']
@@ -474,10 +474,10 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Add saved-token payment method type to provider data when one can be resolved.
 	 *
-	 * @param PaymentContext $context Payment context.
-	 * @return PaymentContext
+	 * @param PaymentOperationContext $context Payment context.
+	 * @return PaymentOperationContext
 	 */
-	public function with_saved_payment_token_method_type( PaymentContext $context ): PaymentContext {
+	public function with_saved_payment_token_method_type( PaymentOperationContext $context ): PaymentOperationContext {
 		$payment_data  = $context->get_payment_data();
 		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 		if ( '' === $payment_token || 'new' === $payment_token ) {
@@ -495,7 +495,7 @@ class WooPaymentsIntentRequestBuilder {
 
 		$provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] = $payment_method_type;
 
-		return new PaymentContext(
+		return new PaymentOperationContext(
 			$context->get_order(),
 			$context->get_gateway_id(),
 			$context->get_payment_method_id(),
@@ -508,10 +508,10 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Get the submitted payment method or resolve the selected saved token.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return string
 	 */
-	public function payment_credential_from_context( PaymentContext $context ): string {
+	public function payment_credential_from_context( PaymentOperationContext $context ): string {
 		$payment_data  = $context->get_payment_data();
 		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 
@@ -556,11 +556,11 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Get Stripe payment method types for a native WooPayments request.
 	 *
-	 * @param PaymentContext $context  Payment context.
-	 * @param string         $currency Order currency.
+	 * @param PaymentOperationContext $context  Payment context.
+	 * @param string                  $currency Order currency.
 	 * @return array<int,string>
 	 */
-	private function payment_method_types_for_request( PaymentContext $context, string $currency ): array {
+	private function payment_method_types_for_request( PaymentOperationContext $context, string $currency ): array {
 		$provider_data             = $context->get_provider_data();
 		$saved_payment_method_type = isset( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] ) && is_scalar( $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ] )
 			? (string) $provider_data[ self::PROVIDER_DATA_SAVED_PAYMENT_METHOD_TYPE ]

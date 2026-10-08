@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -171,13 +171,13 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Charge an order through the active WooPayments transport.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
-	 *                                        key on the order and sends the kept key on later attempts until a definitive
-	 *                                        outcome retires it, so a retry after an ambiguous failure replays the request.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
+	 *                                                 key on the order and sends the kept key on later attempts until a definitive
+	 *                                                 outcome retires it, so a retry after an ambiguous failure replays the request.
 	 * @return PaymentOutcome
 	 */
-	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		if ( $this->api_client->is_available() ) {
 			try {
 				$outcome = 0.0 < (float) $context->get_order()->get_total()
@@ -212,11 +212,11 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Refund an order through the active WooPayments transport.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this refund call.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this refund call.
 	 * @return PaymentOutcome
 	 */
-	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$order = $context->get_order();
 		if ( $this->api_client->is_available() ) {
 			$charge_id = (string) $order->get_meta( '_charge_id', true );
@@ -263,11 +263,11 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Capture an authorized payment through the active WooPayments transport.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		// Like the client, each capture request carries its own key, so a merchant's retry after a
 		// failed capture reaches the provider instead of replaying the stored failure.
 		unset( $operation_key );
@@ -334,11 +334,11 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Cancel an authorized payment through the active WooPayments transport.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Operation lock key; not sent to the provider.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Operation lock key; not sent to the provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome {
+	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 		// Each cancel request carries its own key, as for capture.
 		unset( $operation_key );
 
@@ -390,13 +390,13 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Charge an order through the native WooPayments transport.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt. A charge key already stored on
-	 *                                        the order is sent instead until a definitive outcome retires it.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A charge key already stored on
+	 *                                                 the order is sent instead until a definitive outcome retires it.
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
-	private function charge_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	private function charge_via_native_transport( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
@@ -467,13 +467,13 @@ class WooPaymentsProviderGatewayAdapter {
 	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is recreated and
 	 * the charge retried, except while the order's ambiguity record exists.
 	 *
-	 * @param PaymentContext      $context      Payment context.
-	 * @param array<string,mixed> $request_data Charge request; its customer is replaced when a missing customer is recreated.
-	 * @param string              $attempt_key  Key minted fresh for this payment attempt.
+	 * @param PaymentOperationContext $context      Payment context.
+	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when a missing customer is recreated.
+	 * @param string                  $attempt_key  Key minted fresh for this payment attempt.
 	 * @return array<string,mixed>|PaymentOutcome The PaymentIntent response, or the outcome to return instead.
 	 * @throws WooPaymentsApiException When recreating a missing customer fails.
 	 */
-	private function send_charge_request( PaymentContext $context, array &$request_data, string $attempt_key ) {
+	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
 		$order    = $context->get_order();
 		$sent_key = $this->resolve_charge_idempotency_key( $order, $attempt_key );
 
@@ -522,10 +522,10 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
 	 * @param string                  $sent_key    Key the request was sent with.
 	 * @param WooPaymentsApiException $exception   Provider request failure.
-	 * @param PaymentContext          $context     Payment context.
+	 * @param PaymentOperationContext $context     Payment context.
 	 * @return bool
 	 */
-	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentContext $context ): bool {
+	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
 			&& ! $this->api_client->is_ambiguous_request_failure( $exception )
@@ -536,10 +536,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Tell whether the payment is a scheduled subscription renewal.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return bool
 	 */
-	private static function is_scheduled_renewal( PaymentContext $context ): bool {
+	private static function is_scheduled_renewal( PaymentOperationContext $context ): bool {
 		return true === ( $context->get_provider_data()['scheduled_subscription_payment'] ?? false );
 	}
 
@@ -633,14 +633,14 @@ class WooPaymentsProviderGatewayAdapter {
 	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
 	 * attempt is refused the same way and the merchant gets one note asking them to check the payment.
 	 *
-	 * @param PaymentContext      $context      Payment context.
-	 * @param array<string,mixed> $request_data Charge request.
-	 * @param string              $attempt_key  Key minted fresh for this payment attempt.
-	 * @param string              $sent_key     Kept key Stripe refused.
+	 * @param PaymentOperationContext $context      Payment context.
+	 * @param array<string,mixed>     $request_data Charge request.
+	 * @param string                  $attempt_key  Key minted fresh for this payment attempt.
+	 * @param string                  $sent_key     Kept key Stripe refused.
 	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
 	 * @throws WooPaymentsApiException When recreating a missing customer for the new charge fails.
 	 */
-	private function settle_earlier_charge( PaymentContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
+	private function settle_earlier_charge( PaymentOperationContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
 		$order  = $context->get_order();
 		$record = $this->get_charge_ambiguity_record( $order ) ?? array(
 			'customers'      => array( '' ),
@@ -1021,11 +1021,11 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Replace raw diagnostics for a permanently unusable scheduled renewal payment method.
 	 *
-	 * @param PaymentContext $context Charge context.
-	 * @param PaymentOutcome $outcome Charge outcome.
+	 * @param PaymentOperationContext $context Charge context.
+	 * @param PaymentOutcome          $outcome Charge outcome.
 	 * @return PaymentOutcome
 	 */
-	private function normalize_unusable_scheduled_renewal_failure( PaymentContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+	private function normalize_unusable_scheduled_renewal_failure( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
 		$provider_data = $context->get_provider_data();
 		$data          = $outcome->get_data();
 		$error_code    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && is_scalar( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : '';
@@ -1213,11 +1213,11 @@ class WooPaymentsProviderGatewayAdapter {
 	 * The client saves when the shopper did not pick a saved token and the payment is recurring or the shopper asked to
 	 * save (`Payment_Information::should_save_payment_method_to_store()`, subtrait:382-394).
 	 *
-	 * @param PaymentContext $context      Payment context.
-	 * @param bool           $is_recurring Whether the payment is recurring.
+	 * @param PaymentOperationContext $context      Payment context.
+	 * @param bool                    $is_recurring Whether the payment is recurring.
 	 * @return bool
 	 */
-	private function zero_amount_saves_payment_method( PaymentContext $context, bool $is_recurring ): bool {
+	private function zero_amount_saves_payment_method( PaymentOperationContext $context, bool $is_recurring ): bool {
 		if ( 0 < $this->get_saved_payment_token_id( $context ) ) {
 			return false;
 		}
@@ -1234,10 +1234,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Get the saved token the shopper picked, or 0 for a new payment method.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return int
 	 */
-	private function get_saved_payment_token_id( PaymentContext $context ): int {
+	private function get_saved_payment_token_id( PaymentOperationContext $context ): int {
 		$payment_data = $context->get_payment_data();
 		$token        = isset( $payment_data['payment_token'] ) && is_scalar( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 
@@ -1247,12 +1247,12 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Create or confirm a zero-amount setup intent through native transport.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
-	private function setup_intent_via_native_transport( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+	private function setup_intent_via_native_transport( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
@@ -1319,10 +1319,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Get the intent WooPay already confirmed for this order, when the checkout came from WooPay.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return string
 	 */
-	private function get_woopay_intent_id( PaymentContext $context ): string {
+	private function get_woopay_intent_id( PaymentOperationContext $context ): string {
 		$intent_id = $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? '';
 
 		return is_string( $intent_id ) ? $intent_id : '';
@@ -1389,10 +1389,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Resolve the customer required for a native provider request.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return string
 	 */
-	private function get_customer_id_for_context( PaymentContext $context ): string {
+	private function get_customer_id_for_context( PaymentOperationContext $context ): string {
 		if ( ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) ) {
 			return $this->customer_service->get_or_create_customer_id_for_subscription_payment_method_change( $context->get_order() );
 		}
@@ -1403,10 +1403,10 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Tell whether checkout context requires recurring credential persistence.
 	 *
-	 * @param PaymentContext $context Payment context.
+	 * @param PaymentOperationContext $context Payment context.
 	 * @return bool
 	 */
-	private function is_recurring_payment( PaymentContext $context ): bool {
+	private function is_recurring_payment( PaymentOperationContext $context ): bool {
 		$provider_data = $context->get_provider_data();
 
 		return ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT ] )
@@ -1431,17 +1431,17 @@ class WooPaymentsProviderGatewayAdapter {
 	/**
 	 * Snapshot runtime facts needed by the pure native codec.
 	 *
-	 * @param array<string,mixed> $result               Provider intent response.
-	 * @param PaymentContext      $context              Payment context.
-	 * @param string              $payment_credential   Submitted credential.
-	 * @param string              $fallback_customer_id Customer ID used for the request.
-	 * @param string              $intent_type          Provider intent type.
-	 * @param string              $confirmation_token   Confirmation token.
+	 * @param array<string,mixed>     $result               Provider intent response.
+	 * @param PaymentOperationContext $context              Payment context.
+	 * @param string                  $payment_credential   Submitted credential.
+	 * @param string                  $fallback_customer_id Customer ID used for the request.
+	 * @param string                  $intent_type          Provider intent type.
+	 * @param string                  $confirmation_token   Confirmation token.
 	 * @return WooPaymentsIntentMappingContext
 	 */
 	private function native_mapping_context(
 		array $result,
-		PaymentContext $context,
+		PaymentOperationContext $context,
 		string $payment_credential,
 		string $fallback_customer_id,
 		string $intent_type = 'pi',

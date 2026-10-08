@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -1494,7 +1494,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		 */
 		do_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', 12.0, wc_get_order( $order->get_id() ) );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame(
 			array(
@@ -1798,7 +1798,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame(
 			array(
@@ -1837,7 +1837,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
-			$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+			$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 			$this->assertSame(
 				array(
 					'payment_token'       => (string) $order->get_payment_tokens()[0],
@@ -1950,11 +1950,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Process checkout payment and return the neutral outcome.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return PaymentOutcome
 			 */
-			public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->last_checkout_context = $context;
 
 				return $this->outcome;
@@ -2942,7 +2942,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
@@ -2979,7 +2979,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
 		$this->assertSame( '10.99', $service->last_checkout_context->get_order()->get_total() );
 		$this->assertSame( 'USD', $service->last_checkout_context->get_order()->get_currency() );
@@ -3060,7 +3060,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal_fresh      = wc_get_order( $renewal_order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertInstanceOf( WC_Order::class, $subscription_fresh );
 		$this->assertInstanceOf( WC_Order::class, $renewal_fresh );
 		$this->assertSame( $renewal_order->get_id(), $service->last_checkout_context->get_order_id() );
@@ -3183,7 +3183,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( $expected_redirect, $result['redirect'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $should_save, $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 	}
 
@@ -3320,7 +3320,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( array(), array_column( wc_get_notices( 'error' ), 'notice' ) );
 	}
 
@@ -3371,7 +3371,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
@@ -3412,7 +3412,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id, $service->last_checkout_context->get_gateway_id() );
 	}
 
@@ -3454,7 +3454,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'valid-token', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
 
@@ -3532,7 +3532,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( 1, $service->checkout_attempt_count );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
@@ -3793,7 +3793,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$result = $gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The payment must have run before the downstream failure.' );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context, 'The payment must have run before the downstream failure.' );
 		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Auth credentials missing', 'Exception', $logger, 'pending' );
 	}
 
@@ -3828,7 +3828,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$result = $gateway->process_payment( $subscription->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
 		$this->assert_succeeded_intent_defense( $subscription->get_id(), $result, $return_url, $note_count, 'Subscription hook failed', 'RuntimeException', $logger, 'pending' );
 	}
@@ -4180,7 +4180,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $subscription->get_id() );
 
 		$this->assertSame( 'failure', $result['result'] ?? '' );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
@@ -4880,7 +4880,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 		// The outcome the real provider hands the gateway: the codec's mapping enriched with the order effects.
 		$service->checkout_outcome = wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->enrich_outcome_for_lifecycle(
-			PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 			WooPaymentsIntentCodec::outcome_from_intention( $intent, WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url() ) ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
@@ -4989,7 +4989,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertSame( 'https://example.test/my-account/', $result['redirect'] );
 		$this->assertSame( 'Visa credit card', wc_get_order( $order->get_id() )->get_payment_method_title(), 'Client 11.1.0 brands the subscription after WCS records the change, so the stored title stays the card title, not "Card".' );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'A validated subscription payment-method change must reach the provider context.' );
@@ -5169,7 +5169,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['recurring_payment'] ?? false );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
@@ -5201,7 +5201,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
 	}
 
@@ -5244,7 +5244,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 'https://example.test/my-account/', $result['redirect'], 'Client 11.1.0 returns get_return_url() for a saved-method change too, so the shopper lands on the subscription, not on "Order received".' );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertFalse( $service->last_checkout_context->get_payment_data()['save_payment_method'] ?? false, 'Saved-method handling must keep its existing new-method-only save policy.' );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'Validated saved-method changes must preserve provider billing.' );
 	}
@@ -5280,7 +5280,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_order_is_paid_statuses', $paid_statuses );
 		}
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The saved-token change must reach payment processing.' );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context, 'The saved-token change must reach payment processing.' );
 	}
 
 	/**
@@ -5425,7 +5425,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'pm_platform', $service->last_checkout_context->get_payment_method_id() );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
 	}
@@ -5446,7 +5446,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'pi_3Abcx', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
 	}
 
@@ -5463,7 +5463,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( '', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
 	}
 
@@ -5565,7 +5565,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'ctoken_express', $service->last_checkout_context->get_payment_method_id() );
 		$this->assertSame( array( 'card', 'amazon_pay' ), $service->last_checkout_context->get_provider_data()[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_DATA_KEY ] );
 		$this->assertSame( 'pay_for_order', $service->last_checkout_context->get_provider_data()[ WooPaymentsExpressPaymentMethodTypes::PROVIDER_CONTEXT_KEY ] );
@@ -5588,7 +5588,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
 
 		$this->assertTrue( $result );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_refund_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_refund_context );
 		$this->assertSame(
 			array(
 				'amount' => 4.25,
@@ -5732,7 +5732,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_refund( $order->get_id(), 12.0, 'Full refund' );
 
 		$this->assertTrue( $result );
-		$this->assertInstanceOf( PaymentContext::class, $service->last_refund_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_refund_context );
 		$this->assertSame( 12.0, $service->last_refund_context->get_payment_data()['amount'] );
 	}
 
@@ -5764,11 +5764,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund like a provider refusal.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
+			public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'expired_or_canceled_card', 'The card was declined.' );
@@ -5800,11 +5800,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund with the platform's insufficient-balance code.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
+			public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'insufficient_balance_for_refund', 'Could not refund the payment: insufficient funds.' );
@@ -5837,11 +5837,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Refuse the refund before any platform attempt.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
+			public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'native_payment_refund_locked', 'A payment operation is already in progress for this order.' );
@@ -5885,11 +5885,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Record the platform refund call and report it as successful.
 			 *
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 				unset( $context, $idempotency_key );
 				++$this->refund_calls;
 
@@ -6811,11 +6811,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund with the platform's code and message, as the processing service hands them back.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
+			public function process_refund( PaymentOperationContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'https://pay.example.test/code', "Error: No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123" );
@@ -6901,11 +6901,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the fixed charge outcome.
 			 *
-			 * @param PaymentContext $context         Payment context.
-			 * @param string         $idempotency_key Idempotency key.
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
 			 * @return PaymentOutcome
 			 */
-			public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome {
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 				unset( $context, $idempotency_key );
 
 				return $this->outcome;
@@ -6914,13 +6914,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Throw before the lifecycle when asked to.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
 			 * @return PaymentOutcome
 			 * @throws \Throwable When the stage is `operation_effects`.
 			 */
-			public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 				unset( $context, $operation );
 				if ( 'operation_effects' === $this->stage ) {
 					throw $this->failure;
@@ -6932,12 +6932,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Throw after the lifecycle when asked to.
 			 *
-			 * @param PaymentContext $context   Payment context.
-			 * @param PaymentOutcome $outcome   Applied provider outcome.
-			 * @param string         $operation Operation name.
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Applied provider outcome.
+			 * @param string                  $operation Operation name.
 			 * @throws \Throwable When the stage is `post_lifecycle_effects`.
 			 */
-			public function apply_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): void {
+			public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 				unset( $context, $outcome, $operation );
 				if ( 'post_lifecycle_effects' === $this->stage ) {
 					throw $this->failure;
@@ -7393,7 +7393,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
 		}
 
-		$this->assertInstanceOf( PaymentContext::class, $service->last_checkout_context, 'The repaired token must let the renewal charge proceed.' );
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context, 'The repaired token must let the renewal charge proceed.' );
 		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
 
 		$renewal_fresh = wc_get_order( $renewal->get_id() );

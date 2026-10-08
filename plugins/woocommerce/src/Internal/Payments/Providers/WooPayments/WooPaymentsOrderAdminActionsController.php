@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -265,7 +265,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		try {
 			$outcome = 'capture' === $operation
 				? $this->processing_service->capture(
-					PaymentContext::for_capture(
+					PaymentOperationContext::for_capture(
 						$order,
 						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 						(float) $order->get_total(),
@@ -274,7 +274,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 					$this->provider
 				)
 				: $this->processing_service->cancel(
-					PaymentContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+					PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 					$this->provider
 				);
 

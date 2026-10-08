@@ -23,10 +23,10 @@ interface ProviderOperationEffectApplierInterface {
 	/**
 	 * Apply provider-specific effects and optionally replace the neutral outcome.
 	 *
-	 * @param PaymentContext $context   Payment context.
-	 * @param PaymentOutcome $outcome   Provider transport outcome.
-	 * @param string         $operation Operation name.
+	 * @param PaymentOperationContext $context   Payment context.
+	 * @param PaymentOutcome          $outcome   Provider transport outcome.
+	 * @param string                  $operation Operation name.
 	 * @return PaymentOutcome
 	 */
-	public function apply_operation_effects( PaymentContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome;
+	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome;
 }

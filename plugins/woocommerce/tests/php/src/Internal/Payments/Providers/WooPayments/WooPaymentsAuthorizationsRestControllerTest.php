@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -101,11 +101,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->capture_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
@@ -114,11 +114,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->cancel_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
@@ -297,24 +297,24 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 * @throws \RuntimeException Always.
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				throw new \RuntimeException( 'capture failed' );
 			}
 
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 * @throws \RuntimeException Always.
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				throw new \RuntimeException( 'cancel failed' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
@@ -348,12 +348,12 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 * @throws \Error Always.
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				throw new \Error( 'capture failed' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
@@ -451,22 +451,22 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_auth', '', '', '', $this->data );
 			}
 
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_auth', '', '', '', $this->data );
 			}
 		};
@@ -592,11 +592,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->capture_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
@@ -657,11 +657,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->capture_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
@@ -670,11 +670,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->cancel_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
@@ -733,11 +733,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->cancel_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
@@ -769,11 +769,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->capture_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
@@ -823,11 +823,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_Y' );
@@ -836,11 +836,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_Y' );
@@ -901,11 +901,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->cancel_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
@@ -945,25 +945,25 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Last capture context.
 			 *
-			 * @var PaymentContext|null
+			 * @var PaymentOperationContext|null
 			 */
-			public ?PaymentContext $last_capture_context = null;
+			public ?PaymentOperationContext $last_capture_context = null;
 
 			/**
 			 * Last cancel context.
 			 *
-			 * @var PaymentContext|null
+			 * @var PaymentOperationContext|null
 			 */
-			public ?PaymentContext $last_cancel_context = null;
+			public ?PaymentOperationContext $last_cancel_context = null;
 
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->last_capture_context = $context;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
@@ -972,11 +972,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Cancel a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->last_cancel_context = $context;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
@@ -1000,7 +1000,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 200, $capture_response->get_status() );
 		$this->assertSame( 'succeeded', $capture_response->get_data()['status'] );
 		$this->assertSame( 'pi_auth', $capture_response->get_data()['id'] );
-		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_capture_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $processing_service->last_capture_context );
 		$this->assertNull( $processing_service->last_capture_context->get_amount() );
 
 		$order_after_capture      = wc_get_order( $order->get_id() );
@@ -1024,7 +1024,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertSame( 200, $cancel_response->get_status() );
 		$this->assertSame( 'canceled', $cancel_response->get_data()['status'] );
 		$this->assertSame( 'pi_auth', $cancel_response->get_data()['id'] );
-		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_cancel_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $processing_service->last_cancel_context );
 
 		$order_after_cancel     = wc_get_order( $order->get_id() );
 		$cancel_blocked_entries = array_values(
@@ -1054,18 +1054,18 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Last capture context.
 			 *
-			 * @var PaymentContext|null
+			 * @var PaymentOperationContext|null
 			 */
-			public ?PaymentContext $last_capture_context = null;
+			public ?PaymentOperationContext $last_capture_context = null;
 
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->last_capture_context = $context;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_partial' );
@@ -1096,7 +1096,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertInstanceOf( PaymentContext::class, $processing_service->last_capture_context );
+		$this->assertInstanceOf( PaymentOperationContext::class, $processing_service->last_capture_context );
 		$this->assertSame( $requested_amount, $processing_service->last_capture_context->get_amount() );
 	}
 
@@ -1134,11 +1134,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			/**
 			 * Capture a payment.
 			 *
-			 * @param PaymentContext    $context  Payment context.
-			 * @param ProviderInterface $provider Payment provider.
+			 * @param PaymentOperationContext $context  Payment context.
+			 * @param ProviderInterface       $provider Payment provider.
 			 * @return PaymentOutcome
 			 */
-			public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
+			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
 				++$this->capture_calls;
 
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_invalid_amount' );

@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\PaymentContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
@@ -118,7 +118,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_provider_delegates_woopayments_operation_effects(): void {
 		$order           = wc_create_order();
-		$context         = PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
+		$context         = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
 		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
 		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
 		$call_sequence   = array();
@@ -374,7 +374,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_zero_total_checkout_reaches_charge(): void {
 		$order = wc_create_order();
 
-		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ) ) );
+		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ) ) );
 	}
 
 	/**

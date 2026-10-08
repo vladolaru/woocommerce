@@ -29,10 +29,10 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	 * A provider that returns true decides in charge() what a zero-amount payment needs (for example, a
 	 * setup intent to save the payment method). Returning false completes the order without a provider call.
 	 *
-	 * @param PaymentContext $context Checkout payment context.
+	 * @param PaymentOperationContext $context Checkout payment context.
 	 * @return bool
 	 */
-	public function supports_zero_amount_setup( PaymentContext $context ): bool;
+	public function supports_zero_amount_setup( PaymentOperationContext $context ): bool;
 
 	/**
 	 * Get the provider persistence profile.
@@ -46,43 +46,43 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	/**
 	 * Charge an order through the provider.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this payment attempt, also the order payment lock
-	 *                                        token. Retries within the attempt reuse it; a new attempt gets a new key.
-	 *                                        A provider may send a key it kept on the order from an ambiguous earlier
-	 *                                        attempt instead, until a definitive outcome (see PaymentOperationIdempotency).
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this payment attempt, also the order payment lock
+	 *                                                 token. Retries within the attempt reuse it; a new attempt gets a new key.
+	 *                                                 A provider may send a key it kept on the order from an ambiguous earlier
+	 *                                                 attempt instead, until a definitive outcome (see PaymentOperationIdempotency).
 	 * @return PaymentOutcome
 	 */
-	public function charge( PaymentContext $context, string $idempotency_key ): PaymentOutcome;
+	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
 
 	/**
 	 * Capture a previously authorized payment through the provider.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Deterministic operation key: the order payment lock token and log
-	 *                                      correlation ID. Do not send it as the provider request key, or a
-	 *                                      retry after a failure replays that failure.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Deterministic operation key: the order payment lock token and log
+	 *                                               correlation ID. Do not send it as the provider request key, or a
+	 *                                               retry after a failure replays that failure.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, string $operation_key ): PaymentOutcome;
+	public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome;
 
 	/**
 	 * Cancel a previously authorized payment through the provider.
 	 *
-	 * @param PaymentContext $context       Payment context.
-	 * @param string         $operation_key Deterministic operation key: the order payment lock token and log
-	 *                                      correlation ID. Do not send it as the provider request key, or a
-	 *                                      retry after a failure replays that failure.
+	 * @param PaymentOperationContext $context       Payment context.
+	 * @param string                  $operation_key Deterministic operation key: the order payment lock token and log
+	 *                                               correlation ID. Do not send it as the provider request key, or a
+	 *                                               retry after a failure replays that failure.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, string $operation_key ): PaymentOutcome;
+	public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome;
 
 	/**
 	 * Refund a payment through the provider.
 	 *
-	 * @param PaymentContext $context         Payment context.
-	 * @param string         $idempotency_key Key minted fresh for this refund call; send it as the provider request key.
+	 * @param PaymentOperationContext $context         Payment context.
+	 * @param string                  $idempotency_key Key minted fresh for this refund call; send it as the provider request key.
 	 * @return PaymentOutcome
 	 */
-	public function refund( PaymentContext $context, string $idempotency_key ): PaymentOutcome;
+	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome;
 }
