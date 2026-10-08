@@ -602,7 +602,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $mismatch_lines );
 		$context = $logger->contexts[ $mismatch_lines[0] ];
-		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( 'order-payments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'charge.refunded', $context['applied_operation'] );
 		$this->assertSame( 'cod', $context['payment_method'] );

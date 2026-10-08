@@ -4496,7 +4496,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $mismatch_lines, 'One warning line per event on a gateway mismatch.' );
 		$context = $logger->contexts[ $mismatch_lines[0] ];
-		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( 'order-payments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'payment_intent.succeeded', $context['applied_operation'] );
 		$this->assertSame( 'bacs', $context['payment_method'] );

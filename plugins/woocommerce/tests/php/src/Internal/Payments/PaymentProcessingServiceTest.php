@@ -616,7 +616,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Native payment provider operation threw an exception.', $logger->error_calls[0]['message'] );
 		$this->assertSame(
 			array(
-				'source'          => 'woopayments-payments',
+				'source'          => 'order-payments',
 				'operation'       => $operation,
 				'order_id'        => $order->get_id(),
 				'idempotency_key' => $expected_idempotency_key,
@@ -898,7 +898,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertCount( 1, $fake_logger->error_calls, 'A post-charge apply failure must be logged at error level.' );
 		$context = $fake_logger->error_calls[0]['context'];
-		$this->assertSame( 'native-payments', $context['source'] );
+		$this->assertSame( 'order-payments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );
 		$this->assertSame( 'pi_post_charge', $context['payment_reference'] );
 	}
@@ -2970,7 +2970,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $mismatch_logs, 'The transaction ID mismatch must be logged on its own line.' );
 		$this->assertSame(
 			array(
-				'source'                  => 'native-payments',
+				'source'                  => 'order-payments',
 				'order_id'                => $order->get_id(),
 				'payment_reference'       => 'pi_second_payment',
 				'existing_transaction_id' => 'pi_first_payment',

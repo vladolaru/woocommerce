@@ -149,7 +149,7 @@ class OrderPaymentLifecycleService {
 			$order,
 			$persistence_vocabulary,
 			'payment status update',
-			'native-payments-webhook',
+			'order-payments-webhook',
 			array(
 				'payment_reference' => $payment_reference,
 				'event_type'        => $event->get_status(),
@@ -400,7 +400,7 @@ class OrderPaymentLifecycleService {
 		wc_get_logger()->debug(
 			$message,
 			array(
-				'source'     => 'native-payments-webhook',
+				'source'     => 'order-payments-webhook',
 				'order_id'   => $order->get_id(),
 				'event_type' => $event->get_status(),
 				'reason'     => $reason,

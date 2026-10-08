@@ -33,11 +33,11 @@ class OrderPaymentLock {
 	private const PAYMENT_METHOD_MISMATCH_LOG_PREFIX = 'order payment method mismatch';
 
 	/**
-	 * Log source for lock refusals and payment method mismatches, matching the WooPayments plugin's log file.
+	 * Log source for lock refusals and payment method mismatches when the caller names none.
 	 *
 	 * @var string
 	 */
-	private const LOCK_REFUSAL_LOG_SOURCE = 'woopayments';
+	private const LOCK_REFUSAL_LOG_SOURCE = 'order-payments';
 
 	/**
 	 * Lock held in the database rows of a transient.

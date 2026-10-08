@@ -200,7 +200,7 @@ final class WooPaymentsSetupTier {
 				(string) wp_json_encode( $stored_tier ),
 				$autoloaded ? 'yes' : 'no'
 			),
-			array( 'source' => 'native-payments' )
+			array( 'source' => WooPaymentsLogger::SOURCE )
 		);
 	}
 

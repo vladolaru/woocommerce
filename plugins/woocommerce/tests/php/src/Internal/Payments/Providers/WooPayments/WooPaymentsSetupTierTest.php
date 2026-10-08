@@ -94,7 +94,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->state->write_tier( WooPaymentsSetupTier::ACTIVE ) );
 
 		$this->assertSame(
-			array( array( 'error', 'Native payments state write failed: requested active, stored false, autoloaded yes.', 'native-payments' ) ),
+			array( array( 'error', 'Native payments state write failed: requested active, stored false, autoloaded yes.', 'woopayments' ) ),
 			$logger->lines
 		);
 	}

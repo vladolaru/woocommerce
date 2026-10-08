@@ -152,7 +152,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'debug',
 			'open WooPayments dispute',
 			array(
-				'source'     => 'native-payments-webhook',
+				'source'     => 'order-payments-webhook',
 				'order_id'   => $order->get_id(),
 				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
 				'reason'     => 'open_dispute',
@@ -335,7 +335,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'debug',
 			'already persisted success note',
 			array(
-				'source'     => 'native-payments-webhook',
+				'source'     => 'order-payments-webhook',
 				'order_id'   => $order->get_id(),
 				'event_type' => PaymentLifecycleEvent::STATUS_COMPLETED,
 				'reason'     => 'success_note_exists',
@@ -1111,7 +1111,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'warning',
 			'order payment lock refused: order ',
 			array(
-				'source'            => 'native-payments-webhook',
+				'source'            => 'order-payments-webhook',
 				'order_id'          => $order->get_id(),
 				'payment_reference' => 'pi_webhook',
 				'event_type'        => PaymentLifecycleEvent::STATUS_COMPLETED,

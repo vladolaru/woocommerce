@@ -240,7 +240,7 @@ class PaymentProcessingService {
 			wc_get_logger()->warning(
 				sprintf( 'Native checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
 				array(
-					'source'   => 'native-payments',
+					'source'   => 'order-payments',
 					'order_id' => $order->get_id(),
 					'reason'   => $reason,
 				)
@@ -277,7 +277,7 @@ class PaymentProcessingService {
 				wc_get_logger()->error(
 					'Native payment reconciliation context was not saved: the order already has a different transaction ID.',
 					array(
-						'source'                  => 'native-payments',
+						'source'                  => 'order-payments',
 						'order_id'                => $reloaded_order->get_id(),
 						'payment_reference'       => $payment_reference,
 						'existing_transaction_id' => $existing_transaction_id,
@@ -330,7 +330,7 @@ class PaymentProcessingService {
 			wc_get_logger()->error(
 				'Native payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
 				array(
-					'source'                   => 'native-payments',
+					'source'                   => 'order-payments',
 					'order_id'                 => $order->get_id(),
 					'payment_reference'        => $outcome->get_provider_payment_id(),
 					'operation'                => $operation,
@@ -796,7 +796,7 @@ class PaymentProcessingService {
 			wc_get_logger()->error(
 				'Native payment provider operation threw an exception.',
 				array(
-					'source'          => 'woopayments-payments',
+					'source'          => 'order-payments',
 					'operation'       => $operation,
 					'order_id'        => $order->get_id(),
 					'idempotency_key' => $idempotency_key,
