@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -95,8 +96,8 @@ class PaymentCapturePending implements RequestHandler {
 			return $this->failure_response( $message );
 		}
 
-		if ( $wc_order->get_status() === 'pending' ) {
-			$wc_order->update_status( 'on-hold', __( 'Payment initiation was successful, and is waiting for the buyer to complete the payment.', 'woocommerce' ) );
+		if ( $wc_order->get_status() === OrderStatus::PENDING ) {
+			$wc_order->update_status( OrderStatus::ON_HOLD, __( 'Payment initiation was successful, and is waiting for the buyer to complete the payment.', 'woocommerce' ) );
 
 		}
 

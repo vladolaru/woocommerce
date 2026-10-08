@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Assets;
 
+use Automattic\WooCommerce\Enums\ProductType;
 use WC_Cart;
 use WC_Order;
 use WC_Product;
@@ -1776,7 +1777,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 
 		$in_stock = $product->is_in_stock();
 
-		if ( $product->is_type( 'variable' ) ) {
+		if ( $product->is_type( ProductType::VARIABLE ) ) {
 			assert( $product instanceof WC_Product_Variable );
 
 			/**
@@ -1788,7 +1789,7 @@ document.querySelector("#payment").before(document.querySelector(".ppcp-messages
 			$in_stock   = $this->has_in_stock_variation( $variations );
 		}
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
-		$enable_button = ! $product->is_type( array( 'external', 'grouped' ) ) && $in_stock &&
+		$enable_button = ! $product->is_type( array( ProductType::EXTERNAL, ProductType::GROUPED ) ) && $in_stock &&
 			! ( ( $product->is_type( 'subscription' ) || $product->is_type( 'variable-subscription' ) ) && ! empty( $_GET['switch-subscription'] ) );
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 

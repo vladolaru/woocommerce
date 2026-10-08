@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use RuntimeException;
 use Throwable;
@@ -560,7 +561,7 @@ class WooCommerceOrderCreator {
 		$subscription = wcs_create_subscription(
 			array(
 				'order_id'         => $wc_order->get_id(),
-				'status'           => 'pending',
+				'status'           => OrderStatus::PENDING,
 				'billing_period'   => WC_Subscriptions_Product::get_period( $product_id ),
 				'billing_interval' => WC_Subscriptions_Product::get_interval( $product_id ),
 				'customer_id'      => $wc_order->get_customer_id(),

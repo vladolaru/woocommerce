@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Admin;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\AuthorizedPaymentsProcessor;
@@ -105,7 +106,7 @@ class OrderTablePaymentStatusColumn {
 		$intent               = $order->get_meta( PayPalGateway::INTENT_META_KEY );
 		$captured             = $order->get_meta( AuthorizedPaymentsProcessor::CAPTURED_META_KEY );
 		$status               = $order->get_status();
-		$not_allowed_statuses = array( 'refunded' );
+		$not_allowed_statuses = array( OrderStatus::REFUNDED );
 		return ! empty( $intent ) && strtoupper( self::INTENT ) === strtoupper( $intent ) &&
 			! empty( $captured ) &&
 			! in_array( $status, $not_allowed_statuses, true );

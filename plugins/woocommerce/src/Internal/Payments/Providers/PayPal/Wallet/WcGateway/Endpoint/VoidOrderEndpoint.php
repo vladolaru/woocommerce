@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Endpoint;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Order;
@@ -200,6 +201,6 @@ class VoidOrderEndpoint {
 			)
 		);
 
-		$wc_order->set_status( 'refunded' );
+		$wc_order->set_status( OrderStatus::REFUNDED );
 	}
 }

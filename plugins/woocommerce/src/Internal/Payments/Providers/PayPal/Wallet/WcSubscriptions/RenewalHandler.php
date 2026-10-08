@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcSubscriptions;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Payment_Tokens;
 use WC_Subscription;
@@ -175,7 +176,7 @@ class RenewalHandler {
 			}
 
 			$wc_order->update_status(
-				'failed',
+				OrderStatus::FAILED,
 				$error
 			);
 

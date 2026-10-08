@@ -9,6 +9,8 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Admin;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
+
 /**
  * Class RenderAuthorizeAction
  */
@@ -59,7 +61,7 @@ class RenderAuthorizeAction {
 	 */
 	private function should_render_for_order( \WC_Order $order ): bool {
 		$status               = $order->get_status();
-		$not_allowed_statuses = array( 'refunded', 'cancelled', 'failed' );
+		$not_allowed_statuses = array( OrderStatus::REFUNDED, OrderStatus::CANCELLED, OrderStatus::FAILED );
 		return $this->column->should_render_for_order( $order ) &&
 			! $this->column->is_captured( $order ) &&
 			! in_array( $status, $not_allowed_statuses, true );

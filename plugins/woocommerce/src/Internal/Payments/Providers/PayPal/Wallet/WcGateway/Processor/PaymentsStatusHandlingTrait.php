@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Authorization;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\AuthorizationStatus;
@@ -100,7 +101,7 @@ trait PaymentsStatusHandlingTrait {
 						$fraud->get_response_code_message()
 					)
 					: __( 'Could not capture the payment.', 'woocommerce' );
-				$wc_order->update_status( 'failed', $status_note );
+				$wc_order->update_status( OrderStatus::FAILED, $status_note );
 				$decline_message = $fraud
 					? $fraud->get_customer_decline_message()
 					: __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' );
@@ -108,7 +109,7 @@ trait PaymentsStatusHandlingTrait {
 			case CaptureStatus::PENDING:
 			case CaptureStatus::FAILED:
 				$wc_order->update_status(
-					'on-hold',
+					OrderStatus::ON_HOLD,
 					__( 'Awaiting payment.', 'woocommerce' )
 				);
 				break;
@@ -138,7 +139,7 @@ trait PaymentsStatusHandlingTrait {
 			case AuthorizationStatus::CREATED:
 			case AuthorizationStatus::PENDING:
 				$wc_order->update_status(
-					'on-hold',
+					OrderStatus::ON_HOLD,
 					__( 'Awaiting payment.', 'woocommerce' )
 				);
 				/**
@@ -153,7 +154,7 @@ trait PaymentsStatusHandlingTrait {
 				break;
 			case AuthorizationStatus::DENIED:
 				$wc_order->update_status(
-					'failed',
+					OrderStatus::FAILED,
 					__( 'Could not get the payment authorization.', 'woocommerce' )
 				);
 				throw new RuntimeException( esc_html__( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' ) );

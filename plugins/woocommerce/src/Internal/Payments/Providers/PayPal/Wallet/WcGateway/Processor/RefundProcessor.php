@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Order;
@@ -142,7 +143,7 @@ class RefundProcessor {
 				case self::REFUND_MODE_VOID:
 					$this->void( $order );
 
-					$wc_order->set_status( 'refunded' );
+					$wc_order->set_status( OrderStatus::REFUNDED );
 					$wc_order->save();
 
 					break;

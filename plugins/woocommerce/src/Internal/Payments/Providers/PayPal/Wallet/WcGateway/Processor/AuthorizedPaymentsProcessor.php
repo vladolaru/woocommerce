@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Exception;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\AmountFactory;
@@ -199,7 +201,7 @@ class AuthorizedPaymentsProcessor {
 		$this->render_authorization_message_for_status( $result_status );
 
 		if ( self::ALREADY_CAPTURED === $result_status ) {
-			if ( $wc_order->get_status() === 'on-hold' ) {
+			if ( $wc_order->get_status() === OrderStatus::ON_HOLD ) {
 				$wc_order->add_order_note(
 					__( 'Payment successfully captured.', 'woocommerce' )
 				);
@@ -247,7 +249,7 @@ class AuthorizedPaymentsProcessor {
 		$wc_orders = wc_get_orders(
 			array(
 				'customer_id' => $customer_id,
-				'status'      => array( 'wc-on-hold' ),
+				'status'      => array( OrderInternalStatus::ON_HOLD ),
 				'limit'       => -1,
 			)
 		);

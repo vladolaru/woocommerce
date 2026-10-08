@@ -9,6 +9,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Throwable;
@@ -331,7 +332,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				 * @param string[]  $statuses The order statuses; processing and completed by default.
 				 * @param \WC_Order $wc_order The WooCommerce order.
 				 */
-				$capture_statuses = apply_filters( 'woocommerce_paypal_payments_auto_capture_statuses', array( 'processing', 'completed' ), $wc_order );
+				$capture_statuses = apply_filters( 'woocommerce_paypal_payments_auto_capture_statuses', array( OrderStatus::PROCESSING, OrderStatus::COMPLETED ), $wc_order );
 				if ( ! in_array( $to, $capture_statuses, true ) ) {
 					return;
 				}
@@ -350,7 +351,7 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				}
 
 				$wc_order->update_status(
-					'failed',
+					OrderStatus::FAILED,
 					__( 'Could not capture the payment.', 'woocommerce' )
 				);
 			},

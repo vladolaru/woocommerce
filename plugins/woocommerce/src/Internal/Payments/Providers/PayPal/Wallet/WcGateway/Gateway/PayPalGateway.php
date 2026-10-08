@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway;
 
+use Automattic\WooCommerce\Enums\OrderStatus as WcOrderStatus;
 use Exception;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WC_Order;
@@ -724,7 +725,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 		 * If the WC_Order is paid through the approved webhook.
 		 */
 		//phpcs:disable WordPress.Security.NonceVerification.Recommended
-		if ( isset( $_REQUEST['ppcp-resume-order'] ) && $wc_order->has_status( 'processing' ) ) {
+		if ( isset( $_REQUEST['ppcp-resume-order'] ) && $wc_order->has_status( WcOrderStatus::PROCESSING ) ) {
 			return $this->handle_payment_success( $wc_order );
 		}
 		//phpcs:enable WordPress.Security.NonceVerification.Recommended
@@ -788,7 +789,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 
 				$this->session_handler->increment_insufficient_funding_tries();
 				if ( $this->session_handler->insufficient_funding_tries() >= 3 ) {
-					$wc_order->update_status( 'failed', $retry_message );
+					$wc_order->update_status( WcOrderStatus::FAILED, $retry_message );
 
 					return $this->handle_payment_failure(
 						null,
@@ -802,7 +803,7 @@ class PayPalGateway extends \WC_Payment_Gateway {
 
 				$session_order = $this->session_handler->order();
 				if ( ! ( $session_order instanceof Order ) ) {
-					$wc_order->update_status( 'failed', $retry_message );
+					$wc_order->update_status( WcOrderStatus::FAILED, $retry_message );
 
 					return $this->handle_payment_failure(
 						null,

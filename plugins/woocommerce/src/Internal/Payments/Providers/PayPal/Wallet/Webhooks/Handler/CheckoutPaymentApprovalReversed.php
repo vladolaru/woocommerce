@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -87,7 +88,7 @@ class CheckoutPaymentApprovalReversed implements RequestHandler {
 
 				$this->logger->warning( 'CHECKOUT.PAYMENT-APPROVAL.REVERSED received. ' . $error_message );
 
-				$wc_order->update_status( 'failed', $error_message );
+				$wc_order->update_status( OrderStatus::FAILED, $error_message );
 			}
 		}
 

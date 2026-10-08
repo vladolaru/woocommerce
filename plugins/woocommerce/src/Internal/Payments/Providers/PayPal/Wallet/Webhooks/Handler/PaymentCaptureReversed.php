@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
 /**
@@ -101,7 +102,7 @@ class PaymentCaptureReversed implements RequestHandler {
 		 */
 		$note = apply_filters( 'ppcp_payment_capture_reversed_webhook_update_status_note', '', $wc_order, $request['event_type'] );
 
-		$is_success = $wc_order->update_status( 'cancelled', $note );
+		$is_success = $wc_order->update_status( OrderStatus::CANCELLED, $note );
 		if ( ! $is_success ) {
 			$message = sprintf(
 				'Failed to cancel order %1$s cancelled through PayPal',

@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use Throwable;
 use WC_Order;
@@ -31,7 +32,7 @@ trait ProcessPaymentTrait {
 
 		if ( $wc_order ) {
 			$wc_order->update_status(
-				'failed',
+				OrderStatus::FAILED,
 				$this->format_exception( $error )
 			);
 

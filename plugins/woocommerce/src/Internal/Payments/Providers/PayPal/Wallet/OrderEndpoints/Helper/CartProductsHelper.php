@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Helper;
 
+use Automattic\WooCommerce\Enums\ProductType;
 use Exception;
 use WC_Cart;
 use WC_Data_Store;
@@ -138,7 +139,7 @@ class CartProductsHelper {
 					$product['product'],
 					$product['booking']
 				);
-			} elseif ( $product['product']->is_type( 'variable' ) ) {
+			} elseif ( $product['product']->is_type( ProductType::VARIABLE ) ) {
 				if ( empty( $product['variations'] ) || ! is_array( $product['variations'] ) ) {
 					$product['variations'] = array();
 				}

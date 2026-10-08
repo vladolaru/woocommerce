@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Exception;
 use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
@@ -116,7 +117,7 @@ class PaymentCaptureCompleted implements RequestHandler {
 		 */
 		do_action( 'woocommerce_paypal_payments_payment_capture_completed_webhook_handler', $wc_order, $order_id );
 
-		if ( ! in_array( $wc_order->get_status(), array( 'pending', 'on-hold' ), true ) ) {
+		if ( ! in_array( $wc_order->get_status(), array( OrderStatus::PENDING, OrderStatus::ON_HOLD ), true ) ) {
 			return $this->success_response();
 		}
 		$wc_order->add_order_note(
