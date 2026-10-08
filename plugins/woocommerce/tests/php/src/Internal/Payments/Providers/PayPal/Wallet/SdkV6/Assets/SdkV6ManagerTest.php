@@ -1109,6 +1109,36 @@ class SdkV6ManagerTest extends WalletTestCase {
 	}
 
 	/**
+	 * A block checkout can load the SDK for another surface (the mini-cart) while its own location is off; the block
+	 * script must not register express buttons then.
+	 *
+	 * @testdox Should tell the page whether its own button location is on, apart from loading the SDK: $page_context on $enabled.
+	 * @testWith ["checkout-block", true]
+	 *           ["checkout-block", false]
+	 *           ["cart-block", false]
+	 *
+	 * @param string $page_context The page context.
+	 * @param bool   $enabled      Whether that location is on.
+	 */
+	public function test_script_data_carries_whether_the_page_location_is_on( string $page_context, bool $enabled ): void {
+		$this->stub_page( $page_context );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( $page_context )->andReturn( $enabled );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->with( 'mini-cart' )->andReturn( true );
+
+		$this->assertSame( $enabled, $this->script_data()['buttons_enabled'] );
+	}
+
+	/**
+	 * @testdox Should report no page location on a page without a page context.
+	 */
+	public function test_script_data_buttons_disabled_without_a_page_context(): void {
+		$this->stub_page( '' );
+		$this->settings_status->shouldReceive( 'is_smart_button_enabled_for_location' )->andReturn( true );
+
+		$this->assertFalse( $this->script_data()['buttons_enabled'] );
+	}
+
+	/**
 	 * @testdox Should not carry a fastlane subtree in the data: the SDK loader no longer asks for that component.
 	 */
 	public function test_script_data_has_no_fastlane_subtree(): void {

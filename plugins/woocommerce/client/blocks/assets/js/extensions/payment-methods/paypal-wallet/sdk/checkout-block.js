@@ -171,7 +171,7 @@ if ( config && config.page_context && config.continuation ) {
 			],
 		},
 	} );
-} else if ( config && config.page_context ) {
+} else if ( config && config.page_context && config.buttons_enabled ) {
 	// canMakePayment runs per funding source on every cart update; caching the
 	// current amount keeps that to one lookup per update.
 	let cached = { amount: null, eligibility: null };

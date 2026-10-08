@@ -43,6 +43,7 @@ jest.mock( '../messages/cartTotalWatcher', () => ( {
 const baseConfig = ( overrides = {} ) => ( {
 	id: 'ppcp-gateway',
 	page_context: 'checkout',
+	buttons_enabled: true,
 	supported_features: [ 'products', 'subscriptions' ],
 	pay_later_button: { checkout: true },
 	...overrides,
@@ -119,6 +120,25 @@ afterEach( () => {
 
 describe( 'checkout-block', () => {
 	describe( 'express method registration', () => {
+		// The SDK can load on a block page for another surface, such as the
+		// mini-cart, while the page's own button location is off.
+		test( 'registers no express method when the page location is off', () => {
+			loadCheckoutBlock( baseConfig( { buttons_enabled: false } ) );
+
+			expect( mockRegisterExpressPaymentMethod ).not.toHaveBeenCalled();
+		} );
+
+		test( 'still registers the regular PayPal row when the page location is off', () => {
+			loadCheckoutBlock(
+				baseConfig( {
+					buttons_enabled: false,
+					place_order_enabled: true,
+				} )
+			);
+
+			expect( regularCallFor( 'ppcp-gateway' ) ).toBeDefined();
+		} );
+
 		test.each( [
 			[ 'ppcp-gateway-paypal', [ 'products', 'subscriptions' ] ],
 			[ 'ppcp-gateway-venmo', [ 'products', 'subscriptions' ] ],
