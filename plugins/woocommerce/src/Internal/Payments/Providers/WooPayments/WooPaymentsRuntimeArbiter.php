@@ -22,14 +22,14 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 class WooPaymentsRuntimeArbiter {
 
 	/**
-	 * Owner value: the standalone WooPayments plugin owns the runtime.
+	 * Owner value: the WooPayments extension owns payments.
 	 *
 	 * @var string
 	 */
 	public const OWNER_EXTENSION = 'extension';
 
 	/**
-	 * Owner value: the core-native payments runtime owns the runtime.
+	 * Owner value: the built-in WooPayments owns payments.
 	 *
 	 * @var string
 	 */
@@ -43,7 +43,7 @@ class WooPaymentsRuntimeArbiter {
 	public const OWNER_NONE = 'none';
 
 	/**
-	 * The WooPayments plugin's main file, as it appears in the active-plugins option.
+	 * The WooPayments extension's main file, as it appears in the active-plugins option.
 	 *
 	 * @var string
 	 */
@@ -66,11 +66,11 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Filter that reports whether the built-in WooPayments is enabled for this site.
 	 *
-	 * The stored option supplies the default. Even when enabled, the plugin still wins while it is
-	 * active.
+	 * The stored option supplies the default. Even when enabled, the WooPayments extension still wins
+	 * while it is active.
 	 *
-	 * Early native registrations resolve this filter while WooCommerce is being loaded. To affect all
-	 * native registrations in a request, set the filter from a mu-plugin or earlier bootstrap code.
+	 * Registrations made while WooCommerce loads resolve this filter early. To affect every
+	 * registration in a request, set the filter from a mu-plugin or earlier bootstrap code.
 	 * Filters added from ordinary plugins may run too late for services registered during WooCommerce
 	 * inclusion.
 	 *
@@ -79,9 +79,9 @@ class WooPaymentsRuntimeArbiter {
 	public const BUILTIN_ENABLED_FILTER = 'woocommerce_woopayments_builtin_enabled';
 
 	/**
-	 * Option that disables native payments in the rollout filter default.
+	 * Option that turns the built-in WooPayments off in the enabled filter's default.
 	 *
-	 * The rollout filter retains final authority and may explicitly override this option.
+	 * The enabled filter keeps the final say and may override this option.
 	 *
 	 * @var string
 	 */
@@ -122,7 +122,7 @@ class WooPaymentsRuntimeArbiter {
 	public function get_runtime_owner(): string {
 		$blog_id = get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->runtime_owners ) ) {
-			// Plugin-wins is the only allowed state while the plugin is active; native is dormant.
+			// The WooPayments extension wins while it is active, whatever the built-in WooPayments setting says.
 			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_EXTENSION : ( $this->is_builtin_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE );
 		}
 
@@ -141,56 +141,56 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether core-native code may perform mutating registration for this site.
+	 * Tell whether the built-in WooPayments owns payments on this site.
 	 *
-	 * This is the guard every native registration must consult before acting.
+	 * Every built-in WooPayments registration that changes the site checks it first.
 	 *
 	 * @since 11.0.0
 	 *
-	 * @return bool True only when the native runtime owns this site.
+	 * @return bool True only when the built-in WooPayments owns this site.
 	 */
 	public function is_builtin_owner(): bool {
 		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
 	/**
-	 * Tell whether the WooPayments plugin owns the runtime for this site.
+	 * Tell whether the WooPayments extension owns payments on this site.
 	 *
-	 * The migration-notice / auto-deactivation component uses this to know when to surface the
-	 * "WooPayments is now in core — deactivate the extension" notice and the cutover action.
+	 * Code that only runs while the extension owns payments checks it, such as the cutover notice and the
+	 * setup tier sync.
 	 *
 	 * @since 11.0.0
 	 *
-	 * @return bool True when the plugin owns this site's payments runtime.
+	 * @return bool True when the WooPayments extension owns this site's payments.
 	 */
 	public function is_extension_owner(): bool {
 		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
 	/**
-	 * Tell whether the core-native payments runtime is enabled for this site.
+	 * Tell whether the built-in WooPayments is enabled for this site.
 	 *
-	 * This is the feature-flag state, independent of ownership: native can be enabled while the
-	 * plugin still owns the runtime (in which case the plugin still wins).
+	 * This is the enabled setting, independent of ownership: the built-in WooPayments can be enabled
+	 * while the WooPayments extension owns payments, and the extension still wins.
 	 *
 	 * @since 11.0.0
 	 *
-	 * @return bool True when the native runtime is enabled.
+	 * @return bool True when the built-in WooPayments is enabled.
 	 */
 	public function is_builtin_enabled(): bool {
 		$option_enabled = 'yes' === get_option( self::BUILTIN_ENABLED_OPTION, 'no' );
 		$filter_default = $this->is_kill_switch_active() ? false : $option_enabled;
 
 		/**
-		 * Filters whether the core-native payments runtime is enabled for this site.
+		 * Filters whether the built-in WooPayments is enabled for this site.
 		 *
-		 * This value is resolved during WooCommerce loading for early native registrations. Use a
-		 * mu-plugin or earlier bootstrap when the filter must control the whole native payments
-		 * registration cluster for the request.
+		 * This value is resolved while WooCommerce loads, for early registrations. Use a mu-plugin or
+		 * earlier bootstrap when the filter must control every built-in WooPayments registration in the
+		 * request.
 		 *
 		 * @since 11.0.0
 		 *
-		 * @param bool $enabled Whether the native runtime is enabled.
+		 * @param bool $enabled Whether the built-in WooPayments is enabled.
 		 */
 		return (bool) apply_filters( self::BUILTIN_ENABLED_FILTER, $filter_default );
 	}
@@ -215,13 +215,13 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the WooPayments plugin is active for the current site.
+	 * Tell whether the WooPayments extension is active for the current site.
 	 *
-	 * Primary signal is the active-plugins list (per-site + network), which is reliable in the
-	 * early-boot window and correct per-site under multisite. The include-time WCPAY_PLUGIN_FILE
-	 * constant is the fallback for a plugin included before WooCommerce without a list entry.
+	 * The active-plugins lists (per-site and network) are the primary signal: they are reliable early
+	 * in boot and per-site under multisite. The include-time WCPAY_PLUGIN_FILE constant is the fallback
+	 * for an extension included before WooCommerce without a list entry.
 	 *
-	 * @return bool True when the WooPayments plugin is active.
+	 * @return bool True when the WooPayments extension is active.
 	 */
 	private function is_woopayments_plugin_active(): bool {
 		if ( $this->plugin_in_active_list() ) {
@@ -232,9 +232,9 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the WooPayments plugin appears in the active-plugins lists.
+	 * Tell whether the WooPayments extension appears in the active-plugins lists.
 	 *
-	 * @return bool True when the plugin is in the per-site or network active-plugins list.
+	 * @return bool True when its main file is in the per-site or network active-plugins list.
 	 */
 	private function plugin_in_active_list(): bool {
 		$site_active = (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() );

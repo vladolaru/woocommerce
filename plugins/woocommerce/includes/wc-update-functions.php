@@ -3805,7 +3805,7 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
 }
 
 /**
- * Enable native payments for stores upgrading to this release.
+ * Enable the built-in WooPayments for stores upgrading to this release.
  *
  * @since 11.2.0
  *
@@ -3827,9 +3827,9 @@ function wc_update_11204_seed_multi_currency_feature(): void {
 }
 
 /**
- * Write the native payments state for stores that upgraded with the WooPayments plugin active.
+ * Write the setup tier for stores that upgraded with the WooPayments extension active.
  *
- * Those stores never wrote the state, so they read as disabled and never load the switch notice.
+ * Those stores never wrote the setup tier, so they read as disabled and never load the switch notice.
  *
  * @since 11.2.0
  *

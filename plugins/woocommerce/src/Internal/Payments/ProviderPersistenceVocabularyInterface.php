@@ -10,14 +10,12 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use WC_Order;
 
 /**
- * Provider-specific persistence keys and lock vocabulary.
+ * Names the order meta keys and lock settings the payments runtime reads and writes for a provider.
  *
- * This contract contains only identifiers needed by the generic runtime to
- * read and coordinate provider-owned persisted state. Outcome interpretation
- * belongs to ProviderOutcomeMetadataMapperInterface instead.
+ * It holds only identifiers; turning an outcome into meta belongs to ProviderOutcomeMetadataMapperInterface.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 interface ProviderPersistenceVocabularyInterface {
 

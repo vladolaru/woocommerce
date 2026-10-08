@@ -1288,7 +1288,7 @@ class WC_Install {
 		add_option( 'woocommerce_checkout_highlight_required_fields', 'yes', '', 'yes' );
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
-		// Native payments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
+		// The built-in WooPayments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
 		self::seed_autoloaded_option( 'woocommerce_woopayments_builtin_kill_switch', '0' );
 		// WooPaymentsCutoverStateStore::ABSENT_RECORD: admin and cron requests read the cutover record.

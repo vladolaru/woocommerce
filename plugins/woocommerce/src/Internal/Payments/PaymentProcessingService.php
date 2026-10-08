@@ -13,15 +13,15 @@ use WC_Order_Refund;
 use WP_Error;
 
 /**
- * Generic native payment processing template.
+ * Runs checkout, refund, capture and cancel through a payment provider under the order payment lock, and applies the outcome to the order.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class PaymentProcessingService {
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
@@ -35,7 +35,7 @@ class PaymentProcessingService {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
-	 * Payment operation idempotency service.
+	 * Payment operation keys.
 	 *
 	 * @var PaymentOperationKeys
 	 */
@@ -46,9 +46,9 @@ class PaymentProcessingService {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock             $order_payment_lock Order payment store.
+	 * @param OrderPaymentLock             $order_payment_lock Order payment lock.
 	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
-	 * @param PaymentOperationKeys         $operation_keys     Payment operation idempotency service.
+	 * @param PaymentOperationKeys         $operation_keys     Payment operation keys.
 	 */
 	final public function init(
 		OrderPaymentLock $order_payment_lock,
@@ -77,7 +77,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Process checkout payment through a provider and return the neutral outcome.
+	 * Process checkout payment through a provider and return the outcome.
 	 *
 	 * Under the order payment lock the context's order is read again in place, so every holder of that object sees the
 	 * order as the charge saw it (get_outcome_for_order_changed_before_claim()).
@@ -254,7 +254,7 @@ class PaymentProcessingService {
 	/**
 	 * Persist provider reconciliation context after local outcome application fails.
 	 *
-	 * The order is reloaded to avoid clobbering concurrent writes. Provider-profile metadata is needed
+	 * The order is reloaded to avoid clobbering concurrent writes. The provider's order meta is needed
 	 * by later confirmation and reconciliation paths, so persisting only the transaction ID is not enough.
 	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
 	 * outcome after transport has completed.
@@ -379,10 +379,10 @@ class PaymentProcessingService {
 			// while the request is in flight (a manual refund, or one the lock refuses) is never linked.
 			$wc_refund_id = $this->get_newest_refund_id( $order );
 
-			// Refuse a refund with no local row before any money moves. Client 11.1.0 sends it first and
-			// then fails (class-wc-payment-gateway-wcpay.php:3003-3007), so a retry could refund twice;
-			// money hazards are fixed natively. Every core caller (wc_refund_payment(), the REST API)
-			// creates the row first, so only a direct caller without one reaches this.
+			// Refuse a refund with no local row before any money moves, so a retry cannot refund twice.
+			// Client 11.1.0 sends it first and then fails (class-wc-payment-gateway-wcpay.php:3003-3007).
+			// Every core caller (wc_refund_payment(), the REST API) creates the row first, so only a
+			// direct caller without one reaches this.
 			if ( null === $wc_refund_id ) {
 				return new WP_Error(
 					'order_payment_refund_not_found',
@@ -558,7 +558,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Add a WooPayments-compatible provider refund note if it does not already exist.
+	 * Add the provider's refund note unless the order already has it.
 	 *
 	 * @param WC_Order $order             Parent order.
 	 * @param string   $note              Provider refund note.

@@ -10,21 +10,14 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use WC_Order;
 
 /**
- * Builds idempotency keys for native payment operations.
+ * Builds the keys for payment operations: a fresh idempotency key per charge or refund attempt, and a derived key per capture or cancel.
  *
- * Two policies live here. Charges and refunds get a fresh key per attempt
- * (`mint_attempt_key()`): WooCommerce cannot tell whether a resubmitted checkout or refund
- * retries a failed attempt or starts a genuinely new one, and a reused key would make the
- * provider replay the first attempt's cached failure. Duplicate-charge protection comes from
- * the application-level guards, not only the key. A provider may keep a charge's key on the order
- * when the outcome is ambiguous (the request may have reached it) and send that key on the next
- * attempt instead, until a definitive outcome retires it. Captures and cancels derive a key
- * (`derive_operation_key()`), but only as the order payment lock token and log correlation ID: their
- * provider requests carry a fresh key per call, so a retry after a failed capture reaches the
- * provider instead of replaying the stored failure.
+ * A fresh key per attempt keeps a new attempt from replaying an earlier attempt's cached failure; the application-level
+ * guards, not the key, prevent a duplicate charge. A derived key is only the order payment lock token and the log
+ * correlation ID: capture and cancel requests carry a fresh key per call, so a retry after a failure reaches the provider.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class PaymentOperationKeys {
 
@@ -33,8 +26,8 @@ class PaymentOperationKeys {
 	 *
 	 * Minted once per attempt and carried through every transport-level retry within it, so
 	 * one attempt can never double-charge while a new attempt is never poisoned by a previous
-	 * one's cached response. Matches the platform-proven client, which sends a UUID v4 per
-	 * request family. A provider keeping an ambiguous attempt's key sends that key instead.
+	 * one's cached response. A provider keeping an ambiguous attempt's key sends that key instead.
+	 * Client 11.1.0 sends a fresh UUID v4 Idempotency-Key on each platform request (class-wc-payments-api-client.php:2690, 3114).
 	 *
 	 * @since 11.0.0
 	 *

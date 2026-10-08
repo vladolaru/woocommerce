@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use WC_Order;
 
 /**
- * Neutral input context for a provider payment operation.
+ * Carries the order, gateway, amount and payment data for one checkout, refund, capture or cancel.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class PaymentOperationContext {
 

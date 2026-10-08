@@ -14,7 +14,7 @@ use WC_Order;
  * Holds the order payment lock, and logs lock refusals and payment method mismatches.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class OrderPaymentLock {
 
@@ -60,14 +60,12 @@ class OrderPaymentLock {
 	/**
 	 * Claim the order payment lock and record which operation holds it.
 	 *
-	 * Unlike WooPayments-compatible reference checks, native processing uses this as an order-wide
-	 * claim: any active lock value blocks checkout, refund, capture, and cancel from starting.
-	 * WooPayments 11.1.0 locks only intent-driven status updates; this stricter lock is owner-ratified
-	 * money-path hardening (inbox N-270), and log_refusal() records each refusal
-	 * the plugin would have allowed. Release the lock with release() and the returned token.
+	 * Any held lock blocks checkout, refund, capture and cancel from starting; every refusal is logged through
+	 * log_refusal(). Release the lock with release() and the returned token.
+	 * Client 11.1.0 locks only intent-driven status updates (class-wc-payments-order-service.php:2756-2761).
 	 *
-	 * The lock keeps the WooPayments-compatible value, the payment reference, so a plugin request still sees an
-	 * intent it is processing as locked. A holder record names the operation, for the refusal log, and carries a
+	 * The lock value is the payment reference, so a request processing that reference sees the order as locked.
+	 * A holder record names the operation, for the refusal log, and carries a
 	 * token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL cannot
 	 * release a lock a later claim with the same reference took over.
 	 *
@@ -106,7 +104,7 @@ class OrderPaymentLock {
 	}
 
 	/**
-	 * Log a warning when the order payment lock refuses an operation WooPayments would have allowed.
+	 * Log a warning when the order payment lock refuses an operation.
 	 *
 	 * Writes one warning line with a fixed prefix, naming the order, the refused operation, the
 	 * operation holding the lock and the lock's age. Logging is best-effort and never throws.

@@ -17,7 +17,7 @@ use RuntimeException;
  * payment; the provider's retry policy decides that per event type. The holder's lock expires after its TTL.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class OrderPaymentLockRefusedException extends RuntimeException {
 

@@ -8,18 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * Internal processing contract implemented by native payments providers.
+ * Runs a payment provider's charge, refund, capture and cancel calls for the payments runtime.
  *
- * Processing providers also publish their WooCommerce payment gateways through the
- * inherited gateway-provider identity contract. Keeping one interface hierarchy
- * lets the processing service and gateway registry consume the same provider
- * without duplicate interface declarations on each implementation.
- *
- * When charge(), capture(), cancel() or refund() throws, the operation fails with the exception message as its
- * error message and, when the exception has a get_error_code() method, that code as its error code.
+ * It extends PaymentGatewayProviderInterface, so the same provider also publishes its gateways. When an operation
+ * throws, it fails with the exception message and, when the exception has get_error_code(), that error code.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 interface ProviderInterface extends PaymentGatewayProviderInterface {
 
@@ -35,7 +30,7 @@ interface ProviderInterface extends PaymentGatewayProviderInterface {
 	public function supports_zero_amount_setup( PaymentOperationContext $context ): bool;
 
 	/**
-	 * Get the provider persistence profile.
+	 * Get the provider's persistence vocabulary.
 	 *
 	 * @return ProviderPersistenceVocabularyInterface
 	 *

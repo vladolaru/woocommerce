@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Registers what WooCommerce's built-in payment provider needs on the current request, and starts Multi-Currency.
  *
- * A listed class that is a payment gateway provider is handed to the gateway registry, which resolves it only when
+ * A listed class that is a payment gateway provider is handed to ProviderGatewaysController, which resolves it only when
  * WooCommerce builds its gateway list; it is register()ed as well only when it also registers hooks. Every other listed
  * class is resolved and register()ed.
  *
@@ -69,7 +69,7 @@ final class PaymentsBootstrap {
 	 * Create the bootstrap for WooCommerce's built-in payment provider.
 	 *
 	 * The inputs are the built-in provider's: the classes each request type registers, in order and empty when nothing
-	 * is set up; whether its gateways belong in the gateway list, which the bootstrap only hands to the gateway registry;
+	 * is set up; whether its gateways belong in the gateway list, which the bootstrap only hands to ProviderGatewaysController;
 	 * and the Multi-Currency classes it contributes, as the bootstrap starts Multi-Currency.
 	 *
 	 * @param callable $classes_for_request      Lists the classes a request type registers.
@@ -169,7 +169,7 @@ final class PaymentsBootstrap {
 	}
 
 	/**
-	 * Resolve and register explicit roots once, handing payment gateway providers to the gateway registry.
+	 * Resolve and register explicit roots once, handing payment gateway providers to ProviderGatewaysController.
 	 *
 	 * @param Container|RuntimeContainer $container Runtime dependency container.
 	 * @param array<int,class-string>    $roots     Root class names.
@@ -188,14 +188,14 @@ final class PaymentsBootstrap {
 	}
 
 	/**
-	 * Hand a payment gateway provider to the gateway registry, resolved only when WooCommerce builds its gateway list.
+	 * Hand a payment gateway provider to ProviderGatewaysController, resolved only when WooCommerce builds its gateway list.
 	 *
 	 * @param Container|RuntimeContainer $container     Runtime dependency container.
 	 * @param class-string               $provider_root Payment gateway provider class name.
 	 */
 	private function add_gateway_provider( $container, string $provider_root ): void {
 		/**
-		 * Gateway registry.
+		 * Provider gateways controller.
 		 *
 		 * @var ProviderGatewaysController $registry
 		 */
@@ -203,7 +203,7 @@ final class PaymentsBootstrap {
 		$registry->add_provider(
 			static function () use ( $container, $provider_root ) {
 				/**
-				 * Native payment gateway provider.
+				 * Payment gateway provider.
 				 *
 				 * @var PaymentGatewayProviderInterface $provider
 				 */

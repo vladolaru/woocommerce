@@ -8,20 +8,19 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * Optional provider port that turns an outcome into provider order meta.
+ * Turns a payment outcome into the provider's order meta.
  *
- * PaymentProcessingService calls it from apply_checkout_outcome() and apply_order_operation_outcome() to build
- * the PaymentLifecycleEvent meta that OrderPaymentLifecycleService::apply_unlocked() saves, and from
- * persist_reconciliation_context() when applying an outcome failed. It receives the outcome and only returns meta.
- * Without it, no provider meta is written for checkout, capture or cancel outcomes.
+ * PaymentProcessingService uses it to build the lifecycle event meta for checkout, capture and cancel outcomes, and
+ * to save the reconciliation context when applying an outcome failed. It only returns meta; without it, no provider
+ * meta is written for those outcomes.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 interface ProviderOutcomeMetadataMapperInterface {
 
 	/**
-	 * Map a neutral outcome to provider-owned order metadata.
+	 * Map an outcome to provider-owned order metadata.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>

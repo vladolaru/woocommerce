@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * Contract for native providers that publish WooCommerce payment gateways.
+ * Publishes a payment provider's WooCommerce payment gateways.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 interface PaymentGatewayProviderInterface {
 

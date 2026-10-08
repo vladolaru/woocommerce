@@ -18,7 +18,7 @@ use Throwable;
  * did. The caller decides what the order and the shopper see; the original failure is the previous exception.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class PaymentOutcomeApplyException extends RuntimeException {
 

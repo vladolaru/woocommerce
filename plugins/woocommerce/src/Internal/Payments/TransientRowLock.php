@@ -8,20 +8,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 /**
- * A lock held in the database rows of a transient, so exactly one of several concurrent requests holds it.
+ * Holds a lock in the database rows of a transient, so exactly one of several concurrent requests holds it.
  *
- * WordPress add_option() and set_transient() trust the request's notoptions cache and then upsert, so two requests
- * can both believe they stored a lock. Like WC_Install::seed_autoloaded_option(), a claim inserts the value row with
- * INSERT IGNORE instead, takes an expired lock over with one compare-and-set UPDATE, and a release deletes the rows
- * only while they still hold the caller's value. The rows are always in the options table, so the caller decides
- * whether the lock belongs there or in the object cache.
- *
- * A caller can add a holder transient: a takeover rewrites it in the same statement, and a release deletes the lock
- * only while the holder still holds the caller's record. That fences a release on a token kept apart from a lock
- * value other readers expect.
+ * WordPress add_option() and set_transient() can let two requests both believe they stored a lock, so a claim inserts with INSERT
+ * IGNORE, as WC_Install::seed_autoloaded_option() does, and takes an expired lock over with one compare-and-set UPDATE.
+ * A release deletes the rows only while they hold the caller's value; an optional holder record fences it on a token.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class TransientRowLock {
 
@@ -35,6 +29,9 @@ class TransientRowLock {
 	 * former holder can no longer release the lock. Only a lock removed without its release, by the expired-transient
 	 * cleanup or an unconditional unlock, can leave a former holder's record in place until a new claim's holder write
 	 * replaces it.
+	 *
+	 * The rows are always in the options table, so the caller decides whether the lock belongs there or in the object
+	 * cache. A holder record keeps the release token apart from a lock value other readers expect.
 	 *
 	 * @since 11.2.0
 	 *

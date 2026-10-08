@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use InvalidArgumentException;
 
 /**
- * Neutral result of a provider payment operation.
+ * Holds the result of a provider payment operation: its status, references, and the data the runtime applies to the order.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class PaymentOutcome {
 
@@ -185,7 +185,7 @@ class PaymentOutcome {
 	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
 
 	/**
-	 * Data key flagging that a failed outcome must not transition the order status.
+	 * Data key flagging that a failed outcome must not change the order status.
 	 *
 	 * A payment refused before processing (for example by fraud screening) records
 	 * its meta and note effects while leaving the order status for the merchant to
@@ -241,7 +241,7 @@ class PaymentOutcome {
 	private string $customer_id;
 
 	/**
-	 * Additional neutral outcome data.
+	 * Additional outcome data.
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -359,7 +359,7 @@ class PaymentOutcome {
 	}
 
 	/**
-	 * Get additional neutral outcome data.
+	 * Get additional outcome data.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -370,7 +370,7 @@ class PaymentOutcome {
 	/**
 	 * Return a copy carrying a request-scoped provider effect plan.
 	 *
-	 * The plan is intentionally excluded from outcome data and serialization.
+	 * The plan stays out of outcome data, so it is never serialized or saved with the outcome.
 	 *
 	 * @param ProviderOperationEffectPlanInterface $effect_plan Provider effect plan.
 	 * @return self

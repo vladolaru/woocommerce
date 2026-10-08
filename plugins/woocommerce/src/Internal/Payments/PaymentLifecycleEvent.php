@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use InvalidArgumentException;
 
 /**
- * Neutral order lifecycle effect produced by a payment provider event.
+ * Describes the order changes a payment provider event asks for: status, meta, and a note added once.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class PaymentLifecycleEvent {
 

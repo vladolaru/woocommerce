@@ -18,23 +18,24 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  */
 final class WooPaymentsSetupTier {
 
-	/** The persisted state option. */
+	/** The option that stores the setup tier. */
 	public const OPTION_NAME = 'woocommerce_woopayments_setup_tier';
 
-	/** Native payments is unavailable. */
+	/** The built-in WooPayments is unavailable. */
 	public const DISABLED = 'disabled';
 
-	/** Native payments can be offered or migrated to. */
+	/** The built-in WooPayments can be offered, or a store on the WooPayments extension can switch to it. */
 	public const AVAILABLE = 'available';
 
-	/** A native account exists without checkout enabled. */
+	/** A WooPayments account is connected, without checkout enabled. */
 	public const CONNECTED = 'connected';
 
 	/**
-	 * Native checkout is enabled.
+	 * WooPayments checkout is enabled.
 	 *
-	 * Onboarding enables the card gateway when it applies the payment-method picks, so a store reaches this tier once its account is cached, before KYC, as the client loads its checkout code then.
+	 * Onboarding enables the card gateway when it applies the payment-method picks, so a store reaches this tier once its account is cached, before KYC.
 	 * Checkout still offers nothing until the account can take payments.
+	 * Client 11.1.0 builds and hooks its checkout code on every request, before KYC (`includes/class-wc-payments.php:647-650`).
 	 */
 	public const ACTIVE = 'active';
 
@@ -46,7 +47,7 @@ final class WooPaymentsSetupTier {
 	private WooPaymentsRuntimeArbiter $runtime_arbiter;
 
 	/**
-	 * Request-local states keyed by blog ID.
+	 * Request-local setup tiers keyed by blog ID.
 	 *
 	 * @var array<int,string>
 	 */
@@ -60,7 +61,7 @@ final class WooPaymentsSetupTier {
 	private ?array $classes_by_setup_tier = null;
 
 	/**
-	 * Initialize the state store.
+	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
@@ -71,11 +72,11 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Get the validated effective state for the current blog.
+	 * Get the validated effective setup tier for the current blog.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @return string One of the state constants.
+	 * @return string One of the setup tier constants.
 	 */
 	public function get_effective_tier(): string {
 		$tier  = $this->get_stored_tier();
@@ -122,13 +123,13 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Get the stored state for the current blog, before runtime ownership clamps it.
+	 * Get the stored setup tier for the current blog, before runtime ownership clamps it.
 	 *
 	 * Support surfaces use it: a connected store keeps its stored tier while the kill switch disables it.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @return string One of the state constants.
+	 * @return string One of the setup tier constants.
 	 */
 	public function get_stored_tier(): string {
 		$blog_id = get_current_blog_id();
@@ -141,19 +142,19 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Persist a state and update the current-blog memo only after exact readback.
+	 * Persist a setup tier and update the current-blog memo only after exact readback.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string $tier State to persist.
-	 * @return bool Whether the exact autoloaded state was read back.
+	 * @param string $tier Setup tier to persist.
+	 * @return bool Whether the exact autoloaded setup tier was read back.
 	 */
 	public function write_tier( string $tier ): bool {
 		if ( ! $this->is_valid_tier( $tier ) ) {
 			return false;
 		}
 
-		// Every account refresh re-syncs the state; an unchanged autoloaded value needs no write or reread.
+		// Every account refresh re-syncs the setup tier; an unchanged autoloaded value needs no write or reread.
 		if ( get_option( self::OPTION_NAME, null ) === $tier && array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {
 			$this->tiers[ get_current_blog_id() ] = $tier;
 			return true;
@@ -175,7 +176,7 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Invalidate one blog's memoized state.
+	 * Invalidate one blog's memoized setup tier.
 	 *
 	 * @since 11.2.0
 	 *
@@ -186,9 +187,9 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Log a state write whose readback did not match, with the requested and stored values.
+	 * Log a setup tier write whose readback did not match, with the requested and stored values.
 	 *
-	 * @param string $requested_tier State that was written.
+	 * @param string $requested_tier Setup tier that was written.
 	 * @param mixed  $stored_tier    Value read back from the option.
 	 * @param bool   $autoloaded      Whether the option is autoloaded.
 	 */
@@ -205,9 +206,9 @@ final class WooPaymentsSetupTier {
 	}
 
 	/**
-	 * Tell whether a value is an exact native state.
+	 * Tell whether a value is an exact setup tier.
 	 *
-	 * @param mixed $tier Candidate state.
+	 * @param mixed $tier Candidate setup tier.
 	 * @return bool
 	 */
 	private function is_valid_tier( $tier ): bool {

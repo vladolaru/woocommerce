@@ -12,15 +12,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use WC_Order;
 
 /**
- * Applies neutral payment lifecycle effects to WooCommerce orders.
+ * Applies payment lifecycle events to WooCommerce orders: meta, status and a note added once, under the order payment lock.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class OrderPaymentLifecycleService {
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
@@ -38,7 +38,7 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock            $order_payment_lock  Order payment store.
+	 * @param OrderPaymentLock            $order_payment_lock  Order payment lock.
 	 * @param WooPaymentsOrderNoteService $order_note_service  WooPayments order note service.
 	 */
 	final public function init( OrderPaymentLock $order_payment_lock, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
@@ -144,7 +144,7 @@ class OrderPaymentLifecycleService {
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 */
 	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
-		// Same line as every other lock refusal, so one search finds them all (inbox N-270).
+		// Same line as every other lock refusal, so one search finds them all.
 		$this->order_payment_lock->log_refusal(
 			$order,
 			$persistence_vocabulary,
