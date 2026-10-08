@@ -718,16 +718,16 @@ class StripeBillingSubscriptionService {
 		// Charging the invoice also sends invoice.paid, whose webhook records the payment under the order payment lock.
 		// Completing the order here takes the same lock and reads the order again, so the two cannot both complete it;
 		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock (:677-690).
-		$vocabulary    = new WooPaymentsPersistenceVocabulary();
-		$payment_store = wc_get_container()->get( OrderPaymentLock::class );
-		$lock_token    = $payment_store->claim( $order, $vocabulary, $wcpay_invoice_id, 'payment method change payment' );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $wcpay_invoice_id, 'payment method change payment' );
 		if ( null === $lock_token ) {
-			$payment_store->log_refusal( $order, $vocabulary, 'payment method change payment' );
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment method change payment' );
 		} else {
 			try {
 				$this->complete_renewal_order_with_token( $order->get_id(), $token );
 			} finally {
-				$payment_store->release( $order, $vocabulary, $lock_token );
+				$order_payment_lock->release( $order, $vocabulary, $lock_token );
 			}
 		}
 

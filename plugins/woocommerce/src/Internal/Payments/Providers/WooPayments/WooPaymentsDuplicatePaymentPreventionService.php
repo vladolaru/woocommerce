@@ -408,18 +408,18 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return;
 		}
 
-		$store      = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		$lock_token = $store->claim( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, 'disputed_intent_note_' . $intent_id, 'disputed intent note' );
 		if ( null === $lock_token ) {
-			$store->log_refusal( $order, $vocabulary, 'disputed intent note' );
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'disputed intent note' );
 			return;
 		}
 
 		try {
 			$this->write_disputed_intent_note_unless_noted( $this->get_lifecycle_service()->get_fresh_order_from_data_store( $order ), $intent_id );
 		} finally {
-			$store->release( $order, $vocabulary, $lock_token );
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 	}
 

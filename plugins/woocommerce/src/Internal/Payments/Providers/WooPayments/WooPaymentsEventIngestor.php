@@ -452,11 +452,11 @@ class WooPaymentsEventIngestor {
 	 */
 	public function record_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
 		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
-		$vocabulary    = new WooPaymentsPersistenceVocabulary();
-		$payment_store = wc_get_container()->get( OrderPaymentLock::class );
-		$lock_token    = $payment_store->claim( $order, $vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
 		if ( null === $lock_token ) {
-			$payment_store->log_refusal( $order, $vocabulary, 'payment status update' );
+			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
@@ -473,7 +473,7 @@ class WooPaymentsEventIngestor {
 			$this->repair_recurring_order_token( $order, $payment_intent );
 			$this->lifecycle_service->apply_unlocked( $order, $lifecycle_event, $vocabulary );
 		} finally {
-			$payment_store->release( $order, $vocabulary, $lock_token );
+			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );

@@ -25,7 +25,7 @@ class PaymentProcessingService {
 	 *
 	 * @var OrderPaymentLock
 	 */
-	private OrderPaymentLock $order_payment_store;
+	private OrderPaymentLock $order_payment_lock;
 
 	/**
 	 * Order payment lifecycle service.
@@ -46,18 +46,18 @@ class PaymentProcessingService {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock             $order_payment_store Order payment store.
+	 * @param OrderPaymentLock             $order_payment_lock Order payment store.
 	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
-	 * @param PaymentOperationKeys         $operation_keys      Payment operation idempotency service.
+	 * @param PaymentOperationKeys         $operation_keys     Payment operation idempotency service.
 	 */
 	final public function init(
-		OrderPaymentLock $order_payment_store,
+		OrderPaymentLock $order_payment_lock,
 		OrderPaymentLifecycleService $lifecycle_service,
 		PaymentOperationKeys $operation_keys
 	): void {
-		$this->order_payment_store = $order_payment_store;
-		$this->lifecycle_service   = $lifecycle_service;
-		$this->operation_keys      = $operation_keys;
+		$this->order_payment_lock = $order_payment_lock;
+		$this->lifecycle_service  = $lifecycle_service;
+		$this->operation_keys     = $operation_keys;
 	}
 
 	/**
@@ -96,7 +96,7 @@ class PaymentProcessingService {
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
 		// WooPayments locks checkout too, so this refusal is not logged as a native-only one.
-		$lock_token = $this->order_payment_store->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
+		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();
 		}
@@ -131,7 +131,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release( $order, $vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 	}
 
@@ -367,9 +367,9 @@ class PaymentProcessingService {
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
 		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
 		$idempotency_key = $this->operation_keys->mint_attempt_key();
-		$lock_token      = $this->order_payment_store->claim( $order, $vocabulary, $idempotency_key, 'refund' );
+		$lock_token      = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'refund' );
 		if ( null === $lock_token ) {
-			$this->order_payment_store->log_refusal( $order, $vocabulary, 'refund' );
+			$this->order_payment_lock->log_refusal( $order, $vocabulary, 'refund' );
 			return new WP_Error( 'native_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
@@ -413,7 +413,7 @@ class PaymentProcessingService {
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
-			$this->order_payment_store->release( $order, $vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 
 		if ( $outcome->is_successful() ) {
@@ -714,9 +714,9 @@ class PaymentProcessingService {
 		$operation_key = $this->operation_keys->derive_operation_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
 		$vocabulary    = $provider->get_persistence_vocabulary();
 
-		$lock_token = $this->order_payment_store->claim( $order, $vocabulary, $operation_key, $operation );
+		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $operation_key, $operation );
 		if ( null === $lock_token ) {
-			$this->order_payment_store->log_refusal( $order, $vocabulary, $operation );
+			$this->order_payment_lock->log_refusal( $order, $vocabulary, $operation );
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
 				'',
@@ -754,7 +754,7 @@ class PaymentProcessingService {
 
 			return $outcome;
 		} finally {
-			$this->order_payment_store->release( $order, $vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
 	}
 

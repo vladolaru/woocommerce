@@ -551,12 +551,12 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_lock_contention' );
 		$order->save();
 
-		$event           = $this->get_created_event_object( 'dp_lock_contention', 'needs_response' );
-		$event['charge'] = 'ch_lock_contention';
-		$payment_store   = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary      = new WooPaymentsPersistenceVocabulary();
+		$event              = $this->get_created_event_object( 'dp_lock_contention', 'needs_response' );
+		$event['charge']    = 'ch_lock_contention';
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 
-		$this->assertNotNull( $payment_store->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
+		$this->assertNotNull( $order_payment_lock->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
 
 		try {
 			try {
@@ -598,9 +598,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_locked_close' );
 		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_locked_close' ) );
 		$order->save();
-		$payment_store = wc_get_container()->get( OrderPaymentLock::class );
-		$vocabulary    = new WooPaymentsPersistenceVocabulary();
-		$this->assertNotNull( $payment_store->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
+		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary         = new WooPaymentsPersistenceVocabulary();
+		$this->assertNotNull( $order_payment_lock->claim( $order, $vocabulary, 'pi_lock_holder', 'payment operation' ) );
 
 		try {
 			$this->sut->process(

@@ -1733,10 +1733,10 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		$persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
-		$order_payment_store    = wc_get_container()->get( OrderPaymentLock::class );
-		$lock_token             = $order_payment_store->claim( $draft_order, $persistence_vocabulary, null, self::DRAFT_REUSE_OPERATION );
+		$order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
+		$lock_token             = $order_payment_lock->claim( $draft_order, $persistence_vocabulary, null, self::DRAFT_REUSE_OPERATION );
 		if ( null === $lock_token ) {
-			$order_payment_store->log_refusal( $draft_order, $persistence_vocabulary, self::DRAFT_REUSE_OPERATION );
+			$order_payment_lock->log_refusal( $draft_order, $persistence_vocabulary, self::DRAFT_REUSE_OPERATION );
 
 			return new WP_Error(
 				'woocommerce_woopay_payment_in_progress',
@@ -1756,7 +1756,7 @@ class WooPaymentsWooPaySessionService {
 			$session->set( 'store_api_draft_order', null );
 			$session->set( 'order_awaiting_payment', $draft_order_id );
 		} finally {
-			$order_payment_store->release( $draft_order, $persistence_vocabulary, $lock_token );
+			$order_payment_lock->release( $draft_order, $persistence_vocabulary, $lock_token );
 		}
 
 		return $order_id;

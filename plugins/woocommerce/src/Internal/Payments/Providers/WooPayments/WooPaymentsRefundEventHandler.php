@@ -43,7 +43,7 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @var OrderPaymentLock
 	 */
-	private OrderPaymentLock $order_payment_store;
+	private OrderPaymentLock $order_payment_lock;
 
 	/**
 	 * WooPayments persistence profile.
@@ -58,12 +58,12 @@ class WooPaymentsRefundEventHandler {
 	 * @internal
 	 *
 	 * @param WooPaymentsLegacyRuntime         $legacy_runtime      WooPayments legacy runtime.
-	 * @param OrderPaymentLock                 $order_payment_store Order payment store.
+	 * @param OrderPaymentLock                 $order_payment_lock Order payment store.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentLock $order_payment_store, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
 		$this->legacy_runtime         = $legacy_runtime;
-		$this->order_payment_store    = $order_payment_store;
+		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 	}
 
@@ -155,7 +155,7 @@ class WooPaymentsRefundEventHandler {
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );
 		} finally {
-			$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}
 	}
 
@@ -183,7 +183,7 @@ class WooPaymentsRefundEventHandler {
 					$order = $this->get_fresh_order( $order );
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), false, $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
-					$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
+					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 				}
 				return;
 			case 'canceled':
@@ -193,7 +193,7 @@ class WooPaymentsRefundEventHandler {
 					$order = $this->get_fresh_order( $order );
 					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), true );
 				} finally {
-					$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
+					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 				}
 				return;
 			case 'succeeded':
@@ -211,7 +211,7 @@ class WooPaymentsRefundEventHandler {
 						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
 					}
 				} finally {
-					$this->order_payment_store->release( $order, $this->persistence_vocabulary, $lock_token );
+					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 				}
 				return;
 		}
@@ -462,7 +462,7 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		if ( ! $this->is_woopayments_order( $order ) ) {
-			$this->order_payment_store->log_order_payment_method_mismatch( $order, $event_type );
+			$this->order_payment_lock->log_order_payment_method_mismatch( $order, $event_type );
 		}
 
 		return $order;
@@ -565,9 +565,9 @@ class WooPaymentsRefundEventHandler {
 	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_refund_lock( WC_Order $order, string $refund_id ): string {
-		$lock_token = $this->order_payment_store->claim( $order, $this->persistence_vocabulary, 'refund_webhook_' . $refund_id, 'refund webhook' );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'refund_webhook_' . $refund_id, 'refund webhook' );
 		if ( null === $lock_token ) {
-			$this->order_payment_store->log_refusal( $order, $this->persistence_vocabulary, 'refund webhook' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'refund webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
 		}

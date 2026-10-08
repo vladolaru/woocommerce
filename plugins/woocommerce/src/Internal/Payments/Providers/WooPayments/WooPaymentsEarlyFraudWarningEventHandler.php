@@ -26,7 +26,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 *
 	 * @var OrderPaymentLock|null
 	 */
-	private ?OrderPaymentLock $order_payment_store = null;
+	private ?OrderPaymentLock $order_payment_lock = null;
 
 	/**
 	 * WooPayments persistence profile.
@@ -48,12 +48,12 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @internal
 	 * @since 11.2.0
 	 *
-	 * @param OrderPaymentLock|null                 $order_payment_store Optional order payment store.
+	 * @param OrderPaymentLock|null                 $order_payment_lock Optional order payment store.
 	 * @param WooPaymentsPersistenceVocabulary|null $persistence_vocabulary Optional WooPayments persistence profile.
 	 * @param WooPaymentsOrderNoteService|null      $note_service Optional WooPayments note service.
 	 */
-	final public function init( ?OrderPaymentLock $order_payment_store = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
-		$this->order_payment_store    = $order_payment_store;
+	final public function init( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
+		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->note_service           = $note_service;
 	}
@@ -100,9 +100,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find a WooPayments order for early fraud warning charge ID: %s', $warning['charge'] ) ) );
 		}
 
-		$lock_token = $this->get_order_payment_store()->claim( $order, $this->get_persistence_vocabulary(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
+		$lock_token = $this->get_order_payment_lock()->claim( $order, $this->get_persistence_vocabulary(), 'early_fraud_warning_' . $warning['id'], 'early fraud warning webhook' );
 		if ( null === $lock_token ) {
-			$this->get_order_payment_store()->log_refusal( $order, $this->get_persistence_vocabulary(), 'early fraud warning webhook' );
+			$this->get_order_payment_lock()->log_refusal( $order, $this->get_persistence_vocabulary(), 'early fraud warning webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
 		}
@@ -131,7 +131,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning ID: %s', $warning['id'] ) ) );
 			}
 			if ( ! $this->is_woopayments_order( $persisted_order ) ) {
-				$this->get_order_payment_store()->log_order_payment_method_mismatch( $persisted_order, $event_type );
+				$this->get_order_payment_lock()->log_order_payment_method_mismatch( $persisted_order, $event_type );
 			}
 
 			$note_candidates = $this->get_note_service()->format_early_fraud_warning_note_candidates( $warning['charge'], $warning['actionable'], $warning['fraud_type'] );
@@ -146,7 +146,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning note for ID: %s', $warning['id'] ) ) );
 			}
 		} finally {
-			$this->get_order_payment_store()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
+			$this->get_order_payment_lock()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
 		}
 	}
 
@@ -255,12 +255,12 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 *
 	 * @return OrderPaymentLock
 	 */
-	private function get_order_payment_store(): OrderPaymentLock {
-		if ( null === $this->order_payment_store ) {
-			$this->order_payment_store = wc_get_container()->get( OrderPaymentLock::class );
+	private function get_order_payment_lock(): OrderPaymentLock {
+		if ( null === $this->order_payment_lock ) {
+			$this->order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		}
 
-		return $this->order_payment_store;
+		return $this->order_payment_lock;
 	}
 
 	/**
