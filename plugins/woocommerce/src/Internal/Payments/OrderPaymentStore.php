@@ -9,11 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments;
 
 use Throwable;
 use WC_Order;
-use WC_Order_Refund;
-use WC_Abstract_Order;
 
 /**
- * HPOS-safe order payment projection and WooPayments-compatible payment locks.
+ * Holds the order payment lock, and logs lock refusals and payment method mismatches.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -57,31 +55,6 @@ class OrderPaymentStore {
 	 */
 	final public function init( TransientRowLock $row_lock ): void {
 		$this->row_lock = $row_lock;
-	}
-
-	/**
-	 * Read a stable, HPOS-safe projection of an order's payment surface.
-	 *
-	 * The returned structure is intentionally limited to persisted payment state. A1 shadow mode
-	 * compares this read projection without writing back to the order.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Order                      $order               Order to project.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @return array<string,mixed>
-	 */
-	public function read_payment_surface( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
-		return array(
-			'order_id'       => (int) $order->get_id(),
-			'status'         => (string) $order->get_status(),
-			'payment_method' => (string) $order->get_payment_method(),
-			'transaction_id' => (string) $order->get_transaction_id(),
-			'currency'       => (string) $order->get_currency(),
-			'total'          => (string) $order->get_total(),
-			'meta'           => $this->read_payment_meta( $order, $persistence_profile ),
-			'refunds'        => $this->read_refund_surfaces( $order, $persistence_profile ),
-		);
 	}
 
 	/**
@@ -328,81 +301,5 @@ class OrderPaymentStore {
 	 */
 	private function get_lock_holder_key( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): string {
 		return $persistence_profile->get_order_lock_key( $order ) . '_holder';
-	}
-
-	/**
-	 * Read preserved payment meta from an order or refund object.
-	 *
-	 * @param WC_Abstract_Order             $order               Order or refund object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @return array<string,string>
-	 */
-	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
-		$payment_meta = array();
-		$allowed_keys = array_fill_keys( $persistence_profile->get_preserved_payment_meta_keys(), true );
-
-		foreach ( $order->get_meta_data() as $meta ) {
-			$meta_data = $meta->get_data();
-			$key       = (string) ( $meta_data['key'] ?? '' );
-
-			if ( ! isset( $allowed_keys[ $key ] ) ) {
-				continue;
-			}
-
-			$payment_meta[ $key ] = $this->normalize_meta_value( $meta_data['value'] ?? null );
-		}
-
-		ksort( $payment_meta );
-
-		return $payment_meta;
-	}
-
-	/**
-	 * Read stable refund projections for an order.
-	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
-		$refunds = array();
-
-		foreach ( $order->get_refunds() as $refund ) {
-			if ( ! $refund instanceof WC_Order_Refund ) {
-				continue;
-			}
-
-			$refunds[] = array(
-				'refund_id' => (int) $refund->get_id(),
-				'amount'    => (string) $refund->get_amount(),
-				'currency'  => (string) $refund->get_currency(),
-				'reason'    => (string) $refund->get_reason(),
-				'meta'      => $this->read_payment_meta( $refund, $persistence_profile ),
-			);
-		}
-
-		usort(
-			$refunds,
-			static function ( array $left, array $right ): int {
-				return $left['refund_id'] <=> $right['refund_id'];
-			}
-		);
-
-		return $refunds;
-	}
-
-	/**
-	 * Normalize meta values for stable machine-readable comparisons.
-	 *
-	 * @param mixed $value Meta value.
-	 * @return string Normalized scalar value.
-	 */
-	private function normalize_meta_value( $value ): string {
-		if ( is_scalar( $value ) || null === $value ) {
-			return (string) $value;
-		}
-
-		$encoded = wp_json_encode( $value );
-		return false === $encoded ? '' : $encoded;
 	}
 }

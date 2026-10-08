@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Shadow;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -15,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\Paymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\ShadowComparison;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
+use WC_Order_Refund;
 use WC_Unit_Test_Case;
 
 /**
@@ -414,9 +414,9 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native projection fetches the provider intent and reuses the first payment surface read.
+	 * @testdox Native projection reads the provider intent once.
 	 */
-	public function test_native_projection_fetches_intent_and_reuses_first_payment_surface_projection(): void {
+	public function test_native_projection_reads_the_provider_intent_once(): void {
 		$logger = new class() {
 			/**
 			 * Record a debug log entry.
@@ -435,35 +435,12 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$store = new class() extends OrderPaymentStore {
-			/**
-			 * Number of read_payment_surface calls.
-			 *
-			 * @var int
-			 */
-			public $reads = 0;
-
-			/**
-			 * Read a stable, HPOS-safe projection of an order's payment surface.
-			 *
-			 * @param \WC_Order                     $order               Order to project.
-			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-			 * @return array<string,mixed>
-			 */
-			public function read_payment_surface( \WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
-				++$this->reads;
-
-				return parent::read_payment_surface( $order, $persistence_profile );
-			}
-		};
-
 		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'requires_capture' ) );
-		$sut        = $this->create_shadow_mode( $api_client, $store );
+		$sut        = $this->create_shadow_mode( $api_client );
 		$order      = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
 
 		$sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' );
 
-		$this->assertSame( 1, $store->reads );
 		$this->assertSame( 1, $api_client->reads );
 	}
 
@@ -614,7 +591,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 
 		$order      = $this->create_projected_woopayments_order( 'requires_capture', 'on-hold' );
 		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'requires_capture' ) );
-		$sut        = $this->create_shadow_mode( $api_client, null, false );
+		$sut        = $this->create_shadow_mode( $api_client, false );
 
 		$this->assertInstanceOf( ShadowComparison::class, $sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' ) );
 		$this->assertSame( array( true ), $api_client->test_modes );
@@ -658,7 +635,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
 		$api_client = $this->create_recording_api_client( $this->create_payment_intent_response( 'succeeded' ) );
-		$sut        = $this->create_shadow_mode( $api_client, null, false );
+		$sut        = $this->create_shadow_mode( $api_client, false );
 
 		$this->assertNull( $sut->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' ) );
 		$this->assertSame( 0, $api_client->reads );
@@ -667,7 +644,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		add_filter( NativePaymentsShadowMode::FILTER_ALLOW_LIVE_READS, '__return_true' );
 
 		$api_client_with_live_opt_in = $this->create_recording_api_client( $this->create_payment_intent_response( 'succeeded' ) );
-		$sut_with_live_opt_in        = $this->create_shadow_mode( $api_client_with_live_opt_in, null, false );
+		$sut_with_live_opt_in        = $this->create_shadow_mode( $api_client_with_live_opt_in, false );
 
 		$this->assertInstanceOf( ShadowComparison::class, $sut_with_live_opt_in->record_shadow_for_order( wc_get_order( $order->get_id() ), 'unit_test' ) );
 		$this->assertSame( 1, $api_client_with_live_opt_in->reads );
@@ -675,18 +652,134 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox read_payment_surface returns a stable HPOS-safe projection without unrelated meta.
+	 */
+	public function test_read_payment_surface_returns_stable_payment_projection(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_transaction_id( 'txn_123' );
+		$order->set_total( '12.34' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.71' );
+		$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
+		$order->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '0.724' );
+		$order->update_meta_data(
+			'_wcpay_fraud_outcome_manual_entry',
+			array(
+				'status' => 'approved',
+			)
+		);
+		$order->update_meta_data( '_not_a_payment_key', 'ignore-me' );
+		$order->save();
+
+		$surface = $this->read_payment_surface( $order, new WooPaymentsPersistenceVocabulary() );
+
+		$this->assertSame( $order->get_id(), $surface['order_id'] );
+		$this->assertSame( $order->get_status(), $surface['status'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $surface['payment_method'] );
+		$this->assertSame( 'txn_123', $surface['transaction_id'] );
+		$this->assertSame( 'USD', $surface['currency'] );
+		$this->assertSame( '12.34', $surface['total'] );
+		$this->assertSame( 'pi_123', $surface['meta']['_intent_id'] );
+		$this->assertSame( 'ch_123', $surface['meta']['_charge_id'] );
+		$this->assertSame( '0.71', $surface['meta']['_wcpay_multi_currency_order_exchange_rate'] );
+		$this->assertSame( 'USD', $surface['meta']['_wcpay_multi_currency_order_default_currency'] );
+		$this->assertSame( '0.724', $surface['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
+		$this->assertSame( '{"status":"approved"}', $surface['meta']['_wcpay_fraud_outcome_manual_entry'] );
+		$this->assertArrayNotHasKey( '_not_a_payment_key', $surface['meta'] );
+		$this->assertSame( array(), $surface['refunds'] );
+	}
+
+	/**
+	 * @testdox read_payment_surface includes refund payment meta in the stable projection.
+	 */
+	public function test_read_payment_surface_includes_refund_payment_meta(): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '12.34' );
+		$order->save();
+
+		$refund = wc_create_refund(
+			array(
+				'amount'   => '3.21',
+				'reason'   => 'partial refund',
+				'order_id' => $order->get_id(),
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.71' );
+		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
+		$refund->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '0.724' );
+		$refund->update_meta_data( '_not_a_payment_key', 'ignore-me' );
+		$refund->save();
+
+		$surface = $this->read_payment_surface( wc_get_order( $order->get_id() ), new WooPaymentsPersistenceVocabulary() );
+
+		$this->assertCount( 1, $surface['refunds'] );
+		$this->assertSame( $refund->get_id(), $surface['refunds'][0]['refund_id'] );
+		$this->assertSame( '3.21', $surface['refunds'][0]['amount'] );
+		$this->assertSame( 'partial refund', $surface['refunds'][0]['reason'] );
+		$this->assertSame( 're_123', $surface['refunds'][0]['meta']['_wcpay_refund_id'] );
+		$this->assertSame( '0.71', $surface['refunds'][0]['meta']['_wcpay_multi_currency_order_exchange_rate'] );
+		$this->assertSame( 'USD', $surface['refunds'][0]['meta']['_wcpay_multi_currency_order_default_currency'] );
+		$this->assertSame( '0.724', $surface['refunds'][0]['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
+		$this->assertArrayNotHasKey( '_not_a_payment_key', $surface['refunds'][0]['meta'] );
+	}
+
+	/**
+	 * @testdox read_payment_surface keeps only the meta keys the supplied provider persistence vocabulary preserves.
+	 */
+	public function test_read_payment_surface_uses_supplied_provider_vocabulary(): void {
+		$order = wc_create_order();
+		$order->update_meta_data( '_provider_payment_id', 'provider_payment_123' );
+		$order->update_meta_data( '_intent_id', 'pi_must_not_leak' );
+		$order->save();
+
+		$profile = $this->create_provider_profile();
+		$surface = $this->read_payment_surface( $order, $profile );
+
+		$this->assertSame( array( '_provider_payment_id' => 'provider_payment_123' ), $surface['meta'] );
+	}
+
+	/**
+	 * Read an order's payment surface through the shadow mode's private reader.
+	 *
+	 * @param WC_Order                      $order      Order to read.
+	 * @param ProviderPersistenceVocabulary $vocabulary Provider persistence vocabulary.
+	 * @return array<string,mixed>
+	 */
+	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabulary $vocabulary ): array {
+		$method = new \ReflectionMethod( NativePaymentsShadowMode::class, 'read_payment_surface' );
+		$method->setAccessible( true );
+
+		return $method->invoke( $this->sut, $order, $vocabulary );
+	}
+
+	/**
+	 * Create a non-WooPayments persistence profile.
+	 *
+	 * @return ProviderPersistenceVocabulary
+	 */
+	private function create_provider_profile(): ProviderPersistenceVocabulary {
+		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
+
+		return $profile;
+	}
+	/**
 	 * Create a shadow-mode instance with deterministic provider dependencies.
 	 *
-	 * @param WooPaymentsApiClient   $api_client   API client.
-	 * @param OrderPaymentStore|null $store       Optional payment store.
-	 * @param bool                   $test_mode    Whether the account is in test mode.
+	 * @param WooPaymentsApiClient $api_client API client.
+	 * @param bool                 $test_mode  Whether the account is in test mode.
 	 * @return NativePaymentsShadowMode
 	 */
-	private function create_shadow_mode( WooPaymentsApiClient $api_client, ?OrderPaymentStore $store = null, bool $test_mode = true ): NativePaymentsShadowMode {
+	private function create_shadow_mode( WooPaymentsApiClient $api_client, bool $test_mode = true ): NativePaymentsShadowMode {
 		$sut = new NativePaymentsShadowMode();
 		$sut->init(
 			wc_get_container()->get( NativePaymentsRuntimeArbiter::class ),
-			$store ?? wc_get_container()->get( OrderPaymentStore::class ),
 			new PaymentSurfaceDiffer(),
 			wc_get_container()->get( LegacyProxy::class ),
 			$api_client,

@@ -8,8 +8,6 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
-use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -79,9 +77,6 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$token_service    = wc_get_container()->get( WooPaymentsTokenService::class );
 			$runtime_arbiter  = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 			$cutover_store    = new WooPaymentsCutoverStateStore();
-			$order_store      = new OrderPaymentStore();
-			$profile          = new WooPaymentsPersistenceVocabulary();
-			$order_store->init( new TransientRowLock() );
 
 			$this->assert_site_fixture(
 				$primary,
@@ -90,9 +85,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				$customer_service,
 				$token_service,
 				$runtime_arbiter,
-				$cutover_store,
-				$order_store,
-				$profile
+				$cutover_store
 			);
 
 			switch_to_blog( $secondary_blog_id );
@@ -108,9 +101,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				$customer_service,
 				$token_service,
 				$runtime_arbiter,
-				$cutover_store,
-				$order_store,
-				$profile
+				$cutover_store
 			);
 
 			restore_current_blog();
@@ -122,9 +113,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				$customer_service,
 				$token_service,
 				$runtime_arbiter,
-				$cutover_store,
-				$order_store,
-				$profile
+				$cutover_store
 			);
 		} finally {
 			while ( ms_is_switched() ) {
@@ -546,15 +535,13 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert that shared services expose only the current site's fixture.
 	 *
-	 * @param array<string,mixed>              $fixture          Site fixture.
-	 * @param int                              $user_id          Network user ID.
-	 * @param WooPaymentsAccountService        $account_service Account service.
-	 * @param WooPaymentsCustomerService       $customer_service Customer service.
-	 * @param WooPaymentsTokenService          $token_service    Token service.
-	 * @param NativePaymentsRuntimeArbiter     $runtime_arbiter Runtime arbiter.
-	 * @param WooPaymentsCutoverStateStore     $cutover_store Cutover state store.
-	 * @param OrderPaymentStore                $order_store      Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $profile    Persistence profile.
+	 * @param array<string,mixed>          $fixture          Site fixture.
+	 * @param int                          $user_id          Network user ID.
+	 * @param WooPaymentsAccountService    $account_service Account service.
+	 * @param WooPaymentsCustomerService   $customer_service Customer service.
+	 * @param WooPaymentsTokenService      $token_service    Token service.
+	 * @param NativePaymentsRuntimeArbiter $runtime_arbiter Runtime arbiter.
+	 * @param WooPaymentsCutoverStateStore $cutover_store Cutover state store.
 	 */
 	private function assert_site_fixture(
 		array $fixture,
@@ -563,9 +550,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsTokenService $token_service,
 		NativePaymentsRuntimeArbiter $runtime_arbiter,
-		WooPaymentsCutoverStateStore $cutover_store,
-		OrderPaymentStore $order_store,
-		WooPaymentsPersistenceVocabulary $profile
+		WooPaymentsCutoverStateStore $cutover_store
 	): void {
 		$slug = $fixture['slug'];
 
@@ -583,15 +568,14 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		if ( ! $order instanceof WC_Order ) {
 			return;
 		}
-		$surface = $order_store->read_payment_surface( $order, $profile );
 		$this->assertSame( array( $fixture['token_id'] ), $order->get_payment_tokens() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $surface['payment_method'] );
-		$this->assertSame( 'txn_' . $slug, $surface['transaction_id'] );
-		$this->assertSame( 'primary' === $slug ? 'USD' : 'GBP', $surface['currency'] );
-		$this->assertSame( $fixture['total'], $surface['total'] );
-		$this->assertSame( 'pm_' . $slug, $surface['meta']['_payment_method_id'] );
-		$this->assertSame( 'pi_' . $slug, $surface['meta']['_intent_id'] );
-		$this->assertSame( 'ch_' . $slug, $surface['meta']['_charge_id'] );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'txn_' . $slug, $order->get_transaction_id() );
+		$this->assertSame( 'primary' === $slug ? 'USD' : 'GBP', $order->get_currency() );
+		$this->assertSame( $fixture['total'], (string) $order->get_total() );
+		$this->assertSame( 'pm_' . $slug, $order->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'pi_' . $slug, $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_' . $slug, $order->get_meta( '_charge_id', true ) );
 	}
 
 	/**

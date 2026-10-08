@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
@@ -24,7 +24,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Throwable;
+use WC_Abstract_Order;
 use WC_Order;
+use WC_Order_Refund;
 
 /**
  * Records same-store native shadow output while the WooPayments plugin owns processing.
@@ -75,13 +77,6 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	private NativePaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Order payment projection store.
-	 *
-	 * @var OrderPaymentStore
-	 */
-	private OrderPaymentStore $order_payment_store;
-
-	/**
 	 * Payment-surface differ.
 	 *
 	 * @var PaymentSurfaceDiffer
@@ -129,7 +124,6 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param NativePaymentsRuntimeArbiter     $arbiter             Runtime owner arbiter.
-	 * @param OrderPaymentStore                $order_payment_store Order payment projection store.
 	 * @param PaymentSurfaceDiffer             $differ              Payment-surface differ.
 	 * @param LegacyProxy                      $legacy_proxy        Legacy proxy.
 	 * @param WooPaymentsApiClient             $api_client           WooPayments API client.
@@ -139,7 +133,6 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 */
 	final public function init(
 		NativePaymentsRuntimeArbiter $arbiter,
-		OrderPaymentStore $order_payment_store,
 		PaymentSurfaceDiffer $differ,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsApiClient $api_client,
@@ -148,7 +141,6 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		WooPaymentsOrderDataService $order_data_service
 	): void {
 		$this->arbiter             = $arbiter;
-		$this->order_payment_store = $order_payment_store;
 		$this->differ              = $differ;
 		$this->legacy_proxy        = $legacy_proxy;
 		$this->api_client          = $api_client;
@@ -268,7 +260,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		}
 
 		$start           = microtime( true );
-		$actual          = $this->order_payment_store->read_payment_surface( $order, $this->persistence_profile );
+		$actual          = $this->read_payment_surface( $order, $this->persistence_profile );
 		$native_computed = $this->compute_native_projection( $order );
 		if ( null === $native_computed ) {
 			return null;
@@ -281,6 +273,107 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 		$this->log_comparison( $comparison );
 
 		return $comparison;
+	}
+
+	/**
+	 * Read a stable, HPOS-safe projection of an order's payment surface.
+	 *
+	 * The returned structure is intentionally limited to persisted payment state. A1 shadow mode
+	 * compares this read projection without writing back to the order.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WC_Order                      $order               Order to project.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return array<string,mixed>
+	 */
+	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+		return array(
+			'order_id'       => (int) $order->get_id(),
+			'status'         => (string) $order->get_status(),
+			'payment_method' => (string) $order->get_payment_method(),
+			'transaction_id' => (string) $order->get_transaction_id(),
+			'currency'       => (string) $order->get_currency(),
+			'total'          => (string) $order->get_total(),
+			'meta'           => $this->read_payment_meta( $order, $persistence_profile ),
+			'refunds'        => $this->read_refund_surfaces( $order, $persistence_profile ),
+		);
+	}
+
+	/**
+	 * Read preserved payment meta from an order or refund object.
+	 *
+	 * @param WC_Abstract_Order             $order               Order or refund object.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return array<string,string>
+	 */
+	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+		$payment_meta = array();
+		$allowed_keys = array_fill_keys( $persistence_profile->get_preserved_payment_meta_keys(), true );
+
+		foreach ( $order->get_meta_data() as $meta ) {
+			$meta_data = $meta->get_data();
+			$key       = (string) ( $meta_data['key'] ?? '' );
+
+			if ( ! isset( $allowed_keys[ $key ] ) ) {
+				continue;
+			}
+
+			$payment_meta[ $key ] = $this->normalize_meta_value( $meta_data['value'] ?? null );
+		}
+
+		ksort( $payment_meta );
+
+		return $payment_meta;
+	}
+
+	/**
+	 * Read stable refund projections for an order.
+	 *
+	 * @param WC_Order                      $order               Order object.
+	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+		$refunds = array();
+
+		foreach ( $order->get_refunds() as $refund ) {
+			if ( ! $refund instanceof WC_Order_Refund ) {
+				continue;
+			}
+
+			$refunds[] = array(
+				'refund_id' => (int) $refund->get_id(),
+				'amount'    => (string) $refund->get_amount(),
+				'currency'  => (string) $refund->get_currency(),
+				'reason'    => (string) $refund->get_reason(),
+				'meta'      => $this->read_payment_meta( $refund, $persistence_profile ),
+			);
+		}
+
+		usort(
+			$refunds,
+			static function ( array $left, array $right ): int {
+				return $left['refund_id'] <=> $right['refund_id'];
+			}
+		);
+
+		return $refunds;
+	}
+
+	/**
+	 * Normalize meta values for stable machine-readable comparisons.
+	 *
+	 * @param mixed $value Meta value.
+	 * @return string Normalized scalar value.
+	 */
+	private function normalize_meta_value( $value ): string {
+		if ( is_scalar( $value ) || null === $value ) {
+			return (string) $value;
+		}
+
+		$encoded = wp_json_encode( $value );
+		return false === $encoded ? '' : $encoded;
 	}
 
 	/**

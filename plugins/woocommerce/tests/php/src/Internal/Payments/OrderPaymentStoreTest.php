@@ -5,9 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
-use WC_Order_Refund;
-use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
@@ -38,99 +35,6 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->sut                 = wc_get_container()->get( OrderPaymentStore::class );
 		$this->persistence_profile = new WooPaymentsPersistenceVocabulary();
-	}
-
-	/**
-	 * @testdox read_payment_surface returns a stable HPOS-safe projection without unrelated meta.
-	 */
-	public function test_read_payment_surface_returns_stable_payment_projection(): void {
-		$order = wc_create_order();
-		$order->set_currency( 'USD' );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->set_transaction_id( 'txn_123' );
-		$order->set_total( '12.34' );
-		$order->update_meta_data( '_intent_id', 'pi_123' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.71' );
-		$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
-		$order->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '0.724' );
-		$order->update_meta_data(
-			'_wcpay_fraud_outcome_manual_entry',
-			array(
-				'status' => 'approved',
-			)
-		);
-		$order->update_meta_data( '_not_a_payment_key', 'ignore-me' );
-		$order->save();
-
-		$surface = $this->sut->read_payment_surface( $order, $this->persistence_profile );
-
-		$this->assertSame( $order->get_id(), $surface['order_id'] );
-		$this->assertSame( $order->get_status(), $surface['status'] );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $surface['payment_method'] );
-		$this->assertSame( 'txn_123', $surface['transaction_id'] );
-		$this->assertSame( 'USD', $surface['currency'] );
-		$this->assertSame( '12.34', $surface['total'] );
-		$this->assertSame( 'pi_123', $surface['meta']['_intent_id'] );
-		$this->assertSame( 'ch_123', $surface['meta']['_charge_id'] );
-		$this->assertSame( '0.71', $surface['meta']['_wcpay_multi_currency_order_exchange_rate'] );
-		$this->assertSame( 'USD', $surface['meta']['_wcpay_multi_currency_order_default_currency'] );
-		$this->assertSame( '0.724', $surface['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
-		$this->assertSame( '{"status":"approved"}', $surface['meta']['_wcpay_fraud_outcome_manual_entry'] );
-		$this->assertArrayNotHasKey( '_not_a_payment_key', $surface['meta'] );
-		$this->assertSame( array(), $surface['refunds'] );
-	}
-
-	/**
-	 * @testdox read_payment_surface includes refund payment meta in the stable projection.
-	 */
-	public function test_read_payment_surface_includes_refund_payment_meta(): void {
-		$order = wc_create_order();
-		$order->set_currency( 'USD' );
-		$order->set_total( '12.34' );
-		$order->save();
-
-		$refund = wc_create_refund(
-			array(
-				'amount'   => '3.21',
-				'reason'   => 'partial refund',
-				'order_id' => $order->get_id(),
-			)
-		);
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.71' );
-		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
-		$refund->update_meta_data( '_wcpay_multi_currency_stripe_exchange_rate', '0.724' );
-		$refund->update_meta_data( '_not_a_payment_key', 'ignore-me' );
-		$refund->save();
-
-		$surface = $this->sut->read_payment_surface( wc_get_order( $order->get_id() ), $this->persistence_profile );
-
-		$this->assertCount( 1, $surface['refunds'] );
-		$this->assertSame( $refund->get_id(), $surface['refunds'][0]['refund_id'] );
-		$this->assertSame( '3.21', $surface['refunds'][0]['amount'] );
-		$this->assertSame( 'partial refund', $surface['refunds'][0]['reason'] );
-		$this->assertSame( 're_123', $surface['refunds'][0]['meta']['_wcpay_refund_id'] );
-		$this->assertSame( '0.71', $surface['refunds'][0]['meta']['_wcpay_multi_currency_order_exchange_rate'] );
-		$this->assertSame( 'USD', $surface['refunds'][0]['meta']['_wcpay_multi_currency_order_default_currency'] );
-		$this->assertSame( '0.724', $surface['refunds'][0]['meta']['_wcpay_multi_currency_stripe_exchange_rate'] );
-		$this->assertArrayNotHasKey( '_not_a_payment_key', $surface['refunds'][0]['meta'] );
-	}
-
-	/**
-	 * @testdox Payment surfaces and locks use the supplied provider persistence profile.
-	 */
-	public function test_payment_surfaces_and_locks_use_supplied_provider_profile(): void {
-		$order = wc_create_order();
-		$order->update_meta_data( '_provider_payment_id', 'provider_payment_123' );
-		$order->update_meta_data( '_intent_id', 'pi_must_not_leak' );
-		$order->save();
-
-		$profile = $this->create_provider_profile();
-		$surface = $this->sut->read_payment_surface( $order, $profile );
-
-		$this->assertSame( array( '_provider_payment_id' => 'provider_payment_123' ), $surface['meta'] );
 	}
 
 	/**
@@ -763,22 +667,5 @@ class OrderPaymentStoreTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
-	}
-
-	/**
-	 * Create a non-WooPayments persistence profile.
-	 *
-	 * @return ProviderPersistenceVocabulary
-	 */
-	private function create_provider_profile(): ProviderPersistenceVocabulary {
-		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
-		$profile->method( 'get_order_lock_key' )->willReturnCallback(
-			static fn( WC_Order $order ): string => 'provider_payment_lock_' . $order->get_id()
-		);
-		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
-		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
-		$profile->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
-
-		return $profile;
 	}
 }
