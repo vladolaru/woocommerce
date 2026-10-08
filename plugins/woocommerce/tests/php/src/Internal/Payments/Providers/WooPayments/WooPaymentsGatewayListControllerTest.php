@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsBootstrap;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
@@ -91,7 +90,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		foreach ( WooPaymentsProvider::get_bootstrap_root_matrix() as $state => $request_groups ) {
 			foreach ( $request_groups as $request_type => $roots ) {
 				$this->assertSame(
-					in_array( NativePaymentsGatewayRegistry::class, $roots, true ),
+					in_array( WooPaymentsProvider::class, $roots, true ),
 					in_array( WooPaymentsGatewayListController::class, $roots, true ),
 					"$state $request_type"
 				);

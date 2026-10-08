@@ -15,6 +15,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Selects native payment registrations for the current request.
  *
+ * A listed class that is a payment gateway provider is handed to the gateway registry, which resolves it only when
+ * WooCommerce builds its gateway list; it is register()ed as well only when it also registers hooks. Every other listed
+ * class is resolved and register()ed.
+ *
  * @since 11.2.0
  * @internal
  */
@@ -186,68 +190,61 @@ final class NativePaymentsBootstrap {
 	}
 
 	/**
-	 * Get the roots not yet registered, keeping each gateway registry with the provider root that follows it.
+	 * Get the roots not yet registered.
 	 *
 	 * @param array<int,class-string> $roots      Root class names in registration order.
 	 * @param array<int,class-string> $registered Roots already registered.
 	 * @return array<int,class-string> Missing roots in registration order.
 	 */
 	private static function roots_missing_from( array $roots, array $registered ): array {
-		$missing = array();
-		$count   = count( $roots );
-		for ( $index = 0; $index < $count; ++$index ) {
-			$root        = $roots[ $index ];
-			$is_registry = NativePaymentsGatewayRegistry::class === $root;
-			if ( ! in_array( $root, $registered, true ) ) {
-				$missing[] = $root;
-				if ( $is_registry && isset( $roots[ $index + 1 ] ) ) {
-					$missing[] = $roots[ $index + 1 ];
-				}
-			}
-			if ( $is_registry ) {
-				++$index;
-			}
-		}
-
-		return $missing;
+		return array_values( array_diff( $roots, $registered ) );
 	}
 
 	/**
-	 * Resolve and register explicit roots once. The gateway registry takes the next root as its provider, resolved only when WooCommerce builds its gateway list.
+	 * Resolve and register explicit roots once, handing payment gateway providers to the gateway registry.
 	 *
 	 * @param Container|RuntimeContainer $container Runtime dependency container.
 	 * @param array<int,class-string>    $roots     Root class names.
 	 */
 	private function register_roots( $container, array $roots ): void {
-		$count = count( $roots );
-		for ( $index = 0; $index < $count; ++$index ) {
-			$root = $roots[ $index ];
-			if ( NativePaymentsGatewayRegistry::class === $root && isset( $roots[ $index + 1 ] ) ) {
-				/**
-				 * Gateway registry.
-				 *
-				 * @var NativePaymentsGatewayRegistry $registry
-				 */
-				$registry      = $container->get( $root );
-				$provider_root = $roots[ ++$index ];
-				$registry->add_provider(
-					static function () use ( $container, $provider_root ) {
-						/**
-						 * Native payment gateway provider.
-						 *
-						 * @var PaymentGatewayProviderContract $provider
-						 */
-						$provider = $container->get( $provider_root );
-						return $provider;
-					},
-					static fn(): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register()
-				);
-				$registry->register();
-				continue;
+		foreach ( $roots as $root ) {
+			if ( is_a( $root, PaymentGatewayProviderContract::class, true ) ) {
+				$this->add_gateway_provider( $container, $root );
+				if ( ! is_a( $root, RegisterHooksInterface::class, true ) ) {
+					continue;
+				}
 			}
 
 			$this->register_root( $container, $root );
 		}
+	}
+
+	/**
+	 * Hand a payment gateway provider to the gateway registry, resolved only when WooCommerce builds its gateway list.
+	 *
+	 * @param Container|RuntimeContainer $container     Runtime dependency container.
+	 * @param class-string               $provider_root Payment gateway provider class name.
+	 */
+	private function add_gateway_provider( $container, string $provider_root ): void {
+		/**
+		 * Gateway registry.
+		 *
+		 * @var NativePaymentsGatewayRegistry $registry
+		 */
+		$registry = $container->get( NativePaymentsGatewayRegistry::class );
+		$registry->add_provider(
+			static function () use ( $container, $provider_root ) {
+				/**
+				 * Native payment gateway provider.
+				 *
+				 * @var PaymentGatewayProviderContract $provider
+				 */
+				$provider = $container->get( $provider_root );
+				return $provider;
+			},
+			static fn(): bool => $container->get( NativePaymentsRuntimeArbiter::class )->should_native_register()
+		);
+		$registry->register();
 	}
 
 	/**

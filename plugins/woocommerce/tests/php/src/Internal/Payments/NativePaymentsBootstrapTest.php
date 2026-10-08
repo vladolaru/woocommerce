@@ -319,28 +319,8 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox A gateway registry listed last, with no provider root after it, registers without a provider. */
-	public function test_registry_listed_last_registers_without_a_provider(): void {
-		$container = $this->make_container( NativePaymentsState::AVAILABLE, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
-		$sut       = new NativePaymentsBootstrap(
-			static fn(): array => array( NativePaymentsState::AVAILABLE => array( 'cron' => array( WooPaymentsCutoverReconciliationJob::class, NativePaymentsGatewayRegistry::class ) ) ),
-			static fn(): array => array()
-		);
-
-		$sut->register( $container, '__return_false' );
-		do_action( 'action_scheduler_before_execute', 1, 'WP Cron' );
-
-		$this->assertSame(
-			array_merge(
-				$this->expected_events( array( WooPaymentsCutoverReconciliationJob::class ) ),
-				array( 'get:' . NativePaymentsGatewayRegistry::class, 'register:' . NativePaymentsGatewayRegistry::class )
-			),
-			$container->events
-		);
-	}
-
 	/**
-	 * @testdox Every provider root resolves from the container and registers hooks, appears once per list, and every gateway registry is followed by a gateway provider.
+	 * @testdox Every provider root resolves from the container and is a gateway provider or registers hooks, appears once per list, and no list names the gateway registry.
 	 */
 	public function test_provider_matrix_roots_are_registrable_and_listed_once(): void {
 		$matrix = WooPaymentsProvider::get_bootstrap_root_matrix();
@@ -350,15 +330,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			foreach ( $request_groups as $request => $roots ) {
 				$cell = "$state $request";
 				$this->assertSame( array_values( array_unique( $roots ) ), $roots, "$cell lists a root twice." );
-				foreach ( $roots as $index => $root ) {
+				foreach ( $roots as $root ) {
 					$service = wc_get_container()->get( $root );
-					if ( 0 < $index && NativePaymentsGatewayRegistry::class === $roots[ $index - 1 ] ) {
-						$this->assertInstanceOf( PaymentGatewayProviderContract::class, $service, "$cell: the root after the gateway registry must be its gateway provider." );
+					if ( $service instanceof PaymentGatewayProviderContract ) {
 						continue;
 					}
 					$this->assertInstanceOf( RegisterHooksInterface::class, $service, "$cell: $root must register hooks." );
 				}
-				$this->assertNotSame( NativePaymentsGatewayRegistry::class, end( $roots ), "$cell: the gateway registry needs a provider root after it." );
+				$this->assertNotContains( NativePaymentsGatewayRegistry::class, $roots, "$cell: the bootstrap adds the gateway registry for a listed gateway provider." );
 			}
 		}
 	}
@@ -663,17 +642,14 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			'get:' . NativePaymentsRuntimeArbiter::class,
 		);
 
-		$roots = array_merge( $roots, $on_demand_roots );
-		$count = count( $roots );
-		for ( $index = 0; $index < $count; ++$index ) {
-			$root     = $roots[ $index ];
-			$events[] = 'get:' . $root;
-			if ( NativePaymentsGatewayRegistry::class === $root ) {
-				++$index;
-				$events[] = 'provider-resolver:' . $root;
-				$events[] = 'register:' . $root;
+		foreach ( array_merge( $roots, $on_demand_roots ) as $root ) {
+			if ( is_a( $root, PaymentGatewayProviderContract::class, true ) ) {
+				$events[] = 'get:' . NativePaymentsGatewayRegistry::class;
+				$events[] = 'provider-resolver:' . NativePaymentsGatewayRegistry::class;
+				$events[] = 'register:' . NativePaymentsGatewayRegistry::class;
 				continue;
 			}
+			$events[] = 'get:' . $root;
 			$events[] = 'register:' . $root;
 		}
 

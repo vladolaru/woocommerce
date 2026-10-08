@@ -12,7 +12,6 @@ use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\NativePaymentsGatewayRegistry;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\NativePaymentsState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -5824,7 +5823,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$effective_state = $state->get_state();
 
 		$this->assertSame( NativePaymentsState::ACTIVE, $effective_state );
-		$this->assertContains( NativePaymentsGatewayRegistry::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ $effective_state ]['front'] ?? array() );
+		$this->assertContains( WooPaymentsProvider::class, WooPaymentsProvider::get_bootstrap_root_matrix()[ $effective_state ]['front'] ?? array() );
 	}
 
 	/**
