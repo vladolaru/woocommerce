@@ -219,6 +219,7 @@ export function V6ExpressComponent( {
 					onComplete: () =>
 						callbacksRef.current.onFreeTrialComplete(),
 					onError: ( error ) => callbacksRef.current.onError( error ),
+					onCancel: () => callbacksRef.current.onCancel(),
 				} )
 			);
 			return undefined;

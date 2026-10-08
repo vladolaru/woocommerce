@@ -663,6 +663,28 @@ describe( 'V6ExpressComponent', () => {
 	// The zero total in each config below is what routes the button to the save
 	// flow; the flags alone do not.
 	describe( 'free-trial ($0 subscription) cart', () => {
+		// Blocks disabled the express area on onClick; only onClose gives it back.
+		test( 'cancelling the save popup releases the express UI', async () => {
+			const onClose = jest.fn();
+			renderComponent( {
+				config: {
+					...config,
+					amount: '0.00',
+					cart_needs_vaulting: true,
+					is_free_trial_cart: true,
+				},
+				fundingSource: 'paypal',
+				onClose,
+			} );
+			await waitFor( () =>
+				expect( mockCreateFreeTrialPayPalSession ).toHaveBeenCalled()
+			);
+
+			act( () => capturedSaveSessionHandlers.onCancel() );
+
+			expect( onClose ).toHaveBeenCalledTimes( 1 );
+		} );
+
 		test( 'creates the save session instead of a one-time session for the paypal button', async () => {
 			renderComponent( {
 				config: {

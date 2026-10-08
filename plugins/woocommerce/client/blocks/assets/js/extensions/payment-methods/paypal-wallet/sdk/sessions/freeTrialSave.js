@@ -65,12 +65,13 @@ export async function exchangeSetupToken( config, vaultSetupToken ) {
  * @param {Object}                 handlers            - Surface callbacks.
  * @param {() => void}             handlers.onComplete - Submits the checkout after the token is stored.
  * @param {(error: Error) => void} [handlers.onError]  - Called on failure.
+ * @param {() => void}             [handlers.onCancel] - Called when the buyer closes the popup.
  * @return {Object} The PayPal save payment session.
  */
 export function createFreeTrialPayPalSession(
 	sdkInstance,
 	config,
-	{ onComplete, onError } = {}
+	{ onComplete, onError, onCancel } = {}
 ) {
 	return sdkInstance.createPayPalSavePaymentSession( {
 		async onApprove( data ) {
@@ -88,7 +89,11 @@ export function createFreeTrialPayPalSession(
 			}
 		},
 
-		onCancel() {},
+		onCancel() {
+			if ( onCancel ) {
+				onCancel();
+			}
+		},
 
 		onError( error ) {
 			if ( onError ) {

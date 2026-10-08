@@ -93,6 +93,16 @@ describe( 'createFreeTrialPayPalSession', () => {
 		expect( sdk.capture.config.onError ).toBeInstanceOf( Function );
 	} );
 
+	test( 'onCancel forwards to the provided onCancel', () => {
+		const sdk = fakeSdk();
+		const onCancel = jest.fn();
+
+		createFreeTrialPayPalSession( sdk, baseConfig(), { onCancel } );
+		sdk.capture.config.onCancel();
+
+		expect( onCancel ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	test( 'onApprove exchanges the setup token and calls onComplete on success', async () => {
 		const sdk = fakeSdk();
 		mockPostJson.mockResolvedValueOnce( {} );
