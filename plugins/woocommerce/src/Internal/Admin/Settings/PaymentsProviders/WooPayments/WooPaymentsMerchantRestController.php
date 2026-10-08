@@ -35,7 +35,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Prefix for cached provider file purposes.
 	 */
-	private const FILE_PURPOSE_CACHE_PREFIX = 'woocommerce_native_woopayments_file_purpose_';
+	private const FILE_PURPOSE_CACHE_PREFIX = 'wcpay_file_purpose_';
 
 	/**
 	 * Lifetime, in seconds, of a cached provider file purpose.

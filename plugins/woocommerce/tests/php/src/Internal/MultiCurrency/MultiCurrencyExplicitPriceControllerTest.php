@@ -45,7 +45,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register explicit price hooks once when core owns runtime.
 	 */
 	public function test_registers_explicit_price_hooks_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		$sut->register();
 		$sut->register();
@@ -60,7 +60,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register explicit price hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_explicit_price_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
 
@@ -77,11 +77,11 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		$order = $this->createMock( \WC_Order::class );
 		$order->method( 'get_currency' )->willReturn( 'BRL' );
 
-		$multi_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$multi_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$this->assertSame( 'R$ 5,90 BRL', $multi_currency->get_explicit_price( 'R$ 5,90', $order ) );
 		$this->assertSame( '$10.30 USD', $multi_currency->get_explicit_price( '$10.30' ) );
 
-		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$single_currency = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$this->assertSame( 'R$ 5,90', $single_currency->get_explicit_price( 'R$ 5,90', $order ) );
 	}
 
@@ -96,7 +96,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$factory->expects( $this->never() )->method( 'create' );
 		$sut = new MultiCurrencyExplicitPriceController();
-		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory, new MultiCurrencyUsageDetector() );
+		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new MultiCurrencyUsageDetector() );
 
 		$this->assertSame( '$10.00', $sut->get_explicit_price( '$10.00' ) );
 	}
@@ -105,7 +105,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should temporarily add explicit wc price args for admin order totals.
 	 */
 	public function test_temporarily_adds_explicit_wc_price_args_for_admin_order_totals(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		$sut->register_formatted_woocommerce_price_filter();
 
@@ -144,7 +144,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	public function test_admin_order_total_never_substitutes_the_store_default_for_the_given_currency(): void {
 		$original_currency = get_option( 'woocommerce_currency', 'USD' );
 		update_option( 'woocommerce_currency', 'USD' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		try {
 			$sut->register_formatted_woocommerce_price_filter();
@@ -173,7 +173,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should let the public filter disable every configured explicit-price projection.
 	 */
 	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_price_projections(): void {
-		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$order = $this->createMock( \WC_Order::class );
 		$order->method( 'get_currency' )->willReturn( 'BRL' );
 		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_false' );
@@ -209,7 +209,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$factory->method( 'create' )->willThrowException( new \RuntimeException( 'State failed.' ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $factory, new MultiCurrencyUsageDetector() );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new MultiCurrencyUsageDetector() );
 		$defaults = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
@@ -227,7 +227,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should run the public filter once before empty-currency and existing-suffix guards.
 	 */
 	public function test_public_filter_runs_once_before_output_guards(): void {
-		$controller = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$controller = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$empty      = $this->createMock( \WC_Order::class );
 		$empty->method( 'get_currency' )->willReturn( '' );
 		$defaults = array();
@@ -319,7 +319,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

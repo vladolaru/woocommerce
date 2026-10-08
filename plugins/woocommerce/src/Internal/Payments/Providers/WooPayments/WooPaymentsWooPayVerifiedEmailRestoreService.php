@@ -99,7 +99,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $this->arbiter->get_runtime_owner() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() ) {
 			return;
 		}
 

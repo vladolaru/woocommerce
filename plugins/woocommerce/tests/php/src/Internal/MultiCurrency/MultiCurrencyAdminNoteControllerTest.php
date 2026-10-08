@@ -29,7 +29,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register admin note hook when plugin owns runtime.
 	 */
 	public function test_does_not_register_admin_note_hook_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
 
@@ -40,7 +40,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register admin note hook outside admin requests.
 	 */
 	public function test_does_not_register_admin_note_hook_outside_admin_requests(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$sut->register();
 
@@ -51,7 +51,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register admin note hook once when core owns runtime in admin.
 	 */
 	public function test_registers_admin_note_hook_once_when_core_owns_runtime_in_admin(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		$sut->register();
 		$sut->register();
@@ -76,7 +76,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		bool $can_be_added
 	): void {
 		$saved_notes = array();
-		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => $is_ajax );
 		$sut->set_wc_version_resolver( static fn(): string => $wc_version );
 		$sut->set_provider_connected_resolver( static fn(): bool => $provider_connected );
@@ -97,7 +97,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_saves_projected_multi_currency_availability_note_when_eligible(): void {
 		$saved_notes = array();
-		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
 		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
@@ -124,7 +124,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_look_up_stored_note_when_provider_is_disconnected(): void {
 		$lookups = 0;
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
 		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_provider_connected_resolver( static fn(): bool => false );
@@ -145,7 +145,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_uses_provider_account_resolver_when_no_override_is_set(): void {
 		$saved_notes = array();
-		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
 		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
@@ -318,7 +318,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

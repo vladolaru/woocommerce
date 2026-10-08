@@ -125,7 +125,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
 		global $wp_widget_factory;
 
-		if ( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN === $this->arbiter->get_runtime_owner() && function_exists( 'WC_Payments_Multi_Currency' ) ) {
+		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && function_exists( 'WC_Payments_Multi_Currency' ) ) {
 			$plugin_multi_currency = \WC_Payments_Multi_Currency(); // phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- WooPayments public compatibility facade.
 			if ( is_object( $plugin_multi_currency ) && is_callable( array( $plugin_multi_currency, 'get_switcher_widget_markup' ) ) ) {
 				return (string) call_user_func( array( $plugin_multi_currency, 'get_switcher_widget_markup' ), $instance, $args );

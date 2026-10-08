@@ -5,7 +5,7 @@ set -euo pipefail
 printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
 
 if [[ "$*" == *"wc-native-payments status"* ]]; then
-	echo 'Owner: native'
+	echo 'Owner: builtin'
 	exit 0
 fi
 
@@ -20,15 +20,15 @@ fi
 
 if [[ "$*" == *"/wc-native-payments-e2e/v1/status"* ]]; then
 	if [[ "${E2E_FAKE_NATIVE_DISABLED:-0}" == '1' ]]; then
-		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":false,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"builtin","native_enabled":false,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
 	else
-		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"native","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
+		printf 'wp-env starting\n{"site_url":"http://native.test","wpcom_blog_id":2,"runtime_owner":"builtin","native_enabled":true,"account_id":"acct_native","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}wp-env done\n'
 	fi
 	exit 0
 fi
 
 if [[ "$*" == *'"runtime_owner"'* ]]; then
-	printf 'pnpm wrapper\n{"site_url":"http://client.test","wpcom_blog_id":1,"runtime_owner":"plugin","native_enabled":false,"account_id":"acct_client","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}\npnpm done\n'
+	printf 'pnpm wrapper\n{"site_url":"http://client.test","wpcom_blog_id":1,"runtime_owner":"extension","native_enabled":false,"account_id":"acct_client","account_connected":true,"gateway_enabled":true,"test_mode":true,"enabled_payment_methods":["card"],"last_webhook_fetch":0,"callback_probe":{"registered":false,"reachable":false,"wpcom_blog_id":0}}\npnpm done\n'
 	exit 0
 fi
 

@@ -20,14 +20,14 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 *
 	 * @var string
 	 */
-	private const NATIVE_ENABLED_FILTER = 'woocommerce_native_payments_enabled';
+	private const NATIVE_ENABLED_FILTER = 'woocommerce_woopayments_builtin_enabled';
 
 	/**
 	 * Host-controlled native runtime kill-switch option.
 	 *
 	 * @var string
 	 */
-	private const KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
+	private const KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
 
 	/**
 	 * Diagnostic route namespace.
@@ -340,7 +340,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 		}
 
 		$status_data = $this->get_native_status_data();
-		if ( 'native' !== ( $status_data['runtime_owner'] ?? null ) ) {
+		if ( 'builtin' !== ( $status_data['runtime_owner'] ?? null ) ) {
 			return new WP_Error(
 				'saved_card_native_runtime_required',
 				'Provider saved-card evidence is available only from the native runtime owner.',
@@ -716,7 +716,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 		}
 
 		$status_data = $this->get_native_status_data();
-		if ( 'native' !== ( $status_data['runtime_owner'] ?? null ) ) {
+		if ( 'builtin' !== ( $status_data['runtime_owner'] ?? null ) ) {
 			return new WP_Error(
 				'setup_intent_native_runtime_required',
 				'Provider SetupIntent evidence is available only from the native runtime owner.',
@@ -793,7 +793,7 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 */
 	private function resolve_provider_customer_id( int $user_id ): string {
 		$status_data = $this->get_native_status_data();
-		if ( 'native' !== ( $status_data['runtime_owner'] ?? null ) ) {
+		if ( 'builtin' !== ( $status_data['runtime_owner'] ?? null ) ) {
 			return '';
 		}
 

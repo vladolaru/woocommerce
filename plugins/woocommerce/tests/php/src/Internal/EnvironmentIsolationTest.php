@@ -80,7 +80,7 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 		// leaked filter was silently making for every other test in this suite.
 		$this->assertFalse(
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Reading the runtime signal under test.
-			(bool) apply_filters( 'woocommerce_native_payments_enabled', false ),
+			(bool) apply_filters( 'woocommerce_woopayments_builtin_enabled', false ),
 			'Native payments ownership must be opt-in per test, not an ambient property of the environment.'
 		);
 	}

@@ -76,7 +76,7 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 		$arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 
 		$this->assertSame(
-			NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
+			NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
 			$arbiter->get_runtime_owner(),
 			'Plugin-wins ownership must remain authoritative when the standalone plugin is active.'
 		);

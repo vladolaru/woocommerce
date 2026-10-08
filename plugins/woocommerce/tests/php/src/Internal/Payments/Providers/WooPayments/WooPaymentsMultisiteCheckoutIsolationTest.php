@@ -328,7 +328,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$provider_property->setAccessible( true );
 			$provider_property->setValue( $gateway, $provider );
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Native should own the primary site once enabled there and the plugin is inactive.' );
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should own the primary site once enabled there and the plugin is inactive.' );
 			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the primary site.' );
 			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
 
@@ -355,7 +355,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->make_native_active_on_current_site();
 			$runtime_arbiter->invalidate();
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
 			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the secondary site, resolving its own account.' );
 			$this->assertSame( 'acct_secondary', $account_service->get_account_id() );
 
@@ -371,7 +371,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->assertSame( $original_blog_id, get_current_blog_id() );
 			$runtime_arbiter->invalidate();
 
-			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'Restoring the primary site should keep native ownership there.' );
+			$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Restoring the primary site should keep native ownership there.' );
 			$this->assertTrue( $gateway->is_available() );
 			$this->assertSame( 'acct_primary', $account_service->get_account_id() );
 		} finally {
@@ -569,7 +569,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	): void {
 		$slug = $fixture['slug'];
 
-		$this->assertSame( 'primary' === $slug ? NativePaymentsRuntimeArbiter::OWNER_NATIVE : NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner() );
+		$this->assertSame( 'primary' === $slug ? NativePaymentsRuntimeArbiter::OWNER_BUILTIN : NativePaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner() );
 		$this->assertSame( 'acct_' . $slug, $account_service->get_account_id() );
 		$this->assertSame( $fixture['country'], $account_service->get_account_country() );
 		$this->assertSame( 'live', $account_service->get_mode() );
@@ -617,7 +617,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'at'   => 1_700_000_100,
 				),
 			),
-			'deferred_codes'         => array( 'native_transport_unavailable' ),
+			'deferred_codes'         => array( 'builtin_transport_unavailable' ),
 			'informational_outcomes' => array(),
 			'next_attempt_at'        => 1_700_001_000,
 			'lease_token'            => null,

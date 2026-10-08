@@ -41,7 +41,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_test_mode_enabled_date' );
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
-		delete_option( 'wcpay_account_deletion_pending_id' );
+		delete_option( 'woocommerce_woopayments_account_deletion_pending_id' );
 		delete_option( '_wcpay_feature_reports_area' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' );
@@ -55,7 +55,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		remove_all_filters( 'pre_option_wcpay_account_data' );
-		remove_all_filters( 'pre_option_wcpay_account_deletion_pending_id' );
+		remove_all_filters( 'pre_option_woocommerce_woopayments_account_deletion_pending_id' );
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
@@ -1549,7 +1549,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service();
 
 		add_filter(
-			'pre_option_wcpay_account_deletion_pending_id',
+			'pre_option_woocommerce_woopayments_account_deletion_pending_id',
 			static function () {
 				return '';
 			}
@@ -1564,12 +1564,12 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should fail closed when the pending account-deletion marker cannot be cleared.
 	 */
 	public function test_clear_pending_account_deletion_fails_when_marker_delete_does_not_stick(): void {
-		update_option( 'wcpay_account_deletion_pending_id', 'acct_123', false );
+		update_option( 'woocommerce_woopayments_account_deletion_pending_id', 'acct_123', false );
 
 		$sut = $this->create_service();
 
 		add_filter(
-			'pre_option_wcpay_account_deletion_pending_id',
+			'pre_option_woocommerce_woopayments_account_deletion_pending_id',
 			static function () {
 				return 'acct_123';
 			}

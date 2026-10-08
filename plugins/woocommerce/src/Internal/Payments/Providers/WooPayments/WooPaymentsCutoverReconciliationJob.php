@@ -31,10 +31,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
 	/** Failure code of stores on the bundled WooPayments subscriptions; stored in records, so it never changes. */
-	private const BUNDLED_EXCLUSION_CODE = 'legacy_stripe_billing_subscriptions_present';
+	private const BUNDLED_EXCLUSION_CODE = 'bundled_stripe_billing_subscriptions_present';
 
 	/** Condition code of a switch whose account lost native eligibility after the merchant started it. */
-	private const INELIGIBLE_CODE = 'native_payments_ineligible';
+	private const INELIGIBLE_CODE = 'builtin_ineligible';
 
 	/** Reconciliation action hook. */
 	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
@@ -445,11 +445,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( is_array( $record ) ) {
 			if ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] && $this->record_has_stripe_billing_failure( $record ) ) {
 				if ( true === ( $record['network_cutover'] ?? false ) ) {
-					if ( $this->schedule_network_exclusion_convergence( $record, 'legacy_stripe_billing_subscriptions_present' ) ) {
-						$this->propagate_network_exclusion( $record['generation'], 'legacy_stripe_billing_subscriptions_present' );
+					if ( $this->schedule_network_exclusion_convergence( $record, 'bundled_stripe_billing_subscriptions_present' ) ) {
+						$this->propagate_network_exclusion( $record['generation'], 'bundled_stripe_billing_subscriptions_present' );
 					}
 				} else {
-					$this->exclude_awaiting_record( $record, 'legacy_stripe_billing_subscriptions_present' );
+					$this->exclude_awaiting_record( $record, 'bundled_stripe_billing_subscriptions_present' );
 				}
 				return $this->state_store->get_record();
 			}
@@ -490,12 +490,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$excluded                    = $this->create_pending_record( 'local_exclusion', $now );
 			$excluded['state']           = WooPaymentsCutoverState::EXCLUDED;
 			$excluded['current_step']    = 'excluded';
-			$excluded['deferred_codes']  = array( 'legacy_stripe_billing_subscriptions_present' );
+			$excluded['deferred_codes']  = array( 'bundled_stripe_billing_subscriptions_present' );
 			$excluded['next_attempt_at'] = null;
 			$excluded['step_log'][]      = array(
 				'step'    => 'excluded',
 				'at'      => $now,
-				'context' => array( 'code' => 'legacy_stripe_billing_subscriptions_present' ),
+				'context' => array( 'code' => 'bundled_stripe_billing_subscriptions_present' ),
 			);
 
 			$this->state_store->save_record( $excluded );
@@ -671,7 +671,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						} else {
 							$terminal_generations[] = $record_generation;
 							if ( WooPaymentsCutoverState::EXCLUDED === $record['state'] ) {
-								$excluded_generations[ $record_generation ] = $record['deferred_codes'][0] ?? 'legacy_stripe_billing_subscriptions_present';
+								$excluded_generations[ $record_generation ] = $record['deferred_codes'][0] ?? 'bundled_stripe_billing_subscriptions_present';
 							}
 						}
 					}
@@ -832,7 +832,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			) {
 				return;
 			}
-			if ( 'verify_native_ownership' === $record['current_step'] && self::$request_token === $record['request_origin_token'] ) {
+			if ( 'verify_builtin_ownership' === $record['current_step'] && self::$request_token === $record['request_origin_token'] ) {
 				return;
 			}
 
@@ -842,7 +842,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$claimed['state']            = WooPaymentsCutoverState::RUNNING;
 			$claimed['attempt']          = $attempt;
 			$claimed['action_id']        = 0;
-			$claimed['current_step']     = 'verify_native_ownership' === $resume_step ? $resume_step : 'running';
+			$claimed['current_step']     = 'verify_builtin_ownership' === $resume_step ? $resume_step : 'running';
 			$claimed['updated_at']       = $now;
 			$claimed['next_attempt_at']  = null;
 			$claimed['lease_token']      = $token;
@@ -856,7 +856,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		if ( is_array( $claimed ) ) {
-			if ( 'verify_native_ownership' === $claimed['current_step'] ) {
+			if ( 'verify_builtin_ownership' === $claimed['current_step'] ) {
 				$this->verify_native_ownership_claim( $claimed );
 			} else {
 				$this->reconcile_claim( $claimed );
@@ -950,13 +950,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			$this->log_late_first_attempt( $claimed );
 			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
-			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
+			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'legacy_stripe_billing_subscriptions_present' ) ) {
+					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
 					}
 				} else {
-					$this->exclude( $claimed, 'legacy_stripe_billing_subscriptions_present' );
+					$this->exclude( $claimed, 'bundled_stripe_billing_subscriptions_present' );
 				}
 				return;
 			}
@@ -975,13 +975,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
-			if ( in_array( 'legacy_stripe_billing_subscriptions_present', $remaining_failures, true ) ) {
+			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $remaining_failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'legacy_stripe_billing_subscriptions_present' ) ) {
+					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ), $outcomes );
 					}
 				} else {
-					$this->exclude( $claimed, 'legacy_stripe_billing_subscriptions_present' );
+					$this->exclude( $claimed, 'bundled_stripe_billing_subscriptions_present' );
 				}
 				return;
 			}
@@ -1122,7 +1122,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						}
 					}
 					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && WooPaymentsCutoverState::EXCLUDED === $record['state'] ) {
-						$excluded_code = $record['deferred_codes'][0] ?? 'legacy_stripe_billing_subscriptions_present';
+						$excluded_code = $record['deferred_codes'][0] ?? 'bundled_stripe_billing_subscriptions_present';
 					}
 				} finally {
 					if ( get_current_blog_id() !== $current_blog_id ) {
@@ -1415,7 +1415,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		// Propagation takes the network lease itself; when it cannot, the sites waiting at the barrier retry and check again.
 		if ( true === $paused_site_marker ) {
-			$this->propagate_network_exclusion( $generation, 'legacy_stripe_billing_subscriptions_present' );
+			$this->propagate_network_exclusion( $generation, 'bundled_stripe_billing_subscriptions_present' );
 		}
 	}
 
@@ -1460,7 +1460,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
-				if ( in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true ) ) {
+				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true ) ) {
 					return true;
 				}
 			} catch ( \Throwable $error ) {
@@ -1502,7 +1502,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			try {
 				$record        = $this->state_store->get_record();
 				$is_ready      = is_array( $record ) && WooPaymentsCutoverState::DEFERRED === $record['state'] && in_array( 'network_barrier', $record['deferred_codes'], true );
-				$is_finalizing = is_array( $record ) && ( in_array( $record['current_step'], array( 'verify_native_ownership', 'done' ), true ) );
+				$is_finalizing = is_array( $record ) && ( in_array( $record['current_step'], array( 'verify_builtin_ownership', 'done' ), true ) );
 				if ( ! is_array( $record ) || $generation !== $record['generation'] || ( ! $is_ready && ! $is_finalizing ) ) {
 					return false;
 				}
@@ -1554,12 +1554,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$verification['revision']             = $record['revision'] + 1;
 				$verification['state']                = WooPaymentsCutoverState::PENDING;
 				$verification['action_id']            = 0;
-				$verification['current_step']         = 'verify_native_ownership';
+				$verification['current_step']         = 'verify_builtin_ownership';
 				$verification['updated_at']           = $now;
 				$verification['deferred_codes']       = array();
 				$verification['next_attempt_at']      = $now + self::FAST_RETRY_DELAY;
 				$verification['request_origin_token'] = self::$request_token;
-				$verification                         = $this->append_step( $verification, 'verify_native_ownership', $now );
+				$verification                         = $this->append_step( $verification, 'verify_builtin_ownership', $now );
 				if ( $this->state_store->compare_and_set_record( $record, $verification ) ) {
 					$this->account_service->synchronize_native_payments_state_from_options( false );
 					$this->scheduler->cancel( $generation, $record['attempt'] + 1 );
@@ -1586,11 +1586,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$plugin_active = $this->arbiter->is_plugin_runtime_active();
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not verify native ownership.', array( 'error' => $error->getMessage() ) );
-			$this->defer( $claimed, array( 'native_ownership_verification_failed' ) );
+			$this->defer( $claimed, array( 'builtin_ownership_verification_failed' ) );
 			return;
 		}
 		if ( $plugin_active ) {
-			$this->defer( $claimed, array( 'native_ownership_unverified' ) );
+			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
 		$this->account_service->synchronize_native_payments_state_from_options( false );
@@ -1669,7 +1669,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$verification['revision']               = $record['revision'] + 1;
 			$verification['state']                  = WooPaymentsCutoverState::PENDING;
 			$verification['action_id']              = 0;
-			$verification['current_step']           = 'verify_native_ownership';
+			$verification['current_step']           = 'verify_builtin_ownership';
 			$verification['updated_at']             = $now;
 			$verification['deferred_codes']         = array();
 			$verification['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
@@ -1677,7 +1677,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$verification['lease_token']            = null;
 			$verification['lease_expires_at']       = null;
 			$verification['request_origin_token']   = self::$request_token;
-			$verification                           = $this->append_step( $verification, 'verify_native_ownership', $now );
+			$verification                           = $this->append_step( $verification, 'verify_builtin_ownership', $now );
 			if ( ! $this->state_store->compare_and_set_record( $record, $verification ) ) {
 				return false;
 			}
@@ -2429,7 +2429,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return false;
 		}
 
-		return ! in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true );
+		return ! in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true );
 	}
 
 	/**
@@ -2462,7 +2462,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			$present = $network
 				? $this->network_has_stripe_billing_failure()
-				: in_array( 'legacy_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
+				: in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
@@ -2527,7 +2527,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
 				$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
-				if ( in_array( 'legacy_stripe_billing_subscriptions_present', $failures, true ) ) {
+				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
 					return true;
 				}
 			} catch ( \Throwable $error ) {

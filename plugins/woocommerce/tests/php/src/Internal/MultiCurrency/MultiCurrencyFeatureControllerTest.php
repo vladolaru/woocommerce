@@ -106,26 +106,26 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function test_concurrent_first_native_requests_hand_over_once(): void {
 		$marker = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION;
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
-		update_option( $marker, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		update_option( $marker, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		// The plugin stores a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		// Request A hands over; the merchant then turns Multi-Currency off.
-		MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$this->assertSame( 'yes', get_option( $option ) );
 		update_option( $option, 'no' );
 
 		// Request B read the marker before A wrote it, so it still sees 'plugin'.
-		$stale_read = static fn() => NativePaymentsRuntimeArbiter::OWNER_PLUGIN;
+		$stale_read = static fn() => NativePaymentsRuntimeArbiter::OWNER_EXTENSION;
 		add_filter( 'pre_option_' . $marker, $stale_read );
 		try {
-			MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+			MultiCurrencyFeatureController::track_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		} finally {
 			remove_filter( 'pre_option_' . $marker, $stale_read );
 		}
 
 		$this->assertSame( 'no', get_option( $option ), 'Only the request that claims the transition hands over.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( $marker ) );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( $marker ) );
 	}
 
 	/**

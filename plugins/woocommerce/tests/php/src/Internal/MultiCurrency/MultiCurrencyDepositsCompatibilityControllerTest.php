@@ -62,9 +62,9 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should not register Deposits hooks when runtime guards block.
 	 */
 	public function test_does_not_register_deposits_hooks_when_guards_block(): void {
-		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_deposits = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$supported        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, '2.0.1' );
+		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_deposits = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$supported        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, '2.0.1' );
 
 		$plugin_owned->register();
 		$missing_deposits->register();
@@ -79,7 +79,7 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should defer Deposits hook registration until plugins load.
 	 */
 	public function test_defers_deposits_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, '2.0.0', false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, '2.0.0', false );
 
 		$sut->register();
 
@@ -239,7 +239,7 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @return MultiCurrencyDepositsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $deposits_available = true,
 		?string $deposits_version = '2.0.0',
 		bool $plugins_loaded = true

@@ -464,7 +464,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 					'at'   => 1_700_000_100,
 				),
 			),
-			'deferred_codes'         => array( 'native_transport_unavailable' ),
+			'deferred_codes'         => array( 'builtin_transport_unavailable' ),
 			'informational_outcomes' => array(),
 			'next_attempt_at'        => 1_700_001_000,
 			'lease_token'            => null,

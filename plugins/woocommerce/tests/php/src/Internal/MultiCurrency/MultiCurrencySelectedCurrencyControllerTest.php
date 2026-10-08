@@ -123,7 +123,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_register_selected_currency_hooks_when_plugin_owns_runtime(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_PLUGIN,
+			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -143,7 +143,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_selected_currency_hooks_when_core_owns_runtime(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -167,7 +167,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_only_account_hooks_in_blocked_request_context(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( false )
 		);
@@ -190,7 +190,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_writer_hooks_for_store_api_context(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, true )
 		);
@@ -211,7 +211,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_write_selected_currency_customer_meta_when_provider_is_disconnected(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false ),
 			$this->create_account_resolver( false )
@@ -228,7 +228,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_writes_selected_currency_customer_meta_when_provider_is_connected(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false ),
 			$this->create_account_resolver( true )
@@ -248,7 +248,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		wp_set_current_user( 1 );
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -266,7 +266,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_removes_array_shaped_selected_currency_provider_meta_from_customer_rest_responses(): void {
 		$service  = $this->create_persistence_service();
-		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$user     = self::factory()->user->create_and_get();
 		$request  = new \WP_REST_Request( 'GET', '/wc/v2/customers/' . $user->ID );
 		$response = new \WP_REST_Response(
@@ -315,7 +315,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_classic_session_readiness_resets_selected_currency_state_once(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -343,7 +343,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_store_api_pre_dispatch_initializes_session_and_resets_state_once( string $session_handler_class ): void {
 		$service           = $this->create_persistence_service();
 		$sut               = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, true )
 		);
@@ -389,7 +389,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_store_api_pre_dispatch_ignores_non_store_request(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, true )
 		);
@@ -431,7 +431,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_updates_currency_from_url_parameter(): void {
 		$service          = $this->create_persistence_service();
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['currency'] = ' gbp ';
 
 		$sut->handle_init();
@@ -445,7 +445,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_updates_currency_from_geolocation_when_auto_currency_is_enabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
@@ -459,7 +459,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_update_geolocation_currency_when_auto_currency_is_disabled(): void {
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
@@ -473,7 +473,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_update_geolocation_currency_when_switching_is_disabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['pay_for_order'] = '1';
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
@@ -488,7 +488,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_overwrite_stored_currency_with_geolocation_currency(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service( true, 'GBP', true );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
@@ -505,7 +505,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->session = $this->create_session( false );
 		$service      = $this->create_persistence_service();
 		$sut          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -526,7 +526,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->session = $this->create_session( false );
 		$service      = $this->create_persistence_service();
 		$sut          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, false )
 		);
@@ -548,7 +548,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->session = $this->create_session( false );
 		$service      = $this->create_persistence_service();
 		$sut          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
 			$this->create_request_context( true, true )
 		);
@@ -566,7 +566,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_geolocation_notice_when_auto_currency_passes_guards(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		$sut->handle_geolocation_init();
@@ -581,7 +581,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_register_geolocation_notice_when_switching_is_disabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['pay_for_order'] = '1';
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
 
@@ -595,7 +595,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_renders_geolocation_currency_update_notice(): void {
 		$service = $this->create_persistence_service( true, 'CAD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		ob_start();
@@ -624,7 +624,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			return 'CAD';
 		};
 		add_filter( 'woocommerce_currency', $converted_currency, 900 );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'CAD' ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'CAD' ) );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		ob_start();
@@ -643,7 +643,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_render_geolocation_notice_for_store_default_currency(): void {
 		$store_currency = get_woocommerce_currency();
 		$service        = $this->create_persistence_service( true, $store_currency );
-		$sut            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( $store_currency, 'US' ) );
 
 		ob_start();
@@ -658,7 +658,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_render_geolocation_notice_for_other_selected_currency(): void {
 		$service = $this->create_persistence_service( true, 'CAD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'EUR', 'FR' ) );
 
 		ob_start();
@@ -682,7 +682,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_storefront_switcher']  = 'false';
 		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'USD' ) );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ) );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'USD', 'US' ) );
 
 		$sut->handle_simulation_init();
@@ -704,7 +704,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'EUR' );
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'EUR' ) );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'EUR' ) );
 		$sut->set_geolocation_service( $this->create_geolocation_service( 'EUR', 'FR' ) );
 
 		$sut->handle_simulation_init();
@@ -724,7 +724,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_simulation_prints_link_script(): void {
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service() );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service() );
 
 		$sut->handle_simulation_init();
 
@@ -748,7 +748,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_simulation_reads_referer(): void {
 		$_SERVER['HTTP_REFERER'] = 'http://example.org/shop/?is_mc_onboarding_simulation=1&enable_auto_currency=true';
-		$sut                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service( true, 'USD' ) );
+		$sut                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ) );
 
 		$sut->handle_simulation_init();
 
@@ -759,7 +759,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should leave the store alone without a simulation, and skip the banner when the simulation turns it off.
 	 */
 	public function test_no_simulation_banner_without_flag_or_auto_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service() );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service() );
 		$sut->handle_simulation_init();
 		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_simulation_wp_footer' ) ) );
 		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'handle_wp_footer' ) ) );
@@ -775,7 +775,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the simulation on frontend requests after geolocation.
 	 */
 	public function test_registers_simulation_hook(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->create_persistence_service(), $this->create_request_context( true, false ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service(), $this->create_request_context( true, false ) );
 
 		$sut->register();
 
@@ -787,7 +787,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_redirects_browser_currency_switch_to_strip_stale_price_filters(): void {
 		$service                = $this->create_persistence_service();
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['currency']       = 'eur';
 		$_GET['min_price']      = '10';
 		$_GET['max_price']      = '50';
@@ -827,7 +827,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_redirect_store_api_currency_switch_with_price_filters(): void {
 		$service                = $this->create_persistence_service();
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['currency']       = 'eur';
 		$_GET['min_price']      = '10';
 		$_GET['max_price']      = '50';
@@ -860,7 +860,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_redirect_rest_route_currency_switch_with_price_filters(): void {
 		$service                = $this->create_persistence_service();
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_GET['currency']       = 'eur';
 		$_GET['min_price']      = '10';
 		$_GET['max_price']      = '50';
@@ -894,7 +894,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_renders_account_currency_field_when_multiple_currencies_are_enabled(): void {
 		$service = $this->create_persistence_service( true, 'GBP' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 
 		ob_start();
 		$sut->handle_woocommerce_edit_account_form();
@@ -909,7 +909,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_saves_account_currency_field_from_posted_data(): void {
 		$service                          = $this->create_persistence_service();
-		$sut                              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut                              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 		$_POST['wcpay_selected_currency'] = ' jpy ';
 
 		$sut->handle_woocommerce_save_account_details();
@@ -1003,7 +1003,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

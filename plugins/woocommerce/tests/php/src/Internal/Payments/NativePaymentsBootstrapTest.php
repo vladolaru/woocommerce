@@ -63,7 +63,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Native Payments passes provider roots and REST classification into Multi-Currency registration. */
 	public function test_native_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
-		$container      = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_NATIVE, MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$container      = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$provider_calls = 0;
 		$rest_calls     = 0;
 		$sut            = new NativePaymentsBootstrap(
@@ -100,7 +100,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	public function test_bootstrap_filter_false_short_circuits_all_work(): void {
 		add_filter( NativePaymentsBootstrap::FILTER_BOOTSTRAP_ENABLED, '__return_false' );
 		$matrix_calls = 0;
-		$container    = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container    = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$rest_calls   = 0;
 		$sut          = new NativePaymentsBootstrap(
 			static function () use ( &$matrix_calls ): array {
@@ -183,7 +183,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox The gateway provider is resolved only when WooCommerce builds its gateway list.
 	 */
 	public function test_gateway_provider_is_resolved_only_by_the_gateway_list(): void {
-		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
@@ -224,7 +224,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should resolve and register each explicit connected REST root once in order. */
 	public function test_register_resolves_connected_rest_roots_once_in_order(): void {
-		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container = $this->make_container( NativePaymentsState::CONNECTED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_true' );
@@ -235,7 +235,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should make only the independent ownership decisions for a disabled tier. */
 	public function test_register_resolves_no_native_roots_for_disabled_tier(): void {
-		$container = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container = $this->make_container( NativePaymentsState::DISABLED, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
 		$sut->register( $container, '__return_false' );
@@ -253,7 +253,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $state, string $request, array $missing_roots ): void {
 		$request_roots = WooPaymentsProvider::get_bootstrap_root_matrix()[ $state ][ $request ] ?? array();
-		$container     = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container     = $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut           = $this->make_bootstrap();
 		if ( 'admin' === $request ) {
 			set_current_screen( 'woocommerce_page_wc-status' );
@@ -311,7 +311,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 			}
 			$sut = $this->make_bootstrap();
 
-			$sut->register( $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_NATIVE ), $is_rest );
+			$sut->register( $this->make_container( $state, NativePaymentsRuntimeArbiter::OWNER_BUILTIN ), $is_rest );
 			remove_filter( 'wp_doing_cron', '__return_true' );
 			set_current_screen( 'front' );
 
@@ -321,7 +321,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox A gateway registry listed last, with no provider root after it, registers without a provider. */
 	public function test_registry_listed_last_registers_without_a_provider(): void {
-		$container = $this->make_container( NativePaymentsState::AVAILABLE, NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container = $this->make_container( NativePaymentsState::AVAILABLE, NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = new NativePaymentsBootstrap(
 			static fn(): array => array( NativePaymentsState::AVAILABLE => array( 'cron' => array( WooPaymentsCutoverReconciliationJob::class, NativePaymentsGatewayRegistry::class ) ) ),
 			static fn(): array => array()
@@ -462,7 +462,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox A plugin-owned site with an available effective tier registers only the plugin lifecycle listener, not shadow mode, by default.
 	 */
 	public function test_plugin_owner_registers_no_shadow_mode_by_default(): void {
-		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
 		$sut->register( $container, '__return_false' );
@@ -475,7 +475,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should register only the native shadow exception on plugin-owned shopper requests when explicitly enabled. */
 	public function test_plugin_owner_registers_opt_in_shadow_only(): void {
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
-		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$container = $this->make_container( NativePaymentsState::ACTIVE, NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		$sut       = $this->make_bootstrap( array( NativePaymentsShadowMode::class, 'register_when_enabled' ) );
 
 		$sut->register( $container, '__return_false' );
@@ -502,9 +502,9 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox The provider's plugin-owner hooks are added only on sites the plugin owns, with nothing resolved from the container. */
 	public function test_plugin_owner_registrar_runs_only_for_the_plugin_owner(): void {
 		$owners = array(
-			NativePaymentsRuntimeArbiter::OWNER_PLUGIN => 1,
-			NativePaymentsRuntimeArbiter::OWNER_NATIVE => 0,
-			NativePaymentsRuntimeArbiter::OWNER_NONE   => 0,
+			NativePaymentsRuntimeArbiter::OWNER_EXTENSION => 1,
+			NativePaymentsRuntimeArbiter::OWNER_BUILTIN   => 0,
+			NativePaymentsRuntimeArbiter::OWNER_NONE      => 0,
 		);
 
 		foreach ( $owners as $owner => $expected_calls ) {
@@ -834,7 +834,7 @@ class NativePaymentsBootstrapTest extends WC_Unit_Test_Case {
 							}
 
 							if (
-								NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $this->owner &&
+								NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $this->owner &&
 								in_array( $this->state, array( NativePaymentsState::CONNECTED, NativePaymentsState::ACTIVE ), true )
 							) {
 								return NativePaymentsState::AVAILABLE;

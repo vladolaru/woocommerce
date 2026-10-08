@@ -105,7 +105,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const NOX_ONBOARDING_LOCKED_OPTION = 'woocommerce_woopayments_nox_onboarding_locked';
 
-	private const ACCOUNT_DELETION_PENDING_OPTION = 'wcpay_account_deletion_pending_id';
+	private const ACCOUNT_DELETION_PENDING_OPTION = 'woocommerce_woopayments_account_deletion_pending_id';
 
 	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
 

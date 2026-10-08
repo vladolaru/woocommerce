@@ -57,7 +57,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register frontend currency hooks while plugin multi-currency owns the runtime.
 	 */
 	public function test_does_not_register_when_plugin_multi_currency_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -81,7 +81,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register frontend currency hooks when core multi-currency owns the runtime.
 	 */
 	public function test_registers_frontend_currency_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -105,7 +105,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should load the Blocks totals currency code script when the Cart or Checkout block loads its scripts.
 	 */
 	public function test_loads_the_blocks_totals_script_with_the_cart_and_checkout_blocks(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
 		// The client appends the currency code to the block totals (client 11.1.0 `client/checkout/blocks/index.js:159-175`).
@@ -125,7 +125,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_only_always_on_currency_hooks_in_blocked_request_context(): void {
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$this->create_request_context( false )
 		);
 
@@ -147,7 +147,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should delegate frontend formatting callbacks to the projection service.
 	 */
 	public function test_delegates_frontend_formatting_callbacks_to_projection_service(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
 		$this->assertSame( 'GBP', $sut->get_woocommerce_currency( 'USD' ) );
@@ -164,7 +164,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_currency_projection_is_reentry_safe(): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$service = new class() extends MultiCurrencyFrontendProjectionService {
 			/**
 			 * Number of projection calls.
@@ -203,7 +203,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should leave deferred order-context callbacks as safe pass-throughs.
 	 */
 	public function test_deferred_order_context_callbacks_are_safe_pass_throughs(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
 		$this->assertSame( 123, $sut->init_order_currency( 123 ) );
@@ -219,7 +219,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->set_currency( 'JPY' );
 		$order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( $order->get_id(), $sut->init_order_currency( $order->get_id() ) );
 		$this->assertSame( 'JPY', $sut->get_woocommerce_currency( 'USD' ) );
@@ -231,7 +231,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_initializes_order_currency_to_selected_currency_when_order_lookup_fails(): void {
 		$missing_order_id = PHP_INT_MAX;
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( $missing_order_id, $sut->init_order_currency( $missing_order_id ) );
 
@@ -247,7 +247,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 		wc_get_container()->get( OrderCache::class )->remove( $order->get_id() );
 
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
 		$observed_filters = null;
@@ -290,7 +290,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'JPY' );
 		$order->save();
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			null,
 			$this->create_order_context_service( true )
 		);
@@ -309,7 +309,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'JPY' );
 		$order->save();
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			null,
 			$this->create_order_context_service( true )
 		);
@@ -327,7 +327,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'JPY' );
 		$order->save();
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			null,
 			$this->create_order_context_service( false )
 		);
@@ -345,7 +345,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'JPY' );
 		$order->save();
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			null,
 			$this->create_order_context_service( false )
 		);
@@ -367,7 +367,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->set_currency( 'JPY' );
 		$order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->with_query_vars(
 			array( $query_var => $order->get_id() ),
@@ -407,7 +407,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$view_order = wc_create_order();
 		$view_order->set_currency( 'AUD' );
 		$view_order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->with_query_vars(
 			array(
@@ -427,7 +427,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should ignore empty order query vars.
 	 */
 	public function test_ignores_empty_order_query_vars(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->with_query_vars(
 			array(
@@ -447,7 +447,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should set store currency decimals for shipping rate args.
 	 */
 	public function test_sets_store_currency_decimals_for_shipping_rate_args(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
 		$this->assertSame(
@@ -584,7 +584,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

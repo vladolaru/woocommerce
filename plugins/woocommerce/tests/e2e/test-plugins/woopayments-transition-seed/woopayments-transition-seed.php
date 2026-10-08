@@ -166,10 +166,10 @@ final class WooPayments_Transition_Seed_CLI {
 		// This store is a fresh install, so WooCommerce never runs the 11.2.0-5
 		// update that an upgraded plugin-era store runs. Call it here, as that
 		// upgrade would, so the store reaches `available` the real way.
-		if ( ! function_exists( 'wc_update_11205_repair_native_payments_state' ) ) {
+		if ( ! function_exists( 'wc_update_11205_seed_woopayments_setup_tier' ) ) {
 			include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 		}
-		wc_update_11205_repair_native_payments_state();
+		wc_update_11205_seed_woopayments_setup_tier();
 		$migrator_action_id = null;
 		if ( ! empty( $assoc_args['pending-migrator'] ) ) {
 			$migrator_action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_migrate_subscription_retry' );
@@ -179,7 +179,7 @@ final class WooPayments_Transition_Seed_CLI {
 			$migrator_action_id = (int) $migrator_action_id;
 		}
 		$identity                       = $this->read_identity();
-		$identity['native_state']       = get_option( 'woocommerce_native_payments_state', null );
+		$identity['native_state']       = get_option( 'woocommerce_woopayments_setup_tier', null );
 		$identity['migrator_action_id'] = $migrator_action_id;
 		WP_CLI::line( wp_json_encode( $identity ) );
 	}

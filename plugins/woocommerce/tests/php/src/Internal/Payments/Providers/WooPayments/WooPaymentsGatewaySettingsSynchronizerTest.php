@@ -12,7 +12,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 
 	private const SETTINGS_OPTION                = 'woocommerce_woocommerce_payments_settings';
-	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woocommerce_payments_payment_request_projection_pending';
+	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
 
 	/**
 	 * Tear down test fixtures.

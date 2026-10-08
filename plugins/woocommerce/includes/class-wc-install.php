@@ -363,13 +363,13 @@ class WC_Install {
 			'wc_update_11202_reset_refund_returning_customer_markers',
 		),
 		'11.2.0-3' => array(
-			'wc_update_11203_enable_native_payments',
+			'wc_update_11203_enable_builtin_woopayments',
 		),
 		'11.2.0-4' => array(
 			'wc_update_11204_seed_multi_currency_feature',
 		),
 		'11.2.0-5' => array(
-			'wc_update_11205_repair_native_payments_state',
+			'wc_update_11205_seed_woopayments_setup_tier',
 		),
 	);
 
@@ -1289,8 +1289,8 @@ class WC_Install {
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
 		// Native payments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
-		self::seed_autoloaded_option( 'woocommerce_native_payments_state', 'disabled' );
-		self::seed_autoloaded_option( 'woocommerce_native_payments_killswitch', '0' );
+		self::seed_autoloaded_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
+		self::seed_autoloaded_option( 'woocommerce_woopayments_builtin_kill_switch', '0' );
 		// WooPaymentsCutoverStateStore::ABSENT_RECORD: admin and cron requests read the cutover record.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_cutover_state', 'none' );
 
@@ -1301,7 +1301,7 @@ class WC_Install {
 			$native_eligible = ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
 
 			if ( $native_eligible ) {
-				add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+				add_option( 'woocommerce_woopayments_builtin_enabled', 'yes', '', true );
 			}
 
 			// Define initial tax classes.

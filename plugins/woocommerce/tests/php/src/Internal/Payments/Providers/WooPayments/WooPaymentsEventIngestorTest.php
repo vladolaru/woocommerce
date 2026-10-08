@@ -139,7 +139,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_onboarding_stripe_connected' );
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
-		delete_option( 'wcpay_account_deletion_pending_id' );
+		delete_option( 'woocommerce_woopayments_account_deletion_pending_id' );
 		foreach ( $this->original_multi_currency_options as $option_name => $option_value ) {
 			if ( null === $option_value ) {
 				delete_option( $option_name );

@@ -9,7 +9,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
 // A store that has not set native payments up loads nothing of it (owner
 // dormancy rule, N-299). The tier is the stored state option, so this describe
 // block sets it to `disabled` and restores whatever the store had before.
-const NATIVE_PAYMENTS_STATE_OPTION = 'woocommerce_native_payments_state';
+const NATIVE_PAYMENTS_STATE_OPTION = 'woocommerce_woopayments_setup_tier';
 const NATIVE_PAYMENTS_STATE_ABSENT_MARKER =
 	'__woopayments_native_e2e_native_payments_state_absent__';
 const STORE_PRODUCTS_API = '/wp-json/wc/store/v1/products?per_page=1';

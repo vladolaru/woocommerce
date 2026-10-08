@@ -157,8 +157,8 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	 * @param bool   $expected       Whether WooPayments should read as active.
 	 */
 	public function test_woopayments_activation_rules_follow_native_enablement_and_kill_switch( string $native_enabled, string $kill_switch, bool $expected ) {
-		update_option( 'woocommerce_native_payments_enabled', $native_enabled );
-		update_option( 'woocommerce_native_payments_killswitch', $kill_switch );
+		update_option( 'woocommerce_woopayments_builtin_enabled', $native_enabled );
+		update_option( 'woocommerce_woopayments_builtin_kill_switch', $kill_switch );
 		$evaluator = new RuleEvaluator();
 
 		$this->assertSame( $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( true ) ) );

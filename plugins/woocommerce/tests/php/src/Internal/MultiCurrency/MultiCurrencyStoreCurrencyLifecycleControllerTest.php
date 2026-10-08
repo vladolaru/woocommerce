@@ -28,7 +28,7 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	 */
 	public function test_does_not_register_init_hook_when_plugin_owns_runtime(): void {
 		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $service );
 
 		$sut->register();
 
@@ -52,7 +52,7 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	 */
 	public function test_registers_init_hook_once_when_core_owns_runtime(): void {
 		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 
 		$sut->register();
 		$sut->register();
@@ -65,7 +65,7 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	 */
 	public function test_handle_init_synchronizes_store_currency(): void {
 		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $service );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
 
 		$sut->handle_init();
 
@@ -164,7 +164,7 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

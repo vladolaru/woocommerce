@@ -1808,7 +1808,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'user_has_cap', $filter_callback );
 
 		// Ensure the classification cache misses so the handler must re-fetch the fresh purpose.
-		delete_transient( 'woocommerce_native_woopayments_file_purpose_file_reclassified_0' );
+		delete_transient( 'wcpay_file_purpose_file_reclassified_0' );
 
 		// The provider has reclassified this file from public to private since it was last served.
 		$this->mock_settings_service

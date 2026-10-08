@@ -228,7 +228,7 @@ class WooPaymentsProviderGatewayAdapter {
 						$charge_id,
 						$this->order_data_service->prepare_amount( (float) ( $payment_data['amount'] ?? 0.0 ), (string) $order->get_currency() ),
 						(string) ( $payment_data['reason'] ?? '' ),
-						'woocommerce_native',
+						'woocommerce_core',
 						$idempotency_key
 					);
 					$outcome = WooPaymentsIntentCodec::outcome_from_refund_result( $result );

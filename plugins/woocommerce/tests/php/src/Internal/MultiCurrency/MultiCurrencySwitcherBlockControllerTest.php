@@ -55,7 +55,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register init hook when plugin owns runtime.
 	 */
 	public function test_does_not_register_init_hook_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -74,7 +74,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		$enabled_sut = $this->create_controller_with_arbiter( $arbiter );
 		$enabled_sut->register();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $arbiter->get_runtime_owner(), 'An enabled Core feature must own multi-currency in native payments mode.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner(), 'An enabled Core feature must own multi-currency in native payments mode.' );
 		$this->assertSame( 10, has_action( 'init', array( $enabled_sut, 'handle_init' ) ), 'An enabled Core runtime must register the block renderer.' );
 
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
@@ -89,7 +89,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register init hook when core owns runtime.
 	 */
 	public function test_registers_init_hook_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -101,7 +101,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register switcher block type with preserved attributes.
 	 */
 	public function test_registers_switcher_block_type_with_preserved_attributes(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();
 
@@ -217,7 +217,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 			true
 		);
 
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();
 
@@ -239,7 +239,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_render_callback_delegates_to_projection_service(): void {
 		$projection       = $this->create_projection_service();
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
 		$_GET['currency'] = 'EUR';
 		$_GET['orderby']  = 'price';
 
@@ -273,7 +273,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_render_callback_passes_switching_disabled_decision(): void {
 		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection, true );
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection, true );
 
 		$sut->render_block_widget( array() );
 
@@ -359,7 +359,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

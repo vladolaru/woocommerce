@@ -22,14 +22,14 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_native_woopayments_last_webhook_fetch';
+	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_woopayments_last_webhook_fetch';
 
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		$this->reset_container_replacements();
-		delete_option( 'woocommerce_native_payments_killswitch' );
+		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
@@ -52,10 +52,10 @@ class NativePaymentsCliCommandTest extends WC_Unit_Test_Case {
 		$lines = wc_get_container()->get( NativePaymentsCliCommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
-		$this->assertStringContainsString( 'Owner: native', $text );
+		$this->assertStringContainsString( 'Owner: builtin', $text );
 		$this->assertStringContainsString( 'Native enabled: yes', $text );
-		$this->assertStringContainsString( 'Filter: woocommerce_native_payments_enabled (source: filter)', $text );
-		$this->assertStringContainsString( 'woocommerce_native_payments_killswitch', $text );
+		$this->assertStringContainsString( 'Filter: woocommerce_woopayments_builtin_enabled (source: filter)', $text );
+		$this->assertStringContainsString( 'woocommerce_woopayments_builtin_kill_switch', $text );
 		$this->assertStringContainsString( 'final authority', $text );
 		$this->assertStringContainsString( 'Preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );

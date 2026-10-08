@@ -53,7 +53,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
 
@@ -64,8 +64,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register sales record filter only for cron requests.
 	 */
 	public function test_registers_sales_record_filter_only_for_cron_requests(): void {
-		$non_cron = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$cron     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$non_cron = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$cron     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		$non_cron->register();
 		$cron->register();
@@ -78,7 +78,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply public compatibility decision filters.
 	 */
 	public function test_applies_public_compatibility_decision_filters(): void {
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$product = (object) array( 'id' => 1 );
 		$coupon  = (object) array( 'id' => 2 );
 
@@ -104,7 +104,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should disable currency switching for pay-for-order and external filters.
 	 */
 	public function test_disables_currency_switching_for_pay_for_order_and_external_filters(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertFalse( $sut->should_disable_currency_switching() );
 
@@ -126,7 +126,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should attach order modifier and return original value.
 	 */
 	public function test_attach_order_modifier_adds_order_query_filter_and_returns_original_value(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'enabled', $sut->attach_order_modifier( 'enabled' ) );
 
@@ -137,7 +137,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should convert sales record order totals to default currency.
 	 */
 	public function test_converts_sales_record_order_totals_to_default_currency(): void {
-		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true );
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 1000 );
@@ -162,8 +162,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should skip sales record conversion when context or meta do not match.
 	 */
 	public function test_skips_sales_record_conversion_when_context_or_meta_do_not_match(): void {
-		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
-		$missing_meta  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true );
+		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
+		$missing_meta  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
 		$order         = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 1000 );
@@ -286,7 +286,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

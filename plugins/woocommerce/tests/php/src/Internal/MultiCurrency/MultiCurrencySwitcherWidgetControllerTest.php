@@ -46,7 +46,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register widget hook when plugin owns runtime.
 	 */
 	public function test_does_not_register_widget_hook_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -57,7 +57,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register widget hook when core owns runtime.
 	 */
 	public function test_registers_widget_hook_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -69,7 +69,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register single widget instance on widgets init.
 	 */
 	public function test_registers_single_widget_instance_on_widgets_init(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$before = $this->get_switcher_widgets();
 		$sut->handle_widgets_init();
@@ -82,7 +82,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should return empty markup before the switcher widget is registered.
 	 */
 	public function test_returns_empty_markup_before_switcher_widget_is_registered(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertTrue( method_exists( $sut, 'get_switcher_widget_markup' ), 'The controller must expose the template-tag rendering method.' );
 		if ( ! method_exists( $sut, 'get_switcher_widget_markup' ) ) {
@@ -98,7 +98,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	public function test_returns_empty_markup_when_widget_factory_is_malformed(): void {
 		global $wp_widget_factory;
 
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$original_widgets = $wp_widget_factory->widgets;
 		$sut->handle_widgets_init();
 		$wp_widget_factory->widgets = null;
@@ -114,7 +114,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should return empty markup when the registered widget is absent from the factory.
 	 */
 	public function test_returns_empty_markup_when_registered_widget_is_absent_from_factory(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->handle_widgets_init();
 		$this->remove_registered_switcher_widgets();
 
@@ -128,7 +128,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		global $wp_widget_factory;
 
 		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
 		$before     = $this->get_switcher_widgets();
 		$sut->handle_widgets_init();
 		$widget = current( array_diff_key( $this->get_switcher_widgets(), $before ) );
@@ -173,7 +173,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_retains_caller_arrays_when_legacy_theme_filters_return_malformed_values(): void {
 		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
 		$instance   = array( 'title' => 'Caller title' );
 		$args       = array( 'before_widget' => '<aside>' );
 		$sut->handle_widgets_init();
@@ -200,7 +200,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not render core markup when the plugin owns multi-currency.
 	 */
 	public function test_does_not_render_core_markup_when_plugin_owns_multi_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 		$sut->handle_widgets_init();
 
 		$this->assertSame( '', $sut->get_switcher_widget_markup() );
@@ -246,7 +246,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 		$GLOBALS['row_86_multi_currency_client'] = $client;
 		$instance                                = array( 'title' => 'Client title' );
 		$args                                    = array( 'before_widget' => '<aside>' );
-		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		try {
 			$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
@@ -285,7 +285,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Rendering failed.' );
 			}
 		};
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $projection );
+		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
 		$level      = ob_get_level();
 		$sut->handle_widgets_init();
 
@@ -469,7 +469,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

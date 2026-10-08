@@ -18,7 +18,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
-	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
+	private const NORMALIZED_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
 
 	/**
 	 * Shared settings keys native does not know, one per value shape; normalization must keep them as they are.

@@ -56,8 +56,8 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	 * @testdox Should not register Pre-Orders hooks when runtime guards block.
 	 */
 	public function test_does_not_register_pre_orders_hooks_when_guards_block(): void {
-		$plugin_owned       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_pre_orders = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$plugin_owned       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_pre_orders = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$plugin_owned->register();
 		$missing_pre_orders->register();
@@ -70,7 +70,7 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	 * @testdox Should defer Pre-Orders hook registration until plugins load.
 	 */
 	public function test_defers_pre_orders_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 
 		$sut->register();
 
@@ -125,7 +125,7 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 	 * @return MultiCurrencyPreOrdersCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $pre_orders_available = true,
 		bool $plugins_loaded = true
 	): MultiCurrencyPreOrdersCompatibilityController {

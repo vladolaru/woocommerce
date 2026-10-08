@@ -56,9 +56,9 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Points and Rewards hooks when runtime guards block.
 	 */
 	public function test_does_not_register_points_rewards_hooks_when_guards_block(): void {
-		$plugin_owned           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_points_rewards = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$admin                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true );
+		$plugin_owned           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_points_rewards = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$admin                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true );
 
 		$plugin_owned->register();
 		$missing_points_rewards->register();
@@ -73,7 +73,7 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should defer Points and Rewards hook registration until plugins load.
 	 */
 	public function test_defers_points_rewards_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false );
 
 		$sut->register();
 
@@ -182,7 +182,7 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @return MultiCurrencyPointsRewardsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $points_rewards_available = true,
 		bool $is_admin = false,
 		bool $plugins_loaded = true

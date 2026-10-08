@@ -28,14 +28,14 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	const OWNER_PLUGIN = 'plugin';
+	const OWNER_EXTENSION = 'extension';
 
 	/**
 	 * Owner value: WooCommerce core owns multi-currency.
 	 *
 	 * @var string
 	 */
-	const OWNER_CORE = 'core';
+	const OWNER_BUILTIN = 'builtin';
 
 	/**
 	 * Owner value: no multi-currency runtime is active for this site.
@@ -95,17 +95,17 @@ class MultiCurrencyRuntimeArbiter {
 	/**
 	 * Get the multi-currency runtime owner for the current site.
 	 *
-	 * @return string One of self::OWNER_PLUGIN, self::OWNER_CORE, self::OWNER_NONE.
+	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
 		$payments_owner = $this->get_payments_owner();
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
-			return self::OWNER_PLUGIN;
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $payments_owner && $this->is_plugin_multi_currency_enabled() ) {
+			return self::OWNER_EXTENSION;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE === $payments_owner && $this->feature_is_enabled() ) {
-			return self::OWNER_CORE;
+		if ( NativePaymentsRuntimeArbiter::OWNER_BUILTIN === $payments_owner && $this->feature_is_enabled() ) {
+			return self::OWNER_BUILTIN;
 		}
 
 		return self::OWNER_NONE;
@@ -117,7 +117,7 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool True when core owns multi-currency.
 	 */
 	public function should_core_register(): bool {
-		return self::OWNER_CORE === $this->get_runtime_owner();
+		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
 	/**
@@ -126,7 +126,7 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool True when plugin multi-currency owns the price/currency pipeline.
 	 */
 	public function should_plugin_register(): bool {
-		return self::OWNER_PLUGIN === $this->get_runtime_owner();
+		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
 	/**

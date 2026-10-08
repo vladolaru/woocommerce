@@ -76,57 +76,57 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should arm the Multi-Currency handover on a request the WooPayments plugin owns. */
 	public function test_plugin_owned_request_arms_the_handover(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions(), 'Every request reads the marker, so it is autoloaded.' );
 	}
 
 	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */
 	public function test_first_native_request_hands_over_before_the_arbiter_reads(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
 		// while the plugin owned payments.
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$container = $this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$container = $this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
 		$this->assertSame( 'yes', $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
 	}
 
 	/** @testdox Should keep a merchant choice made under native ownership on later requests. */
 	public function test_later_native_request_keeps_the_merchant_choice(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/** @testdox Should hand over again after the plugin is reactivated and native takes over a second time. */
 	public function test_reactivation_rearms_the_handover(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */
 	public function test_first_native_request_without_marker_marks_the_store_native(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
 		$this->assertArrayHasKey( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION, wp_load_alloptions() );
 		$this->assertFalse( get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, false ) );
 	}
@@ -137,13 +137,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		// a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 
 		delete_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The seed adds the option only when it is unset.' );
 	}
@@ -160,18 +160,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should count a completed plugin setup as plugin use at the switch. */
 	public function test_completed_setup_counts_as_plugin_use_at_the_switch(): void {
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_PLUGIN );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_EXTENSION );
 		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
 		update_option( 'wcpay_multi_currency_setup_completed', '1' );
 
-		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_NATIVE );
+		$this->register_for_payments_owner( NativePaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
 
 	/** @testdox Should retain core roots when no provider roots are configured. */
 	public function test_empty_provider_resolver_keeps_core_registration_providerless(): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
 
 		$sut->register( $container, '__return_false' );
@@ -205,7 +205,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should order and de-duplicate provider roots before core roots. */
 	public function test_core_registration_orders_and_deduplicates_provider_roots_before_core_roots(): void {
 		$provider_roots = array( 'ProviderRoot', self::CORE_ROOTS[0], 'ProviderRoot' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$provider_roots, &$resolver_calls ): array {
@@ -224,7 +224,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should order provider roots before an enabled plugin shadow root. */
 	public function test_plugin_shadow_registers_provider_roots_before_shadow(): void {
 		add_filter( MultiCurrencyShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -241,7 +241,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should not resolve provider roots when plugin shadow mode is disabled. */
 	public function test_plugin_owner_with_disabled_shadow_does_not_resolve_provider_roots(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -258,7 +258,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Should not resolve provider roots for an empty front request. */
 	public function test_empty_front_request_does_not_resolve_provider_roots(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -282,7 +282,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_core_owned_single_currency_front_request_registers_explicit_price_filter_without_provider_roots(): void {
 		$controller     = $this->create_explicit_price_controller( false );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false, $controller );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, $controller );
 		$resolver_calls = 0;
 		$defaults       = array();
 		$sut            = new MultiCurrencyBootstrap(
@@ -315,7 +315,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Should retain provider roots, and the explicit-price controller, for an empty core-owned REST request without the public filter.
 	 */
 	public function test_empty_core_owned_rest_request_retains_provider_roots_without_the_public_filter(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -333,7 +333,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should append the existing controller to empty REST roots when the public filter is attached before bootstrap. */
 	public function test_empty_core_owned_rest_request_appends_the_existing_controller_when_the_public_filter_is_attached(): void {
 		$controller     = $this->create_explicit_price_controller( false );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false, $controller );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, $controller );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -356,7 +356,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should not resolve provider roots for an empty AJAX request. */
 	public function test_empty_ajax_request_does_not_resolve_provider_roots(): void {
 		add_filter( 'wp_doing_ajax', '__return_true' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -381,7 +381,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_empty_action_scheduler_request_precedes_ajax_rest_and_admin_without_resolving_provider_roots(): void {
 		$_REQUEST['action'] = 'as_async_request_queue_runner';
 		add_filter( 'wp_doing_ajax', '__return_true' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -406,7 +406,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_empty_cli_request_does_not_resolve_provider_roots(): void {
 		Constants::set_constant( 'WP_CLI', true );
 
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -432,7 +432,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $expected   Expected roots.
 	 */
 	public function test_selects_exact_core_root_matrix( bool $configured, bool $historical, string $request, array $expected ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, $configured, $historical );
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
 		$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) );
 		if ( ! method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) ) {
@@ -488,7 +488,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $expected Expected roots.
 	 */
 	public function test_retains_historical_roots_when_historical_order_detection_fails( string $request, array $expected ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, true );
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, true );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
 		$method    = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
 		$method->setAccessible( true );
@@ -511,7 +511,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Should avoid historical storage checks for no-config front, AJAX, and CLI requests. */
 	public function test_no_config_front_ajax_and_cli_skip_historical_order_detection(): void {
 		foreach ( array( 'front', 'ajax', 'cli' ) as $request ) {
-			$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true );
+			$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
 			$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
 			$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) );
 			if ( ! method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) ) {
@@ -574,7 +574,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $on_demand_roots Roots the first action registers, in cron order.
 	 */
 	public function test_page_request_registers_its_missing_cron_roots_once_when_an_action_runs( string $tier, string $request, array $load_roots, array $on_demand_roots ): void {
-		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured' === $tier, 'historical' === $tier );
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured' === $tier, 'historical' === $tier );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
 
 		$this->register_as( $sut, $container, $request );
@@ -607,17 +607,17 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_adds_no_action_scheduler_listener_when_no_cron_root_is_missing(): void {
 		$cases = array(
 			'no owner, configured front' => array( MultiCurrencyRuntimeArbiter::OWNER_NONE, 'configured', 'front' ),
-			'plugin owner, front'        => array( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, 'configured', 'front' ),
-			'configured cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'cron' ),
-			'configured cli'             => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'cli' ),
-			'configured ajax'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'ajax' ),
-			'configured rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'rest' ),
-			'configured admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'configured', 'admin' ),
-			'historical cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'cron' ),
-			'historical rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'rest' ),
-			'historical admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'historical', 'admin' ),
-			'empty rest'                 => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'empty', 'rest' ),
-			'empty admin'                => array( MultiCurrencyRuntimeArbiter::OWNER_CORE, 'empty', 'admin' ),
+			'plugin owner, front'        => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, 'configured', 'front' ),
+			'configured cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured', 'cron' ),
+			'configured cli'             => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured', 'cli' ),
+			'configured ajax'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured', 'ajax' ),
+			'configured rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured', 'rest' ),
+			'configured admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'configured', 'admin' ),
+			'historical cron'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'historical', 'cron' ),
+			'historical rest'            => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'historical', 'rest' ),
+			'historical admin'           => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'historical', 'admin' ),
+			'empty rest'                 => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'empty', 'rest' ),
+			'empty admin'                => array( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 'empty', 'admin' ),
 		);
 		foreach ( $cases as $label => list( $owner, $tier, $request ) ) {
 			$sut = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
@@ -791,7 +791,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** @testdox Adds no order listeners when the plugin or nobody owns Multi-Currency. */
 	public function test_adds_no_refund_listener_without_core_ownership(): void {
-		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_NONE, MultiCurrencyRuntimeArbiter::OWNER_PLUGIN ) as $owner ) {
+		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_NONE, MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ) as $owner ) {
 			$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
 
 			$this->register_as( $sut, $this->make_container( $owner, true, false ), 'admin' );
@@ -941,9 +941,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	private function make_container( string $owner, bool $configured, bool $historical, bool $throw_on_foreign_currency_order_detection = false, ?MultiCurrencyExplicitPriceController $explicit_price_controller = null, ?string $payments_owner = null ): RuntimeContainer {
 		$payments_owner = $payments_owner ?? array(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE   => NativePaymentsRuntimeArbiter::OWNER_NATIVE,
-			MultiCurrencyRuntimeArbiter::OWNER_PLUGIN => NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
-			MultiCurrencyRuntimeArbiter::OWNER_NONE   => NativePaymentsRuntimeArbiter::OWNER_NONE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN   => NativePaymentsRuntimeArbiter::OWNER_BUILTIN,
+			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION => NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
+			MultiCurrencyRuntimeArbiter::OWNER_NONE      => NativePaymentsRuntimeArbiter::OWNER_NONE,
 		)[ $owner ];
 		$arbiter        = new class( $owner, $payments_owner ) extends MultiCurrencyRuntimeArbiter {
 			/** @var string */
@@ -979,7 +979,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 

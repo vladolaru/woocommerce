@@ -163,7 +163,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,int>
 	 */
 	private const NATIVE_ONLY_HOOKS = array(
-		'woocommerce_native_payments_enabled'             => 1,
+		'woocommerce_woopayments_builtin_enabled'         => 1,
 		'woocommerce_native_payments_shadow_mode_enabled' => 1,
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
 		'woocommerce_native_payments_shadow_mode_allow_live_reads' => 2,

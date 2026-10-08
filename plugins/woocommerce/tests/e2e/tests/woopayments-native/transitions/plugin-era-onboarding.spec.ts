@@ -217,7 +217,7 @@ test.describe( 'WooPayments transition: plugin-era onboarding', () => {
 				( await restApi.get( 'wc-native-payments-e2e/v1/status' ) ).data
 					.runtime_owner,
 				'the plugin must own runtime on a store that has not switched'
-			).toBe( 'plugin' );
+			).toBe( 'extension' );
 			expect(
 				await wpEvalJson< boolean >(
 					'return wc_get_container()->get( Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Api\\WooPaymentsApiClient::class )->is_available();'

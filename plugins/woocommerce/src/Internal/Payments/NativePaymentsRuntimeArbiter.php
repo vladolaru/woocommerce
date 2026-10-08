@@ -65,14 +65,14 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	const OWNER_PLUGIN = 'plugin';
+	const OWNER_EXTENSION = 'extension';
 
 	/**
 	 * Owner value: the core-native payments runtime owns the runtime.
 	 *
 	 * @var string
 	 */
-	const OWNER_NATIVE = 'native';
+	const OWNER_BUILTIN = 'builtin';
 
 	/**
 	 * Owner value: no payments runtime is active for this site.
@@ -108,7 +108,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	const FILTER_NATIVE_ENABLED = 'woocommerce_native_payments_enabled';
+	const FILTER_NATIVE_ENABLED = 'woocommerce_woopayments_builtin_enabled';
 
 	/**
 	 * Option that disables native payments in the rollout filter default.
@@ -117,7 +117,7 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_native_payments_killswitch';
+	public const NATIVE_RUNTIME_KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
 
 	/**
 	 * The legacy proxy, used for mockable calls to global functions.
@@ -149,13 +149,13 @@ class NativePaymentsRuntimeArbiter {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @return string One of self::OWNER_PLUGIN, self::OWNER_NATIVE, self::OWNER_NONE.
+	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
 		$blog_id = get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->runtime_owners ) ) {
 			// Plugin-wins is the only allowed state while the plugin is active; native is dormant.
-			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_PLUGIN : ( $this->is_native_runtime_enabled() ? self::OWNER_NATIVE : self::OWNER_NONE );
+			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_EXTENSION : ( $this->is_native_runtime_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE );
 		}
 
 		return $this->runtime_owners[ $blog_id ];
@@ -182,7 +182,7 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True only when the native runtime owns this site.
 	 */
 	public function should_native_register(): bool {
-		return self::OWNER_NATIVE === $this->get_runtime_owner();
+		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
 	/**
@@ -196,7 +196,7 @@ class NativePaymentsRuntimeArbiter {
 	 * @return bool True when the plugin owns this site's payments runtime.
 	 */
 	public function is_plugin_runtime_active(): bool {
-		return self::OWNER_PLUGIN === $this->get_runtime_owner();
+		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
 	/**

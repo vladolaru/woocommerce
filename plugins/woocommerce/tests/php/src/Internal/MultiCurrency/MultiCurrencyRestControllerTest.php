@@ -85,7 +85,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register REST hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_rest_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -122,7 +122,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should omit public config route when cache mode is inactive.
 	 */
 	public function test_omits_public_config_route_when_cache_mode_is_inactive(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, false );
 
 		$sut->register();
 		/**
@@ -159,7 +159,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	public function test_returns_store_currencies_from_the_static_settings_catalog(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$this->create_state_builder( array( 'USD', 'EUR' ), array( 'USD', 'EUR' ) )
 		);
 
@@ -212,7 +212,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should permit automatic settings during a registered provider outage.
 	 */
 	public function test_permits_automatic_rate_writes_when_a_registered_provider_is_unavailable(): void {
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, false );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, true, false );
 		$request = $this->create_automatic_rate_request();
 
 		$response = $sut->update_single_currency_settings( $request );
@@ -227,7 +227,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	public function test_activates_a_configured_currency_after_a_positive_manual_rate_write_without_a_provider(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$builder = $this->create_real_state_builder();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $builder );
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/currencies/EUR' );
 		$request->set_param( 'currency_code', 'EUR' );
 		$request->set_param( 'exchange_rate_type', 'manual' );
@@ -251,7 +251,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_price_rounding_gbp', '1.00' );
 		update_option( 'wcpay_multi_currency_price_charm_gbp', '0.99' );
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$this->create_state_builder( array( 'USD', 'EUR', 'GBP' ), array( 'USD', 'EUR', 'GBP' ) )
 		);
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
@@ -278,7 +278,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.78' );
 
 		$builder = $this->create_real_state_builder();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $builder );
 
 		$this->assertSame(
 			array( 'USD', 'EUR', 'GBP' ),
@@ -323,7 +323,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$builder = $this->create_real_state_builder();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $builder );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $builder );
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
 		// WooPayments 11.1.0 multi-currency-on-boarding.spec.ts:139 supplies the GBP/EUR/CAD/AUD selection; DECISIONS.md (2026-08-08) maps it to native settings persistence.
 		$request->set_param( 'enabled', array( 'USD', 'GBP', 'EUR', 'CAD', 'AUD' ) );
@@ -363,7 +363,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_rejects_enabled_currency_the_rate_provider_does_not_support(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, true, true, null, array( 'EUR' ) );
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
 		$request->set_param( 'enabled', array( 'USD', 'GBP' ) );
 
@@ -380,7 +380,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * Source: WooPayments 11.1.0 MultiCurrency::initialize_available_currencies() (:1707-1732).
 	 */
 	public function test_lists_only_provider_supported_currencies_as_available(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, true, true, null, array( 'EUR' ) );
 
 		$data = $sut->get_store_currencies()->get_data();
 
@@ -392,7 +392,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should accept an enabled currency the available rate provider supports.
 	 */
 	public function test_accepts_enabled_currency_the_rate_provider_supports(): void {
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, null, true, true, null, array( 'EUR' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, true, true, null, array( 'EUR' ) );
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/multi-currency/update-enabled-currencies' );
 		$request->set_param( 'enabled', array( 'USD', 'EUR' ) );
 
@@ -479,7 +479,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$cache_rendering_service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
 		$cache_rendering_service->init( $this->create_active_caching_environment() );
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			null,
 			true,
 			null,
@@ -570,7 +570,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		?MultiCurrencyStateBuilder $state_builder = null,
 		bool $cache_optimized_mode = true,
 		?bool $provider_available = null,
@@ -731,7 +731,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

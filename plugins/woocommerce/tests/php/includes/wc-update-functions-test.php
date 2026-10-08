@@ -34,12 +34,12 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	public function tearDown(): void {
 		Constants::clear_single_constant( 'WOOCOMMERCE_BIS_ALPHA_ENABLED' );
 		delete_option( 'woocommerce_feature_customer_stock_notifications_enabled' );
-		delete_option( 'woocommerce_native_payments_enabled' );
+		delete_option( 'woocommerce_woopayments_builtin_enabled' );
 		delete_option( 'woocommerce_feature_multi_currency_enabled' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_setup_completed' );
-		delete_option( 'woocommerce_native_payments_state' );
+		delete_option( 'woocommerce_woopayments_setup_tier' );
 		delete_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
@@ -640,28 +640,28 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	/**
 	 * @testdox Migration registers and creates the autoloaded native payments option without overwriting an existing value.
 	 */
-	public function test_wc_update_11203_enable_native_payments(): void {
+	public function test_wc_update_11203_enable_builtin_woopayments(): void {
 		global $wpdb;
 
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 
 		$db_updates = WC_Install::get_db_update_callbacks();
 		$this->assertArrayHasKey( '11.2.0-3', $db_updates );
-		$this->assertContains( 'wc_update_11203_enable_native_payments', $db_updates['11.2.0-3'] );
+		$this->assertContains( 'wc_update_11203_enable_builtin_woopayments', $db_updates['11.2.0-3'] );
 
-		wc_update_11203_enable_native_payments();
+		wc_update_11203_enable_builtin_woopayments();
 
-		$this->assertSame( 'yes', get_option( 'woocommerce_native_payments_enabled' ), 'The migration should enable native payments for upgraded stores.' );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woopayments_builtin_enabled' ), 'The migration should enable native payments for upgraded stores.' );
 		$this->assertContains(
-			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_native_payments_enabled' ) ),
+			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_woopayments_builtin_enabled' ) ),
 			wp_autoload_values_to_autoload(),
 			'The option should be autoloaded because the arbiter resolves it in the request hot path.'
 		);
 
-		update_option( 'woocommerce_native_payments_enabled', 'no' );
-		wc_update_11203_enable_native_payments();
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'no' );
+		wc_update_11203_enable_builtin_woopayments();
 
-		$this->assertSame( 'no', get_option( 'woocommerce_native_payments_enabled' ), 'The migration should preserve an existing native payments setting.' );
+		$this->assertSame( 'no', get_option( 'woocommerce_woopayments_builtin_enabled' ), 'The migration should preserve an existing native payments setting.' );
 	}
 
 	/**
@@ -729,18 +729,18 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	 *
 	 * Source: data/task-1.4-dormancy-design.md:84-96 (install/update repair is an authoritative writer; an active standalone plugin derives available).
 	 */
-	public function test_wc_update_11205_repair_native_payments_state(): void {
+	public function test_wc_update_11205_seed_woopayments_setup_tier(): void {
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 
 		$db_updates = WC_Install::get_db_update_callbacks();
 		$this->assertArrayHasKey( '11.2.0-5', $db_updates );
-		$this->assertContains( 'wc_update_11205_repair_native_payments_state', $db_updates['11.2.0-5'] );
+		$this->assertContains( 'wc_update_11205_seed_woopayments_setup_tier', $db_updates['11.2.0-5'] );
 
 		$container = wc_get_container();
 		$arbiter   = $container->get( NativePaymentsRuntimeArbiter::class );
 		$state     = $container->get( NativePaymentsState::class );
 		$matrix    = WooPaymentsProvider::get_bootstrap_root_matrix();
-		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		update_option( 'active_plugins', array( NativePaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		update_option(
 			'wcpay_account_data',
@@ -764,7 +764,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$this->assertSame( NativePaymentsState::DISABLED, $state->get_state() );
 		$this->assertArrayNotHasKey( NativePaymentsState::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
 
-		wc_update_11205_repair_native_payments_state();
+		wc_update_11205_seed_woopayments_setup_tier();
 		$state->invalidate();
 
 		$this->assertSame( NativePaymentsState::AVAILABLE, get_option( NativePaymentsState::OPTION_NAME ) );
@@ -775,7 +775,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		$arbiter->invalidate();
 		$state->invalidate();
 
-		wc_update_11205_repair_native_payments_state();
+		wc_update_11205_seed_woopayments_setup_tier();
 
 		$this->assertFalse( get_option( NativePaymentsState::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
 	}
@@ -793,7 +793,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	public function test_wc_update_11205_repair_writes_disabled_for_stores_native_cannot_serve( bool $eligible, bool $kill_switch ): void {
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 
-		update_option( 'woocommerce_native_payments_enabled', 'yes' );
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
 		if ( $kill_switch ) {
 			update_option( NativePaymentsRuntimeArbiter::NATIVE_RUNTIME_KILL_SWITCH_OPTION, true );
 		}
@@ -815,7 +815,7 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		wc_get_container()->get( NativePaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( NativePaymentsState::class )->invalidate();
 
-		wc_update_11205_repair_native_payments_state();
+		wc_update_11205_seed_woopayments_setup_tier();
 
 		$this->assertSame( NativePaymentsState::DISABLED, get_option( NativePaymentsState::OPTION_NAME ) );
 	}

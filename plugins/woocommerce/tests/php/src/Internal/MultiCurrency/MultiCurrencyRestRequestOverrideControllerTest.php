@@ -52,7 +52,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register REST request overrides when plugin owns runtime.
 	 */
 	public function test_does_not_register_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
 
@@ -64,7 +64,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register REST request overrides outside non-Store REST context.
 	 */
 	public function test_does_not_register_outside_non_store_rest_context(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$sut->register();
 
@@ -77,7 +77,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register query currency override for non-Store REST request.
 	 */
 	public function test_registers_query_currency_override_for_non_store_rest_request(): void {
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$_GET['currency'] = ' gbp ';
 
 		$sut->register();
@@ -98,7 +98,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should force store currency without query currency for non-Store REST request.
 	 */
 	public function test_forces_store_currency_without_query_currency_for_non_store_rest_request(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 
 		$sut->register();
 		$sut->register();
@@ -183,7 +183,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

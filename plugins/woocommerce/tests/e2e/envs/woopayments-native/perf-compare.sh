@@ -207,9 +207,9 @@ prepare_state() {
 		account='{"data":{"account_id":"acct_native_ci","country":"US","default_currency":"usd","payments_enabled":true,"payouts_enabled":true,"details_submitted":true,"is_live":false,"test_publishable_key":"pk_test_native_ci","live_publishable_key":"","statement_descriptor":"NATIVE CI","statement_descriptor_kanji":"","statement_descriptor_kana":"","business_profile":{"name":"Native CI store","url":"https://example.test","support_address":{"country":"US"},"support_email":"support@example.test","support_phone":"+10000000000"},"branding":{"logo":"","icon":"","primary_color":"#000000","secondary_color":"#ffffff"},"communications_email":"owner@example.test","store_currencies":{"default":"usd"},"customer_currencies":{"supported":["usd","eur","aud","cad","chf","gbp","jpy","nzd","sek"]},"account_details":{"account_status":{"text":"Enabled"},"payout_status":{"text":"Enabled"},"banner":null},"deposits":{"interval":"daily","weekly_anchor":"monday","monthly_anchor":1,"delay_days":2,"status":"enabled","restrictions":"","completed_waiting_period":true},"platform_checkout_eligible":true,"capabilities":{"card_payments":"active","klarna_payments":"active"},"supported_payment_methods":["card","klarna"],"fees":{"card":[],"klarna":[]}},"fetched":'"$ACCOUNT_FETCHED_AT"',"errored":false,"consecutive_errors":0}'
 		if [[ "$state" == 'active_native' || "$state" == 'active_plugin' ]]; then settings='{"enabled":"yes","test_mode":"yes","platform_checkout":"no","upe_enabled_payment_method_ids":["card"]}'; fi
 	fi
-	set_option_json 'woocommerce_native_payments_perf_probe_control' "$control" || return 1
-	set_option_json 'woocommerce_native_payments_state' '"'"$native_state"'"' || return 1
-	set_option_json 'woocommerce_native_payments_killswitch' 'false' || return 1
+	set_option_json 'e2e_woopayments_perf_probe_control' "$control" || return 1
+	set_option_json 'woocommerce_woopayments_setup_tier' '"'"$native_state"'"' || return 1
+	set_option_json 'woocommerce_woopayments_builtin_kill_switch' 'false' || return 1
 	set_option_json '_wcpay_feature_customer_multi_currency' '"0"' || return 1
 	set_option_json 'woocommerce_feature_multi_currency_enabled' '"no"' || return 1
 	set_option_json 'wcpay_account_data' "$account" || return 1

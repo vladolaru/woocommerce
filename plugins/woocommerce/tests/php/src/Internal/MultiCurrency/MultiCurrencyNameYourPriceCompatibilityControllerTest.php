@@ -92,8 +92,8 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Name Your Price hooks when runtime guards block.
 	 */
 	public function test_does_not_register_name_your_price_hooks_when_guards_block(): void {
-		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_nyp  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_nyp  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$plugin_owned->register();
 		$missing_nyp->register();
@@ -106,7 +106,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should defer Name Your Price hook registration until plugins load.
 	 */
 	public function test_defers_name_your_price_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, true, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true, false );
 
 		$sut->register();
 
@@ -315,7 +315,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should preserve cart item when NYP runtime function is unavailable.
 	 */
 	public function test_preserves_cart_item_when_name_your_price_function_is_unavailable(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 
 		$cart_item = array(
 			'nyp_original' => '10.00',
@@ -391,7 +391,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @return MultiCurrencyNameYourPriceCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $name_your_price_available = true,
 		bool $name_your_price_function_available = true,
 		bool $plugins_loaded = true

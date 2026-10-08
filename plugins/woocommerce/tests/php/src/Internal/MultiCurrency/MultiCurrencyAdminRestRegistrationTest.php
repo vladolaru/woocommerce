@@ -35,7 +35,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 
 		$previous_screen         = $current_screen;
 		$previous_store_currency = get_option( 'woocommerce_currency', 'USD' );
-		$arbiter                 = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$arbiter                 = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$controller              = $this->create_rest_controller( $arbiter );
 		$container               = $this->create_container( $arbiter, $controller );
 		$bootstrap               = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -107,7 +107,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	/** @return array<string,array{string}> */
 	public static function non_core_owner_provider(): array {
 		return array(
-			'plugin' => array( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN ),
+			'plugin' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
 			'none'   => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
 		);
 	}
@@ -126,12 +126,12 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		$arbiter->method( 'get_runtime_owner' )->willReturn( $owner );
 		$arbiter->method( 'get_payments_owner' )->willReturn(
 			array(
-				MultiCurrencyRuntimeArbiter::OWNER_CORE   => NativePaymentsRuntimeArbiter::OWNER_NATIVE,
-				MultiCurrencyRuntimeArbiter::OWNER_PLUGIN => NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
-				MultiCurrencyRuntimeArbiter::OWNER_NONE   => NativePaymentsRuntimeArbiter::OWNER_NONE,
+				MultiCurrencyRuntimeArbiter::OWNER_BUILTIN => NativePaymentsRuntimeArbiter::OWNER_BUILTIN,
+				MultiCurrencyRuntimeArbiter::OWNER_EXTENSION => NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
+				MultiCurrencyRuntimeArbiter::OWNER_NONE    => NativePaymentsRuntimeArbiter::OWNER_NONE,
 			)[ $owner ]
 		);
-		$arbiter->method( 'should_core_register' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_CORE === $owner );
+		$arbiter->method( 'should_core_register' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $owner );
 
 		return $arbiter;
 	}

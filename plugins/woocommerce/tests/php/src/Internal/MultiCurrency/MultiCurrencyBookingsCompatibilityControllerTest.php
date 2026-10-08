@@ -77,9 +77,9 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should not register Bookings hooks when runtime or request guards block.
 	 */
 	public function test_does_not_register_bookings_hooks_when_guards_block(): void {
-		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_bookings = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$admin            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true, false );
+		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_bookings = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$admin            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false );
 
 		$plugin_owned->register();
 		$missing_bookings->register();
@@ -94,7 +94,7 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should defer Bookings hook registration until plugins load.
 	 */
 	public function test_defers_bookings_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, false );
 
 		$sut->register();
 
@@ -279,7 +279,7 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @return MultiCurrencyBookingsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $bookings_available = true,
 		bool $is_admin = false,
 		bool $is_ajax = false,

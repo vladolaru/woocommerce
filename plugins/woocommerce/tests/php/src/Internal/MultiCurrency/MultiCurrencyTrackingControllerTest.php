@@ -30,7 +30,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register tracker data when plugin owns runtime.
 	 */
 	public function test_does_not_register_tracker_data_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -41,7 +41,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register tracker data once when core owns runtime.
 	 */
 	public function test_registers_tracker_data_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -56,7 +56,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 		$projection_service  = $this->create_projection_service();
 		$order_count_service = $this->create_order_count_service();
 		$sut                 = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$projection_service,
 			$order_count_service
 		);
@@ -95,13 +95,13 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 		$hpos_order_count_service   = $this->create_order_count_service();
 		$legacy_order_count_service = $this->create_order_count_service();
 		$hpos_controller            = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$this->create_projection_service(),
 			$hpos_order_count_service,
 			static fn(): bool => true
 		);
 		$legacy_controller          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$this->create_projection_service(),
 			$legacy_order_count_service,
 			static fn(): bool => false
@@ -261,7 +261,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

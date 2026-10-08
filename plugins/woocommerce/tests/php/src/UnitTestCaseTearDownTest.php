@@ -98,7 +98,7 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 		$this->assertSame( 'shortcode', WC()->cart->cart_context, 'The cart context should be back to shortcode.' );
 		$this->assertSame( 0, wc_notice_count(), 'The notice queue should have been cleared.' );
 		$this->assertFalse( $clear_persistent_cart, 'Teardown should leave persistent cart cleanup to the database rollback.' );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $runtime_arbiter->get_runtime_owner(), 'The native runtime owner should be resolved again after cleanup.' );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'The native runtime owner should be resolved again after cleanup.' );
 		$this->assertNotSame(
 			self::LEAKED_LOCALE_LABEL,
 			WC()->countries->get_country_locale()['GB']['postcode']['label'] ?? null,

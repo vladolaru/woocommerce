@@ -135,7 +135,7 @@ expect_readiness_failure 'client' 'client-disabled' \
 assert_failed_before_callback_proof 'client-disabled' \
 	'A disabled client runtime must fail before callback proof.'
 assert_stderr_contains 'client-disabled' \
-	'client readiness requires runtime_owner=plugin and native_enabled=false'
+	'client readiness requires runtime_owner=extension and native_enabled=false'
 
 CLIENT_DIAGNOSTICS="$TEST_ROOT/client-diagnostics"
 CLIENT_COMMAND_LOG="$TEST_ROOT/client-commands.log"
@@ -186,7 +186,7 @@ if ! grep -Fq 'created' "$TEST_ROOT/client-diagnostics/client/customer.txt"; the
 	fail 'Provider readiness must record the shopper fixture outcome.'
 fi
 jq -e '
-	.runtime_owner == "plugin" and
+	.runtime_owner == "extension" and
 	.native_enabled == false and
 	.wpcom_blog_id == 1 and
 	.account_connected == true and
@@ -258,7 +258,7 @@ if grep -Eq 'config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$NATIVE_COMMAND_LO
 	fail 'Native readiness must not mutate the native runtime constant.'
 fi
 jq -e '
-	.runtime_owner == "native" and
+	.runtime_owner == "builtin" and
 	.native_enabled == true and
 	.wpcom_blog_id == 2 and
 	.account_connected == true and
@@ -314,7 +314,7 @@ expect_readiness_failure 'native' 'disabled' \
 if grep -Eq 'config (set|delete) E2E_WOOPAYMENTS_NATIVE' "$TEST_ROOT/disabled-commands.log"; then
 	fail 'Readiness must not set E2E_WOOPAYMENTS_NATIVE.'
 fi
-assert_stderr_contains 'disabled' 'runtime_owner=native and native_enabled=true'
+assert_stderr_contains 'disabled' 'runtime_owner=builtin and native_enabled=true'
 
 expect_readiness_failure 'native' 'callback' \
 	'A failed native callback probe must fail closed.' \
@@ -343,7 +343,7 @@ expect_readiness_failure 'native' 'provider-free-disabled' \
 	E2E_FAKE_LIST_TAGS='woopayments-native' \
 	-- --project=woopayments-native-readonly tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts
 assert_stderr_contains 'provider-free-disabled' \
-	'runtime_owner=native and native_enabled=true'
+	'runtime_owner=builtin and native_enabled=true'
 
 # Arguments that collect a provider-tagged test keep the full gates.
 run_setup 'native' 'provider-args' \

@@ -154,7 +154,7 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		if ( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN === $owner ) {
+		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $owner ) {
 			/**
 			 * Filters whether read-only native Multi-Currency shadow mode is enabled.
 			 *

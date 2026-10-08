@@ -112,7 +112,7 @@ fake_pnpm() {
 			if [[ "$3" == 'woocommerce_feature_multi_currency_enabled' ]]; then
 				printf 'CORE_MULTI_CURRENCY_FEATURE\t%s\n' "$4" >> "$root/events.log"
 			fi
-			if [[ "$3" == 'woocommerce_native_payments_perf_probe_control' ]]; then
+			if [[ "$3" == 'e2e_woopayments_perf_probe_control' ]]; then
 				state="$(printf '%s' "$4" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')"
 				printf '%s\n' "$state" > "$root/current-state"
 				printf 'STATE\t%s\n' "$state" >> "$root/events.log"
@@ -309,7 +309,7 @@ function add_action( $hook ) {
 require $argv[1];
 $expected = array(
 	"filter:woocommerce_native_payments_bootstrap_enabled",
-	"filter:woocommerce_native_payments_enabled",
+	"filter:woocommerce_woopayments_builtin_enabled",
 	"filter:pre_http_request",
 	"action:plugins_loaded",
 	"action:wp",
@@ -428,8 +428,8 @@ function wp_upload_dir() {
 }
 require $argv[1];
 $method = new ReflectionMethod( "WooCommerce_Native_Payments_Perf_Probe", "write_attribution_artifacts" );
-global $woocommerce_native_payments_perf_probe;
-exit( false === $method->invoke( $woocommerce_native_payments_perf_probe ) ? 0 : 1 );
+global $e2e_woopayments_perf_probe;
+exit( false === $method->invoke( $e2e_woopayments_perf_probe ) ? 0 : 1 );
 ' "$PROBE" || fail 'The MU probe did not report unavailable attribution artifact storage.'
 
 assert_trace_is_rejected() {

@@ -16,7 +16,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
 final class NativePaymentsState {
 
 	/** The persisted state option. */
-	public const OPTION_NAME = 'woocommerce_native_payments_state';
+	public const OPTION_NAME = 'woocommerce_woopayments_setup_tier';
 
 	/** Native payments is unavailable. */
 	public const DISABLED = 'disabled';
@@ -74,7 +74,7 @@ final class NativePaymentsState {
 			return self::DISABLED;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && in_array( $state, array( self::CONNECTED, self::ACTIVE ), true ) ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $state, array( self::CONNECTED, self::ACTIVE ), true ) ) {
 			return self::AVAILABLE;
 		}
 

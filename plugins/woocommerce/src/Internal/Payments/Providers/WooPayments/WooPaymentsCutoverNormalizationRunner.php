@@ -59,7 +59,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
-	private const NORMALIZED_OPTION = 'woocommerce_native_woopayments_cutover_normalization_version';
+	private const NORMALIZED_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
 
 	private const NORMALIZATION_VERSION = '4';
 

@@ -1084,7 +1084,7 @@ class DefaultPaymentGateways {
 	 *
 	 * WooPayments is active when the WooPayments plugin is active, or when the native runtime is enabled and its kill
 	 * switch is off. Rules read stored options only, so a site that enables native payments through the
-	 * woocommerce_native_payments_enabled filter alone reads as inactive here.
+	 * woocommerce_woopayments_builtin_enabled filter alone reads as inactive here.
 	 *
 	 * @param bool $should_be Whether WooPayments should be activated.
 	 *
@@ -1103,14 +1103,14 @@ class DefaultPaymentGateways {
 				array(
 					(object) array(
 						'type'        => 'option',
-						'option_name' => 'woocommerce_native_payments_enabled',
+						'option_name' => 'woocommerce_woopayments_builtin_enabled',
 						'operation'   => '=',
 						'value'       => 'yes',
 						'default'     => 'no',
 					),
 					(object) array(
 						'type'        => 'option',
-						'option_name' => 'woocommerce_native_payments_killswitch',
+						'option_name' => 'woocommerce_woopayments_builtin_kill_switch',
 						'operation'   => '!in',
 						// The usual stored spellings of the values wc_string_to_bool() reads as true, which the runtime arbiter
 						// applies to the kill switch. Rules compare strings as stored, so other casings are not matched.

@@ -71,6 +71,6 @@ class PaymentOperationIdempotency {
 
 		$encoded = wp_json_encode( $parts );
 
-		return 'wc_native_payments_' . md5( false === $encoded ? implode( '|', $parts ) : $encoded );
+		return 'wc_order_payment_' . md5( false === $encoded ? implode( '|', $parts ) : $encoded );
 	}
 }

@@ -64,7 +64,7 @@ return array(
 	'plugin_version' => $headers['Version'],
 	'preflight_failures' => $controller->get_preflight_failures(),
 	'migrator_action' => $action ? array( 'status' => ActionScheduler::store()->get_status( $migrator_id ) ) : null,
-	'native_state' => get_option( 'woocommerce_native_payments_state', null ),
+	'native_state' => get_option( 'woocommerce_woopayments_setup_tier', null ),
 );
 `;
 
@@ -240,7 +240,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			expect(
 				await readRuntimeOwner( restApi ),
 				'the plugin must own runtime before its own cutover writes'
-			).toBe( 'plugin' );
+			).toBe( 'extension' );
 
 			const before = await readCutoverStatus( migratorActionId );
 			expect( before.plugin_version ).toBe( '10.5.0' );
@@ -299,7 +299,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			expect( completed.migrator_action?.status ).toBe( 'canceled' );
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
-				.toBe( 'native' );
+				.toBe( 'builtin' );
 			await expectNativeGatewayActive( restApi, completed );
 
 			await page.goto( 'wp-admin/plugins.php' );
@@ -523,7 +523,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 			expect(
 				await readRuntimeOwner( restApi ),
 				'the plugin must own runtime before its own cutover writes'
-			).toBe( 'plugin' );
+			).toBe( 'extension' );
 
 			const before = await readCutoverStatus( 0 );
 			expect( before.plugin_version ).toBe( '10.4.0' );
@@ -573,7 +573,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 			expect(
 				owner,
 				'the plugin must still own runtime after the first attempt'
-			).toBe( 'plugin' );
+			).toBe( 'extension' );
 			expect(
 				status.plugin_active,
 				'the plugin must stay active through the first attempt'
@@ -610,7 +610,7 @@ test.describe( 'WooPayments transition: old plugin cutover advancement', () => {
 
 			// Step 3: the all-clear. The plugin is deactivated only here,
 			// not during the deferred attempt above (asserted active there).
-			expect( owner ).toBe( 'native' );
+			expect( owner ).toBe( 'builtin' );
 			expect(
 				status.plugin_active,
 				'the plugin must be deactivated only once the record is done'
@@ -834,7 +834,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_TRANSITION ],
 		},
 		async ( { page, restApi, baseURL } ) => {
-			expect( await readRuntimeOwner( restApi ) ).toBe( 'plugin' );
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'extension' );
 			const before = await readRollbackSnapshot( orderId );
 			expect(
 				Object.keys( before ).filter( ( path ) =>
@@ -883,7 +883,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			const doneGeneration = status.record?.generation ?? 0;
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
-				.toBe( 'native' );
+				.toBe( 'builtin' );
 			await expectNativeGatewayActive( restApi, status );
 			const native = await readRollbackSnapshot( orderId );
 			await test.info().attach( 'rollback-snapshot-diff-native', {
@@ -904,7 +904,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			] );
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
-				.toBe( 'plugin' );
+				.toBe( 'extension' );
 			const gateway = (
 				await restApi.get(
 					'wc/v3/payment_gateways/woocommerce_payments'
@@ -940,7 +940,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			] );
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
-				.toBe( 'native' );
+				.toBe( 'builtin' );
 			await expectOnlyAddedPaths(
 				before,
 				await readRollbackSnapshot( orderId ),

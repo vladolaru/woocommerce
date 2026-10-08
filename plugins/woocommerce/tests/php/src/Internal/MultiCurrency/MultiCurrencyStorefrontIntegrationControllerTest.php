@@ -59,7 +59,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -73,7 +73,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_register_defers_the_storefront_decision_to_init(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$state_builder = $this->create_state_builder( 2 );
 		$theme_reads   = 0;
 		$sut->set_state_builder( $state_builder );
@@ -109,7 +109,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_registers_hooks_when_storefront_switcher_is_enabled(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();
 		$sut->handle_init();
@@ -123,7 +123,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_does_not_register_hooks_for_non_storefront_theme(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 2, 'twentytwentyfive', 'twentytwentyfive' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'twentytwentyfive', 'twentytwentyfive' );
 
 		$sut->handle_init();
 
@@ -136,7 +136,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_does_not_register_hooks_with_one_enabled_currency(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 1 );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 1 );
 
 		$sut->handle_init();
 
@@ -150,7 +150,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	public function test_allows_simulation_to_enable_storefront_switcher_hooks(): void {
 		$_GET['is_mc_onboarding_simulation'] = 'true';
 		$_GET['enable_storefront_switcher']  = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();
 
@@ -166,7 +166,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		$_GET['currency'] = 'EUR';
 		$_GET['s']        = 'shirts';
 		$switcher         = $this->create_switcher_service( '<div id="woocommerce-payments-multi-currency-storefront-widget">Switcher</div>' );
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 2, 'storefront', 'storefront', $switcher );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', $switcher );
 
 		add_filter(
 			'wcpay_multi_currency_storefront_widget_instance',
@@ -219,7 +219,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	public function test_keeps_breadcrumb_defaults_when_switching_is_disabled(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
 		$switcher = $this->create_switcher_service( '<div>Switcher</div>' );
-		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, 2, 'storefront', 'storefront', $switcher );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', $switcher );
 
 		add_filter( 'wcpay_multi_currency_should_disable_currency_switching', '__return_true' );
 
@@ -236,7 +236,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should enqueue filtered Storefront inline CSS.
 	 */
 	public function test_enqueues_filtered_storefront_inline_css(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		wp_register_style( 'storefront-style', false, array(), '1.0.0' );
 		add_filter(
@@ -333,7 +333,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

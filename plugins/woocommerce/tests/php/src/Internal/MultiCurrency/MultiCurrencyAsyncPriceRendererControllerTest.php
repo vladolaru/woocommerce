@@ -60,7 +60,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->maybe_register_async_hooks();
 
@@ -112,7 +112,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$cache_optimized_mode,
 			$frontend_request,
 			$store_api_request,
@@ -313,7 +313,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyAsyncPriceRendererController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $cache_optimized_mode = true,
 		bool $frontend_request = true,
 		bool $store_api_request = false,
@@ -367,7 +367,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

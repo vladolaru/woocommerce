@@ -117,7 +117,7 @@ async function runHistoricalMoneyRecords(
 	expect(
 		await readRuntimeOwner( restApi ),
 		'the plugin must own runtime before the plugin-era decline'
-	).toBe( 'plugin' );
+	).toBe( 'extension' );
 
 	const customer = getFakeUser( 'customer' );
 	const created = ( await restApi.post( 'wc/v3/customers', customer ) )
@@ -263,7 +263,7 @@ async function runHistoricalMoneyRecords(
 			.click( { timeout: 30_000 } );
 		await expect
 			.poll( () => readRuntimeOwner( restApi ), { timeout: 120_000 } )
-			.toBe( 'native' );
+			.toBe( 'builtin' );
 		await page.context().clearCookies();
 
 		// Native era: the same order's pay-for-order link, the fraud

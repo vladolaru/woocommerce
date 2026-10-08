@@ -112,7 +112,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register subscription filters when plugin owns runtime.
 	 */
 	public function test_does_not_register_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -123,7 +123,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register subscription filters when subscriptions runtime is absent.
 	 */
 	public function test_does_not_register_when_subscriptions_runtime_is_absent(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$sut->register();
 
@@ -134,8 +134,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register subscription filters for admin or cron requests.
 	 */
 	public function test_does_not_register_for_admin_or_cron_requests(): void {
-		$admin = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true, false );
-		$cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false, true );
+		$admin = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false );
+		$cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true );
 
 		$admin->register();
 		$cron->register();
@@ -148,7 +148,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should defer registration until subscriptions runtime loads.
 	 */
 	public function test_defers_registration_until_subscriptions_runtime_loads(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$sut->set_plugins_loaded( false );
 		$this->deferred_controllers[] = $sut;
 
@@ -252,7 +252,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should skip explicit subscription total formatting when additional currencies are disabled.
 	 */
 	public function test_skips_explicit_subscription_total_formatting_when_additional_currencies_are_disabled(): void {
-		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, false, false, false );
+		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, false );
 		$subscription = $this->create_subscription( 'EUR' );
 		$sut->set_backtrace_calls( array( 'WC_Subscription->get_formatted_order_total' ) );
 
@@ -568,7 +568,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @return MultiCurrencySubscriptionsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $subscriptions_available = true,
 		bool $is_admin = false,
 		bool $is_cron = false,
@@ -955,7 +955,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

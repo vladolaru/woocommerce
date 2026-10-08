@@ -45,7 +45,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	const RETRY_ATTEMPTS_EVENT_KEY = '_native_retry_attempts';
+	const RETRY_ATTEMPTS_EVENT_KEY = '_wcpay_retry_attempts';
 
 	/**
 	 * Delays, in seconds, of the retries after a failed processing job: three more attempts at most.
@@ -59,7 +59,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	const LAST_FETCH_OPTION_KEY = 'woocommerce_native_woopayments_last_webhook_fetch';
+	const LAST_FETCH_OPTION_KEY = 'woocommerce_woopayments_last_webhook_fetch';
 
 	/**
 	 * Runtime owner arbiter.

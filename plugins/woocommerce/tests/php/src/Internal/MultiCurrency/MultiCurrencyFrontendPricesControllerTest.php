@@ -62,7 +62,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register frontend price hooks while plugin multi-currency owns the runtime.
 	 */
 	public function test_does_not_register_when_plugin_multi_currency_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -88,7 +88,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register frontend price hooks when core multi-currency owns the runtime.
 	 */
 	public function test_registers_frontend_price_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -117,7 +117,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_frontend_price_hooks_in_blocked_request_context(): void {
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			true,
 			$this->create_request_context( false )
 		);
@@ -134,7 +134,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should pass each price to the projection service with its price type.
 	 */
 	public function test_passes_each_price_to_the_projection_service_with_its_type(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( '20', $sut->get_product_price_string( '10.00', (object) array() ) );
 		$this->assertSame(
@@ -186,7 +186,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
-			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ),
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
 		);
@@ -225,7 +225,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should skip shipping cost conversion when the shipping method filter returns false.
 	 */
 	public function test_skips_shipping_cost_conversion_when_shipping_method_filter_returns_false(): void {
-		$sut             = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut             = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
 
 		$sut->register();
@@ -257,7 +257,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should respect conversion guards for product and coupon prices.
 	 */
 	public function test_respects_conversion_guards_for_product_and_coupon_prices(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );
 		add_filter( 'wcpay_multi_currency_should_convert_coupon_amount', '__return_false' );
@@ -273,7 +273,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should convert free shipping minimums and persist projected order meta.
 	 */
 	public function test_converts_free_shipping_minimums_and_persists_order_meta(): void {
-		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$free_shipping     = (object) array(
 			'id'         => 'free_shipping',
 			'min_amount' => '10.00',
@@ -301,7 +301,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should persist projected multi-currency refund meta.
 	 */
 	public function test_persists_projected_refund_meta(): void {
-		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 100 );
@@ -331,7 +331,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should skip refund meta when no projected candidates exist.
 	 */
 	public function test_skips_refund_meta_when_no_projected_candidates_exist(): void {
-		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
 		$order->set_total( 100 );
@@ -363,7 +363,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should convert Store API and query-loop price ranges.
 	 */
 	public function test_converts_store_api_and_query_loop_price_ranges(): void {
-		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$response = new WP_REST_Response(
 			array(
 				'price_range' => (object) array(
@@ -466,7 +466,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

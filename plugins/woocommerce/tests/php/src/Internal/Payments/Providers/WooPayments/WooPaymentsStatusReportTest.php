@@ -31,7 +31,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_native_woopayments_last_webhook_fetch';
+	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_woopayments_last_webhook_fetch';
 
 	/**
 	 * The System Under Test.
@@ -246,7 +246,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 					'action_id'              => 0,
 					'current_step'           => 'deferred',
 					'step_log'               => array(),
-					'deferred_codes'         => array( 'native_transport_unavailable' ),
+					'deferred_codes'         => array( 'builtin_transport_unavailable' ),
 					'informational_outcomes' => array(),
 					'next_attempt_at'        => 1_700_001_000,
 					'lease_token'            => null,
@@ -288,8 +288,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'recommended', $result['status'] );
 		$this->assertSame( 'woocommerce_woopayments_native_cutover', $result['test'] );
-		$this->assertStringContainsString( 'Runtime owner: plugin', $result['description'] );
-		$this->assertStringContainsString( 'Preflight failures: native_runtime_disabled', $result['description'] );
+		$this->assertStringContainsString( 'Runtime owner: extension', $result['description'] );
+		$this->assertStringContainsString( 'Preflight failures: builtin_runtime_disabled', $result['description'] );
 	}
 
 	/**
@@ -306,7 +306,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$data = $this->get_sut()->get_status_data();
 
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $data['runtime_owner'] );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $data['runtime_owner'] );
 		$this->assertTrue( $data['native_enabled'] );
 		$this->assertSame( 'filter', $data['native_enabled_source'] );
 		$this->assertSame( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED, $data['native_enabled_filter'] );
@@ -371,7 +371,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			) as $tool_id
 		) {
 			$this->assertArrayHasKey( $tool_id, $tools );
-			$this->assertArrayNotHasKey( 'native-' . $tool_id, $tools );
+			$this->assertArrayNotHasKey( 'builtin-' . $tool_id, $tools );
 			$this->assertArrayHasKey( 'callback', $tools[ $tool_id ] );
 			$this->assertIsCallable( $tools[ $tool_id ]['callback'] );
 		}
@@ -402,8 +402,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		foreach ( $tool_ids as $tool_id ) {
 			$this->assertSame( $plugin_tools[ $tool_id ], $tools[ $tool_id ] );
-			$this->assertArrayHasKey( 'native-' . $tool_id, $tools );
-			$this->assertIsCallable( $tools[ 'native-' . $tool_id ]['callback'] );
+			$this->assertArrayHasKey( 'builtin-' . $tool_id, $tools );
+			$this->assertIsCallable( $tools[ 'builtin-' . $tool_id ]['callback'] );
 		}
 	}
 
@@ -554,7 +554,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayHasKey( 'woocommerce_native_payments', $info );
 		$this->assertSame( 'WooPayments native payments', $info['woocommerce_native_payments']['label'] );
-		$this->assertSame( 'native', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
+		$this->assertSame( 'builtin', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
 		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
 		$this->assertStringContainsString( 'mu-plugin', $info['woocommerce_native_payments']['fields']['native_enabled_note']['value'] );
 	}
@@ -602,7 +602,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 			),
 			array_intersect_key( $this->get_status_cells( $html, 'WooPayments', 'Auth and Capture' ), array_flip( array( 'label', 'help' ) ) )
 		);
-		$this->assertSame( 'native', $tables['WooPayments native runtime']['Runtime owner'] );
+		$this->assertSame( 'builtin', $tables['WooPayments native runtime']['Runtime owner'] );
 		$this->assertArrayNotHasKey( 'Account ID', $tables['WooPayments native runtime'] );
 		$this->assertStringNotContainsString( 'SENTINEL', $html, 'Keys in the account data never reach the report.' );
 	}
@@ -621,7 +621,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		remove_filter( 'gettext', $translate, 10 );
 		$runtime_owner = $this->get_status_cells( $html, 'WooPayments native runtime', 'Runtime owner' );
 		$this->assertSame( 'Propriétaire du runtime:', $runtime_owner['label'] );
-		$this->assertSame( 'native', $runtime_owner['value'] );
+		$this->assertSame( 'builtin', $runtime_owner['value'] );
 	}
 
 	/**

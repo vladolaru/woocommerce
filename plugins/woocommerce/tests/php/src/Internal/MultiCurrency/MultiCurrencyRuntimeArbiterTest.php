@@ -34,7 +34,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		delete_option( 'woocommerce_feature_multi_currency_enabled' );
-		delete_option( 'woocommerce_native_payments_enabled' );
+		delete_option( 'woocommerce_woopayments_builtin_enabled' );
 		$this->payments_arbiter = wc_get_container()->get( NativePaymentsRuntimeArbiter::class );
 		$this->payments_arbiter->invalidate();
 		$this->sut = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
@@ -46,7 +46,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_all_filters( NativePaymentsRuntimeArbiter::FILTER_NATIVE_ENABLED );
 		delete_option( 'woocommerce_feature_multi_currency_enabled' );
-		delete_option( 'woocommerce_native_payments_enabled' );
+		delete_option( 'woocommerce_woopayments_builtin_enabled' );
 		$this->payments_arbiter->invalidate();
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
@@ -133,7 +133,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_plugin_payments_owner_keeps_plugin_multi_currency_owner(): void {
 		$this->fake_plugin( true );
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'Plugin payments ownership should also own multi-currency.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin payments ownership should also own multi-currency.' );
 		$this->assertTrue( $this->sut->should_plugin_register(), 'Plugin multi-currency should remain responsible for price filters in plugin mode.' );
 		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register price filters in plugin mode.' );
 	}
@@ -156,7 +156,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( true );
 		$this->enable_native_runtime();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_runtime_owner(), 'Plugin-wins must avoid split-brain multi-currency ownership.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins must avoid split-brain multi-currency ownership.' );
 		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while the plugin remains active.' );
 	}
 
@@ -168,7 +168,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->enable_native_runtime();
 		$this->enable_core_multi_currency();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->sut->get_runtime_owner(), 'Native payments ownership should flip multi-currency to core.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native payments ownership should flip multi-currency to core.' );
 		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency may register only in native payments mode.' );
 		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency should not own the price pipeline in native mode.' );
 	}
@@ -181,7 +181,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->enable_native_runtime();
 		$this->enable_core_multi_currency();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_CORE, $this->sut->get_runtime_owner(), 'The plugin flag must not override the independent core feature setting.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The plugin flag must not override the independent core feature setting.' );
 		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency should register when its core feature is enabled.' );
 		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency must not register in native mode either.' );
 	}
@@ -202,7 +202,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reports_the_payments_owner(): void {
 		$this->fake_plugin( true );
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_PLUGIN, $this->sut->get_payments_owner() );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_payments_owner() );
 
 		$this->reset_legacy_proxy_mocks();
 		$this->payments_arbiter->invalidate();
@@ -211,7 +211,7 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->payments_arbiter->invalidate();
 		$this->enable_native_runtime();
-		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_NATIVE, $this->sut->get_payments_owner() );
+		$this->assertSame( NativePaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_payments_owner() );
 	}
 
 	/**

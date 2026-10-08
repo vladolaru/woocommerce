@@ -93,7 +93,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should register Product Add-ons Ajax hooks for core runtime.
 	 */
 	public function test_registers_product_addons_ajax_hooks_for_core_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true, true, true, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, true, false );
 
 		$sut->register();
 		$sut->register();
@@ -108,10 +108,10 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Product Add-ons hooks when runtime guards block.
 	 */
 	public function test_does_not_register_product_addons_hooks_when_guards_block(): void {
-		$plugin_owned   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_addons = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
-		$admin_non_ajax = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true, true, false, false );
-		$frontend_cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, true, true, false, false, true );
+		$plugin_owned   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_addons = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$admin_non_ajax = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, false, false );
+		$frontend_cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, false, true );
 
 		$plugin_owned->register();
 		$missing_addons->register();
@@ -128,7 +128,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should defer Product Add-ons hook registration until plugins load.
 	 */
 	public function test_defers_product_addons_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 
 		$sut->register();
 
@@ -438,7 +438,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @return MultiCurrencyProductAddOnsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $product_addons_available = true,
 		bool $plugins_loaded = true,
 		bool $is_admin = false,

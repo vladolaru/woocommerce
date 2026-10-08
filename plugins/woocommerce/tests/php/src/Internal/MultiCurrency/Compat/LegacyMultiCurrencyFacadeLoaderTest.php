@@ -34,7 +34,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$failed_projection = $this->createMock( MultiCurrencyPriceProjectionService::class );
 		$failed_projection->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
-		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_CORE, $failed_projection );
+		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failed_projection );
 		$consumer = new LegacyMultiCurrencyConsumerFixture();
 
 		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Core ownership should declare the namespaced compatibility facade.' );
@@ -93,7 +93,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$facade_projected_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
 		$controller = new MultiCurrencyDepositsCompatibilityController();
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_CORE ), $this->createMock( MultiCurrencyProjectionServiceFactory::class ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $this->createMock( MultiCurrencyProjectionServiceFactory::class ) );
 		$controller->set_price_projection_service( $projection_service );
 		$cart_contents = $controller->modify_cart_item_deposit_amounts(
 			array(
@@ -119,7 +119,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		// The case that declares the facade runs in its own process; an in-process declaration would show here first.
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 
-		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
+		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
 			// Only the declaration loader: the shared runtime loader keeps its projection service across in-process tests.
 			$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
 			$declaration_loader->init( $this->create_arbiter( $owner ) );

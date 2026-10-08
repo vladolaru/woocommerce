@@ -20,9 +20,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	/** @var array<string,array<int|string,mixed>>|null */
 	private static $recorded_responses;
 
-	private const STATE_OPTION                            = 'e2e_woopayments_native_provider_state';
-	private const REQUEST_LOG_OPTION                      = 'e2e_woopayments_native_request_log';
-	private const FAILURE_LOG_OPTION                      = 'e2e_woopayments_native_failure_log';
+	private const STATE_OPTION                            = 'e2e_woopayments_provider_fixture_state';
+	private const REQUEST_LOG_OPTION                      = 'e2e_woopayments_provider_fixture_request_log';
+	private const FAILURE_LOG_OPTION                      = 'e2e_woopayments_provider_fixture_failure_log';
 	private const FRAUD_SERVICES_TRANSIENT_OPTION         = '_transient_woocommerce_woopayments_public_fraud_services';
 	private const FRAUD_SERVICES_TRANSIENT_TIMEOUT_OPTION = '_transient_timeout_woocommerce_woopayments_public_fraud_services';
 	private const JETPACK_OPTIONS_OPTION                  = 'jetpack_options';

@@ -26,8 +26,8 @@ install_file "$source_dir/../../test-plugins/woopayments-native-runtime/woopayme
 "${WP_ENV[@]}" wp eval "$INITIALIZE_FIXTURE_STATE_CODE"
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE true --raw
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw
-"${WP_ENV[@]}" wp option delete e2e_woopayments_native_request_log
-"${WP_ENV[@]}" wp option delete e2e_woopayments_native_failure_log
+"${WP_ENV[@]}" wp option delete e2e_woopayments_provider_fixture_request_log
+"${WP_ENV[@]}" wp option delete e2e_woopayments_provider_fixture_failure_log
 "${WP_ENV[@]}" wp eval "$AUTHORIZATION_CACHE_CLEAR_CODE"
 "${WP_ENV[@]}" wp --user=1 eval "$IDENTITY_ASSERT_CODE"
 "${WP_ENV[@]}" wp --user=1 eval "$ACCOUNT_CACHE_PREPARE_CODE"

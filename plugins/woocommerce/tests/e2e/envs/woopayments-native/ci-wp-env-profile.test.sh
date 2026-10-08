@@ -195,7 +195,7 @@ if ! grep -Fq 'restore_pre_fixture_physical_account_cache' "$TEST_ROOT/commands.
 	exit 1
 fi
 reconcile_line="$(grep -nF 'wp eval WooCommerce_WooPayments_Native_CI_Provider_Fixture::initialize_fixture_state_for_install();' "$TEST_ROOT/commands.log" | head -n 1 | cut -d: -f1 || true)"
-if [[ -z "$reconcile_line" ]] || grep -Fq 'wp option delete e2e_woopayments_native_provider_state' "$TEST_ROOT/commands.log"; then
+if [[ -z "$reconcile_line" ]] || grep -Fq 'wp option delete e2e_woopayments_provider_fixture_state' "$TEST_ROOT/commands.log"; then
 	echo 'Fixture installation must initialize or reconcile and reset provider state atomically without an absent-state window.' >&2
 	exit 1
 fi

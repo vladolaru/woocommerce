@@ -65,8 +65,8 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register FedEx hooks when runtime guards block.
 	 */
 	public function test_does_not_register_fedex_hooks_when_guards_block(): void {
-		$plugin_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_fedex = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$plugin_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_fedex = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$plugin_owned->register();
 		$missing_fedex->register();
@@ -79,7 +79,7 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should defer FedEx hook registration until plugins load.
 	 */
 	public function test_defers_fedex_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 
 		$sut->register();
 
@@ -190,7 +190,7 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyFedExCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $fedex_available = true,
 		bool $plugins_loaded = true
 	): MultiCurrencyFedExCompatibilityController {

@@ -26,7 +26,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 
 	private const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
 
-	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woocommerce_payments_payment_request_projection_pending';
+	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
 
 	/**
 	 * Payment method registry.

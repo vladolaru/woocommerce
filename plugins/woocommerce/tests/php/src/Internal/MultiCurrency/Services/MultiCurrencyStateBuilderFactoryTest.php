@@ -490,7 +490,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 			 * @return string
 			 */
 			public function get_runtime_owner(): string {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN;
 			}
 
 			/**

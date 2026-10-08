@@ -323,7 +323,7 @@ test.describe( 'WooPayments transition: historical tokens', () => {
 			expect(
 				await readRuntimeOwner( restApi ),
 				'the plugin must own runtime before its own plugin-era writes'
-			).toBe( 'plugin' );
+			).toBe( 'extension' );
 
 			await page.goto( 'wp-login.php' );
 			await logIn( page, customer.username, customer.password, false );
@@ -389,7 +389,7 @@ test.describe( 'WooPayments transition: historical tokens', () => {
 				.poll( () => readRuntimeOwner( restApi ), {
 					timeout: 120_000,
 				} )
-				.toBe( 'native' );
+				.toBe( 'builtin' );
 
 			const nativeDefaultCard = await readDefaultToken( customerId );
 			expect( nativeDefaultCard.tokenId ).toBe( defaultCard.tokenId );

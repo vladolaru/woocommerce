@@ -27,7 +27,7 @@ const ADMIN_AUTH_CONTRACT_ID =
 // the extension-compat project never runs the readonly project's global setup that seeds this
 // for its own case, so this store-configuration precondition is set up and restored here,
 // scoped to this describe block only.
-const NATIVE_PAYMENTS_STATE_OPTION = 'woocommerce_native_payments_state';
+const NATIVE_PAYMENTS_STATE_OPTION = 'woocommerce_woopayments_setup_tier';
 const NATIVE_PAYMENTS_STATE_ABSENT_MARKER =
 	'__woopayments_native_e2e_native_payments_state_absent__';
 const RUNTIME_STATUS_API = 'wc-native-payments-e2e/v1/status';

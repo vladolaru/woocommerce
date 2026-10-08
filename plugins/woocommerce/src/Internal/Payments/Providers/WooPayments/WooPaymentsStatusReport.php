@@ -680,7 +680,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		if ( $this->arbiter->is_plugin_runtime_active() ) {
 			$namespaced_tools = array();
 			foreach ( $native_tools as $tool_id => $tool ) {
-				$namespaced_tools[ 'native-' . $tool_id ] = $tool;
+				$namespaced_tools[ 'builtin-' . $tool_id ] = $tool;
 			}
 			$native_tools = $namespaced_tools;
 		}

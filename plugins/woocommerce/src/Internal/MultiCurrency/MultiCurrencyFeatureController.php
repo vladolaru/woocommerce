@@ -27,7 +27,7 @@ class MultiCurrencyFeatureController {
 	public const FEATURE_ENABLE_OPTION = 'woocommerce_feature_multi_currency_enabled';
 
 	/**
-	 * Per-blog option recording the payments owner this site last ran under ('plugin' or 'native').
+	 * Per-blog option recording the payments owner this site last ran under ('extension' or 'builtin').
 	 */
 	public const LAST_PAYMENTS_OWNER_OPTION = 'woocommerce_multi_currency_last_payments_owner';
 
@@ -94,7 +94,7 @@ class MultiCurrencyFeatureController {
 	 *
 	 * The marker is a per-blog option read with get_option(), not a network-wide site option, so each site of a network hands over on its own first
 	 * native-owned request. A plugin-owned request re-arms it, so a reactivation hands over again at the next switch. A native-owned request with no
-	 * marker gets the upgrade seed and the 'native' marker. Runs before the Multi-Currency arbiter reads the feature option.
+	 * marker gets the upgrade seed and the 'builtin' marker. Runs before the Multi-Currency arbiter reads the feature option.
 	 *
 	 * @since 11.2.0
 	 *
@@ -102,24 +102,24 @@ class MultiCurrencyFeatureController {
 	 */
 	public static function track_payments_owner( string $payments_owner ): void {
 		$last_owner = get_option( self::LAST_PAYMENTS_OWNER_OPTION );
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $payments_owner ) {
-			if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN !== $last_owner ) {
-				update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_PLUGIN, true );
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $payments_owner ) {
+			if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION !== $last_owner ) {
+				update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_EXTENSION, true );
 			}
 			return;
 		}
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_NATIVE !== $payments_owner ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_BUILTIN !== $payments_owner ) {
 			return;
 		}
 		if ( false === $last_owner ) {
 			// No plugin-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
 			// which never overwrites a stored choice, and mark the site so later requests read the autoloaded marker instead of a missing option.
 			self::seed_from_prior_use();
-			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_NATIVE, true );
+			update_option( self::LAST_PAYMENTS_OWNER_OPTION, NativePaymentsRuntimeArbiter::OWNER_BUILTIN, true );
 			return;
 		}
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $last_owner && self::claim_handover() ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $last_owner && self::claim_handover() ) {
 			self::hand_over_plugin_state();
 		}
 	}
@@ -127,10 +127,10 @@ class MultiCurrencyFeatureController {
 	/**
 	 * Claim the plugin-to-native transition with one conditional update of the marker row.
 	 *
-	 * Two first native-owned requests can both read 'plugin'; only the one whose update changes the row hands over, so a choice the
+	 * Two first native-owned requests can both read 'extension'; only the one whose update changes the row hands over, so a choice the
 	 * merchant saves after the first handover is never overwritten by the second.
 	 *
-	 * @return bool True when this request moved the marker from 'plugin' to 'native'.
+	 * @return bool True when this request moved the marker from 'extension' to 'builtin'.
 	 */
 	private static function claim_handover(): bool {
 		global $wpdb;
@@ -138,10 +138,10 @@ class MultiCurrencyFeatureController {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic compare-and-set; the caches are cleared below.
 		$claimed = $wpdb->update(
 			$wpdb->options,
-			array( 'option_value' => NativePaymentsRuntimeArbiter::OWNER_NATIVE ),
+			array( 'option_value' => NativePaymentsRuntimeArbiter::OWNER_BUILTIN ),
 			array(
 				'option_name'  => self::LAST_PAYMENTS_OWNER_OPTION,
-				'option_value' => NativePaymentsRuntimeArbiter::OWNER_PLUGIN,
+				'option_value' => NativePaymentsRuntimeArbiter::OWNER_EXTENSION,
 			)
 		);
 		wp_cache_delete( self::LAST_PAYMENTS_OWNER_OPTION, 'options' );

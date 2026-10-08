@@ -53,7 +53,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register admin notice hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_admin_notice_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -65,7 +65,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register admin notice hooks once when core owns runtime.
 	 */
 	public function test_registers_admin_notice_hooks_once_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -80,7 +80,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	public function test_renders_manual_rate_notice_for_users_who_can_manage_woocommerce(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar', 'Euro' ) );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -104,7 +104,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$original_request_uri   = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : null;
 		$_SERVER['REQUEST_URI'] = '/wp-admin/?unrelated=preserved&wcpay-multi-currency-hide-notice=currency_changed&_wcpay_multi_currency_notice_nonce=legacy-nonce&wc-multi-currency-hide-notice=old-notice&wc-multi-currency-notice-nonce=old-nonce';
-		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		try {
 			ob_start();
@@ -134,7 +134,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	public function test_renders_rate_provider_unavailable_notice_for_automatic_currencies_without_provider(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -156,7 +156,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_render_rate_provider_unavailable_notice_for_manual_currencies(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		$this->enable_multi_currency_with_rate_type( 'manual' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -174,7 +174,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
 		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
 		$this->register_available_rate_provider( $provider_registry_factory );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, $provider_registry_factory );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $provider_registry_factory );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -191,7 +191,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->set_current_user_can_manage_woocommerce();
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = self::RATE_NOTICE_KEY;
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_wp_loaded();
 
@@ -204,7 +204,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_render_notices_for_users_who_cannot_manage_woocommerce(): void {
 		$this->set_current_user_cannot_manage_woocommerce();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar', 'Euro' ) );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -226,7 +226,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$_GET[ $notice_query_key ] = 'currency_changed';
 		$_GET[ $nonce_query_key ]  = wp_create_nonce( self::NONCE_ACTION );
-		$sut                       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_wp_loaded();
 
@@ -261,7 +261,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
 		$_GET[ self::LEGACY_NOTICE_QUERY ]    = 'currency_changed';
 		$_GET[ self::LEGACY_NONCE_QUERY ]     = 'legacy-nonce';
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_wp_loaded();
 
@@ -280,7 +280,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::LEGACY_NOTICE_QUERY ]    = self::RATE_NOTICE_KEY;
 		$_GET[ self::LEGACY_NONCE_QUERY ]     = wp_create_nonce( self::NONCE_ACTION );
 		$messages                             = array();
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->set_die_handler( $this->create_die_handler( $messages ) );
 
 		$this->expectException( \RuntimeException::class );
@@ -302,7 +302,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = 'invalid';
 		$messages                             = array();
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->set_die_handler( $this->create_die_handler( $messages ) );
 
 		$this->expectException( \RuntimeException::class );
@@ -322,7 +322,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
 		$messages                             = array();
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->set_die_handler( $this->create_die_handler( $messages ) );
 
 		$this->expectException( \RuntimeException::class );
@@ -523,7 +523,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 
 			/**
@@ -532,7 +532,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function feature_is_enabled(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

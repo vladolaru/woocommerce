@@ -49,8 +49,8 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register UPS hooks when runtime guards block.
 	 */
 	public function test_does_not_register_ups_hooks_when_guards_block(): void {
-		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
-		$missing_ups  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false );
+		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_ups  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$plugin_owned->register();
 		$missing_ups->register();
@@ -63,7 +63,7 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should defer UPS hook registration until plugins load.
 	 */
 	public function test_defers_ups_registration_until_plugins_load(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE, false, false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 
 		$sut->register();
 
@@ -159,7 +159,7 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyUpsCompatibilityController
 	 */
 	private function create_controller(
-		string $owner = MultiCurrencyRuntimeArbiter::OWNER_CORE,
+		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $ups_available = true,
 		bool $plugins_loaded = true
 	): MultiCurrencyUpsCompatibilityController {

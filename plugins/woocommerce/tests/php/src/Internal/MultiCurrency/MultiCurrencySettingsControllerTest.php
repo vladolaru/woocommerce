@@ -47,7 +47,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_PLUGIN );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
 
@@ -65,7 +65,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register settings hooks when core owns runtime.
 	 */
 	public function test_registers_settings_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->register();
 		$sut->register();
@@ -91,7 +91,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$service->expects( $this->once() )->method( 'maybe_auto_enable_cache_rendering_mode' );
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array( 'cache_rendering_service' => $service )
 		);
 		$user_id = $this->factory()->user->create( array( 'role' => 'administrator' ) );
@@ -112,7 +112,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'cache_rendering_service' => $service,
 				'is_admin'                => false,
@@ -132,7 +132,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
 		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array( 'cache_rendering_service' => $service )
 		);
 		$user_id = $this->factory()->user->create( array( 'role' => 'subscriber' ) );
@@ -156,7 +156,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve invalid settings returned by an earlier Core filter callback.
 	 */
 	public function test_preserves_invalid_settings_from_an_earlier_core_filter_callback(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		add_filter( 'woocommerce_multi_currency_js_settings', '__return_null', 5 );
 		$sut->register();
 
@@ -169,7 +169,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register settings page without a provider dependency.
 	 */
 	public function test_registers_settings_page_without_a_provider_dependency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array( 'existing' ) );
 		$settings_page  = $settings_pages[1];
@@ -193,7 +193,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the settings page when no provider is connected.
 	 */
 	public function test_registers_the_settings_page_when_no_provider_is_connected(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$settings_pages = $sut->handle_woocommerce_get_settings_pages( array() );
 		$settings_page  = $settings_pages[0];
@@ -208,7 +208,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should render settings container and hide save button.
 	 */
 	public function test_renders_settings_container_and_hides_save_button(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
 		$sut->render_settings_container();
@@ -226,7 +226,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_prints_emoji_detection_script_only_on_settings_page(): void {
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'is_admin'    => true,
 				'current_tab' => 'wcpay_multi_currency',
@@ -244,7 +244,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$settings_page_output = ob_get_clean();
 
 		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'is_admin'    => true,
 				'current_tab' => 'checkout',
@@ -272,7 +272,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$registered_assets = array();
 		$enqueued_assets   = array();
 		$sut               = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'asset_available'   => false,
 				'registered_assets' => &$registered_assets,
@@ -293,7 +293,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$registered_assets = array();
 		$enqueued_assets   = array();
 		$sut               = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_CORE,
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'asset_available'   => true,
 				'registered_assets' => &$registered_assets,
@@ -322,7 +322,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should add multi-currency flag to WCPay JS config.
 	 */
 	public function test_adds_multi_currency_flag_to_wcpay_js_config(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_CORE );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame(
 			array(
@@ -414,7 +414,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_core_register(): bool {
-				return MultiCurrencyRuntimeArbiter::OWNER_CORE === $this->owner;
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
 	}

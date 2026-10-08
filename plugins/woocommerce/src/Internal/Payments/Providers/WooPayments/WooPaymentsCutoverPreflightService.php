@@ -195,7 +195,7 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	private function evaluate_failures(): array {
 		if ( ! $this->arbiter->is_native_runtime_enabled() ) {
-			return array( 'native_runtime_disabled' );
+			return array( 'builtin_runtime_disabled' );
 		}
 
 		$failures = array();
@@ -203,14 +203,14 @@ class WooPaymentsCutoverPreflightService {
 			$failures[] = 'woopayments_plugin_version_unsupported';
 		}
 		if ( ! $this->is_native_transport_ready() ) {
-			$failures[] = 'native_transport_unavailable';
+			$failures[] = 'builtin_transport_unavailable';
 		}
 		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$failures[] = 'multi_currency_rates_unavailable';
 		}
 		if ( ! $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) {
-			$failures[] = 'native_admin_surfaces_unavailable';
+			$failures[] = 'builtin_admin_surfaces_unavailable';
 		}
 		/**
 		 * Event types that still block the switch. The list is empty today.
@@ -219,16 +219,16 @@ class WooPaymentsCutoverPreflightService {
 		 */
 		$unhandled_event_types = WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES;
 		if ( array() !== $unhandled_event_types ) {
-			$failures[] = 'provider_events_undispositioned';
+			$failures[] = 'provider_events_unhandled';
 		}
 		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
-			$failures[] = 'operational_queue_hooks_undispositioned';
+			$failures[] = 'operational_queue_hooks_unhandled';
 		}
 		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
 			$failures[] = 'financial_migrations_unavailable';
 		}
 		if ( $this->get_legacy_subscriptions_guard()->is_bundled_stripe_billing_store() ) {
-			$failures[] = 'legacy_stripe_billing_subscriptions_present';
+			$failures[] = 'bundled_stripe_billing_subscriptions_present';
 		}
 
 		return self::normalize_string_list( $failures );

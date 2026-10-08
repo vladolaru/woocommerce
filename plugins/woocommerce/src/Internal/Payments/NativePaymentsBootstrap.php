@@ -118,7 +118,7 @@ final class NativePaymentsBootstrap {
 		$this->register_roots( $container, $roots );
 		$this->register_cron_roots_on_demand( $container, $state, $request, $roots );
 
-		if ( NativePaymentsRuntimeArbiter::OWNER_PLUGIN === $owner && null !== $this->plugin_owner_registrar ) {
+		if ( NativePaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && null !== $this->plugin_owner_registrar ) {
 			( $this->plugin_owner_registrar )( $container );
 		}
 	}

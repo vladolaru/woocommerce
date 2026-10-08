@@ -72,7 +72,7 @@ final class EnvironmentIsolation {
 	private const CLEARED_HOOKS = array(
 		// Decides whether core-native payments own the site. Tests that want
 		// native ownership add this filter themselves.
-		'woocommerce_native_payments_enabled',
+		'woocommerce_woopayments_builtin_enabled',
 	);
 
 	/**
@@ -81,7 +81,7 @@ final class EnvironmentIsolation {
 	 * @var string[]
 	 */
 	private const CLEARED_OPTIONS = array(
-		'woocommerce_native_payments_enabled',
+		'woocommerce_woopayments_builtin_enabled',
 	);
 
 	/**

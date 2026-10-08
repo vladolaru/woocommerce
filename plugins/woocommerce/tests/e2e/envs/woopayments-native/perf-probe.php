@@ -270,7 +270,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		if ( ! defined( 'DISABLE_WP_CRON' ) ) {
 			define( 'DISABLE_WP_CRON', true );
 		}
-		$this->control = get_option( 'woocommerce_native_payments_perf_probe_control', null );
+		$this->control = get_option( 'e2e_woopayments_perf_probe_control', null );
 		ob_start();
 		if ( ! $this->is_valid_control() ) {
 			add_action( 'shutdown', array( $this, 'send_invalid_control_header' ), 0 );
@@ -279,7 +279,7 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		$this->trace_state = $this->get_trace_state();
 
 		add_filter( 'woocommerce_native_payments_bootstrap_enabled', array( $this, 'control_bootstrap' ) );
-		add_filter( 'woocommerce_native_payments_enabled', array( $this, 'enable_native_runtime' ) );
+		add_filter( 'woocommerce_woopayments_builtin_enabled', array( $this, 'enable_native_runtime' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
 		if ( '' !== $this->trace_state ) {
 			add_filter( 'query', array( $this, 'handle_query' ), 9999 );
@@ -568,5 +568,5 @@ if ( defined( 'WP_CLI' ) && WP_CLI && isset( $args ) && is_array( $args ) && 'wo
 	return;
 }
 
-$woocommerce_native_payments_perf_probe = new WooCommerce_Native_Payments_Perf_Probe();
-$woocommerce_native_payments_perf_probe->register();
+$e2e_woopayments_perf_probe = new WooCommerce_Native_Payments_Perf_Probe();
+$e2e_woopayments_perf_probe->register();

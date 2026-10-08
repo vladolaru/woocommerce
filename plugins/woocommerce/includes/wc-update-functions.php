@@ -3811,8 +3811,8 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
  *
  * @return void
  */
-function wc_update_11203_enable_native_payments(): void {
-	add_option( 'woocommerce_native_payments_enabled', 'yes', '', true );
+function wc_update_11203_enable_builtin_woopayments(): void {
+	add_option( 'woocommerce_woopayments_builtin_enabled', 'yes', '', true );
 }
 
 /**
@@ -3835,7 +3835,7 @@ function wc_update_11204_seed_multi_currency_feature(): void {
  *
  * @return void
  */
-function wc_update_11205_repair_native_payments_state(): void {
+function wc_update_11205_seed_woopayments_setup_tier(): void {
 	$container = wc_get_container();
 	if ( ! $container->get( NativePaymentsRuntimeArbiter::class )->is_plugin_runtime_active() ) {
 		return;
