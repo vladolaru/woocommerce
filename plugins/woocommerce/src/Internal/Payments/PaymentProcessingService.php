@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Throwable;
-use WC_Logger_Interface;
 use WC_Order;
 use WC_Order_Refund;
 use WP_Error;
@@ -41,24 +40,6 @@ class PaymentProcessingService {
 	 * @var PaymentOperationIdempotency
 	 */
 	private PaymentOperationIdempotency $idempotency;
-
-	/**
-	 * Payments logger.
-	 *
-	 * @var WC_Logger_Interface|null
-	 */
-	private ?WC_Logger_Interface $logger = null;
-
-	/**
-	 * Constructor.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param WC_Logger_Interface|null $logger Payments logger.
-	 */
-	public function __construct( ?WC_Logger_Interface $logger = null ) {
-		$this->logger = $logger;
-	}
 
 	/**
 	 * Initialize the class instance.
@@ -256,9 +237,7 @@ class PaymentProcessingService {
 	 */
 	private function log_checkout_refused_after_claim( WC_Order $order, string $reason ): void {
 		try {
-			$logger = $this->logger ?? wc_get_logger();
-
-			$logger->warning(
+			wc_get_logger()->warning(
 				sprintf( 'Native checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
 				array(
 					'source'   => 'native-payments',
@@ -814,9 +793,7 @@ class PaymentProcessingService {
 	 */
 	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {
 		try {
-			$logger = $this->logger ?? wc_get_logger();
-
-			$logger->error(
+			wc_get_logger()->error(
 				'Native payment provider operation threw an exception.',
 				array(
 					'source'          => 'woopayments-payments',

@@ -567,7 +567,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
 
 		$logger = $this->create_fake_logger();
-		$sut    = new PaymentProcessingService( $logger );
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $logger ) {
+				return $logger;
+			}
+		);
+		$sut = new PaymentProcessingService();
 		$sut->init(
 			$this->store,
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
