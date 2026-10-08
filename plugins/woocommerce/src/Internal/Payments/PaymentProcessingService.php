@@ -65,12 +65,12 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return array<string,string>
 	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 */
-	public function process_checkout( PaymentContext $context, ProviderContract $provider ): array {
+	public function process_checkout( PaymentContext $context, ProviderInterface $provider ): array {
 		$outcome = $this->process_checkout_outcome( $context, $provider );
 
 		return $this->format_checkout_result( $context, $context->get_order(), $outcome );
@@ -84,13 +84,13 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return PaymentOutcome
 	 * @throws PaymentOutcomeApplyException When applying a referenced or successful charge outcome fails.
 	 * @throws Throwable When applying an unreferenced unsuccessful charge outcome fails.
 	 */
-	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+	public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$order           = $context->get_order();
 		$idempotency_key = $this->idempotency->mint_attempt_key();
 		$profile         = $provider->get_persistence_profile();
@@ -163,11 +163,11 @@ class PaymentProcessingService {
 	 * means another request is at work, so the charge is refused. Client 11.1.0 takes no lock in process_payment()
 	 * (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
 	 *
-	 * @param WC_Order                      $order   Order as this request loaded it, read again in place.
-	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order   Order as this request loaded it, read again in place.
+	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
 	 * @return PaymentOutcome|null The outcome to return instead of charging, or null to charge.
 	 */
-	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabulary $profile ): ?PaymentOutcome {
+	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): ?PaymentOutcome {
 		$paid_statuses     = wc_get_is_paid_statuses();
 		$loaded_status     = $order->get_status();
 		$loaded_was_paid   = $order->has_status( $paid_statuses );
@@ -203,11 +203,11 @@ class PaymentProcessingService {
 	/**
 	 * Get the payment references recorded on an order: its transaction ID and the provider's payment meta.
 	 *
-	 * @param WC_Order                      $order   Order object.
-	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order   Order object.
+	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
 	 * @return array{0:string,1:string}
 	 */
-	private function get_recorded_payment_references( WC_Order $order, ProviderPersistenceVocabulary $profile ): array {
+	private function get_recorded_payment_references( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): array {
 		return array(
 			(string) $order->get_transaction_id(),
 			(string) $order->get_meta( $profile->get_payment_reference_meta_key(), true ),
@@ -217,11 +217,11 @@ class PaymentProcessingService {
 	/**
 	 * Get the charge idempotency key the provider keeps on the order while a charge outcome is unknown.
 	 *
-	 * @param WC_Order                      $order   Order object.
-	 * @param ProviderPersistenceVocabulary $profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order   Order object.
+	 * @param ProviderPersistenceVocabularyInterface $profile Provider persistence vocabulary.
 	 * @return string The kept key, or '' when there is none or the provider keeps none.
 	 */
-	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabulary $profile ): string {
+	private function get_kept_charge_key( WC_Order $order, ProviderPersistenceVocabularyInterface $profile ): string {
 		$meta_key = $profile->get_charge_idempotency_key_meta_key();
 
 		return '' === $meta_key ? '' : (string) $order->get_meta( $meta_key, true );
@@ -258,12 +258,12 @@ class PaymentProcessingService {
 	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
 	 * outcome after transport has completed.
 	 *
-	 * @param WC_Order         $order   Order object.
-	 * @param PaymentOutcome   $outcome Provider outcome with a durable reference.
-	 * @param ProviderContract $provider Provider.
+	 * @param WC_Order          $order   Order object.
+	 * @param PaymentOutcome    $outcome Provider outcome with a durable reference.
+	 * @param ProviderInterface $provider Provider.
 	 * @return bool Whether the reconciliation context was persisted.
 	 */
-	private function persist_reconciliation_context( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): bool {
+	private function persist_reconciliation_context( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): bool {
 		try {
 			$reloaded_order = wc_get_order( $order->get_id() );
 			if ( ! $reloaded_order instanceof WC_Order ) {
@@ -349,12 +349,12 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return bool|WP_Error
 	 * @throws Throwable When applying an unreferenced unsuccessful refund outcome fails.
 	 */
-	public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+	public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 		$order        = $context->get_order();
 		$payment_data = $context->get_payment_data();
 		$amount       = isset( $payment_data['amount'] ) ? (float) $payment_data['amount'] : 0.0;
@@ -434,13 +434,13 @@ class PaymentProcessingService {
 	/**
 	 * Retain the provider refund identity on the local refund after local effects fail.
 	 *
-	 * @param WC_Order                      $order        Parent order.
-	 * @param int|null                      $wc_refund_id Local refund this call links.
-	 * @param PaymentOutcome                $outcome      Provider refund outcome.
-	 * @param ProviderPersistenceVocabulary $profile      Provider persistence vocabulary.
+	 * @param WC_Order                               $order        Parent order.
+	 * @param int|null                               $wc_refund_id Local refund this call links.
+	 * @param PaymentOutcome                         $outcome      Provider refund outcome.
+	 * @param ProviderPersistenceVocabularyInterface $profile      Provider persistence vocabulary.
 	 * @return bool Whether the refund identity was persisted.
 	 */
-	private function persist_refund_reconciliation_context( WC_Order $order, ?int $wc_refund_id, PaymentOutcome $outcome, ProviderPersistenceVocabulary $profile ): bool {
+	private function persist_refund_reconciliation_context( WC_Order $order, ?int $wc_refund_id, PaymentOutcome $outcome, ProviderPersistenceVocabularyInterface $profile ): bool {
 		$refund_reference = $outcome->get_provider_payment_id();
 		if ( '' === $refund_reference || null === $wc_refund_id ) {
 			return false;
@@ -631,11 +631,11 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return PaymentOutcome
 	 */
-	public function capture( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+	public function capture( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		return $this->run_provider_order_operation( $context, $provider, 'capture' );
 	}
 
@@ -644,23 +644,23 @@ class PaymentProcessingService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return PaymentOutcome
 	 */
-	public function cancel( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+	public function cancel( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		return $this->run_provider_order_operation( $context, $provider, 'cancel' );
 	}
 
 	/**
 	 * Charge a provider and normalize exceptions.
 	 *
-	 * @param PaymentContext   $context         Payment context.
-	 * @param ProviderContract $provider        Provider.
-	 * @param string           $idempotency_key Key minted fresh for this payment attempt.
+	 * @param PaymentContext    $context         Payment context.
+	 * @param ProviderInterface $provider        Provider.
+	 * @param string            $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 */
-	private function charge_provider( PaymentContext $context, ProviderContract $provider, string $idempotency_key ): PaymentOutcome {
+	private function charge_provider( PaymentContext $context, ProviderInterface $provider, string $idempotency_key ): PaymentOutcome {
 		try {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
@@ -674,11 +674,11 @@ class PaymentProcessingService {
 	/**
 	 * Tell whether a zero-total checkout still needs a provider-owned setup operation.
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return bool
 	 */
-	private function should_call_provider_for_zero_total_checkout( PaymentContext $context, ProviderContract $provider ): bool {
+	private function should_call_provider_for_zero_total_checkout( PaymentContext $context, ProviderInterface $provider ): bool {
 		if ( ! $provider->supports_zero_amount_setup( $context ) ) {
 			return false;
 		}
@@ -702,13 +702,13 @@ class PaymentProcessingService {
 	/**
 	 * Run a capture/cancel provider operation under the shared order lock.
 	 *
-	 * @param PaymentContext   $context   Payment context.
-	 * @param ProviderContract $provider  Provider.
-	 * @param string           $operation Operation name.
+	 * @param PaymentContext    $context   Payment context.
+	 * @param ProviderInterface $provider  Provider.
+	 * @param string            $operation Operation name.
 	 * @return PaymentOutcome
 	 * @throws Throwable When applying an unreferenced unsuccessful provider outcome fails.
 	 */
-	private function run_provider_order_operation( PaymentContext $context, ProviderContract $provider, string $operation ): PaymentOutcome {
+	private function run_provider_order_operation( PaymentContext $context, ProviderInterface $provider, string $operation ): PaymentOutcome {
 		$order           = $context->get_order();
 		$amount          = $context->get_amount() ?? (float) $order->get_total();
 		$idempotency_key = $this->idempotency->derive_key( $order, $provider->get_id(), $operation, $amount, (string) $order->get_currency() );
@@ -812,14 +812,14 @@ class PaymentProcessingService {
 	/**
 	 * Apply optional provider-owned effects after transport and before the generic lifecycle.
 	 *
-	 * @param PaymentContext   $context   Payment context.
-	 * @param PaymentOutcome   $outcome   Provider outcome.
-	 * @param ProviderContract $provider  Provider.
-	 * @param string           $operation Operation name.
+	 * @param PaymentContext    $context   Payment context.
+	 * @param PaymentOutcome    $outcome   Provider outcome.
+	 * @param ProviderInterface $provider  Provider.
+	 * @param string            $operation Operation name.
 	 * @return PaymentOutcome
 	 */
-	private function apply_provider_operation_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderContract $provider, string $operation ): PaymentOutcome {
-		if ( ! $provider instanceof ProviderOperationEffectApplier ) {
+	private function apply_provider_operation_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): PaymentOutcome {
+		if ( ! $provider instanceof ProviderOperationEffectApplierInterface ) {
 			return $outcome;
 		}
 
@@ -829,13 +829,13 @@ class PaymentProcessingService {
 	/**
 	 * Apply optional provider-owned effects after the generic lifecycle.
 	 *
-	 * @param PaymentContext   $context   Payment context.
-	 * @param PaymentOutcome   $outcome   Applied provider outcome.
-	 * @param ProviderContract $provider  Provider.
-	 * @param string           $operation Operation name.
+	 * @param PaymentContext    $context   Payment context.
+	 * @param PaymentOutcome    $outcome   Applied provider outcome.
+	 * @param ProviderInterface $provider  Provider.
+	 * @param string            $operation Operation name.
 	 */
-	private function apply_provider_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderContract $provider, string $operation ): void {
-		if ( ! $provider instanceof ProviderPostLifecycleEffectApplier ) {
+	private function apply_provider_post_lifecycle_effects( PaymentContext $context, PaymentOutcome $outcome, ProviderInterface $provider, string $operation ): void {
+		if ( ! $provider instanceof ProviderPostLifecycleEffectApplierInterface ) {
 			return;
 		}
 
@@ -845,12 +845,12 @@ class PaymentProcessingService {
 	/**
 	 * Apply a provider order-operation outcome to the order lifecycle.
 	 *
-	 * @param WC_Order         $order     Order object.
-	 * @param PaymentOutcome   $outcome   Provider outcome.
-	 * @param string           $operation Operation name.
-	 * @param ProviderContract $provider  Provider.
+	 * @param WC_Order          $order     Order object.
+	 * @param PaymentOutcome    $outcome   Provider outcome.
+	 * @param string            $operation Operation name.
+	 * @param ProviderInterface $provider  Provider.
 	 */
-	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderContract $provider ): void {
+	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderInterface $provider ): void {
 		if ( in_array( $operation, array( 'capture', 'cancel' ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			// An expired authorization is the one capture failure that must move the order:
 			// the provider effects carry the capture-expired note when the re-fetched intent
@@ -898,11 +898,11 @@ class PaymentProcessingService {
 	/**
 	 * Apply a provider checkout outcome to the order lifecycle.
 	 *
-	 * @param WC_Order         $order    Order object.
-	 * @param PaymentOutcome   $outcome  Provider outcome.
-	 * @param ProviderContract $provider Provider.
+	 * @param WC_Order          $order    Order object.
+	 * @param PaymentOutcome    $outcome  Provider outcome.
+	 * @param ProviderInterface $provider Provider.
 	 */
-	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderContract $provider ): void {
+	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
 		$this->lifecycle_service->apply_unlocked(
 			$order,
 			new PaymentLifecycleEvent(
@@ -965,34 +965,34 @@ class PaymentProcessingService {
 	/**
 	 * Build lifecycle meta from a provider outcome.
 	 *
-	 * @param PaymentOutcome   $outcome  Provider outcome.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentOutcome    $outcome  Provider outcome.
+	 * @param ProviderInterface $provider Provider.
 	 * @return array<string,string>
 	 */
-	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
+	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderInterface $provider ): array {
 		return $this->get_provider_outcome_meta( $outcome, $provider );
 	}
 
 	/**
 	 * Map provider outcome metadata through the optional provider port.
 	 *
-	 * @param PaymentOutcome   $outcome  Provider outcome.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentOutcome    $outcome  Provider outcome.
+	 * @param ProviderInterface $provider Provider.
 	 * @return array<string,string>
 	 */
-	private function get_provider_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_outcome_meta( $outcome ) : array();
+	private function get_provider_outcome_meta( PaymentOutcome $outcome, ProviderInterface $provider ): array {
+		return $provider instanceof ProviderOutcomeMetadataMapperInterface ? $provider->get_outcome_meta( $outcome ) : array();
 	}
 
 	/**
 	 * Map a failed capture or cancel outcome to metadata through the optional provider port.
 	 *
-	 * @param PaymentOutcome   $outcome  Provider outcome.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentOutcome    $outcome  Provider outcome.
+	 * @param ProviderInterface $provider Provider.
 	 * @return array<string,string>
 	 */
-	private function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome, ProviderContract $provider ): array {
-		return $provider instanceof ProviderOutcomeMetadataMapper ? $provider->get_failed_capture_or_cancel_outcome_meta( $outcome ) : array();
+	private function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome, ProviderInterface $provider ): array {
+		return $provider instanceof ProviderOutcomeMetadataMapperInterface ? $provider->get_failed_capture_or_cancel_outcome_meta( $outcome ) : array();
 	}
 
 	/**

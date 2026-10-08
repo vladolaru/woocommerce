@@ -28,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use RuntimeException;
@@ -882,9 +882,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Return the WooPayments persistence profile.
 			 *
-			 * @return ProviderPersistenceVocabulary
+			 * @return ProviderPersistenceVocabularyInterface
 			 */
-			public function get_persistence_profile(): ProviderPersistenceVocabulary {
+			public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
 				return new WooPaymentsPersistenceVocabulary();
 			}
 

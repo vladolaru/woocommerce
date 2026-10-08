@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Shadow;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -747,11 +747,11 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	/**
 	 * Read an order's payment surface through the shadow mode's private reader.
 	 *
-	 * @param WC_Order                      $order      Order to read.
-	 * @param ProviderPersistenceVocabulary $vocabulary Provider persistence vocabulary.
+	 * @param WC_Order                               $order      Order to read.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return array<string,mixed>
 	 */
-	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabulary $vocabulary ): array {
+	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): array {
 		$method = new \ReflectionMethod( NativePaymentsShadowMode::class, 'read_payment_surface' );
 		$method->setAccessible( true );
 
@@ -761,10 +761,10 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a non-WooPayments persistence profile.
 	 *
-	 * @return ProviderPersistenceVocabulary
+	 * @return ProviderPersistenceVocabularyInterface
 	 */
-	private function create_provider_profile(): ProviderPersistenceVocabulary {
-		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
+	private function create_provider_profile(): ProviderPersistenceVocabularyInterface {
+		$profile = $this->createMock( ProviderPersistenceVocabularyInterface::class );
 		$profile->method( 'get_preserved_payment_meta_keys' )->willReturn( array( '_provider_payment_id' ) );
 
 		return $profile;

@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -1950,11 +1950,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Process checkout payment and return the neutral outcome.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
+			 * @param PaymentContext    $context  Payment context.
+			 * @param ProviderInterface $provider Provider.
 			 * @return PaymentOutcome
 			 */
-			public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+			public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 				$this->last_checkout_context = $context;
 
 				return $this->outcome;
@@ -5764,11 +5764,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund like a provider refusal.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
+			 * @param PaymentContext    $context  Payment context.
+			 * @param ProviderInterface $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'expired_or_canceled_card', 'The card was declined.' );
@@ -5800,11 +5800,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund with the platform's insufficient-balance code.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
+			 * @param PaymentContext    $context  Payment context.
+			 * @param ProviderInterface $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'insufficient_balance_for_refund', 'Could not refund the payment: insufficient funds.' );
@@ -5837,11 +5837,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Refuse the refund before any platform attempt.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
+			 * @param PaymentContext    $context  Payment context.
+			 * @param ProviderInterface $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'native_payment_refund_locked', 'A payment operation is already in progress for this order.' );
@@ -6811,11 +6811,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail the refund with the platform's code and message, as the processing service hands them back.
 			 *
-			 * @param PaymentContext   $context  Payment context.
-			 * @param ProviderContract $provider Provider.
+			 * @param PaymentContext    $context  Payment context.
+			 * @param ProviderInterface $provider Provider.
 			 * @return bool|\WP_Error
 			 */
-			public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+			public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 				parent::process_refund( $context, $provider );
 
 				return new \WP_Error( 'https://pay.example.test/code', "Error: No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123" );

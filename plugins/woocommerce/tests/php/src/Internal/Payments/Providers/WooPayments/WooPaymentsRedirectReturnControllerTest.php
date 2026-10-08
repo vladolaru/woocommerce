@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -2678,13 +2678,13 @@ class RedirectReturnWebhookFirstOrderPaymentStore extends OrderPaymentStore {
 	/**
 	 * Let a webhook take the lock, write on-hold and release it, then claim the lock for the caller.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
-	 * @param string|null                   $payment_reference   Payment reference.
-	 * @param string                        $operation           Operation claiming the lock.
+	 * @param WC_Order                               $order               Order object.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
+	 * @param string|null                            $payment_reference   Payment reference.
+	 * @param string                                 $operation           Operation claiming the lock.
 	 * @return string|null
 	 */
-	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile, ?string $payment_reference, string $operation ): ?string {
+	public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile, ?string $payment_reference, string $operation ): ?string {
 		if ( ! $this->webhook_ran ) {
 			$this->webhook_ran = true;
 			$webhook_token     = parent::claim_order_payment_lock_for_operation( $order, $persistence_profile, $payment_reference, 'payment status update' );

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 
 /**
  * Maps neutral payment outcomes to WooPayments-owned order metadata.
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataMapper {
+final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataMapperInterface {
 
 	/**
 	 * Map a neutral outcome to WooPayments order metadata.

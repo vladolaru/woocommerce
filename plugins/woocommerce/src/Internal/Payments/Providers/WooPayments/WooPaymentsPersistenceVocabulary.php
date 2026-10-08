@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use WC_Order;
 
 /**
@@ -17,7 +17,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabulary {
+class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyInterface {
 
 	/**
 	 * Preserved WooPayments gateway ID.

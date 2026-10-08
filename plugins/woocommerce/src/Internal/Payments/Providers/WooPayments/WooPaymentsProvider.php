@@ -21,11 +21,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 
 /**
  * First-party WooPayments provider skeleton for the native payments runtime.
@@ -35,7 +35,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectApplier, ProviderOutcomeMetadataMapper, ProviderPostLifecycleEffectApplier {
+class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
 
 	/**
 	 * WooPayments gateway adapter.
@@ -391,11 +391,11 @@ class WooPaymentsProvider implements ProviderContract, ProviderOperationEffectAp
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceVocabulary
+	 * @return ProviderPersistenceVocabularyInterface
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceVocabulary {
+	public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
 		return new WooPaymentsPersistenceVocabulary();
 	}
 

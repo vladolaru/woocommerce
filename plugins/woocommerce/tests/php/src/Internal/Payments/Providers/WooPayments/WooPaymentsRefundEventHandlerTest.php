@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -174,7 +174,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				'balance_transaction' => array( 'id' => 'txn_123' ),
 			);
 			$effect_applier     = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-			$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 				/**
 				 * WooPayments effect applier.
 				 *
@@ -372,7 +372,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'balance_transaction' => $refund_object['balance_transaction'],
 		);
 		$effect_applier     = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-		$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $refund_id ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider           = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $refund_id ), $effect_applier, $provider_result ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * WooPayments effect applier.
 			 *
@@ -457,7 +457,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 
 		$refund         = $this->create_local_refund( $order );
 		$effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-		$provider       = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider       = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ), $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * WooPayments effect applier.
 			 *
@@ -642,13 +642,13 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Finish the admin refund, as the gateway does under the lock, then grant the webhook's claim.
 			 *
-			 * @param WC_Order                      $order     Order being locked.
-			 * @param ProviderPersistenceVocabulary $profile   Persistence profile.
-			 * @param string|null                   $reference Payment reference.
-			 * @param string                        $operation Operation claiming the lock.
+			 * @param WC_Order                               $order     Order being locked.
+			 * @param ProviderPersistenceVocabularyInterface $profile   Persistence profile.
+			 * @param string|null                            $reference Payment reference.
+			 * @param string                                 $operation Operation claiming the lock.
 			 * @return string|null
 			 */
-			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, ?string $reference, string $operation ): ?string {
 				unset( $profile, $reference, $operation );
 				if ( ! $this->admin_refund_linked ) {
 					$this->admin_refund_linked = true;
@@ -671,11 +671,11 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Release nothing: the claim above holds no lock.
 			 *
-			 * @param WC_Order                      $order      Order being unlocked.
-			 * @param ProviderPersistenceVocabulary $profile    Persistence profile.
-			 * @param string                        $lock_token Claim token.
+			 * @param WC_Order                               $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabularyInterface $profile    Persistence profile.
+			 * @param string                                 $lock_token Claim token.
 			 */
-			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $profile, string $lock_token ): void {
+			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, string $lock_token ): void {
 				unset( $order, $profile, $lock_token );
 			}
 		};

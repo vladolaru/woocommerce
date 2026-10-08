@@ -11,11 +11,11 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationIdempotency;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
@@ -71,9 +71,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Persistence profile used by the recording WooPayments provider.
 	 *
-	 * @var ProviderPersistenceVocabulary
+	 * @var ProviderPersistenceVocabularyInterface
 	 */
-	private ProviderPersistenceVocabulary $persistence_profile;
+	private ProviderPersistenceVocabularyInterface $persistence_profile;
 
 	/**
 	 * Set up test fixtures.
@@ -727,7 +727,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'remote_method_123',
 			'remote_customer_123'
 		);
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOutcomeMetadataMapper {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOutcomeMetadataMapperInterface {
 
 			/**
 			 * Get the provider/gateway ID.
@@ -741,10 +741,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the provider persistence profile.
 			 *
-			 * @return ProviderPersistenceVocabulary
+			 * @return ProviderPersistenceVocabularyInterface
 			 */
-			public function get_persistence_profile(): ProviderPersistenceVocabulary {
-				return new class() implements ProviderPersistenceVocabulary {
+			public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
+				return new class() implements ProviderPersistenceVocabularyInterface {
 
 					/**
 					 * Get the order payment lock key.
@@ -946,7 +946,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			);
 		}
 
-		$provider = new class( new PaymentOutcome( $status, $reference ) ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( new PaymentOutcome( $status, $reference ) ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail local outcome application after the provider answered.
@@ -1036,7 +1036,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_outcome_applies_provider_effects_before_lifecycle(): void {
 		$order           = $this->create_woopayments_order( '10.00' );
 		$outcome         = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effect_ordering', '', 'pm_effect_ordering' );
-		$provider        = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider        = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * Apply provider effects before the generic lifecycle.
 			 *
@@ -1078,7 +1078,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$sequence = new \ArrayObject();
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_post_lifecycle', '', 'pm_post_lifecycle' );
-		$provider = new class( $outcome, $sequence ) extends RecordingProvider implements ProviderOperationEffectApplier, ProviderPostLifecycleEffectApplier {
+		$provider = new class( $outcome, $sequence ) extends RecordingProvider implements ProviderOperationEffectApplierInterface, ProviderPostLifecycleEffectApplierInterface {
 			/**
 			 * Observed lifecycle sequence.
 			 *
@@ -1409,7 +1409,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_outcome_keeps_provider_success_when_effect_application_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effect_failure', '', 'pm_effect_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail provider effect application after the remote payment succeeded.
@@ -1450,7 +1450,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			'#wcpay-confirm-pi:1:secret:nonce',
 			'pm_action_effect_failure'
 		);
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail provider effect application after a referenced provider response.
@@ -1486,7 +1486,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_mapping_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_profile_recovery_failure', '', 'pm_profile_recovery_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * Number of recovery mapping calls.
 			 *
@@ -1539,7 +1539,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_logging_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_logger_recovery_failure', '', 'pm_logger_recovery_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail provider effect application after the remote payment succeeded.
@@ -1582,7 +1582,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_capture_keeps_provider_success_when_effect_application_throws(): void {
 		$order    = $this->create_woopayments_order( '10.00' );
 		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture_effect_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail provider effect application after the remote capture succeeded.
@@ -2230,7 +2230,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 
-		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_effect_failure' ) ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_effect_failure' ) ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * Applied operation names.
 			 *
@@ -2277,7 +2277,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$refund->update_meta_data( '_wcpay_refund_id', 're_A' );
 		$refund->save_meta_data();
 
-		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_B' ) ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_B' ) ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail local effect application after the provider refund succeeded.
@@ -2827,7 +2827,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 
-		$provider = new class( $this->successful_refund_outcome( 're_missing_target' ), $refund->get_id() ) extends RecordingProvider implements ProviderOperationEffectApplier {
+		$provider = new class( $this->successful_refund_outcome( 're_missing_target' ), $refund->get_id() ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 			/**
 			 * Exact local refund ID to remove after provider transport.
 			 *
@@ -2894,12 +2894,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Throw a provider's platform text, as a provider effect that calls its platform can.
 			 *
-			 * @param WC_Order                      $order               Order object.
-			 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+			 * @param WC_Order                               $order               Order object.
+			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+			 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 			 * @throws RuntimeException Always.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 				unset( $order, $event, $persistence_profile );
 				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
 			}
@@ -3120,7 +3120,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$order->set_transaction_id( 'pi_mapper_capture_failure' );
 		$order->save();
 
-		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_mapper_capture_failure' ) ) extends RecordingProvider implements ProviderOutcomeMetadataMapper {
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_mapper_capture_failure' ) ) extends RecordingProvider implements ProviderOutcomeMetadataMapperInterface {
 			/**
 			 * Map a neutral outcome to provider order meta.
 			 *
@@ -3378,7 +3378,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 			$provider_outcome = new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_canceled_de' );
 			$effect_applier   = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-			$provider         = new class( $provider_outcome, $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplier {
+			$provider         = new class( $provider_outcome, $effect_applier ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
 				/**
 				 * WooPayments effect applier.
 				 *
@@ -4554,12 +4554,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Always throw to simulate a lifecycle application failure after a successful charge.
 			 *
-			 * @param WC_Order                      $order               Order object.
-			 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-			 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+			 * @param WC_Order                               $order               Order object.
+			 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+			 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 			 * @throws RuntimeException Always, to drive the post-charge failure path.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_profile );
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );

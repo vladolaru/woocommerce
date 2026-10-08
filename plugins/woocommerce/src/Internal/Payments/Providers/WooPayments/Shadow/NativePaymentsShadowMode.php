@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
@@ -283,11 +283,11 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order                      $order               Order to project.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order to project.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return array<string,mixed>
 	 */
-	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+	private function read_payment_surface( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
 		return array(
 			'order_id'       => (int) $order->get_id(),
 			'status'         => (string) $order->get_status(),
@@ -303,11 +303,11 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * Read preserved payment meta from an order or refund object.
 	 *
-	 * @param WC_Abstract_Order             $order               Order or refund object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Abstract_Order                      $order               Order or refund object.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return array<string,string>
 	 */
-	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+	private function read_payment_meta( WC_Abstract_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
 		$payment_meta = array();
 		$allowed_keys = array_fill_keys( $persistence_profile->get_preserved_payment_meta_keys(), true );
 
@@ -330,11 +330,11 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	/**
 	 * Read stable refund projections for an order.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): array {
+	private function read_refund_surfaces( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): array {
 		$refunds = array();
 
 		foreach ( $order->get_refunds() as $refund ) {

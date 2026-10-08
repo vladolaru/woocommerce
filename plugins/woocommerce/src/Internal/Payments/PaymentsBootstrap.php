@@ -176,7 +176,7 @@ final class PaymentsBootstrap {
 	 */
 	private function register_roots( $container, array $roots ): void {
 		foreach ( $roots as $root ) {
-			if ( is_a( $root, PaymentGatewayProviderContract::class, true ) ) {
+			if ( is_a( $root, PaymentGatewayProviderInterface::class, true ) ) {
 				$this->add_gateway_provider( $container, $root );
 				if ( ! is_a( $root, RegisterHooksInterface::class, true ) ) {
 					continue;
@@ -205,7 +205,7 @@ final class PaymentsBootstrap {
 				/**
 				 * Native payment gateway provider.
 				 *
-				 * @var PaymentGatewayProviderContract $provider
+				 * @var PaymentGatewayProviderInterface $provider
 				 */
 				$provider = $container->get( $provider_root );
 				return $provider;

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlanInterface;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
 
@@ -60,7 +60,7 @@ class PaymentOutcomeTest extends WC_Unit_Test_Case {
 			'cus_effect_plan',
 			array( 'meta' => array( '_charge_id' => 'ch_effect_plan' ) )
 		);
-		$plan    = new class() implements ProviderOperationEffectPlan {
+		$plan    = new class() implements ProviderOperationEffectPlanInterface {
 		};
 
 		$planned_outcome = $outcome->with_effect_plan( $plan );

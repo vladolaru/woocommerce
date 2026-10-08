@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use WC_Payment_Gateway;
 
 /**
  * Static provider for registry tests.
  */
-class StaticProvider implements PaymentGatewayProviderContract {
+class StaticProvider implements PaymentGatewayProviderInterface {
 
 	/**
 	 * Whether the provider can process payments.

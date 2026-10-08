@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 
 /**
  * Recording processing service for native gateway tests.
@@ -58,11 +58,11 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	/**
 	 * Process checkout payment through a provider.
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return array<string,string>
 	 */
-	public function process_checkout( PaymentContext $context, ProviderContract $provider ): array {
+	public function process_checkout( PaymentContext $context, ProviderInterface $provider ): array {
 		$this->last_checkout_context = $context;
 		++$this->checkout_attempt_count;
 
@@ -75,12 +75,12 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	/**
 	 * Process checkout payment and return the neutral outcome.
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return PaymentOutcome
 	 * @throws \Exception When a checkout exception is configured.
 	 */
-	public function process_checkout_outcome( PaymentContext $context, ProviderContract $provider ): PaymentOutcome {
+	public function process_checkout_outcome( PaymentContext $context, ProviderInterface $provider ): PaymentOutcome {
 		$this->last_checkout_context = $context;
 		++$this->checkout_attempt_count;
 
@@ -94,11 +94,11 @@ class RecordingPaymentProcessingService extends PaymentProcessingService {
 	/**
 	 * Process a refund through a provider.
 	 *
-	 * @param PaymentContext   $context  Payment context.
-	 * @param ProviderContract $provider Provider.
+	 * @param PaymentContext    $context  Payment context.
+	 * @param ProviderInterface $provider Provider.
 	 * @return bool
 	 */
-	public function process_refund( PaymentContext $context, ProviderContract $provider ) {
+	public function process_refund( PaymentContext $context, ProviderInterface $provider ) {
 		$this->last_refund_context = $context;
 
 		return true;

@@ -1,6 +1,6 @@
 <?php
 /**
- * ProviderPersistenceVocabulary interface file.
+ * ProviderPersistenceVocabularyInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -14,12 +14,12 @@ use WC_Order;
  *
  * This contract contains only identifiers needed by the generic runtime to
  * read and coordinate provider-owned persisted state. Outcome interpretation
- * belongs to ProviderOutcomeMetadataMapper instead.
+ * belongs to ProviderOutcomeMetadataMapperInterface instead.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderPersistenceVocabulary {
+interface ProviderPersistenceVocabularyInterface {
 
 	/**
 	 * Get the order payment lock key.

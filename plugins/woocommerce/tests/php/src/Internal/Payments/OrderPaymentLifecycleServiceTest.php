@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentStore;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
@@ -741,7 +741,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_provider_open_dispute_ids', array( 'dp_custom' ) );
 		$order->update_status( 'on-hold' );
 		$order->save();
-		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile = $this->createMock( ProviderPersistenceVocabularyInterface::class );
 		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
 		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
 		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
@@ -763,7 +763,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	public function test_success_skip_keeps_the_provider_key_dispute_when_a_stale_caller_saves(): void {
 		$stale_order = $this->create_woopayments_order();
 		$fresh_order = wc_get_order( $stale_order->get_id() );
-		$profile     = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile     = $this->createMock( ProviderPersistenceVocabularyInterface::class );
 		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $stale_order->get_id() );
 		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
 		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
@@ -795,7 +795,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_apply_uses_provider_vocabulary_for_locks(): void {
 		$order   = $this->create_woopayments_order();
-		$profile = $this->createMock( ProviderPersistenceVocabulary::class );
+		$profile = $this->createMock( ProviderPersistenceVocabularyInterface::class );
 		$profile->method( 'get_order_lock_key' )->willReturn( 'provider_lifecycle_lock_' . $order->get_id() );
 		$profile->method( 'get_lock_sentinel' )->willReturn( 'provider-lock' );
 		$profile->method( 'get_lock_ttl_seconds' )->willReturn( 60 );
@@ -1062,12 +1062,12 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail every outcome application.
 			 *
-			 * @param WC_Order                                                                $order               Order object.
-			 * @param PaymentLifecycleEvent                                                   $event               Lifecycle event.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+			 * @param WC_Order                                                                         $order               Order object.
+			 * @param PaymentLifecycleEvent                                                            $event               Lifecycle event.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 			 * @throws \RuntimeException Always.
 			 */
-			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary $persistence_profile ): void {
+			public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 				unset( $order, $event, $persistence_profile );
 				throw new \RuntimeException( 'Simulated lifecycle failure.' );
 			}
@@ -1150,11 +1150,11 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Apply a lifecycle event with the WooPayments profile unless a test supplies another profile.
 	 *
-	 * @param WC_Order                           $order               Order object.
-	 * @param PaymentLifecycleEvent              $event               Lifecycle event.
-	 * @param ProviderPersistenceVocabulary|null $persistence_profile Optional provider vocabulary.
+	 * @param WC_Order                                    $order               Order object.
+	 * @param PaymentLifecycleEvent                       $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface|null $persistence_profile Optional provider vocabulary.
 	 */
-	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabulary $persistence_profile = null ): void {
+	private function apply_event( WC_Order $order, PaymentLifecycleEvent $event, ?ProviderPersistenceVocabularyInterface $persistence_profile = null ): void {
 		$this->sut->apply( $order, $event, $persistence_profile ?? $this->persistence_profile );
 	}
 

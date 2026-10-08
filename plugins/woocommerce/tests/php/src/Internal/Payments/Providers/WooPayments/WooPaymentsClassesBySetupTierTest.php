@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
-use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
@@ -121,7 +121,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 				$this->assertSame( array_values( array_unique( $roots ) ), $roots, "$cell lists a root twice." );
 				foreach ( $roots as $root ) {
 					$service = wc_get_container()->get( $root );
-					if ( $service instanceof PaymentGatewayProviderContract ) {
+					if ( $service instanceof PaymentGatewayProviderInterface ) {
 						continue;
 					}
 					$this->assertInstanceOf( RegisterHooksInterface::class, $service, "$cell: $root must register hooks." );

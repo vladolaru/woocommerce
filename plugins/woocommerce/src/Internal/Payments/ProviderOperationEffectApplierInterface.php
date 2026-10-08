@@ -1,6 +1,6 @@
 <?php
 /**
- * ProviderOperationEffectApplier interface file.
+ * ProviderOperationEffectApplierInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderOperationEffectApplier {
+interface ProviderOperationEffectApplierInterface {
 
 	/**
 	 * Apply provider-specific effects and optionally replace the neutral outcome.

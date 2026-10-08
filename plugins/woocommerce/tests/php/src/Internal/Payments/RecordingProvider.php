@@ -5,16 +5,16 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 /**
  * Test provider that records operation calls.
  */
-class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapper {
+class RecordingProvider implements ProviderInterface, ProviderOutcomeMetadataMapperInterface {
 
 	/**
 	 * Outcome returned by all operations.
@@ -100,9 +100,9 @@ class RecordingProvider implements ProviderContract, ProviderOutcomeMetadataMapp
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceVocabulary
+	 * @return ProviderPersistenceVocabularyInterface
 	 */
-	public function get_persistence_profile(): ProviderPersistenceVocabulary {
+	public function get_persistence_profile(): ProviderPersistenceVocabularyInterface {
 		return new WooPaymentsPersistenceVocabulary();
 	}
 

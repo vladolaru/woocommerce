@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -657,13 +657,13 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Record a sibling dispute, as a concurrent dispute created delivery would under the lock, then grant the claim.
 			 *
-			 * @param WC_Order                      $order     Order being locked.
-			 * @param ProviderPersistenceVocabulary $profile   Persistence profile.
-			 * @param string|null                   $reference Payment reference.
-			 * @param string                        $operation Operation claiming the lock.
+			 * @param WC_Order                               $order     Order being locked.
+			 * @param ProviderPersistenceVocabularyInterface $profile   Persistence profile.
+			 * @param string|null                            $reference Payment reference.
+			 * @param string                                 $operation Operation claiming the lock.
 			 * @return string|null
 			 */
-			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabulary $profile, ?string $reference, string $operation ): ?string {
+			public function claim_order_payment_lock_for_operation( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, ?string $reference, string $operation ): ?string {
 				unset( $profile, $reference, $operation );
 				if ( ! $this->sibling_recorded ) {
 					$this->sibling_recorded = true;
@@ -679,11 +679,11 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Release nothing: the claim above holds no lock.
 			 *
-			 * @param WC_Order                      $order      Order being unlocked.
-			 * @param ProviderPersistenceVocabulary $profile    Persistence profile.
-			 * @param string                        $lock_token Claim token.
+			 * @param WC_Order                               $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabularyInterface $profile    Persistence profile.
+			 * @param string                                 $lock_token Claim token.
 			 */
-			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabulary $profile, string $lock_token ): void {
+			public function release_order_payment_lock( WC_Order $order, ProviderPersistenceVocabularyInterface $profile, string $lock_token ): void {
 				unset( $order, $profile, $lock_token );
 			}
 		};

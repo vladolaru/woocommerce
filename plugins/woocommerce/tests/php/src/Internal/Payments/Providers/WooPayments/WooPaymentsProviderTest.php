@@ -7,11 +7,11 @@ use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderContract;
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapper;
-use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
@@ -82,7 +82,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_identity_exposes_woopayments_persistence_profile(): void {
 		$profile = $this->sut->get_persistence_profile();
 
-		$this->assertInstanceOf( ProviderPersistenceVocabulary::class, $profile );
+		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $profile );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
 	}
 
@@ -90,10 +90,10 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider contracts keep persistence vocabulary separate from outcome mapping behavior.
 	 */
 	public function test_provider_contract_separates_persistence_vocabulary_from_outcome_mapping(): void {
-		$return_type = ( new \ReflectionMethod( ProviderContract::class, 'get_persistence_profile' ) )->getReturnType();
+		$return_type = ( new \ReflectionMethod( ProviderInterface::class, 'get_persistence_profile' ) )->getReturnType();
 
-		$this->assertSame( ProviderPersistenceVocabulary::class, (string) $return_type );
-		$this->assertInstanceOf( ProviderOutcomeMetadataMapper::class, $this->sut );
+		$this->assertSame( ProviderPersistenceVocabularyInterface::class, (string) $return_type );
+		$this->assertInstanceOf( ProviderOutcomeMetadataMapperInterface::class, $this->sut );
 	}
 
 	/**
@@ -109,7 +109,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 				'refund',
 			) as $method
 		) {
-			$this->assertTrue( method_exists( $this->sut, $method ), "{$method} must be exposed through ProviderContract for A3." );
+			$this->assertTrue( method_exists( $this->sut, $method ), "{$method} must be exposed through ProviderInterface for A3." );
 		}
 	}
 
@@ -160,8 +160,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$provider = new WooPaymentsProvider();
 		$provider->init( $gateway_adapter, $api_client, $account_service, null, $effect_applier );
 
-		$this->assertInstanceOf( ProviderOperationEffectApplier::class, $provider );
-		$this->assertInstanceOf( ProviderPostLifecycleEffectApplier::class, $provider );
+		$this->assertInstanceOf( ProviderOperationEffectApplierInterface::class, $provider );
+		$this->assertInstanceOf( ProviderPostLifecycleEffectApplierInterface::class, $provider );
 		$this->assertSame( $outcome, $provider->apply_operation_effects( $context, $outcome, 'charge' ) );
 		$provider->apply_post_lifecycle_effects( $context, $outcome, 'charge' );
 	}

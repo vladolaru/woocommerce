@@ -23,7 +23,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	/**
 	 * Resolved gateway providers, by provider ID.
 	 *
-	 * @var array<string,PaymentGatewayProviderContract>
+	 * @var array<string,PaymentGatewayProviderInterface>
 	 */
 	private array $providers = array();
 
@@ -51,7 +51,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	 *
 	 * @param callable $resolver                 Returns the payment gateway provider.
 	 * @param callable $should_register_gateways Whether the provider's gateways belong in the gateway list now.
-	 * @phpstan-param callable(): PaymentGatewayProviderContract $resolver
+	 * @phpstan-param callable(): PaymentGatewayProviderInterface $resolver
 	 * @phpstan-param callable(): bool $should_register_gateways
 	 */
 	public function add_provider( callable $resolver, callable $should_register_gateways ): void {
@@ -119,7 +119,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 			}
 
 			$provider = ( $entry['resolver'] )();
-			if ( $provider instanceof PaymentGatewayProviderContract ) {
+			if ( $provider instanceof PaymentGatewayProviderInterface ) {
 				$this->providers[ $provider->get_id() ]       = $provider;
 				$this->provider_checks[ $provider->get_id() ] = $entry['should_register_gateways'];
 			}

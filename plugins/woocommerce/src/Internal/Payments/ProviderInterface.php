@@ -1,6 +1,6 @@
 <?php
 /**
- * ProviderContract interface file.
+ * ProviderInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderContract extends PaymentGatewayProviderContract {
+interface ProviderInterface extends PaymentGatewayProviderInterface {
 
 	/**
 	 * Tell whether a zero-total checkout with a payment credential should reach the provider's charge().
@@ -37,11 +37,11 @@ interface ProviderContract extends PaymentGatewayProviderContract {
 	/**
 	 * Get the provider persistence profile.
 	 *
-	 * @return ProviderPersistenceVocabulary
+	 * @return ProviderPersistenceVocabularyInterface
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_persistence_profile(): ProviderPersistenceVocabulary;
+	public function get_persistence_profile(): ProviderPersistenceVocabularyInterface;
 
 	/**
 	 * Charge an order through the provider.

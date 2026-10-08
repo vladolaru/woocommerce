@@ -1,6 +1,6 @@
 <?php
 /**
- * ProviderOutcomeMetadataMapper interface file.
+ * ProviderOutcomeMetadataMapperInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-interface ProviderOutcomeMetadataMapper {
+interface ProviderOutcomeMetadataMapperInterface {
 
 	/**
 	 * Map a neutral outcome to provider-owned order metadata.

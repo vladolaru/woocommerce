@@ -55,12 +55,12 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return bool False when the order payment lock refused the event, true otherwise.
 	 */
-	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): bool {
+	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): bool {
 		$payment_reference = $event->get_payment_reference();
 		$lock_token        = null;
 
@@ -138,12 +138,12 @@ class OrderPaymentLifecycleService {
 	 * already holds the order payment lock. The event is skipped, and the webhook path delivers it
 	 * again later; the warning makes each skip observable.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param PaymentLifecycleEvent         $event               Lifecycle event being skipped.
-	 * @param string                        $payment_reference   Provider payment reference for the event.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param PaymentLifecycleEvent                  $event               Lifecycle event being skipped.
+	 * @param string                                 $payment_reference   Provider payment reference for the event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 */
-	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference, ProviderPersistenceVocabulary $persistence_profile ): void {
+	private function log_skipped_locked_event( WC_Order $order, PaymentLifecycleEvent $event, string $payment_reference, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 		// Same line as every other lock refusal, so one search finds them all (inbox N-270).
 		$this->order_payment_store->log_order_payment_lock_refusal(
 			$order,
@@ -163,11 +163,11 @@ class OrderPaymentLifecycleService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 */
-	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): void {
+	public function apply_unlocked( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
@@ -314,12 +314,12 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param PaymentLifecycleEvent         $event               Lifecycle event.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return string|null Skip reason, or null when the event can be applied.
 	 */
-	private function get_completed_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabulary $persistence_profile ): ?string {
+	private function get_completed_event_skip_reason( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_profile ): ?string {
 		if ( PaymentLifecycleEvent::STATUS_COMPLETED !== $event->get_status() ) {
 			return null;
 		}
@@ -348,12 +348,12 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Synchronize state whose stale caller-side changes could overwrite a completed-event skip.
 	 *
-	 * @param WC_Order                      $order                       Caller-owned order object.
-	 * @param WC_Order                      $completed_event_order       Freshly read order used by the completed-event guard.
-	 * @param string                        $completed_event_skip_reason Completed-event skip reason.
-	 * @param ProviderPersistenceVocabulary $persistence_profile         Provider persistence vocabulary.
+	 * @param WC_Order                               $order                       Caller-owned order object.
+	 * @param WC_Order                               $completed_event_order       Freshly read order used by the completed-event guard.
+	 * @param string                                 $completed_event_skip_reason Completed-event skip reason.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile         Provider persistence vocabulary.
 	 */
-	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason, ProviderPersistenceVocabulary $persistence_profile ): void {
+	private function synchronize_skipped_completed_event_order( WC_Order $order, WC_Order $completed_event_order, string $completed_event_skip_reason, ProviderPersistenceVocabularyInterface $persistence_profile ): void {
 		$order->set_status( $completed_event_order->get_status() );
 
 		if ( 'open_dispute' !== $completed_event_skip_reason ) {
@@ -370,11 +370,11 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Tell whether the order has an open dispute under the provider's open dispute key.
 	 *
-	 * @param WC_Order                      $order               Order object.
-	 * @param ProviderPersistenceVocabulary $persistence_profile Provider persistence vocabulary.
+	 * @param WC_Order                               $order               Order object.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_profile Provider persistence vocabulary.
 	 * @return bool
 	 */
-	private function has_open_dispute( WC_Order $order, ProviderPersistenceVocabulary $persistence_profile ): bool {
+	private function has_open_dispute( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_profile ): bool {
 		$open_dispute_ids_meta_key = $persistence_profile->get_open_dispute_ids_meta_key();
 		if ( '' === $open_dispute_ids_meta_key ) {
 			return false;

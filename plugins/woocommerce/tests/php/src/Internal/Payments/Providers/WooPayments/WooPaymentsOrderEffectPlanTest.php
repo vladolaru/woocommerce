@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectPlanInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use WC_Unit_Test_Case;
 
@@ -23,7 +23,7 @@ class WooPaymentsOrderEffectPlanTest extends WC_Unit_Test_Case {
 
 		$plan = WooPaymentsOrderEffectPlan::for_payment_intent( $result, true );
 
-		$this->assertInstanceOf( ProviderOperationEffectPlan::class, $plan );
+		$this->assertInstanceOf( ProviderOperationEffectPlanInterface::class, $plan );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $plan->get_type() );
 		$this->assertSame( $result, $plan->get_provider_result() );
 		$this->assertTrue( $plan->should_apply_token_effects() );

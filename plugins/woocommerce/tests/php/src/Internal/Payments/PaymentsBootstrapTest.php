@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderContract;
+use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
@@ -469,7 +469,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( array_merge( $roots, $on_demand_roots ) as $root ) {
-			if ( is_a( $root, PaymentGatewayProviderContract::class, true ) ) {
+			if ( is_a( $root, PaymentGatewayProviderInterface::class, true ) ) {
 				$events[] = 'get:' . ProviderGatewaysController::class;
 				$events[] = 'provider-resolver:' . ProviderGatewaysController::class;
 				$events[] = 'register:' . ProviderGatewaysController::class;
