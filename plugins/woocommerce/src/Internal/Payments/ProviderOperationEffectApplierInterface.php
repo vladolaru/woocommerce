@@ -24,7 +24,7 @@ interface ProviderOperationEffectApplierInterface {
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider transport outcome.
-	 * @param string                  $operation Operation name.
+	 * @param string                  $operation One of PaymentProcessingService::OPERATION_*.
 	 * @return PaymentOutcome
 	 */
 	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome;

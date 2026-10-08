@@ -23,7 +23,7 @@ interface ProviderPostLifecycleEffectApplierInterface {
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Applied provider outcome.
-	 * @param string                  $operation Operation name.
+	 * @param string                  $operation One of PaymentProcessingService::OPERATION_*.
 	 */
 	public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void;
 }

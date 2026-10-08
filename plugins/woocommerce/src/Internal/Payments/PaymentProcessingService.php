@@ -20,6 +20,18 @@ use WP_Error;
  */
 class PaymentProcessingService {
 
+	/** Operation name for a checkout charge. */
+	public const OPERATION_CHARGE = 'charge';
+
+	/** Operation name for a refund. */
+	public const OPERATION_REFUND = 'refund';
+
+	/** Operation name for a capture of an authorized payment. */
+	public const OPERATION_CAPTURE = 'capture';
+
+	/** Operation name for a cancel of an authorized payment. */
+	public const OPERATION_CANCEL = 'cancel';
+
 	/**
 	 * Order payment lock.
 	 *
@@ -87,9 +99,9 @@ class PaymentProcessingService {
 			$outcome          = $provider_outcome;
 
 			try {
-				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'charge' );
+				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
 				$this->apply_checkout_outcome( $order, $outcome, $provider );
-				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, 'charge' );
+				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
 					throw $apply_exception;
@@ -98,7 +110,7 @@ class PaymentProcessingService {
 				// The provider already returned a durable result. Persist its reference first, so a retry
 				// finds it instead of paying again, then hand the failure back for the caller to settle.
 				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
-				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'charge', $apply_exception, $reconciliation_persisted );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, self::OPERATION_CHARGE, $apply_exception, $reconciliation_persisted );
 
 				throw new PaymentOutcomeApplyException( $provider_outcome, $apply_exception, $reconciliation_persisted );
 			}
@@ -340,9 +352,9 @@ class PaymentProcessingService {
 		// Like client 11.1.0, each refund call sends its own key, so a retry after a failed refund
 		// reaches the provider instead of replaying the stored failure. The key is also the lock value.
 		$idempotency_key = $this->mint_idempotency_key();
-		$lock_token      = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'refund' );
+		$lock_token      = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, self::OPERATION_REFUND );
 		if ( null === $lock_token ) {
-			$this->order_payment_lock->log_refusal( $order, $vocabulary, 'refund' );
+			$this->order_payment_lock->log_refusal( $order, $vocabulary, self::OPERATION_REFUND );
 			return new WP_Error( 'order_payment_refund_locked', __( 'A payment operation is already in progress for this order.', 'woocommerce' ) );
 		}
 
@@ -367,12 +379,12 @@ class PaymentProcessingService {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
 				$provider_outcome = $this->failed_outcome_from_throwable( $exception );
-				$this->log_provider_failure( $order, 'refund', $idempotency_key, $exception );
+				$this->log_provider_failure( $order, self::OPERATION_REFUND, $idempotency_key, $exception );
 			}
 			$outcome = $provider_outcome;
 
 			try {
-				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, 'refund' );
+				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_REFUND );
 				if ( $outcome->is_successful() ) {
 					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id );
 				}
@@ -383,7 +395,7 @@ class PaymentProcessingService {
 
 				$outcome                  = $provider_outcome;
 				$reconciliation_persisted = $this->persist_refund_reconciliation_context( $order, $wc_refund_id, $provider_outcome, $vocabulary );
-				$this->log_post_provider_apply_failure( $order, $provider_outcome, 'refund', $apply_exception, $reconciliation_persisted );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, self::OPERATION_REFUND, $apply_exception, $reconciliation_persisted );
 			}
 		} finally {
 			$this->order_payment_lock->release( $order, $vocabulary, $lock_token );
@@ -609,7 +621,7 @@ class PaymentProcessingService {
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-		return $this->run_provider_order_operation( $context, $provider, 'capture' );
+		return $this->run_provider_order_operation( $context, $provider, self::OPERATION_CAPTURE );
 	}
 
 	/**
@@ -622,7 +634,7 @@ class PaymentProcessingService {
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-		return $this->run_provider_order_operation( $context, $provider, 'cancel' );
+		return $this->run_provider_order_operation( $context, $provider, self::OPERATION_CANCEL );
 	}
 
 	/**
@@ -638,7 +650,7 @@ class PaymentProcessingService {
 			return $provider->charge( $context, $idempotency_key );
 		} catch ( Throwable $exception ) {
 			$outcome = $this->failed_outcome_from_throwable( $exception );
-			$this->log_provider_failure( $context->get_order(), 'charge', $idempotency_key, $exception );
+			$this->log_provider_failure( $context->get_order(), self::OPERATION_CHARGE, $idempotency_key, $exception );
 
 			return $outcome;
 		}
@@ -714,7 +726,7 @@ class PaymentProcessingService {
 
 		try {
 			try {
-				$provider_outcome = 'capture' === $operation
+				$provider_outcome = self::OPERATION_CAPTURE === $operation
 					? $provider->capture( $context, $idempotency_key )
 					: $provider->cancel( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -836,7 +848,7 @@ class PaymentProcessingService {
 	 * @param ProviderInterface $provider  Provider.
 	 */
 	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderInterface $provider ): void {
-		if ( in_array( $operation, array( 'capture', 'cancel' ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
+		if ( in_array( $operation, array( self::OPERATION_CAPTURE, self::OPERATION_CANCEL ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
 			// An expired authorization is the one capture failure that must move the order:
 			// the provider effects carry the capture-expired note when the re-fetched intent
 			// came back canceled, and the order goes to failed like the charge.expired webhook.
