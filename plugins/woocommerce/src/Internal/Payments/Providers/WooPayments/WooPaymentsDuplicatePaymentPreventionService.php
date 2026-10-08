@@ -184,7 +184,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 */
 	public function maybe_remove_session_processing_order_for_offline_voucher( int $order_id, string $payment_method_id, PaymentOutcome $outcome ): void {
 		$data = $outcome->get_data();
-		$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
 		if ( 'requires_action' === ( $meta['_intention_status'] ?? '' ) && in_array( $payment_method_id, self::OFFLINE_PAYMENT_METHODS, true ) ) {
 			$this->remove_session_processing_order( $order_id );

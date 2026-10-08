@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -70,7 +71,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$reloaded = wc_get_order( $order->get_id() );
 
-		$this->assertArrayHasKey( PaymentOutcome::DATA_META, $enriched->get_data() );
+		$this->assertArrayHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $enriched->get_data() );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
 		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
@@ -98,7 +99,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$reloaded = wc_get_order( $order->get_id() );
 
-		$this->assertSame( 'test', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertSame( 'test', $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'] );
 		// Client mark_payment_completed() writes the success note for a succeeded SetupIntent, with no transaction link
 		// (os:404-406, 1565-1600; compose_transaction_url() returns '' for seti_). Live client subscription 26: "A test payment of $0.00 … (seti_…)".
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS, $enriched->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] ?? null );
@@ -152,7 +153,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			'pm_display',
 			'',
 			array(
-				PaymentOutcome::DATA_META => array( '_wcpay_payment_method_details' => '[]' ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_wcpay_payment_method_details' => '[]' ),
 			)
 		);
 		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
@@ -162,12 +163,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order           = wc_get_order( $order->get_id() );
 
 		$this->assertNotSame( $outcome, $applied_outcome );
-		$this->assertSame( '4242', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['last4'] );
-		$this->assertStringContainsString( '"last4":"4242"', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_payment_method_details'] );
-		$this->assertSame( '1.75', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_transaction_fee'] );
+		$this->assertSame( '4242', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['last4'] );
+		$this->assertStringContainsString( '"last4":"4242"', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_payment_method_details'] );
+		$this->assertSame( '1.75', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_transaction_fee'] );
 		// Without an envelope the client writes the fee alone (class-wc-payments-order-service.php:1775-1781).
-		$this->assertArrayNotHasKey( '_wcpay_net', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ] );
-		$this->assertSame( 'txn_display', $applied_outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_payment_transaction_id'] );
+		$this->assertArrayNotHasKey( '_wcpay_net', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] );
+		$this->assertSame( 'txn_display', $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_payment_transaction_id'] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
@@ -300,7 +301,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$outcome,
 			$plan
 		);
-		$meta            = $applied_outcome->get_data()[ PaymentOutcome::DATA_META ];
+		$meta            = $applied_outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ];
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_outcome_status'] );
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
@@ -345,7 +346,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$data    = $applied->get_data();
 
-		$this->assertSame( '{"avs_verification":"review","new_<rule>":"block","order_items_threshold":"allow"}', $data[ PaymentOutcome::DATA_META ]['_wcpay_fraud_ruleset_results'] );
+		$this->assertSame( '{"avs_verification":"review","new_<rule>":"block","order_items_threshold":"allow"}', $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_ruleset_results'] );
 		$this->assertStringContainsString( '<strong>held for review</strong>', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( 'Place in review if the AVS verification fails', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( 'New &lt;rule&gt;', $data[ PaymentOutcome::DATA_NOTE ] );
@@ -385,7 +386,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 		$data    = $outcome->get_data();
 
-		$this->assertArrayNotHasKey( '_wcpay_fraud_ruleset_results', $data[ PaymentOutcome::DATA_META ] );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_ruleset_results', $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] );
 		$this->assertStringContainsString( '<strong>held for review</strong> by one or more risk filters.', $data[ PaymentOutcome::DATA_NOTE ] );
 	}
 
@@ -457,7 +458,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 		$data    = $applied->get_data();
-		$meta    = $data[ PaymentOutcome::DATA_META ];
+		$meta    = $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ];
 
 		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
 		// A live account stores plugin 11.1.0 `Order_Mode::PRODUCTION` (class-wc-payment-gateway-wcpay.php:1677).
@@ -501,7 +502,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
 		);
 
-		$this->assertSame( 'test', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertSame( 'test', $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'] );
 		$this->assertStringContainsString( 'A test payment of', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( 'No real funds were collected.', $enriched->get_data()[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( '', $order->get_meta( '_wcpay_mode', true ) );
@@ -765,7 +766,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			'pm_paid',
 			'cus_paid',
 			array(
-				PaymentOutcome::DATA_META             => array( '_charge_id' => 'ch_paid' ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_charge_id' => 'ch_paid' ),
 				PaymentOutcome::DATA_NOTE             => 'Successful payment note.',
 				PaymentOutcome::DATA_NOTE_TYPE        => 'payment_success',
 				PaymentOutcome::DATA_NOTE_EQUIVALENTS => array( 'Translated successful payment note.' ),
@@ -790,7 +791,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_paid', $result->get_provider_payment_id() );
 		$this->assertSame( 'pm_paid', $result->get_payment_method_id() );
 		$this->assertSame( 'cus_paid', $result->get_customer_id() );
-		$this->assertSame( 'ch_paid', $result->get_data()[ PaymentOutcome::DATA_META ]['_charge_id'] );
+		$this->assertSame( 'ch_paid', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_charge_id'] );
 		$this->assertSame( 'wcpay_recurring_token_save_failed', $result->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $result->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $result->get_data() );
@@ -1284,13 +1285,13 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertNotSame( $outcome, $result );
-		$this->assertSame( 'ch_capture_effects', $result->get_data()[ PaymentOutcome::DATA_META ]['_charge_id'] );
-		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $result->get_data()[ PaymentOutcome::DATA_META ] );
-		$this->assertSame( '1.75', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_transaction_fee'] );
+		$this->assertSame( 'ch_capture_effects', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_charge_id'] );
+		$this->assertArrayNotHasKey( '_wcpay_payment_transaction_id', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] );
+		$this->assertSame( '1.75', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_transaction_fee'] );
 		// A capture response carries no envelope, so the client writes the fee alone (class-wc-payments-order-service.php:1681).
-		$this->assertArrayNotHasKey( '_wcpay_net', $result->get_data()[ PaymentOutcome::DATA_META ] );
-		$this->assertSame( 'prod', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'], 'A live capture stores plugin 11.1.0 Order_Mode::PRODUCTION.' );
-		$this->assertSame( '1.33127', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_multi_currency_stripe_exchange_rate'] );
+		$this->assertArrayNotHasKey( '_wcpay_net', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] );
+		$this->assertSame( 'prod', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'], 'A live capture stores plugin 11.1.0 Order_Mode::PRODUCTION.' );
+		$this->assertSame( '1.33127', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_multi_currency_stripe_exchange_rate'] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
 		$this->assertContains( $result->get_data()[ PaymentOutcome::DATA_NOTE ], $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 	}
@@ -1336,7 +1337,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			update_option( 'woocommerce_currency', $original_currency );
 		}
 
-		$meta = $enriched->get_data()[ PaymentOutcome::DATA_META ];
+		$meta = $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ];
 		$this->assertSame( '1.13905', $meta['_wcpay_multi_currency_stripe_exchange_rate'], 'REC-3 exchange rate must survive from the synchronous response alone.' );
 		$this->assertSame( 'EUR', $meta['_wcpay_intent_currency'], 'The intent currency comes from the recorded intent, uppercased as client 11.1.0 stores it (payment-intention.php:93, os:1361/1414), not from the USD store setting.' );
 		$this->assertSame( 'ch_3UJWs2BzWlxcwgpP1y9vRrWr', $meta['_charge_id'] );
@@ -1396,7 +1397,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$plan     = WooPaymentsOrderEffectPlan::for_payment_intent( $result, false );
 		$enriched = $this->create_applier()->enrich_outcome_for_lifecycle( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_confirm' ), $outcome, $plan );
 
-		$this->assertSame( 'review_allowed', $enriched->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( 'review_allowed', $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_meta_box_type'] );
 	}
 
 	/**
@@ -1427,8 +1428,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$plan    = WooPaymentsOrderEffectPlan::for_capture( $capture_result );
 		$result  = $this->create_applier()->apply( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $outcome, $plan );
 
-		$this->assertSame( 'review_allowed', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
-		$this->assertSame( 'allow', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_outcome_status'] );
+		$this->assertSame( 'review_allowed', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( 'allow', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_outcome_status'] );
 	}
 
 	/**
@@ -1502,7 +1503,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 
 		$data = $result->get_data();
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
-		$this->assertSame( 'canceled', $data[ PaymentOutcome::DATA_META ]['_intention_status'] );
+		$this->assertSame( 'canceled', $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_intention_status'] );
 		// Client 11.1.0 class-wc-payments-order-service.php:2296.
 		$this->assertStringStartsWith( 'Payment authorization has <strong>expired</strong> (', (string) $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( '>pi_capture_expired</a>).', (string) $data[ PaymentOutcome::DATA_NOTE ] );
@@ -1530,7 +1531,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 
-		$this->assertSame( 'review_expired', $result->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( 'review_expired', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_fraud_meta_box_type'] );
 	}
 
 	/**
@@ -1678,7 +1679,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		$data = $result->get_data();
-		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $data[ PaymentOutcome::DATA_META ], 'The status the provider still reports must be recorded, as the plugin does.' );
+		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], 'The status the provider still reports must be recorded, as the plugin does.' );
 		// Client 11.1.0 class-wc-payment-gateway-wcpay.php:4109.
 		$this->assertSame( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>Cancellation rejected.</code>.', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );

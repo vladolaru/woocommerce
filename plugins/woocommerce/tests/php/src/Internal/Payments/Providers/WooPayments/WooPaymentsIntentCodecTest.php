@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
@@ -54,7 +55,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_neutral', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_neutral', $outcome->get_customer_id() );
 		$this->assertSame( 'ch_neutral', $data['charge_id'] );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $data );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $data );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ORDER_META, $data );
@@ -104,7 +105,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertSame( '#wcpay-confirm-pi:42:secret_action:explicit_nonce', $outcome->get_redirect_url() );
 		$this->assertSame( 'cus_fallback', $outcome->get_customer_id() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 	}
 
 	/**
@@ -211,7 +212,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
 		$this->assertSame( 'https://example.test/order-received/42', $outcome->get_redirect_url() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 	}
 
 	/**
@@ -255,7 +256,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( 'Provider diagnostic: balance check failed for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 	}
 
 	/**
@@ -279,7 +280,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$data = $outcome->get_data();
 
 		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+		$this->assertSame( $platform_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 	}
 
 	/**
@@ -304,7 +305,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Raw provider secret must remain diagnostic only.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertSame(
 			"We're not able to process this request. Please refresh the page and try again.",
-			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ]
+			$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ]
 		);
 	}
 
@@ -347,7 +348,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		// A non-string type is dropped, so the error is typeless and keeps its message (client `class-wc-payments-utils.php:770`).
-		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+		$this->assertSame( 'Malformed provider metadata for request req_private.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 		$this->assertSame( array(), $warnings );
 	}
 
@@ -371,7 +372,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $sut->get_status() );
 		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( 'charge', $data['operation'] );
 	}
 
@@ -426,7 +427,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$data = $outcome->get_data();
 
 		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+		$this->assertSame( $platform_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 	}
 
 	/**
@@ -456,7 +457,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$data = $outcome->get_data();
 
 		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( "We're not able to process this request. Please refresh the page and try again.", $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] );
+		$this->assertSame( "We're not able to process this request. Please refresh the page and try again.", $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 	}
 
 	/**
@@ -478,7 +479,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Error: Private upstream host refused the request.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertSame(
 			"We're not able to process this request. Please refresh the page and try again.",
-			$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
+			$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null
 		);
 	}
 
@@ -538,7 +539,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$data = $sut->get_data();
 
-		$this->assertSame( 'The selected payment method requires a total amount of at least $0.50.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'The selected payment method requires a total amount of at least $0.50.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( 'Amount must be at least $0.50 usd', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertSame( 50, get_transient( 'wcpay_minimum_amount_usd' ), 'The platform floor must be cached per currency so the next attempt can fail before the API call.' );
 
@@ -556,7 +557,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 			new WooPaymentsApiException( 'Amount too small', 'amount_too_small', 400 )
 		);
 
-		$this->assertSame( 'Amount too small', $sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'Amount too small', $sut->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 	}
 
 	/**
@@ -576,7 +577,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
-			$sut->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null
+			$sut->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null
 		);
 	}
 

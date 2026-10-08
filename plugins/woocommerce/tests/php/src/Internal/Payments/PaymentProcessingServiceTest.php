@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -361,7 +363,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				array(
 					PaymentOutcome::DATA_ERROR_CODE => 'wcpay_blocked_by_fraud_rule',
 					PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
-					PaymentOutcome::DATA_META       => array(
+					WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array(
 						'_wcpay_fraud_outcome_status' => 'block',
 						'_intention_status'           => 'canceled',
 					),
@@ -416,10 +418,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				array(
 					PaymentOutcome::DATA_ERROR_CODE       => 'card_declined',
 					PaymentOutcome::DATA_ERROR_MESSAGE    => 'Error: Your card was declined.',
-					PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card was declined.',
+					WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card was declined.',
 					PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 					PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
-					PaymentOutcome::DATA_META             => array( '_wcpay_fraud_meta_box_type' => 'allow' ),
+					WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_wcpay_fraud_meta_box_type' => 'allow' ),
 				)
 			)
 		);
@@ -469,7 +471,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				array(
 					PaymentOutcome::DATA_ERROR_CODE => 'wcpay_blocked_by_fraud_rule',
 					PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
-					PaymentOutcome::DATA_META       => array(
+					WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array(
 						'_wcpay_fraud_outcome_status' => 'block',
 						'_intention_status'           => 'canceled',
 					),
@@ -3204,7 +3206,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				array(
 					PaymentOutcome::DATA_NOTE      => 'Payment authorization has <strong>expired</strong>.',
 					PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
-					PaymentOutcome::DATA_META      => array( '_intention_status' => 'canceled' ),
+					WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => 'canceled' ),
 				)
 			)
 		);

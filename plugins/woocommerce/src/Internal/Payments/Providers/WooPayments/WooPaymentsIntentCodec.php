@@ -20,6 +20,13 @@ use WP_Error;
 class WooPaymentsIntentCodec {
 
 	/**
+	 * Outcome data key: safe shopper-facing error message.
+	 *
+	 * @var string
+	 */
+	public const SHOPPER_ERROR_MESSAGE_KEY = 'shopper_error_message';
+
+	/**
 	 * Normalize a native intent response to a neutral payment outcome.
 	 *
 	 * @param array<string,mixed>             $intention Native intent response.
@@ -109,7 +116,7 @@ class WooPaymentsIntentCodec {
 		$error_message                              = isset( $error['message'] ) ? (string) $error['message'] : '';
 		$data[ PaymentOutcome::DATA_ERROR_CODE ]    = $error_code;
 		$data[ PaymentOutcome::DATA_ERROR_MESSAGE ] = $error_message;
-		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, $decline_code, $error_message );
+		$data[ self::SHOPPER_ERROR_MESSAGE_KEY ]    = WooPaymentsErrorMessages::get_shopper_message( $error_type, $error_code, $decline_code, $error_message );
 
 		return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, $intent_id, '', $payment_method_id, $customer_id, $data );
 	}
@@ -353,13 +360,13 @@ class WooPaymentsIntentCodec {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE            => $error_code,
-				PaymentOutcome::DATA_ERROR_MESSAGE         => $exception->getMessage(),
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => self::shopper_message_for_exception( $error_code, $exception ),
-				'operation'                                => $operation,
+				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
+				self::SHOPPER_ERROR_MESSAGE_KEY    => self::shopper_message_for_exception( $error_code, $exception ),
+				'operation'                        => $operation,
 				// The admin capture and cancel routes answer with the platform's status and minimum amount, as the client does.
-				'http_code'                                => $exception->get_http_code(),
-				'extra_details'                            => self::amount_too_small_details( $error_code, $exception ),
+				'http_code'                        => $exception->get_http_code(),
+				'extra_details'                    => self::amount_too_small_details( $error_code, $exception ),
 			)
 		);
 	}

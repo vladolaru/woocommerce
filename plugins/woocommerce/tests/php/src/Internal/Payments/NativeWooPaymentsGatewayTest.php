@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaym
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -4428,7 +4429,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$order->get_checkout_order_received_url(),
 				'pm_card_visa',
 				'',
-				array( PaymentOutcome::DATA_META => array( '_intention_status' => 'requires_action' ) )
+				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => 'requires_action' ) )
 			)
 			: new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' );
 		$provider = $this->create_provider_failing_after_charge(
@@ -4576,9 +4577,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE            => 'card_declined',
-				PaymentOutcome::DATA_ERROR_MESSAGE         => 'Provider diagnostic for request req_private.',
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card has insufficient funds.',
+				PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Provider diagnostic for request req_private.',
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card has insufficient funds.',
 			)
 		);
 
@@ -4666,9 +4667,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE            => 'card_declined',
-				PaymentOutcome::DATA_ERROR_MESSAGE         => 'Provider diagnostic for request req_private.',
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => 'Error: Your card has insufficient funds.',
+				PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
+				PaymentOutcome::DATA_ERROR_MESSAGE => 'Provider diagnostic for request req_private.',
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card has insufficient funds.',
 			)
 		);
 

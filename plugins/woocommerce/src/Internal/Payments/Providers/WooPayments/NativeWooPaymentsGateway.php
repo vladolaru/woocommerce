@@ -977,8 +977,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$data      = $outcome->get_data();
-		$meta      = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] )
-			? $data[ PaymentOutcome::DATA_META ]
+		$meta      = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] )
+			? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]
 			: array();
 		$charge_id = isset( $data['charge_id'] )
 			? (string) $data['charge_id']
@@ -2526,7 +2526,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$data    = $outcome->get_data();
-		$message = $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '';
+		$message = $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? '';
 		if ( ! is_string( $message ) || '' === trim( $message ) ) {
 			$message = WooPaymentsErrorMessages::get_generic_message();
 		}

@@ -237,14 +237,14 @@ class WooPaymentsOrderEffectApplier {
 
 			case WooPaymentsOrderEffectPlan::TYPE_SETUP_INTENT:
 				$data          = $outcome->get_data();
-				$existing_meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] )
-					? $data[ PaymentOutcome::DATA_META ]
+				$existing_meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] )
+					? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]
 					: array();
 
 				return $this->merge_effect_data_into_outcome(
 					$outcome,
 					array_merge(
-						array( PaymentOutcome::DATA_META => array_merge( $existing_meta, $plan->get_setup_meta() ) ),
+						array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array_merge( $existing_meta, $plan->get_setup_meta() ) ),
 						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) ( $plan->get_provider_result()['id'] ?? '' ) )
 					),
 					$plan
@@ -323,7 +323,7 @@ class WooPaymentsOrderEffectApplier {
 			$meta = array_merge( $meta, $display_effects['meta'] );
 		}
 
-		$effect_data = array( PaymentOutcome::DATA_META => $meta );
+		$effect_data = array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta );
 		$intent_id   = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$charge_id   = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		if ( 'succeeded' === $status ) {
@@ -387,7 +387,7 @@ class WooPaymentsOrderEffectApplier {
 			);
 
 			return array(
-				PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::completed_capture_meta(
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::completed_capture_meta(
 					$result,
 					(string) $order->get_currency(),
 					$this->account_service->get_order_mode(),
@@ -412,7 +412,7 @@ class WooPaymentsOrderEffectApplier {
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
 
 		return array(
-			PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::failed_capture_meta(),
+			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::failed_capture_meta(),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
@@ -445,7 +445,7 @@ class WooPaymentsOrderEffectApplier {
 		}
 
 		return array(
-			PaymentOutcome::DATA_META             => $meta,
+			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta,
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
@@ -472,7 +472,7 @@ class WooPaymentsOrderEffectApplier {
 			$note_candidates = $this->note_service->format_cancel_failed_note_candidates( $message );
 
 			return array(
-				PaymentOutcome::DATA_META             => array( '_intention_status' => $provider_status ),
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $provider_status ),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,

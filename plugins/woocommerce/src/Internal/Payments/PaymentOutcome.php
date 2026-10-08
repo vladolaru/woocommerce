@@ -74,13 +74,6 @@ class PaymentOutcome {
 	public const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
 
 	/**
-	 * Additional data key: order/refund meta updates.
-	 *
-	 * @var string
-	 */
-	public const DATA_META = 'meta';
-
-	/**
 	 * Additional data key: order meta keys to delete.
 	 *
 	 * @var string
@@ -169,13 +162,6 @@ class PaymentOutcome {
 	 * @var string
 	 */
 	public const DATA_ERROR_MESSAGE = 'error_message';
-
-	/**
-	 * Additional data key: safe shopper-facing error message.
-	 *
-	 * @var string
-	 */
-	public const DATA_SHOPPER_ERROR_MESSAGE = 'shopper_error_message';
 
 	/**
 	 * Additional data key: checkout redirect URL override.

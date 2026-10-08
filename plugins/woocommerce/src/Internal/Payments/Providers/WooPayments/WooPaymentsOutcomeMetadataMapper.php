@@ -19,6 +19,13 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterf
 final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataMapperInterface {
 
 	/**
+	 * Outcome data key: order/refund meta updates.
+	 *
+	 * @var string
+	 */
+	public const OUTCOME_META_KEY = 'meta';
+
+	/**
 	 * Map a neutral outcome to WooPayments order metadata.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
@@ -28,8 +35,8 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 		$data = $outcome->get_data();
 		$meta = array();
 
-		if ( isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ) {
-			foreach ( $data[ PaymentOutcome::DATA_META ] as $key => $value ) {
+		if ( isset( $data[ self::OUTCOME_META_KEY ] ) && is_array( $data[ self::OUTCOME_META_KEY ] ) ) {
+			foreach ( $data[ self::OUTCOME_META_KEY ] as $key => $value ) {
 				$meta[ (string) $key ] = $value;
 			}
 		}

@@ -715,7 +715,7 @@ class WooPaymentsProviderGatewayAdapter {
 				array(
 					PaymentOutcome::DATA_ERROR_CODE    => (string) $amount_error->get_error_code(),
 					PaymentOutcome::DATA_ERROR_MESSAGE => $amount_error->get_error_message(),
-					PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => $amount_error->get_error_message(),
+					WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $amount_error->get_error_message(),
 					PaymentOutcome::DATA_NOTE          => $amount_error->get_error_message(),
 				)
 			);
@@ -784,7 +784,7 @@ class WooPaymentsProviderGatewayAdapter {
 			'',
 			array(
 				PaymentOutcome::DATA_ERROR_CODE            => WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT,
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => __( "This order's payment is under review. Please contact the store.", 'woocommerce' ),
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => __( "This order's payment is under review. Please contact the store.", 'woocommerce' ),
 				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
 			)
 		);
@@ -1002,10 +1002,10 @@ class WooPaymentsProviderGatewayAdapter {
 		}
 
 		if ( 'card_error' === $exception->get_error_type() ) {
-			$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+			$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
-			$meta['_wcpay_fraud_meta_box_type'] = 'allow';
-			$data[ PaymentOutcome::DATA_META ]  = $meta;
+			$meta['_wcpay_fraud_meta_box_type']                         = 'allow';
+			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
 		}
 
 		return new PaymentOutcome(
@@ -1103,7 +1103,7 @@ class WooPaymentsProviderGatewayAdapter {
 			$ruleset_results = array( 'avs_verification' => 'block' );
 		}
 
-		$meta = isset( $data[ PaymentOutcome::DATA_META ] ) && is_array( $data[ PaymentOutcome::DATA_META ] ) ? $data[ PaymentOutcome::DATA_META ] : array();
+		$meta = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) ? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] : array();
 
 		$meta['_wcpay_fraud_outcome_status'] = 'block';
 		$meta['_wcpay_fraud_meta_box_type']  = 'block';
@@ -1111,11 +1111,11 @@ class WooPaymentsProviderGatewayAdapter {
 		if ( array() !== $ruleset_results ) {
 			$meta['_wcpay_fraud_ruleset_results'] = (string) wp_json_encode( $ruleset_results );
 		}
-		$data[ PaymentOutcome::DATA_META ]                  = $meta;
-		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
+		$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
+		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ]         = true;
 		// Client 11.1.0 gw:1426 passes the fraud flag, so the postal-code hint is withheld and the platform message shows.
 		// Authorized divergence: verification-ledger.md V432 decision C23 (client Blocks gw:1519-1531 drops the flag; not ported).
-		$data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] = WooPaymentsErrorMessages::get_shopper_message(
+		$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] = WooPaymentsErrorMessages::get_shopper_message(
 			$exception->get_error_type(),
 			$exception->get_error_code(),
 			$exception->get_decline_code(),
@@ -1516,7 +1516,7 @@ class WooPaymentsProviderGatewayAdapter {
 			);
 
 			return array(
-				PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::completed_capture_meta(
+				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::completed_capture_meta(
 					$result,
 					(string) $order->get_currency(),
 					$this->account_service->get_order_mode(),
@@ -1537,7 +1537,7 @@ class WooPaymentsProviderGatewayAdapter {
 		);
 
 		return array(
-			PaymentOutcome::DATA_META             => WooPaymentsOrderEffects::failed_capture_meta(),
+			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::failed_capture_meta(),
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
 			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,

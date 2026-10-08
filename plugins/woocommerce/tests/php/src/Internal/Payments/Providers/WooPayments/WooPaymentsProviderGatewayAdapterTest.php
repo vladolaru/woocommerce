@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -425,7 +427,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_payment_method_title() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertSame( 175, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['amount'] );
@@ -478,7 +480,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'amount_too_small', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
-		$this->assertSame( 'The selected payment method requires a total amount of at least $1.00.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'The selected payment method requires a total amount of at least $1.00.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( 0, $gateway->processed_order_id );
 
 		delete_transient( 'wcpay_minimum_amount_usd' );
@@ -1431,7 +1433,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'duplicate_payment_amount_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertStringContainsString( 'so we prevented an overpayment', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '' ) );
+		$this->assertStringContainsString( 'so we prevented an overpayment', (string) ( $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? '' ) );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
@@ -1461,7 +1463,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertCount( 3, $http_client->requests, 'The new card must not be charged.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'duplicate_payment_amount_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertStringContainsString( '&euro;', (string) ( $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? '' ), 'The paid amount shows in the intent\'s currency.' );
+		$this->assertStringContainsString( '&euro;', (string) ( $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? '' ), 'The paid amount shows in the intent\'s currency.' );
 		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( array( 'cus_sent' ), $fresh->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 	}
@@ -1765,7 +1767,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		foreach ( $refused as $outcome ) {
 			$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-			$this->assertSame( "This order's payment is under review. Please contact the store.", $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+			$this->assertSame( "This order's payment is under review. Please contact the store.", $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 			$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
 			$this->assertNull( $outcome->get_effect_plan() );
 		}
@@ -1908,7 +1910,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $refused->get_status() );
 		$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertTrue( $refused->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE, $refused->get_data(), 'The generic notice shows when the outcome has no shopper message.' );
+		$this->assertArrayNotHasKey( WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY, $refused->get_data(), 'The generic notice shows when the outcome has no shopper message.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $refused->get_data() );
 		$this->assertNull( $refused->get_effect_plan() );
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
@@ -2107,7 +2109,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$this->assertSame( PaymentOutcome::STATUS_FAILED, $refused->get_status() );
 			$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 			$this->assertTrue( $refused->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
-			$this->assertArrayNotHasKey( PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE, $refused->get_data() );
+			$this->assertArrayNotHasKey( WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY, $refused->get_data() );
 			$this->assertNull( $refused->get_effect_plan() );
 		}
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
@@ -2772,7 +2774,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '<strong>failed</strong> to complete with the following message:', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertStringContainsString( 'Error: Your card was declined. The bank did not return any further details with this decline', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertNotEmpty( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ?? array() );
-		$this->assertSame( 'allow', ( $data[ PaymentOutcome::DATA_META ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, 'A card error means fraud checks passed; the meta box must show allow.' );
+		$this->assertSame( 'allow', ( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, 'A card error means fraud checks passed; the meta box must show allow.' );
 	}
 
 	/**
@@ -2817,7 +2819,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertStringContainsString( 'Error: Upstream provider unavailable', $data[ PaymentOutcome::DATA_NOTE ] ?? '' );
-		$this->assertArrayNotHasKey( '_wcpay_fraud_meta_box_type', $data[ PaymentOutcome::DATA_META ] ?? array() );
+		$this->assertArrayNotHasKey( '_wcpay_fraud_meta_box_type', $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array() );
 	}
 
 	/**
@@ -2867,7 +2869,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
-		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
+		$meta    = $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertTrue( $data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false, 'A fraud block must not fail the order; the merchant decides whether to cancel.' );
@@ -2878,7 +2880,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_blocked_test', $outcome->get_provider_payment_id() );
 		$this->assertStringContainsString( '<strong>blocked</strong> by the following risk filters', $data[ PaymentOutcome::DATA_NOTE ] ?? '' );
 		// Client 11.1.0 test_process_payment_marks_order_as_blocked_for_fraud: the shopper notice equals the thrown message.
-		$this->assertSame( 'Error: Transaction blocked by fraud rules.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'Error: Transaction blocked by fraud rules.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 	}
 
 	/**
@@ -2932,7 +2934,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
-		$meta    = $outcome->get_data()[ PaymentOutcome::DATA_META ] ?? array();
+		$meta    = $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
 
 		$this->assertSame( 'block', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'With the AVS rule enabled, an incorrect_zip decline is an AVS block.' );
 		$this->assertSame( wp_json_encode( array( 'avs_verification' => 'block' ) ), $meta['_wcpay_fraud_ruleset_results'] ?? null );
@@ -2940,7 +2942,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		// (client test_process_payment_marks_order_as_blocked_for_fraud_avs_mismatch asserts the thrown message).
 		$this->assertSame(
 			'Error: Your postal code failed validation.',
-			$outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null,
+			$outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null,
 			'An AVS-blocked shopper sees the platform message, not the postal-code hint.'
 		);
 
@@ -2950,7 +2952,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
-		$meta    = $data[ PaymentOutcome::DATA_META ] ?? array();
+		$meta    = $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'Without the AVS rule, an incorrect_zip decline is an ordinary card error.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS, $data );
@@ -3056,7 +3058,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
@@ -3485,7 +3487,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 	}
 
@@ -5446,12 +5448,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertNotEmpty( $expected_note_candidates );
 		$this->assertSame(
 			array(
-				PaymentOutcome::DATA_ERROR_CODE            => $error_code,
-				PaymentOutcome::DATA_ERROR_MESSAGE         => $message,
-				PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE => $expected_shopper_message,
-				PaymentOutcome::DATA_NOTE                  => $expected_note_candidates[0],
-				PaymentOutcome::DATA_NOTE_EQUIVALENTS      => $expected_note_candidates,
-				PaymentOutcome::DATA_NOTE_TYPE             => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+				PaymentOutcome::DATA_ERROR_CODE       => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE    => $message,
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $expected_shopper_message,
+				PaymentOutcome::DATA_NOTE             => $expected_note_candidates[0],
+				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $expected_note_candidates,
+				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
 			),
 			$data
 		);
@@ -5846,7 +5848,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( 1, $http_client->request_count );
 	}
 
@@ -5924,10 +5926,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( $expected_error_code, $data[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( $expected_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( $expected_shopper, $data[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( $expected_shopper, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 		$this->assertSame( $expected_intent_id, $outcome->get_provider_payment_id(), 'The declined PaymentIntent id must survive onto the failed outcome.' );
 		$this->assertSame( 1, $http_client->request_count );
-		$this->assertSame( 'allow', ( $data[ PaymentOutcome::DATA_META ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, "$pair is a card_error decline, so the fraud meta box must show allow." );
+		$this->assertSame( 'allow', ( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, "$pair is a card_error decline, so the fraud meta box must show allow." );
 		$this->assertTrue( $data['_wcpay_definitive_charge_failure'] ?? false, "$pair's real decline must be classified as definitive so a retry gets a fresh idempotency key." );
 		if ( '' !== $expected_seller_message ) {
 			$this->assertStringContainsString( $expected_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair's merchant note must carry the platform's seller_message." );
@@ -6597,7 +6599,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertArrayNotHasKey( 'charge_id', $outcome->get_data(), 'REC-3DS-1 has no charge yet on a requires_action intent.' );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertStringStartsWith( '#wcpay-confirm-pi:' . $order->get_id() . ':' . $recorded['body']['client_secret'] . ':', $outcome->get_redirect_url() );
@@ -6660,7 +6662,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'order_id_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertSame(
 			sprintf( 'We&#039;re not able to process this payment. Please try again later. WooPayMeta: intent_meta_order_id: %1$d, order_id: %2$d', $other_id, $order->get_id() ),
-			$outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null,
+			$outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null,
 			'Client 11.1.0 throws Order_ID_Mismatch_Exception with this message and shows it to the shopper.'
 		);
 		$this->assertStringContainsString( 'WooPayMeta: intent_meta_order_id: ' . $other_id, (string) ( $outcome->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ), 'Client 11.1.0 records the refusal in the failed-payment order note.' );
@@ -6698,7 +6700,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $api_client->creates );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'wcpay_core_invalid_request_parameter_stripe_id', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'abc123 is not a valid Stripe identifier', $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'abc123 is not a valid Stripe identifier', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 	}
 
 	/**
@@ -6780,7 +6782,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $api_client->creates );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'order_id_mismatch', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'We\'re not able to process this payment. Please try again later.', $outcome->get_data()[ PaymentOutcome::DATA_SHOPPER_ERROR_MESSAGE ] ?? null );
+		$this->assertSame( 'We\'re not able to process this payment. Please try again later.', $outcome->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
 	}
 
 	/**
@@ -8005,9 +8007,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_live' );
 
-		$this->assertSame( 'prod', $outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_mode'] );
+		$this->assertSame( 'prod', $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'] );
 		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
-		$this->assertSame( 'USD', $outcome->get_data()[ PaymentOutcome::DATA_META ]['_wcpay_intent_currency'] );
+		$this->assertSame( 'USD', $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_intent_currency'] );
 	}
 
 	/**
@@ -8325,7 +8327,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
@@ -8396,7 +8398,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'pi_capture', $outcome->get_provider_payment_id() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $data );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $data );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
 		$this->assertSame( 'The authorization could not be captured.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
@@ -8701,7 +8703,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META, $outcome->get_data() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
