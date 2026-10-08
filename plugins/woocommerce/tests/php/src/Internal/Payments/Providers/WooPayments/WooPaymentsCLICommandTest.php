@@ -78,7 +78,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 * Seed a connected WooPayments store.
 	 */
 	private function seed_connected_store(): void {
-		// A connected store: without a connection the account read returns no account, like the client.
+		// A connected store: without a connection the account read returns no account, like the client (client 11.1.0 `includes/class-wc-payments-account.php:2441-2444`).
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );

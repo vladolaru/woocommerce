@@ -291,6 +291,7 @@ class NativePaymentsE2EBootstrapTest extends WC_Unit_Test_Case {
 			$response->get_data()['callback_probe'],
 			'The local runtime must not be able to invent callback readiness.'
 		);
+		$this->assertTrue( $response->get_data()['builtin_enabled'], 'The status route must report the built-in WooPayments enabled by the E2E constant.' );
 	}
 
 	/**
