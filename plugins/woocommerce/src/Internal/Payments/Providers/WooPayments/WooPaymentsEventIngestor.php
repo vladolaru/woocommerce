@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use Throwable;
@@ -199,6 +200,13 @@ class WooPaymentsEventIngestor {
 	private ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null;
 
 	/**
+	 * Webhook event order resolver.
+	 *
+	 * @var WooPaymentsEventOrderResolver|null
+	 */
+	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -217,8 +225,9 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsOrderNoteService|null              $order_note_service                 Optional order note service.
 	 * @param WooPaymentsAdminMenuBadgeService|null         $admin_menu_badge_service           Optional admin menu badge service.
 	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning event handler.
+	 * @param WooPaymentsEventOrderResolver|null            $event_order_resolver               Optional webhook event order resolver.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null ): void {
 		$this->lifecycle_service                 = $lifecycle_service;
 		$this->legacy_proxy                      = $legacy_proxy;
 		$this->legacy_runtime                    = $legacy_runtime;
@@ -233,6 +242,7 @@ class WooPaymentsEventIngestor {
 		$this->order_note_service                = $order_note_service;
 		$this->admin_menu_badge_service          = $admin_menu_badge_service;
 		$this->early_fraud_warning_event_handler = $early_fraud_warning_event_handler;
+		$this->event_order_resolver              = $event_order_resolver;
 	}
 
 	/**
@@ -345,7 +355,9 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$order = $this->get_order_for_event_object( $event_type, $event_object );
+		$order = 'charge.expired' === $event_type
+			? $this->get_event_order_resolver()->find_order_by_charge_id( $this->get_object_id( $event_object ) )
+			: $this->get_event_order_resolver()->find_order_for_intent_event( $event_object );
 		if ( ! $order instanceof WC_Order ) {
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
@@ -466,7 +478,7 @@ class WooPaymentsEventIngestor {
 			$this->lifecycle_service->reread_order_from_data_store( $order );
 			$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 			// The client's webhook never retitles an order, so an order of another gateway keeps its payment method.
-			if ( $this->is_woopayments_order( $order ) ) {
+			if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 				$this->apply_completed_payment_method_display_title( $order, $payment_intent );
 			}
 			$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
@@ -569,115 +581,6 @@ class WooPaymentsEventIngestor {
 		}
 
 		return $object;
-	}
-
-	/**
-	 * Resolve the order named by the event object.
-	 *
-	 * @param string              $event_type Event type.
-	 * @param array<string,mixed> $event_object Provider object.
-	 * @return WC_Order|null
-	 */
-	private function get_order_for_event_object( string $event_type, array $event_object ): ?WC_Order {
-		if ( 'charge.expired' === $event_type ) {
-			return $this->get_order_by_payment_meta( '_charge_id', $this->get_object_id( $event_object ) );
-		}
-
-		$order = $this->get_order_by_payment_meta( '_intent_id', $this->get_object_id( $event_object ) );
-		if ( $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ) {
-			return $order;
-		}
-
-		return $this->get_order_from_event_object_metadata( $event_object );
-	}
-
-	/**
-	 * Resolve the order named by provider metadata.
-	 *
-	 * The order key guard prevents cross-site order ID collisions from mutating
-	 * another site's order when webhooks are delivered in multisite contexts.
-	 *
-	 * @param array<string,mixed> $event_object Provider object.
-	 * @return WC_Order|null
-	 */
-	private function get_order_from_event_object_metadata( array $event_object ): ?WC_Order {
-		$metadata = $event_object['metadata'] ?? null;
-		if ( ! is_array( $metadata ) ) {
-			return null;
-		}
-
-		$order_id  = isset( $metadata['order_id'] ) ? absint( $metadata['order_id'] ) : 0;
-		$order_key = isset( $metadata['order_key'] ) ? (string) $metadata['order_key'] : '';
-		if ( 0 === $order_id ) {
-			$order_id = $this->get_order_id_from_first_charge_metadata( $event_object );
-		}
-		if ( 0 === $order_id ) {
-			// This includes Stripe Billing intents, which carry an invoice: their invoice event records them (client 11.1.0 webhook processing service :990-993).
-			return null;
-		}
-
-		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order ) {
-			return null;
-		}
-
-		if ( '' !== $order_key && $order_key !== $order->get_order_key() ) {
-			return null;
-		}
-
-		return $order;
-	}
-
-	/**
-	 * Tell whether a found order matches the event order key when one is present.
-	 *
-	 * @param WC_Order            $order        Order object.
-	 * @param array<string,mixed> $event_object Provider object.
-	 * @return bool
-	 */
-	private function does_order_key_match_event_object( WC_Order $order, array $event_object ): bool {
-		$order_key = $event_object['metadata']['order_key'] ?? null;
-
-		return ! is_string( $order_key ) || '' === $order_key || $order_key === $order->get_order_key();
-	}
-
-	/**
-	 * Get the order ID from first-charge metadata.
-	 *
-	 * @param array<string,mixed> $event_object Provider object.
-	 * @return int
-	 */
-	private function get_order_id_from_first_charge_metadata( array $event_object ): int {
-		$order_id = $event_object['charges']['data'][0]['metadata']['order_id'] ?? 0;
-
-		return absint( $order_id );
-	}
-
-	/**
-	 * Get a WooPayments order by a preserved payment meta key.
-	 *
-	 * @param string $meta_key   Payment meta key.
-	 * @param string $meta_value Payment meta value.
-	 * @return WC_Order|null
-	 */
-	private function get_order_by_payment_meta( string $meta_key, string $meta_value ): ?WC_Order {
-		if ( '' === $meta_value ) {
-			return null;
-		}
-
-		$orders = wc_get_orders(
-			array(
-				'limit'      => 1,
-				'meta_key'   => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_value' => $meta_value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-			)
-		);
-
-		if ( ! is_array( $orders ) ) {
-			return null;
-		}
-
-		return isset( $orders[0] ) && $orders[0] instanceof WC_Order ? $orders[0] : null;
 	}
 
 	/**
@@ -1060,6 +963,19 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
+	 * Get the webhook event order resolver.
+	 *
+	 * @return WooPaymentsEventOrderResolver
+	 */
+	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
+		if ( null === $this->event_order_resolver ) {
+			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
+		}
+
+		return $this->event_order_resolver;
+	}
+
+	/**
 	 * Get the WooPayments order data service.
 	 *
 	 * @return WooPaymentsOrderDataService
@@ -1407,20 +1323,8 @@ class WooPaymentsEventIngestor {
 	 * @param string   $event_type Event type.
 	 */
 	private function log_payment_method_mismatch( WC_Order $order, string $event_type ): void {
-		if ( ! $this->is_woopayments_order( $order ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			wc_get_container()->get( OrderPaymentLock::class )->log_payment_method_mismatch( $order, $event_type );
 		}
-	}
-
-	/**
-	 * Tell whether an order belongs to WooPayments.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	private function is_woopayments_order( WC_Order $order ): bool {
-		$payment_method = (string) $order->get_payment_method();
-
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 }

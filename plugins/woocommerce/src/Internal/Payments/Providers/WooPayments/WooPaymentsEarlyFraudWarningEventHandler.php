@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
@@ -43,6 +44,13 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	private ?WooPaymentsOrderNoteService $note_service = null;
 
 	/**
+	 * Webhook event order resolver.
+	 *
+	 * @var WooPaymentsEventOrderResolver|null
+	 */
+	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+
+	/**
 	 * Initialize the handler dependencies.
 	 *
 	 * @internal
@@ -51,11 +59,13 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @param OrderPaymentLock|null                 $order_payment_lock Optional order payment store.
 	 * @param WooPaymentsPersistenceVocabulary|null $persistence_vocabulary Optional WooPayments persistence profile.
 	 * @param WooPaymentsOrderNoteService|null      $note_service Optional WooPayments note service.
+	 * @param WooPaymentsEventOrderResolver|null    $event_order_resolver Optional webhook event order resolver.
 	 */
-	final public function init( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): void {
+	final public function init( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->note_service           = $note_service;
+		$this->event_order_resolver   = $event_order_resolver;
 	}
 
 	/**
@@ -93,7 +103,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		}
 
 		$warning = $this->get_warning_data( $event_object );
-		$order   = $this->get_order_for_charge_id( $warning['charge'] );
+		$order   = $this->get_event_order_resolver()->find_order_by_charge_id( $warning['charge'] );
 		// Like client 11.1.0 (webhook processing service :867-901), the warning applies to the order the charge resolves to,
 		// whatever its gateway now.
 		if ( ! $order instanceof WC_Order ) {
@@ -130,7 +140,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 			if ( ! $persisted_order instanceof WC_Order || $state !== $persisted_warning ) {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning ID: %s', $warning['id'] ) ) );
 			}
-			if ( ! $this->is_woopayments_order( $persisted_order ) ) {
+			if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $persisted_order->get_payment_method() ) ) {
 				$this->get_order_payment_lock()->log_payment_method_mismatch( $persisted_order, $event_type );
 			}
 
@@ -181,28 +191,6 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	}
 
 	/**
-	 * Get the WooPayments order for an early fraud warning charge.
-	 *
-	 * @param string $charge_id Provider charge ID.
-	 * @return WC_Order|null
-	 */
-	private function get_order_for_charge_id( string $charge_id ): ?WC_Order {
-		$orders = wc_get_orders(
-			array(
-				'limit'      => 1,
-				'meta_key'   => '_charge_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_value' => $charge_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-			)
-		);
-
-		if ( ! is_array( $orders ) ) {
-			return null;
-		}
-
-		return isset( $orders[0] ) && $orders[0] instanceof WC_Order ? $orders[0] : null;
-	}
-
-	/**
 	 * Get valid stored warning evidence, if any.
 	 *
 	 * @param WC_Order $order Order with potential early fraud warning evidence.
@@ -236,18 +224,6 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 */
 	private function get_note_identity( string $warning_id, bool $actionable, string $core_note ): string {
 		return implode( '|', array( 'early_fraud_warning', $warning_id, $actionable ? 'actionable' : 'resolved', hash( 'sha256', $core_note ) ) );
-	}
-
-	/**
-	 * Tell whether an order belongs to WooPayments.
-	 *
-	 * @param WC_Order $order Order to inspect.
-	 * @return bool
-	 */
-	private function is_woopayments_order( WC_Order $order ): bool {
-		$payment_method = (string) $order->get_payment_method();
-
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**
@@ -287,5 +263,18 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		}
 
 		return $this->note_service;
+	}
+
+	/**
+	 * Get the webhook event order resolver.
+	 *
+	 * @return WooPaymentsEventOrderResolver
+	 */
+	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
+		if ( null === $this->event_order_resolver ) {
+			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
+		}
+
+		return $this->event_order_resolver;
 	}
 }

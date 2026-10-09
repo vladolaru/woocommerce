@@ -118,6 +118,18 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	);
 
 	/**
+	 * Tell whether a gateway ID is the WooPayments gateway's or one of its split payment method gateways'.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $gateway_id Gateway ID, such as an order's payment method.
+	 * @return bool
+	 */
+	public static function is_woopayments_gateway_id( string $gateway_id ): bool {
+		return self::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, self::GATEWAY_ID_PREFIX );
+	}
+
+	/**
 	 * Get the order payment lock key.
 	 *
 	 * @param WC_Order $order Order object.

@@ -83,6 +83,22 @@ class WooPaymentsPersistenceVocabularyTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should tell that '$gateway_id' is a WooPayments gateway ID: $expected.
+	 * @testWith ["woocommerce_payments", true]
+	 *           ["woocommerce_payments_bancontact", true]
+	 *           ["bacs", false]
+	 *           ["woocommerce_paymentsx", false]
+	 *           ["stripe_woocommerce_payments", false]
+	 *           ["", false]
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @param bool   $expected   Whether it is a WooPayments gateway ID.
+	 */
+	public function test_tells_woopayments_gateway_ids_apart( string $gateway_id, bool $expected ): void {
+		$this->assertSame( $expected, WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) );
+	}
+
+	/**
 	 * @testdox Should map payment outcome statuses to WooPayments intention statuses.
 	 *
 	 * @dataProvider outcome_status_provider

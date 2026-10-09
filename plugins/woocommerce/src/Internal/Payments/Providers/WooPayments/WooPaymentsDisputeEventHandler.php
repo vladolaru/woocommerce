@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -77,24 +78,33 @@ class WooPaymentsDisputeEventHandler {
 	private ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null;
 
 	/**
+	 * Webhook event order resolver.
+	 *
+	 * @var WooPaymentsEventOrderResolver|null
+	 */
+	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime         $legacy_runtime        WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient             $api_client            Native WooPayments API client.
-	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service Dispute cache service.
-	 * @param WooPaymentsOrderNoteService      $order_note_service    WooPayments order note service.
-	 * @param OrderPaymentLock                 $order_payment_lock   Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary   WooPayments persistence profile.
+	 * @param WooPaymentsLegacyRuntime           $legacy_runtime         WooPayments legacy runtime.
+	 * @param WooPaymentsApiClient               $api_client             Native WooPayments API client.
+	 * @param WooPaymentsDisputeCacheService     $dispute_cache_service  Dispute cache service.
+	 * @param WooPaymentsOrderNoteService        $order_note_service     WooPayments order note service.
+	 * @param OrderPaymentLock                   $order_payment_lock     Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary   $persistence_vocabulary WooPayments persistence profile.
+	 * @param WooPaymentsEventOrderResolver|null $event_order_resolver   Webhook event order resolver.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null ): void {
 		$this->legacy_runtime         = $legacy_runtime;
 		$this->api_client             = $api_client;
 		$this->dispute_cache_service  = $dispute_cache_service;
 		$this->order_note_service     = $order_note_service;
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
+		$this->event_order_resolver   = $event_order_resolver;
 	}
 
 	/**
@@ -126,13 +136,13 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		$charge_id = $this->get_required_string( $event_object, 'charge' );
-		$order     = $this->get_order_by_payment_meta( '_charge_id', $charge_id );
+		$order     = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
 		}
 
 		// Like client 11.1.0 (webhook processing service :712-724), the dispute applies whatever the order's payment method.
-		if ( ! $this->is_woopayments_order( $order ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			$this->get_order_payment_lock()->log_payment_method_mismatch( $order, $event_type );
 		}
 		$balance_transaction_id = (string) $order->get_meta( '_wcpay_payment_transaction_id', true );
@@ -151,33 +161,6 @@ class WooPaymentsDisputeEventHandler {
 
 		$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id );
 		$this->dispute_cache_service->delete_dispute_caches();
-	}
-
-	/**
-	 * Get a WooPayments order by a preserved payment meta key.
-	 *
-	 * @param string $meta_key   Payment meta key.
-	 * @param string $meta_value Payment meta value.
-	 * @return WC_Order|null
-	 */
-	private function get_order_by_payment_meta( string $meta_key, string $meta_value ): ?WC_Order {
-		if ( '' === $meta_value ) {
-			return null;
-		}
-
-		$orders = wc_get_orders(
-			array(
-				'limit'      => 1,
-				'meta_key'   => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_value' => $meta_value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-			)
-		);
-
-		if ( ! is_array( $orders ) ) {
-			return null;
-		}
-
-		return isset( $orders[0] ) && $orders[0] instanceof WC_Order ? $orders[0] : null;
 	}
 
 	/**
@@ -928,14 +911,15 @@ class WooPaymentsDisputeEventHandler {
 	}
 
 	/**
-	 * Tell whether an order belongs to WooPayments.
+	 * Get the webhook event order resolver.
 	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
+	 * @return WooPaymentsEventOrderResolver
 	 */
-	private function is_woopayments_order( WC_Order $order ): bool {
-		$payment_method = (string) $order->get_payment_method();
+	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
+		if ( null === $this->event_order_resolver ) {
+			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
+		}
 
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || 0 === strpos( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
+		return $this->event_order_resolver;
 	}
 }
