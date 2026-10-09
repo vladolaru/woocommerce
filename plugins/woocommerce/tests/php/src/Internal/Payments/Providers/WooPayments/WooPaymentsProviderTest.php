@@ -233,7 +233,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The post-lifecycle effects schedule the Fee details job once when the lifecycle's capture note was written without its identity meta.
+	 * @testdox The post-lifecycle effects schedule the Fee details job once when the lifecycle's capture note was written without its identity meta, and not when the capture is reported again.
 	 *
 	 * WC_Order::add_order_note() stores the note's meta with update_comment_meta() and ignores the result
 	 * (includes/class-wc-order.php:2128-2133), so a plugin that short-circuits update_comment_metadata leaves the note
@@ -297,7 +297,23 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertCount( 1, $jobs );
+
+		// The same capture reported again finds the note by its text and schedules nothing. The first job is removed, so
+		// the scheduler's pending-job check cannot hide a second schedule.
 		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$replayed = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		$provider->apply_post_lifecycle_effects( $context, $replayed, 'capture' );
+
+		$this->assertSame(
+			array(),
+			as_get_scheduled_actions(
+				array(
+					'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				)
+			)
+		);
 	}
 
 	/**
