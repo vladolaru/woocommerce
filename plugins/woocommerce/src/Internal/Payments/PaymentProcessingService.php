@@ -898,7 +898,7 @@ class PaymentProcessingService {
 		$this->lifecycle_service->apply_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
-				$this->get_lifecycle_status( $outcome ),
+				PaymentLifecycleEvent::status_for_outcome( $outcome ),
 				$this->get_lifecycle_payment_reference( $outcome ),
 				$this->get_provider_outcome_meta( $outcome, $provider ),
 				$this->get_lifecycle_meta_to_delete( $outcome ),
@@ -922,36 +922,6 @@ class PaymentProcessingService {
 	 */
 	private function should_preserve_order_status( PaymentOutcome $outcome ): bool {
 		return true === ( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? false );
-	}
-
-	/**
-	 * Map a provider outcome status to an order lifecycle status.
-	 *
-	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return string
-	 */
-	private function get_lifecycle_status( PaymentOutcome $outcome ): string {
-		switch ( $outcome->get_status() ) {
-			case PaymentOutcome::STATUS_COMPLETED:
-			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
-				return PaymentLifecycleEvent::STATUS_COMPLETED;
-
-			case PaymentOutcome::STATUS_AUTHORIZED:
-				return PaymentLifecycleEvent::STATUS_AUTHORIZED;
-
-			case PaymentOutcome::STATUS_FAILED:
-				return PaymentLifecycleEvent::STATUS_FAILED;
-
-			case PaymentOutcome::STATUS_CANCELED:
-				return PaymentLifecycleEvent::STATUS_CANCELED;
-
-			case PaymentOutcome::STATUS_PENDING_ASYNC:
-			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
-			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
-				return PaymentLifecycleEvent::STATUS_STARTED;
-		}
-
-		return PaymentLifecycleEvent::STATUS_FAILED;
 	}
 
 	/**

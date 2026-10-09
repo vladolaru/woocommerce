@@ -677,7 +677,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$this->get_fee_details_note_controller()->apply_and_schedule_fee_details_with_lock(
 			$order,
 			new PaymentLifecycleEvent(
-				self::get_lifecycle_status( $outcome ),
+				PaymentLifecycleEvent::status_for_outcome( $outcome ),
 				'' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : null,
 				$vocabulary->get_outcome_meta( $outcome ),
 				array(),
@@ -699,36 +699,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		return $this->order_effect_applier;
-	}
-
-	/**
-	 * Map a provider outcome status to an order lifecycle status.
-	 *
-	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return string
-	 */
-	private static function get_lifecycle_status( PaymentOutcome $outcome ): string {
-		switch ( $outcome->get_status() ) {
-			case PaymentOutcome::STATUS_COMPLETED:
-			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
-				return PaymentLifecycleEvent::STATUS_COMPLETED;
-
-			case PaymentOutcome::STATUS_AUTHORIZED:
-				return PaymentLifecycleEvent::STATUS_AUTHORIZED;
-
-			case PaymentOutcome::STATUS_FAILED:
-				return PaymentLifecycleEvent::STATUS_FAILED;
-
-			case PaymentOutcome::STATUS_CANCELED:
-				return PaymentLifecycleEvent::STATUS_CANCELED;
-
-			case PaymentOutcome::STATUS_PENDING_ASYNC:
-			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
-			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
-				return PaymentLifecycleEvent::STATUS_STARTED;
-		}
-
-		return PaymentLifecycleEvent::STATUS_FAILED;
 	}
 
 	/**

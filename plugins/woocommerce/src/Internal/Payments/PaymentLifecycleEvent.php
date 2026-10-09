@@ -214,6 +214,38 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
+	 * Get the lifecycle status a provider outcome asks for.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param PaymentOutcome $outcome Provider outcome.
+	 * @return string One of the STATUS_* constants; an unknown outcome status is a failure.
+	 */
+	public static function status_for_outcome( PaymentOutcome $outcome ): string {
+		switch ( $outcome->get_status() ) {
+			case PaymentOutcome::STATUS_COMPLETED:
+			case PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT:
+				return self::STATUS_COMPLETED;
+
+			case PaymentOutcome::STATUS_AUTHORIZED:
+				return self::STATUS_AUTHORIZED;
+
+			case PaymentOutcome::STATUS_FAILED:
+				return self::STATUS_FAILED;
+
+			case PaymentOutcome::STATUS_CANCELED:
+				return self::STATUS_CANCELED;
+
+			case PaymentOutcome::STATUS_PENDING_ASYNC:
+			case PaymentOutcome::STATUS_REQUIRES_REDIRECT:
+			case PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION:
+				return self::STATUS_STARTED;
+		}
+
+		return self::STATUS_FAILED;
+	}
+
+	/**
 	 * Tell whether this event must leave the order status untouched.
 	 *
 	 * A payment refused before processing (for example by fraud screening)
