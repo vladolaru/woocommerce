@@ -503,7 +503,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The saved-payment-method job updates billing details in the test mode it was scheduled in, and restores the mode after.
+	 * @testdox The saved-payment-method job, run through its action with all three arguments, updates billing details in the test mode it was scheduled in, and restores the mode after.
 	 */
 	public function test_update_saved_payment_method_updates_billing_details_with_test_mode_context(): void {
 		$order = wc_create_order();
@@ -532,7 +532,11 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		$this->create_service( array(), $api_client )->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), true );
+		remove_all_actions( 'wcpay_update_saved_payment_method' );
+		$this->create_service( array(), $api_client );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Running the queued job as Action Scheduler does.
+		do_action( 'wcpay_update_saved_payment_method', 'pm_123', $order->get_id(), true );
 
 		$this->assertFalse( $this->is_wcpay_test_mode() );
 	}

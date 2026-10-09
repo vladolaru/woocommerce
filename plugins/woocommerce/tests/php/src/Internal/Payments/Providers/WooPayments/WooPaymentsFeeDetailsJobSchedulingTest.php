@@ -340,6 +340,10 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Deliver a payment_intent.succeeded event for the reported intent, as a new event each time.
+	 *
+	 * Envelope fields as the platform delivers them (recorded body in Fixtures/rec-t3-dispute-created-events.json; the
+	 * client reads `id`, `type` and `data.object`, class-wc-payments-webhook-processing-service.php:150,229,497).
+	 * `livemode` and `account` are left out: the ingestor skips its mode check without `livemode`.
 	 */
 	private function deliver_succeeded_webhook(): void {
 		wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
@@ -424,6 +428,10 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a succeeded setup intent.
 	 *
+	 * Trimmed from the recorded SetupIntent in Fixtures/rec-t3-setup-intent-requires-action.json (pair
+	 * setup_intent_requires_action) to the fields native reads. Changed: `id`, `customer`, `payment_method`, and
+	 * `status` set to succeeded.
+	 *
 	 * @param string $setup_intent_id Setup intent ID.
 	 * @return array<string,mixed>
 	 */
@@ -439,6 +447,11 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Build a succeeded card payment intent for the order.
+	 *
+	 * Trimmed from the recorded PaymentIntent in Fixtures/rec-t3-basic-card.json (pair basic_card_usd_create_and_confirm)
+	 * to the fields native reads, with one charge. Changed: the intent and charge IDs, `amount` 5000, `customer`,
+	 * `payment_method` and the card details; `metadata` carries `order_id` and `order_key` as checkout sets them
+	 * (client 11.1.0 src/Internal/Service/OrderService.php:95-97).
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.

@@ -243,7 +243,8 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Fee-breakdown jobs write the note client 11.1.0 renders for the recorded captured timeline event.
+	 * Fee-breakdown jobs, run through their action with all three arguments, write the note client 11.1.0 renders for the
+	 * recorded captured timeline event, reading the timeline in the job's test mode.
 	 *
 	 * @dataProvider recorded_captured_event_names
 	 *
@@ -272,7 +273,13 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', true );
+		remove_all_actions( 'wcpay_add_fee_breakdown_to_order_notes' );
+		$controller        = $this->create_controller( $api_client );
+		$this->hook_owners = array( $controller );
+		$controller->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Running the queued job as Action Scheduler does.
+		do_action( 'wcpay_add_fee_breakdown_to_order_notes', $order->get_id(), 'pi_123', true );
 
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertCount( 1, $notes );

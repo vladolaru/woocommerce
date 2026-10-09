@@ -211,6 +211,10 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 	/**
 	 * Refund 10.00 of the order through the payment runtime and the WooPayments provider, as WooCommerce does.
 	 *
+	 * The refund response is trimmed from the recorded refund in Fixtures/rec-5a-refunds.json (pair
+	 * usd_card_full_refund_free_text_reason) to the fields native reads. Changed: `id`, `amount` 1000, `charge` and
+	 * `balance_transaction`.
+	 *
 	 * @param WC_Order $order Order.
 	 */
 	private function refund( WC_Order $order ): void {
@@ -241,6 +245,11 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Deliver the payment_intent.succeeded webhook for the order's payment.
+	 *
+	 * Envelope as in Fixtures/rec-t3-dispute-created-events.json (`id`, `type`, `data.object`), without `livemode` and
+	 * `account`. The intent is trimmed from Fixtures/rec-t3-basic-card.json (pair basic_card_usd_create_and_confirm).
+	 * Changed: the IDs, `amount` 5000, the charge reduced to its ID, payment method and type, and `metadata` with the
+	 * `order_id` and `order_key` checkout sets (client 11.1.0 src/Internal/Service/OrderService.php:95-97).
 	 *
 	 * @param WC_Order $order Order.
 	 */

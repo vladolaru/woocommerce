@@ -191,7 +191,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 				PaymentOutcome::DATA_NOTE      => 'Captured.',
 				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
 			)
-		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array( 'status' => 'succeeded' ) ) );
+		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array() ) );
 		$identity_meta  = array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', 'payment_lifecycle:pi_fee_details|completed|capture_success' ) );
 		$effect_applier = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
 			->disableOriginalConstructor()
