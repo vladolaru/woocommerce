@@ -202,7 +202,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$token = $sut->get_or_create_card_token_for_user( 'pm_new', $user_id );
+		$token = $sut->get_or_create_token_for_user( 'pm_new', $user_id );
 
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertGreaterThan( 0, $token->get_id(), 'Created tokens should be persisted.' );
@@ -237,7 +237,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$token = $sut->get_or_create_card_token_for_user( 'pm_existing', $user_id );
+		$token = $sut->get_or_create_token_for_user( 'pm_existing', $user_id );
 
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
 		$this->assertSame( $existing_token->get_id(), $token->get_id(), 'Existing tokens should be reused instead of duplicated.' );
@@ -382,9 +382,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertNull( $sut->get_or_create_card_token_for_user( 'pm_incomplete', $user_id ), 'Incomplete card details should not create invalid WooCommerce tokens.' );
-		$this->assertNull( $sut->get_or_create_card_token_for_user( '', $user_id ), 'Empty payment method IDs should not create tokens.' );
-		$this->assertNull( $sut->get_or_create_card_token_for_user( 'pm_incomplete', 0 ), 'Guest customers cannot receive saved card tokens.' );
+		$this->assertNull( $sut->get_or_create_token_for_user( 'pm_incomplete', $user_id ), 'Incomplete card details should not create invalid WooCommerce tokens.' );
+		$this->assertNull( $sut->get_or_create_token_for_user( '', $user_id ), 'Empty payment method IDs should not create tokens.' );
+		$this->assertNull( $sut->get_or_create_token_for_user( 'pm_incomplete', 0 ), 'Guest customers cannot receive saved card tokens.' );
 	}
 
 	/**

@@ -94,20 +94,6 @@ class WooPaymentsPaymentMethodRegistry {
 	}
 
 	/**
-	 * Tell whether a payment method is available for checkout.
-	 *
-	 * @param string $payment_method_id Payment method ID.
-	 * @param string $account_country   Merchant account country.
-	 * @param string $currency          Checkout currency.
-	 * @return bool
-	 */
-	public function is_available_for_checkout( string $payment_method_id, string $account_country, string $currency ): bool {
-		$definition = $this->get( $payment_method_id );
-
-		return null !== $definition && $definition->is_available_for( $currency, $account_country );
-	}
-
-	/**
 	 * Initialize the definitions map.
 	 */
 	private function initialize_definitions(): void {

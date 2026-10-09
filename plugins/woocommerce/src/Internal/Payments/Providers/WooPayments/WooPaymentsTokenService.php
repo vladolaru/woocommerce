@@ -529,23 +529,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get or create a saved card token for a user.
-	 *
-	 * A non-card payment method is still saved as its own token type, and the method then returns null.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param string $payment_method_id Provider payment method ID.
-	 * @param int    $user_id           User ID.
-	 * @return WC_Payment_Token_CC|null Saved card token, or null when details are unavailable or the method is not a card.
-	 */
-	public function get_or_create_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
-		$token = $this->get_or_create_token_for_user( $payment_method_id, $user_id );
-
-		return $token instanceof WC_Payment_Token_CC ? $token : null;
-	}
-
-	/**
 	 * Get or create a saved token for a WooPayments reusable payment method.
 	 *
 	 * @since 11.0.0

@@ -5615,12 +5615,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			/**
 			 * Fail token creation.
 			 *
-			 * @param string $payment_method_id Provider payment method ID.
-			 * @param int    $user_id           User ID.
-			 * @return WC_Payment_Token_CC|null
+			 * @param string $payment_method_id              Provider payment method ID.
+			 * @param int    $user_id                        User ID.
+			 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
+			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
 			 */
-			public function get_or_create_card_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token_CC {
-				unset( $payment_method_id, $user_id );
+			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				unset( $payment_method_id, $user_id, $include_existing_token_details );
 
 				throw new \RuntimeException( 'Token save failed.' );
 			}

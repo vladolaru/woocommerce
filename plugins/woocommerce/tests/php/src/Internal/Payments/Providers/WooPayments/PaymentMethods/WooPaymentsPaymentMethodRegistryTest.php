@@ -304,16 +304,16 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Registry availability normalizes currency and account country inputs.
 	 */
 	public function test_availability_normalizes_currency_and_account_country_inputs(): void {
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'card', 'ro', 'ron' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'bancontact', 'be', 'eur' ) );
-		$this->assertFalse( $this->registry->is_available_for_checkout( 'bancontact', 'be', 'usd' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'affirm', 'us', 'usd' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'afterpay_clearpay', 'gb', 'gbp' ) );
-		$this->assertFalse( $this->registry->is_available_for_checkout( 'link', 'us', 'eur' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'p24', 'pl', 'pln' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'apple_pay', 'nl', 'eur' ) );
-		$this->assertTrue( $this->registry->is_available_for_checkout( 'amazon_pay', 'us', 'usd' ) );
-		$this->assertFalse( $this->registry->is_available_for_checkout( 'missing_method', 'us', 'usd' ) );
+		$this->assertTrue( $this->registry->get( 'card' )->is_available_for( 'ron', 'ro' ) );
+		$this->assertTrue( $this->registry->get( 'bancontact' )->is_available_for( 'eur', 'be' ) );
+		$this->assertFalse( $this->registry->get( 'bancontact' )->is_available_for( 'usd', 'be' ) );
+		$this->assertTrue( $this->registry->get( 'affirm' )->is_available_for( 'usd', 'us' ) );
+		$this->assertTrue( $this->registry->get( 'afterpay_clearpay' )->is_available_for( 'gbp', 'gb' ) );
+		$this->assertFalse( $this->registry->get( 'link' )->is_available_for( 'eur', 'us' ) );
+		$this->assertTrue( $this->registry->get( 'p24' )->is_available_for( 'pln', 'pl' ) );
+		$this->assertTrue( $this->registry->get( 'apple_pay' )->is_available_for( 'eur', 'nl' ) );
+		$this->assertTrue( $this->registry->get( 'amazon_pay' )->is_available_for( 'usd', 'us' ) );
+		$this->assertNull( $this->registry->get( 'missing_method' ) );
 	}
 
 	/**
