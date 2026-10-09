@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -3737,11 +3738,23 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded fails closed for unknown charge IDs.
+	 * @testdox charge.refunded fails closed for a charge ID no order holds when the charge's metadata names no order.
 	 */
 	public function test_charge_refunded_fails_closed_for_unknown_charge_id(): void {
 		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$event = $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded', array( 'id' => 'ch_unknown' ) );
+		$event = $this->create_charge_refunded_event(
+			$order,
+			1000,
+			400,
+			'succeeded',
+			array(
+				'id'       => 'ch_unknown',
+				'metadata' => array(
+					'order_id'  => '',
+					'order_key' => '',
+				),
+			)
+		);
 
 		$this->expectException( RuntimeException::class );
 		$this->expectExceptionMessage( 'Could not find WooPayments order via charge ID' );
@@ -4586,6 +4599,72 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$record_notes = $this->get_order_notes_containing( $order, 'which does not pay this order, expired' );
 		$this->assertCount( 1, $record_notes );
 		$this->assertStringContainsString( 'ch_other', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox charge.expired on a charge no order holds is recorded on the order its metadata names, even one waiting for its WooPayments payment, and fetches nothing.
+	 *
+	 * The Charge object carries the store's `metadata` with `order_id` and `order_key`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-metadata). An order found this way is never paid or failed by the event.
+	 */
+	public function test_expired_charge_found_by_metadata_is_recorded(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_unheld_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_unheld',
+						'payment_intent' => 'pi_unheld',
+						'metadata'       => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => $order->get_order_key(),
+						),
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array(), $requested_intents );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'which does not pay this order, expired' ) );
+	}
+
+	/**
+	 * @testdox charge.expired recorded on an order found by charge metadata leaves the order without that charge ID, so a later event on the charge does not resolve to it.
+	 */
+	public function test_expired_charge_found_by_metadata_does_not_link_the_charge(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_unheld_expired_link',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_unheld',
+						'payment_intent' => 'pi_unheld',
+						'metadata'       => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => $order->get_order_key(),
+						),
+					),
+				),
+			)
+		);
+
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_charge_id', true ) );
+		$this->assertNull( wc_get_container()->get( WooPaymentsEventOrderResolver::class )->find_order_by_charge_id( 'ch_unheld' ) );
 	}
 
 	/**

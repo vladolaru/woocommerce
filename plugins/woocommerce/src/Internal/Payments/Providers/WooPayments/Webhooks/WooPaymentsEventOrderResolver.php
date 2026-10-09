@@ -58,6 +58,19 @@ class WooPaymentsEventOrderResolver {
 	}
 
 	/**
+	 * Find the order a charge's metadata names, for a charge no order holds as its `_charge_id`.
+	 *
+	 * Such a charge is not an order's own payment, such as a second charge on an order already paid: the caller records
+	 * its event on the order and never applies it. The metadata's order key must match the order's.
+	 *
+	 * @param array<string,mixed> $charge Charge object.
+	 * @return WC_Order|null
+	 */
+	public function find_order_from_charge_metadata( array $charge ): ?WC_Order {
+		return $this->find_order_from_metadata( $charge );
+	}
+
+	/**
 	 * Get the payment intent a charge, refund, dispute or early fraud warning event belongs to.
 	 *
 	 * The event's `payment_intent` field comes first, as an ID or an expanded object; without one, the order's

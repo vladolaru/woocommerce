@@ -365,9 +365,16 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$order = 'charge.expired' === $event_type
-			? $this->get_event_order_resolver()->find_order_by_charge_id( $this->get_object_id( $event_object ) )
-			: $this->get_event_order_resolver()->find_order_for_intent_event( $event_object );
+		$record_only = false;
+		if ( 'charge.expired' === $event_type ) {
+			$order = $this->get_event_order_resolver()->find_order_by_charge_id( $this->get_object_id( $event_object ) );
+			if ( ! $order instanceof WC_Order ) {
+				$order       = $this->get_event_order_resolver()->find_order_from_charge_metadata( $event_object );
+				$record_only = true;
+			}
+		} else {
+			$order = $this->get_event_order_resolver()->find_order_for_intent_event( $event_object );
+		}
 		if ( ! $order instanceof WC_Order ) {
 			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
@@ -378,7 +385,7 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$this->process_order_payment_event( $order, $event_type, $event_object );
+		$this->process_order_payment_event( $order, $event_type, $event_object, $record_only );
 
 		// Captures and expiries change what the uncaptured-transactions badge counts; the plugin
 		// invalidates after the order effects land.
@@ -399,9 +406,10 @@ class WooPaymentsEventIngestor {
 	 * @param WC_Order            $order        Order the event resolved to.
 	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed` or `charge.expired`.
 	 * @param array<string,mixed> $event_object Payment intent or charge object.
+	 * @param bool                $record_only  Whether the order was found only by the charge's metadata, so the event is recorded.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
-	private function process_order_payment_event( WC_Order $order, string $event_type, array $event_object ): void {
+	private function process_order_payment_event( WC_Order $order, string $event_type, array $event_object, bool $record_only = false ): void {
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_value         = $this->get_object_id( $event_object );
@@ -418,7 +426,7 @@ class WooPaymentsEventIngestor {
 			$is_charge_event = 'charge.expired' === $event_type;
 			$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
 			$intent_id       = $is_charge_event ? $this->get_event_order_resolver()->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
-			$is_own_payment  = $this->get_event_order_resolver()->is_own_payment( $order, $intent_id, $charge_id );
+			$is_own_payment  = ! $record_only && $this->get_event_order_resolver()->is_own_payment( $order, $intent_id, $charge_id );
 
 			if ( ! $is_own_payment ) {
 				$this->get_other_charge_recorder()->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );

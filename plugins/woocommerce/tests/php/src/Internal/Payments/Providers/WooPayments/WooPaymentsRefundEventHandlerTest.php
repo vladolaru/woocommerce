@@ -602,6 +602,74 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded event on a second charge no order holds is recorded on the order its metadata names, which keeps its first charge and gets no refund.
+	 *
+	 * The second charge's Charge object carries the store's `metadata` with `order_id` and `order_key`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-metadata), as the first charge's does.
+	 */
+	public function test_charge_refunded_on_a_second_charge_is_recorded_on_the_order_its_metadata_names(): void {
+		$order                    = $this->create_refundable_order();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_second';
+		$charge['payment_intent'] = 'pi_second';
+		$charge['metadata']       = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$record_notes = $this->get_notes_containing( $order, 'No refund was added to the order.' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'ch_second', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A charge.refunded event on a charge no order holds is only recorded on the order its metadata names, even when its intent is the one that paid the order.
+	 */
+	public function test_charge_refunded_found_by_metadata_is_never_applied(): void {
+		$order                    = $this->create_refundable_order();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_unheld';
+		$charge['payment_intent'] = 'pi_123';
+		$charge['metadata']       = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
+	 * @testdox A charge.refunded event on a charge no order holds, whose metadata names an order with another key, still fails as not found.
+	 */
+	public function test_charge_refunded_on_an_unheld_charge_with_another_order_key_is_not_found(): void {
+		$order              = $this->create_refundable_order();
+		$charge             = $this->get_successful_refund_charge();
+		$charge['id']       = 'ch_second';
+		$charge['metadata'] = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => 'wc_order_another_site',
+		);
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Could not find WooPayments order via charge ID: ch_second' );
+
+		$this->sut->process( 'charge.refunded', $charge );
+	}
+
+	/**
 	 * @testdox A failed charge.refund.updated on a charge recorded on an order another gateway paid keeps its refund row and status, and adds one note.
 	 *
 	 * Refund object fields: https://docs.stripe.com/api/refunds/object.

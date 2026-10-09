@@ -148,7 +148,13 @@ class WooPaymentsRefundEventHandler {
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
-		$order             = $this->get_order_for_charge_id( $charge_id, $charge );
+		$order             = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $charge );
+		$record_only       = false;
+		if ( ! $order instanceof WC_Order ) {
+			// A second charge on an order already paid is held by no order; its metadata still names the order.
+			$order       = $this->get_order_for_charge_metadata( $charge_id, $charge );
+			$record_only = true;
+		}
 
 		if ( $charge_amount < 0 || $refund_amount < 0 ) {
 			throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
@@ -159,7 +165,7 @@ class WooPaymentsRefundEventHandler {
 			// Read the order again under the lock: a WP Admin refund of the same platform refund links its local row while
 			// it holds the lock, and a lookup made before the claim would miss it and create a second refund.
 			$order = $this->get_fresh_order( $order );
-			if ( ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
+			if ( $record_only || ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
 				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency );
 				return;
 			}
@@ -490,6 +496,23 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function get_order_for_charge_id( string $charge_id, array $event_object = array() ): WC_Order {
 		$order = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $event_object );
+		if ( ! $order instanceof WC_Order ) {
+			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
+		}
+
+		return $order;
+	}
+
+	/**
+	 * Resolve the order a charge's metadata names, for a refunded charge no order holds.
+	 *
+	 * @param string              $charge_id Charge ID.
+	 * @param array<string,mixed> $charge    Charge object.
+	 * @return WC_Order
+	 * @throws RuntimeException When the metadata names no order, or one whose key does not match.
+	 */
+	private function get_order_for_charge_metadata( string $charge_id, array $charge ): WC_Order {
+		$order = $this->get_event_order_resolver()->find_order_from_charge_metadata( $charge );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}

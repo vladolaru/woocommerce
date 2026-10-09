@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use WC_Order;
 
 /**
- * Records an event on a WooPayments charge that does not pay the order: one note, the charge ID when the order has none,
- * and one warning line.
+ * Records an event on a WooPayments charge that does not pay the order: one note and one warning line, and for a
+ * succeeded payment intent the charge ID when the order has none.
  *
  * Nothing else on the order changes: no status, payment, refund or dispute data. The order's `_intent_id` is never
  * written, because it names the intent that pays the order. The caller holds the order payment lock.
@@ -59,8 +59,9 @@ class WooPaymentsOtherChargeRecorder {
 	 */
 	public function record( WC_Order $order, string $event_type, array $facts ): void {
 		$charge_id = (string) ( $facts['charge_id'] ?? '' );
-		if ( '' !== $charge_id && '' === (string) $order->get_meta( '_charge_id', true ) ) {
-			// The transactions and disputes lists find a charge's order by `_charge_id`.
+		if ( 'payment_intent.succeeded' === $event_type && '' !== $charge_id && '' === (string) $order->get_meta( '_charge_id', true ) ) {
+			// The transactions and disputes lists find a charge's order by `_charge_id`. Only a charge that took money is
+			// linked: a later event on it then finds this order, and is still recorded because it is not the order's payment.
 			$order->update_meta_data( '_charge_id', $charge_id );
 			$order->save();
 		}
