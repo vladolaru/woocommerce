@@ -152,6 +152,81 @@ class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An event with intent "$intent_id" and charge "$charge_id" is the own payment of a $status order (paid date: $has_paid_date, method $payment_method, transaction ID "$transaction_id", _intent_id "$order_intent_id"): $expected.
+	 * @dataProvider own_payment_provider
+	 *
+	 * @param string $status          Order status.
+	 * @param bool   $has_paid_date   Whether the order has a paid date.
+	 * @param string $payment_method  Order payment method.
+	 * @param string $transaction_id  Order transaction ID.
+	 * @param string $order_intent_id Order `_intent_id`.
+	 * @param string $intent_id       The event's payment intent ID.
+	 * @param string $charge_id       The event's charge ID.
+	 * @param bool   $expected        Whether the event is the order's own payment.
+	 */
+	public function test_tells_whether_an_event_is_the_orders_own_payment( string $status, bool $has_paid_date, string $payment_method, string $transaction_id, string $order_intent_id, string $intent_id, string $charge_id, bool $expected ): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_status( $status );
+		$order->set_transaction_id( $transaction_id );
+		$order->update_meta_data( '_intent_id', $order_intent_id );
+		$order->set_date_paid( $has_paid_date ? time() : null );
+		$order->save();
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $has_paid_date, null !== $order->get_date_paid(), 'The fixture must have the paid date the case names.' );
+
+		$this->assertSame( $expected, $this->sut->is_own_payment( $order, $intent_id, $charge_id ) );
+	}
+
+	/**
+	 * Order states and event IDs, with whether the event is the order's own payment.
+	 *
+	 * @return array<string,array{string,bool,string,string,string,string,string,bool}>
+	 */
+	public function own_payment_provider(): array {
+		return array(
+			'paid, transaction ID is the intent'   => array( 'processing', true, 'bacs', 'pi_a', '', 'pi_a', 'ch_a', true ),
+			'paid, transaction ID is the charge'   => array( 'processing', true, 'bacs', 'ch_a', '', 'pi_a', 'ch_a', true ),
+			'paid, another transaction ID'         => array( 'processing', true, 'woocommerce_payments', 'pi_b', 'pi_a', 'pi_a', 'ch_a', false ),
+			'paid, no transaction ID'              => array( 'processing', true, 'woocommerce_payments', '', 'pi_a', 'pi_a', 'ch_a', false ),
+			'paid, no IDs at all'                  => array( 'processing', true, 'woocommerce_payments', '', '', '', '', false ),
+			'refunded, its own intent'             => array( 'refunded', true, 'woocommerce_payments', 'pi_a', 'pi_a', 'pi_a', 'ch_a', true ),
+			'refunded, another intent'             => array( 'refunded', true, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),
+			'dispute hold, another intent'         => array( 'on-hold', true, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),
+			'unpaid, recorded intent, other label' => array( 'pending', false, 'bacs', 'pi_a', 'pi_b', 'pi_b', 'ch_b', true ),
+			'unpaid, WooPayments label'            => array( 'pending', false, 'woocommerce_payments_bancontact', 'pi_a', 'pi_b', 'pi_c', 'ch_c', true ),
+			'unpaid, other intent, other label'    => array( 'on-hold', false, 'bacs', '', 'pi_b', 'pi_c', 'ch_c', false ),
+			'unpaid, no recorded intent'           => array( 'pending', false, 'bacs', '', '', 'pi_c', 'ch_c', false ),
+			'unpaid, event without intent'         => array( 'pending', false, 'bacs', '', '', '', 'ch_c', false ),
+		);
+	}
+
+	/**
+	 * @testdox The event's payment intent is read from its payment_intent field as $field_case, else from the order's _intent_id.
+	 * @testWith ["an ID", "pi_event", "pi_event"]
+	 *           ["an expanded object", {"id": "pi_event"}, "pi_event"]
+	 *           ["missing", null, "pi_order"]
+	 *           ["empty", "", "pi_order"]
+	 *
+	 * The field is a Stripe expandable `payment_intent` (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 *
+	 * @param string            $field_case     Field case.
+	 * @param string|array|null $payment_intent The event's `payment_intent` field.
+	 * @param string            $expected       Expected payment intent ID.
+	 */
+	public function test_reads_the_event_intent_id( string $field_case, $payment_intent, string $expected ): void {
+		unset( $field_case );
+		$order        = $this->create_order( array( '_intent_id' => 'pi_order' ) );
+		$event_object = array( 'id' => 'ch_event' );
+		if ( null !== $payment_intent ) {
+			$event_object['payment_intent'] = $payment_intent;
+		}
+
+		$this->assertSame( $expected, $this->sut->get_event_intent_id( $event_object, $order ) );
+	}
+
+	/**
 	 * Create an order with payment meta.
 	 *
 	 * @param array<string,string> $meta Order meta.

@@ -653,6 +653,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order();
 		$order->set_customer_id( $customer_id );
 		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
 		$order->save();
 
 		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
@@ -4444,14 +4446,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded pays an unpaid order whose payment method is another gateway, as the client does.
+	 * @testdox payment_intent.succeeded found only by its metadata on an unpaid order of another gateway is recorded and does not pay the order.
 	 *
-	 * Client 11.1.0 resolves the order by intent ID or metadata with no gateway check
-	 * (class-wc-payments-webhook-processing-service.php:974-1000), writes the intent meta (:510-569) and completes the
-	 * payment through update_order_status_from_intent() (:582), which skips only paid or locked orders. The webhook
-	 * never changes the order's payment method.
+	 * The order never recorded the intent in `_intent_id`, so the intent is another charge on it. Client 11.1.0 pays such an
+	 * order (class-wc-payments-webhook-processing-service.php:974-1000, :582); a payment pays an order only when it is the
+	 * payment the order waits for.
 	 */
-	public function test_succeeded_intent_pays_an_unpaid_order_of_another_gateway(): void {
+	public function test_succeeded_intent_found_by_metadata_on_an_unpaid_order_of_another_gateway_is_recorded(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method( 'bacs' );
 		$order->set_payment_method_title( 'Direct bank transfer' );
@@ -4462,45 +4463,33 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertSame( 'pi_123', $order->get_transaction_id() );
-		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertNull( $order->get_date_paid() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
-		$this->assertSame( 'bacs', $order->get_payment_method() );
 		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
-		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded on an order already paid by another gateway records the intent with one note, keeps the order's status and logs the mismatch.
+	 * @testdox payment_intent.succeeded on an order already paid by another gateway is recorded once, writes only the charge ID, and logs one line.
 	 *
 	 * Client 11.1.0 writes the intent meta on any resolved order (class-wc-payments-webhook-processing-service.php:510-569)
-	 * and then skips paid orders (class-wc-payments-order-service.php:2747-2764, :2863-2879). Native records the
-	 * succeeded intent with one note, so the merchant can see and refund the second charge.
+	 * and then skips paid orders (class-wc-payments-order-service.php:2747-2764, :2863-2879). Here the order records the
+	 * charge with one note, so the merchant can find and refund it, and keeps its payment data.
 	 */
 	public function test_succeeded_intent_on_an_order_paid_by_another_gateway_is_recorded_once_without_paying_it_again(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method( 'bacs' );
+		$order->set_payment_method_title( 'Direct bank transfer' );
 		$order->set_status( 'processing' );
 		$order->save();
 		$logger = RecordingWcLogger::install();
 		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
 
 		$this->sut->process( $event );
-
-		$mismatch_lines = array_keys(
-			array_filter(
-				$logger->lines,
-				static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', ' )
-			)
-		);
-		$this->assertCount( 1, $mismatch_lines, 'One warning line per event on a gateway mismatch.' );
-		$context = $logger->contexts[ $mismatch_lines[0] ];
-		$this->assertSame( 'order-payments', $context['source'] );
-		$this->assertSame( $order->get_id(), $context['order_id'] );
-		$this->assertSame( 'payment_intent.succeeded', $context['applied_operation'] );
-		$this->assertSame( 'bacs', $context['payment_method'] );
-
 		// A redelivery under another event ID must not add a second note.
 		$this->sut->process( array_replace( $event, array( 'id' => 'evt_123_redelivered' ) ) );
 
@@ -4509,16 +4498,205 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertSame( '', $order->get_transaction_id(), 'An order paid by another gateway must not be marked paid again.' );
 		$this->assertSame( 'bacs', $order->get_payment_method() );
-		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'Direct bank transfer', $order->get_payment_method_title() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'A recorded intent must not become the order\'s intent.' );
 		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
-		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$record_notes = $this->get_order_notes_containing( $order, 'does not pay this order' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'ch_123', $record_notes[0]->content );
+		$this->assertStringContainsString( '12.34', $record_notes[0]->content );
+		$record_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', payment_intent.succeeded, charge ch_123, order payment method bacs' === $line[1]
+			)
+		);
+		$this->assertCount( 2, $record_lines, 'Each delivery logs one line.' );
+		$context = $logger->contexts[ $record_lines[0] ];
+		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'payment_intent.succeeded', $context['event_type'] );
+		$this->assertSame( 'ch_123', $context['charge_id'] );
+		$this->assertSame( 'bacs', $context['payment_method'] );
+	}
+
+	/**
+	 * @testdox A second succeeded intent on an order WooPayments already paid is recorded and leaves the order's payment data alone.
+	 */
+	public function test_second_succeeded_intent_on_an_order_woopayments_paid_is_recorded(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_first' );
+		$order->update_meta_data( '_intent_id', 'pi_first' );
+		$order->update_meta_data( '_charge_id', 'ch_first' );
+		$order->save();
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array( 'id' => 'pi_second' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( 'pi_first', $order->get_transaction_id() );
+		$this->assertSame( 'pi_first', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_first', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$record_notes = $this->get_order_notes_containing( $order, 'does not pay this order' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'ch_123', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox payment_intent.payment_failed for an intent another gateway's paid order never recorded adds one note and changes nothing else.
+	 */
+	public function test_failed_intent_on_another_charge_adds_one_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'cod' );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$this->sut->process(
+			$this->create_payment_intent_event(
+				'payment_intent.payment_failed',
+				$order,
+				array(
+					'id'                 => 'pi_other',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_other',
+							'type' => 'card',
+						),
+					),
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$record_notes = $this->get_order_notes_containing( $order, 'that does not pay this order failed' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'pi_other', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox charge.expired on a charge another gateway's paid order recorded adds one note, fetches nothing and changes nothing else.
+	 *
+	 * The event's `payment_intent` is the Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 */
+	public function test_expired_charge_on_another_charge_adds_one_note(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'cod' );
+		$order->set_status( 'processing' );
+		$order->update_meta_data( '_charge_id', 'ch_other' );
+		$order->save();
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_other_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_other',
+						'payment_intent' => 'pi_other',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array(), $requested_intents );
+		$record_notes = $this->get_order_notes_containing( $order, 'which does not pay this order, expired' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'ch_other', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A $event_type delivery refused by a held order payment lock logs one refusal line.
+	 * @dataProvider refusal_line_events
+	 *
+	 * @param string      $event_type         Event type.
+	 * @param string|null $expected_reference Payment reference in the line's context, or null for none.
+	 * @param string|null $expected_lifecycle Lifecycle status in the line's context, or null for none.
+	 * @param string|null $expected_reason    Reason in the line's context, or null for none.
+	 */
+	public function test_refused_payment_event_logs_one_refusal_line( string $event_type, ?string $expected_reference, ?string $expected_lifecycle, ?string $expected_reason ): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->save();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$this->hold_order_payment_lock( $order, $vocabulary, 'pi_lock_holder' );
+		$logger = RecordingWcLogger::install();
+		$event  = 'charge.expired' === $event_type
+			? array(
+				'id'   => 'evt_refused_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_123',
+						'payment_intent' => 'pi_123',
+					),
+				),
+			)
+			: $this->create_payment_intent_event(
+				$event_type,
+				$order,
+				'payment_intent.payment_failed' === $event_type ? array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array(
+						'payment_method' => array(
+							'id'   => 'pm_123',
+							'type' => 'card',
+						),
+					),
+				) : array()
+			);
+		$sut    = 'charge.expired' === $event_type ? $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) ) : $this->sut;
+
+		try {
+			$sut->process( $event );
+			$this->fail( 'The delivery must be refused while another operation holds the order payment lock.' );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$this->assertSame( $order->get_id(), $exception->get_order_id() );
+		} finally {
+			$this->clear_order_payment_lock( $order, $vocabulary );
+		}
+
+		$refusal_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment lock refused: order ' . $order->get_id() . ', refused payment status update, held by ' ) ) );
+		$this->assertCount( 1, $refusal_lines );
+		$context = $logger->contexts[ $refusal_lines[0] ];
+		$this->assertSame( 'order-payments', $context['source'] );
+		$this->assertSame( 'payment status update', $context['refused_operation'] );
+		$this->assertSame( $expected_reference, $context['payment_reference'] ?? null );
+		$this->assertSame( $expected_lifecycle, $context['event_type'] ?? null );
+		$this->assertSame( $expected_reason, $context['reason'] ?? null );
+	}
+
+	/** @return array<string,array{string,?string,?string,?string}> */
+	public static function refusal_line_events(): array {
+		return array(
+			'succeeded'      => array( 'payment_intent.succeeded', null, null, null ),
+			'payment failed' => array( 'payment_intent.payment_failed', 'pi_123', 'failed', 'order_locked' ),
+			'charge expired' => array( 'charge.expired', 'ch_123', 'capture_expired', 'order_locked' ),
+		);
 	}
 
 	/**
 	 * Client 11.1.0 reads the order again before deciding it is unpaid (class-wc-payments-order-service.php:2863-2879), and
 	 * another gateway's status change never takes the order payment lock.
 	 *
-	 * @testdox Recording a succeeded intent reads the order under the lock, so an order another gateway just marked paid is not paid again.
+	 * @testdox Applying a succeeded intent reads the order under the lock, so an order another gateway just marked paid is not paid again.
 	 */
 	public function test_succeeded_intent_reads_the_order_again_under_the_lock(): void {
 		$order = $this->create_woopayments_order();
@@ -4534,7 +4712,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$payment_completions = did_action( 'woocommerce_payment_complete' );
 		$event               = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
 
-		$this->sut->record_succeeded_payment_intent( $stale, $event['data']['object'] );
+		$this->sut->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );

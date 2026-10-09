@@ -286,7 +286,7 @@ class StripeBillingEventHandler {
 					$subscription->update_status( 'on-hold' );
 
 					if ( null !== $intent ) {
-						$this->event_ingestor->record_succeeded_payment_intent( $order, $intent );
+						$this->event_ingestor->apply_succeeded_payment_intent( $order, $intent );
 					} else {
 						$this->complete_order_without_intent( $order, $intent_id, $event_object );
 					}
@@ -301,7 +301,7 @@ class StripeBillingEventHandler {
 				throw new RuntimeException( sprintf( 'Renewal order #%1$d is still unpaid after recording invoice %2$s.', $order->get_id(), $wcpay_invoice_id ) );
 			}
 		} elseif ( null !== $intent ) {
-			$this->event_ingestor->record_succeeded_payment_intent( $order, $intent );
+			$this->event_ingestor->apply_succeeded_payment_intent( $order, $intent );
 		} elseif ( '' !== $intent_id ) {
 			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
 		}

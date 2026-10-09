@@ -403,6 +403,46 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the note for an event on a WooPayments charge that does not pay the order.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string                                                                    $event_type Provider event type.
+	 * @param array{intent_id?:string,charge_id?:string,amount?:float,currency?:string} $facts      The event's intent and charge IDs, and its amount and currency when it moves money.
+	 * @return string
+	 * @throws \InvalidArgumentException When the event type has no note.
+	 */
+	public function format_other_charge_note( string $event_type, array $facts ): string {
+		$intent_id       = (string) ( $facts['intent_id'] ?? '' );
+		$charge_id       = (string) ( $facts['charge_id'] ?? '' );
+		$transaction_url = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
+		$link            = static fn( string $url_placeholder ): array => array(
+			'a' => '' !== $transaction_url ? '<a href="' . $url_placeholder . '" target="_blank" rel="noopener noreferrer">' : '<code>',
+		);
+
+		switch ( $event_type ) {
+			case 'payment_intent.succeeded':
+				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( (string) ( $facts['currency'] ?? '' ) ) );
+				/* translators: %1$s: WooPayments charge ID, %2$s: charged amount, %3$s: transaction URL. */
+				$format = __( 'WooPayments charge <a>%1$s</a> for %2$s does not pay this order, so it was recorded without changing the order.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%3$s' ) ), esc_html( '' !== $charge_id ? $charge_id : $intent_id ), $amount, $transaction_url );
+
+			case 'payment_intent.payment_failed':
+				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
+				$format = __( 'A WooPayments payment attempt (<a>%1$s</a>) that does not pay this order failed.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
+
+			case 'charge.expired':
+				/* translators: %1$s: WooPayments charge ID, %2$s: transaction URL. */
+				$format = __( 'The authorization of WooPayments charge <a>%1$s</a>, which does not pay this order, expired.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $charge_id ), $transaction_url );
+		}
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Event types are fixed strings, not HTML output.
+		throw new \InvalidArgumentException( sprintf( 'No other-charge note for WooPayments event type %s.', $event_type ) );
+	}
+
+	/**
 	 * Build an early fraud warning rendering from one known catalog.
 	 *
 	 * @param string $charge_id  Provider charge ID.
