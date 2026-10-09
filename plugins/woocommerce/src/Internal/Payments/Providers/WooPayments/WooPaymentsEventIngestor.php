@@ -117,13 +117,6 @@ class WooPaymentsEventIngestor {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -221,7 +214,6 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @param OrderPaymentLifecycleService                  $lifecycle_service                  Order lifecycle service.
 	 * @param LegacyProxy                                   $legacy_proxy                       Legacy proxy.
-	 * @param WooPaymentsLegacyRuntime                      $legacy_runtime                     WooPayments legacy runtime.
 	 * @param WooPaymentsApiClient                          $api_client                         Native WooPayments API client.
 	 * @param WooPaymentsDisputeEventHandler                $dispute_event_handler              Dispute event handler.
 	 * @param WooPaymentsRefundEventHandler                 $refund_event_handler               Refund event handler.
@@ -236,10 +228,9 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsEventOrderResolver|null            $event_order_resolver               Optional webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder|null           $other_charge_recorder              Optional recorder of events on another charge.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
 		$this->lifecycle_service                 = $lifecycle_service;
 		$this->legacy_proxy                      = $legacy_proxy;
-		$this->legacy_runtime                    = $legacy_runtime;
 		$this->api_client                        = $api_client;
 		$this->dispute_event_handler             = $dispute_event_handler;
 		$this->refund_event_handler              = $refund_event_handler;
@@ -1428,20 +1419,17 @@ class WooPaymentsEventIngestor {
 		} catch ( Throwable $exception ) {
 			// Logging is best-effort: a failing log handler must not turn an isolated hook failure into a failed event.
 			try {
-				$logger = $this->legacy_runtime->get_logger();
-				if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
-					// A callback can let a platform error out, directly or wrapped, so its message is not logged.
-					$logger->error(
-						'A WooPayments webhook delivery hook callback failed.',
-						array_merge(
-							WooPaymentsLogger::get_failure_context( $exception ),
-							array(
-								'source' => 'native-payments-webhook',
-								'hook'   => $hook,
-							)
+				// A callback can let a platform error out, directly or wrapped, so its message is not logged.
+				wc_get_logger()->error(
+					'A WooPayments webhook delivery hook callback failed.',
+					array_merge(
+						WooPaymentsLogger::get_failure_context( $exception ),
+						array(
+							'source' => 'native-payments-webhook',
+							'hook'   => $hook,
 						)
-					);
-				}
+					)
+				);
 			} catch ( Throwable $logger_exception ) {
 				unset( $logger_exception );
 			}

@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use ReflectionClass;
@@ -54,7 +53,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		}
 		$this->sut = new WooPaymentsDisputeEventHandler();
 		$this->sut->init(
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			new class() extends WooPaymentsApiClient {},
 			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
 		);
@@ -686,7 +684,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			new class() extends WooPaymentsApiClient {},
 			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
 		);
@@ -754,7 +751,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			new class() extends WooPaymentsApiClient {
 				/**
 				 * Fail as the platform does when it cannot answer.
@@ -920,7 +916,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$fetched = array();
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			new class( $fetched ) extends WooPaymentsApiClient {
 				/**
 				 * Dispute IDs the handler asked a summary for.

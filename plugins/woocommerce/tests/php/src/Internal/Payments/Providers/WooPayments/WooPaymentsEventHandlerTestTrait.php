@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
 
@@ -20,15 +19,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRe
 trait WooPaymentsEventHandlerTestTrait {
 
 	/**
-	 * Build a dispute event handler wired to the supplied runtime and API client.
+	 * Build a dispute event handler wired to the supplied API client.
 	 *
-	 * @param WooPaymentsLegacyRuntime $runtime    WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient     $api_client Native WooPayments API client.
+	 * @param WooPaymentsApiClient $api_client Native WooPayments API client.
 	 * @return WooPaymentsDisputeEventHandler
 	 */
-	private function create_dispute_event_handler( WooPaymentsLegacyRuntime $runtime, WooPaymentsApiClient $api_client ): WooPaymentsDisputeEventHandler {
+	private function create_dispute_event_handler( WooPaymentsApiClient $api_client ): WooPaymentsDisputeEventHandler {
 		$handler = new WooPaymentsDisputeEventHandler();
-		$handler->init( $runtime, $api_client, wc_get_container()->get( WooPaymentsDisputeCacheService::class ) );
+		$handler->init( $api_client, wc_get_container()->get( WooPaymentsDisputeCacheService::class ) );
 
 		return $handler;
 	}

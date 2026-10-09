@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -387,9 +386,6 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	private function create_ingestor_with_account_services( WooPaymentsAccountService $account_service, WooPaymentsTokenService $token_service ): WooPaymentsEventIngestor {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
-		$runtime = new WooPaymentsLegacyRuntime();
-		$runtime->init( new LegacyRuntimeProxy( true ) );
-
 		$account_event_handler = new WooPaymentsAccountEventHandler();
 		$account_event_handler->init( $account_service, $token_service );
 
@@ -397,9 +393,8 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 		$sut->init(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
-			$runtime,
 			new class() extends WooPaymentsApiClient {},
-			$this->create_dispute_event_handler( $runtime, new class() extends WooPaymentsApiClient {} ),
+			$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 			$account_event_handler,
 			$this->create_notification_event_handler()

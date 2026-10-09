@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -678,7 +677,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'order_id'  => (string) $order->get_id(),
 			'order_key' => $order->get_order_key(),
 		);
-		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceVocabulary() );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$handler->process( 'charge.refunded', $charge );
 
@@ -727,7 +726,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$handler    = new WooPaymentsRefundEventHandler();
 		$recorder->init( $notes );
-		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, null, $recorder );
+		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, null, $recorder );
 		$charge                   = $this->get_successful_refund_charge();
 		$charge['id']             = 'ch_cod';
 		$charge['payment_intent'] = 'pi_cod';
@@ -1036,7 +1035,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsRefundEventHandler();
-		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceVocabulary() );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$handler->process( 'charge.refunded', $this->get_successful_refund_charge() );
 

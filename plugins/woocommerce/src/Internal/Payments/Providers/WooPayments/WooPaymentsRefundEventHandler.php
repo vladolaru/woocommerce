@@ -34,13 +34,6 @@ class WooPaymentsRefundEventHandler {
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * Order payment store.
 	 *
 	 * @var OrderPaymentLock
@@ -73,14 +66,12 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime            $legacy_runtime         WooPayments legacy runtime.
 	 * @param OrderPaymentLock                    $order_payment_lock     Order payment store.
 	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary WooPayments persistence profile.
 	 * @param WooPaymentsEventOrderResolver|null  $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder|null $other_charge_recorder  Recorder of events on another charge.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
-		$this->legacy_runtime         = $legacy_runtime;
+	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->event_order_resolver   = $event_order_resolver;
@@ -832,12 +823,7 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $message Error message.
 	 */
 	private function log_refund_failure( WC_Order $order, string $message ): void {
-		$logger = $this->legacy_runtime->get_logger();
-		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-			return;
-		}
-
-		$logger->error(
+		wc_get_logger()->error(
 			$message,
 			array(
 				'source'   => 'native-payments-webhook',

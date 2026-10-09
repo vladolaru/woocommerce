@@ -44,13 +44,6 @@ class WooPaymentsDisputeEventHandler {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * Dispute cache service.
 	 *
 	 * @var WooPaymentsDisputeCacheService
@@ -97,7 +90,6 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime            $legacy_runtime         WooPayments legacy runtime.
 	 * @param WooPaymentsApiClient                $api_client             Native WooPayments API client.
 	 * @param WooPaymentsDisputeCacheService      $dispute_cache_service  Dispute cache service.
 	 * @param WooPaymentsOrderNoteService         $order_note_service     WooPayments order note service.
@@ -106,8 +98,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @param WooPaymentsEventOrderResolver|null  $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder|null $other_charge_recorder Recorder of events on another charge.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
-		$this->legacy_runtime         = $legacy_runtime;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
 		$this->api_client             = $api_client;
 		$this->dispute_cache_service  = $dispute_cache_service;
 		$this->order_note_service     = $order_note_service;
@@ -418,12 +409,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string   $error_message Error message.
 	 */
 	private function log_dispute_refund_failure( WC_Order $order, string $charge_id, string $dispute_id, string $status, float $refund_amount, string $error_message ): void {
-		$logger = $this->legacy_runtime->get_logger();
-		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-			return;
-		}
-
-		$logger->error(
+		wc_get_logger()->error(
 			sprintf(
 				'Failed to create local refund for lost dispute %1$s on charge %2$s: %3$s',
 				$dispute_id,
@@ -482,17 +468,14 @@ class WooPaymentsDisputeEventHandler {
 		try {
 			return $this->api_client->get_dispute_summary( $dispute_id );
 		} catch ( Throwable $exception ) {
-			$logger = $this->legacy_runtime->get_logger();
-			if ( is_object( $logger ) && is_callable( array( $logger, 'error' ) ) ) {
-				$logger->error(
-					sprintf(
-						'Failed to fetch dispute summary for dispute %1$s (charge %2$s).',
-						$dispute_id,
-						$charge_id
-					),
-					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
-				);
-			}
+			wc_get_logger()->error(
+				sprintf(
+					'Failed to fetch dispute summary for dispute %1$s (charge %2$s).',
+					$dispute_id,
+					$charge_id
+				),
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+			);
 		}
 
 		return array();

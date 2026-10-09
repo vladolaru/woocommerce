@@ -37,13 +37,6 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	private WooPaymentsEventIngestor $event_ingestor;
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * Webhook reliability service, which retries events that fail to process.
 	 *
 	 * @var WooPaymentsWebhookReliabilityService
@@ -55,15 +48,13 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter            $arbiter        Runtime owner arbiter.
-	 * @param WooPaymentsEventIngestor             $event_ingestor Event ingestor.
-	 * @param WooPaymentsLegacyRuntime             $legacy_runtime WooPayments legacy runtime.
+	 * @param WooPaymentsRuntimeArbiter            $arbiter             Runtime owner arbiter.
+	 * @param WooPaymentsEventIngestor             $event_ingestor      Event ingestor.
 	 * @param WooPaymentsWebhookReliabilityService $reliability_service Webhook reliability service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsWebhookReliabilityService $reliability_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsWebhookReliabilityService $reliability_service ): void {
 		$this->arbiter             = $arbiter;
 		$this->event_ingestor      = $event_ingestor;
-		$this->legacy_runtime      = $legacy_runtime;
 		$this->reliability_service = $reliability_service;
 	}
 
@@ -157,13 +148,8 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 * @param bool      $refused   Whether the ingestor refused the event (an InvalidArgumentException).
 	 */
 	private function log_webhook_exception( Throwable $exception, string $event_id = '', bool $refused = false ): void {
-		$logger = $this->legacy_runtime->get_logger();
-		if ( ! is_object( $logger ) || ! is_callable( array( $logger, 'error' ) ) ) {
-			return;
-		}
-
 		try {
-			$logger->error(
+			wc_get_logger()->error(
 				sprintf(
 					'' === $event_id ? 'Failed processing a WooPayments webhook event.%2$s' : 'Failed processing event %1$s.%2$s',
 					$event_id,

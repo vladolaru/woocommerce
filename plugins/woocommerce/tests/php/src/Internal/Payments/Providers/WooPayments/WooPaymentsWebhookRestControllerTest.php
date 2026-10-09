@@ -7,7 +7,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedEventStore;
@@ -157,7 +156,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Bad webhook payloads return the WooPayments bad_request envelope.
 	 */
 	public function test_bad_payload_returns_bad_request_envelope(): void {
-		$logger     = $this->create_recording_logger();
+		$logger     = new RecordingWcLogger();
 		$controller = $this->create_controller_with_ingestor(
 			new class() extends WooPaymentsEventIngestor {
 				/**
@@ -176,16 +175,16 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'native-payments-webhook', $logger->entries[0]['context']['source'] );
-		$this->assertStringContainsString( 'bad payload', $logger->entries[0]['message'] );
+		$this->assertCount( 1, $logger->get_errors() );
+		$this->assertSame( 'native-payments-webhook', $logger->get_errors()[0][2] );
+		$this->assertStringContainsString( 'bad payload', $logger->get_errors()[0][1] );
 	}
 
 	/**
 	 * @testdox Processing exceptions return the WooPayments error envelope.
 	 */
 	public function test_processing_exception_returns_error_envelope(): void {
-		$logger     = $this->create_recording_logger();
+		$logger     = new RecordingWcLogger();
 		$controller = $this->create_controller_with_ingestor(
 			new class() extends WooPaymentsEventIngestor {
 				/**
@@ -204,11 +203,10 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'native-payments-webhook', $logger->entries[0]['context']['source'] );
+		$this->assertCount( 1, $logger->get_errors() );
+		$this->assertSame( 'native-payments-webhook', $logger->get_errors()[0][2] );
 		// Processing calls the platform, so a failure's message is left out; its class names it.
-		$this->assertSame( 'Failed processing a WooPayments webhook event.', $logger->entries[0]['message'] );
-		$this->assertSame( RuntimeException::class, $logger->entries[0]['context']['exception'] );
+		$this->assertSame( RuntimeException::class, $this->get_logged_context( $logger, 'Failed processing a WooPayments webhook event.' )['exception'] );
 	}
 
 	/**
@@ -412,7 +410,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$controller->init(
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( WooPaymentsEventIngestor::class ),
-			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
 			wc_get_container()->get( WooPaymentsWebhookReliabilityService::class )
 		);
 
@@ -447,14 +444,15 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 					throw new RuntimeException( 'server failed' );
 				}
 			},
-			new class() {
+			new class() extends RecordingWcLogger {
 				/**
-				 * Record an error log entry.
+				 * Fail to record an error log entry.
 				 *
 				 * @param string              $message Log message.
 				 * @param array<string,mixed> $context Log context.
+				 * @throws RuntimeException Always.
 				 */
-				public function error( string $message, array $context = array() ): void {
+				public function error( $message, $context = array() ) {
 					unset( $message, $context );
 
 					throw new RuntimeException( 'logger failed' );
@@ -533,12 +531,13 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Create a controller with a supplied ingestor.
 	 *
 	 * @param WooPaymentsEventIngestor $ingestor Ingestor test double.
-	 * @param object|null              $logger   Optional logger test double.
+	 * @param RecordingWcLogger|null   $logger   Optional logger that wc_get_logger() returns for the rest of the test.
 	 * @return WooPaymentsWebhookRestController
 	 */
-	private function create_controller_with_ingestor( WooPaymentsEventIngestor $ingestor, ?object $logger = null ): WooPaymentsWebhookRestController {
-		$runtime = new WooPaymentsLegacyRuntime();
-		$runtime->init( new LegacyRuntimeProxy( true, null, null, null, $logger ) );
+	private function create_controller_with_ingestor( WooPaymentsEventIngestor $ingestor, ?RecordingWcLogger $logger = null ): WooPaymentsWebhookRestController {
+		if ( null !== $logger ) {
+			add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		}
 
 		$this->scheduler     = new RecordingActionSchedulerService();
 		$reliability_service = new WooPaymentsWebhookReliabilityService();
@@ -551,38 +550,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$controller = new WooPaymentsWebhookRestController();
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $ingestor, $runtime, $reliability_service );
+		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $ingestor, $reliability_service );
 
 		return $controller;
-	}
-
-	/**
-	 * Create a recording logger test double.
-	 *
-	 * @return object
-	 */
-	private function create_recording_logger(): object {
-		return new class() {
-			/**
-			 * Logged entries.
-			 *
-			 * @var array<int,array{message:string,context:array<string,mixed>}>
-			 */
-			public array $entries = array();
-
-			/**
-			 * Record an error log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function error( string $message, array $context = array() ): void {
-				$this->entries[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-		};
 	}
 
 	/**
