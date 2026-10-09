@@ -323,20 +323,26 @@ class PaymentProcessingService {
 	 * @param string         $operation Provider operation.
 	 * @param Throwable      $exception Lifecycle application exception.
 	 * @param bool           $reconciliation_persisted Whether reconciliation context was persisted.
+	 * @param string         $reconciliation_skipped   Why no save was attempted ('failed_outcome'), or '' when one was.
 	 */
-	private function log_post_provider_apply_failure( WC_Order $order, PaymentOutcome $outcome, string $operation, Throwable $exception, bool $reconciliation_persisted ): void {
+	private function log_post_provider_apply_failure( WC_Order $order, PaymentOutcome $outcome, string $operation, Throwable $exception, bool $reconciliation_persisted, string $reconciliation_skipped = '' ): void {
+		$context = array(
+			'source'                   => 'order-payments',
+			'order_id'                 => $order->get_id(),
+			'payment_reference'        => $outcome->get_provider_payment_id(),
+			'operation'                => $operation,
+			'exception_class'          => get_class( $exception ),
+			'exception_code'           => $exception->getCode(),
+			'reconciliation_persisted' => $reconciliation_persisted,
+		);
+		if ( '' !== $reconciliation_skipped ) {
+			$context['reconciliation_skipped'] = $reconciliation_skipped;
+		}
+
 		try {
 			wc_get_logger()->error(
 				'Payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
-				array(
-					'source'                   => 'order-payments',
-					'order_id'                 => $order->get_id(),
-					'payment_reference'        => $outcome->get_provider_payment_id(),
-					'operation'                => $operation,
-					'exception_class'          => get_class( $exception ),
-					'exception_code'           => $exception->getCode(),
-					'reconciliation_persisted' => $reconciliation_persisted,
-				)
+				$context
 			);
 		} catch ( Throwable $logging_exception ) {
 			return;
@@ -722,8 +728,9 @@ class PaymentProcessingService {
 	 * it is: a completed capture moved the money and a completed cancel released the authorization, and the service attempts,
 	 * best effort, to save the reference on the order so the provider's next event settles it; checkout throws
 	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed. When applying a
-	 * failed capture or cancel fails, the failed outcome is returned and nothing is saved: the provider still holds the
-	 * authorization the order records, as client 11.1.0 leaves it when its failure handling throws.
+	 * failed capture or cancel fails, the failed outcome is returned and nothing is saved: the order keeps the authorization
+	 * state it recorded before the call, whether the provider still holds the authorization or it expired, as client 11.1.0
+	 * leaves it when its failure handling throws.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param ProviderInterface       $provider  Provider.
@@ -763,9 +770,9 @@ class PaymentProcessingService {
 				}
 
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = PaymentOutcome::STATUS_FAILED !== $provider_outcome->get_status()
-					&& $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
-				$this->log_post_provider_apply_failure( $order, $provider_outcome, $operation, $apply_exception, $reconciliation_persisted );
+				$is_failed_outcome        = PaymentOutcome::STATUS_FAILED === $provider_outcome->get_status();
+				$reconciliation_persisted = ! $is_failed_outcome && $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
+				$this->log_post_provider_apply_failure( $order, $provider_outcome, $operation, $apply_exception, $reconciliation_persisted, $is_failed_outcome ? 'failed_outcome' : '' );
 			}
 
 			return $outcome;

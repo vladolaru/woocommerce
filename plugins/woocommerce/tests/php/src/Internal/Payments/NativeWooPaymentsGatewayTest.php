@@ -5181,6 +5181,50 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A no-external-payment outcome does not complete a subscription payment-method change.
+	 *
+	 * The service answers no external payment for a $0 checkout with no credential, which the gateway lets through only with
+	 * network-wide saved cards; the recording service returns it here whatever the request carries. Only a completed or
+	 * authorized outcome updates the subscription's payment method and takes the change's return URL.
+	 */
+	public function test_process_payment_does_not_complete_subscription_change_on_no_external_payment_outcome(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT );
+		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_POST['wcpay-payment-method']          = 'pm_card';
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$return_filter_calls = 0;
+		$return_url_filter   = static function () use ( &$return_filter_calls ): string {
+			++$return_filter_calls;
+			return 'https://example.test/my-account/';
+		};
+		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		}
+
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( 0, $return_filter_calls );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+	}
+
+	/**
 	 * @testdox Should not update subscription payment methods or success redirects after a failed new-method change.
 	 */
 	public function test_process_payment_does_not_update_subscription_payment_method_after_failed_new_method_change(): void {

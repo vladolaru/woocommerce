@@ -3409,6 +3409,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				throw new RuntimeException( 'A note hook failed.' );
 			}
 		);
+		$fake_logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
 
 		$outcome = 'capture' === $operation
 			? $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
@@ -3422,6 +3429,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( 'pi_auth', $order->get_transaction_id() );
 		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'The provider still holds the authorization.' );
+		$apply_logs = array_values(
+			array_filter(
+				$fake_logger->error_calls,
+				static fn( array $call ): bool => 0 === strpos( $call['message'], 'Payment provider operation returned a reconcilable outcome' )
+			)
+		);
+		$this->assertCount( 1, $apply_logs );
+		$this->assertFalse( $apply_logs[0]['context']['reconciliation_persisted'] );
+		$this->assertSame( 'failed_outcome', $apply_logs[0]['context']['reconciliation_skipped'] ?? null, 'The log line says the save was skipped for a failed outcome.' );
 	}
 
 	/**
