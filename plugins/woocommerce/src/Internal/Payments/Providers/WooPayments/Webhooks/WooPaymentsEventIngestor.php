@@ -306,50 +306,56 @@ class WooPaymentsEventIngestor {
 		}
 
 		$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
+		$this->route( $event_type, $event );
+		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
+	}
 
+	/**
+	 * Hand the event to the handler for its type.
+	 *
+	 * A handler that throws ends the delivery here, so the after-delivery hook does not fire for it.
+	 *
+	 * @param string              $event_type Event type.
+	 * @param array<string,mixed> $event      Event payload.
+	 * @throws InvalidArgumentException When the event shape is invalid.
+	 */
+	private function route( string $event_type, array $event ): void {
 		if ( $this->is_stripe_billing_invoice_event( $event_type ) ) {
 			if ( ! $this->get_stripe_billing_module()->is_loaded() ) {
 				$this->refuse_stripe_billing_invoice_event_without_module( $event_type );
 			}
 
 			$this->get_stripe_billing_module()->handle_invoice_event( $event );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( $this->notification_event_handler->is_supported_event( $event_type ) ) {
 			$this->notification_event_handler->process( $event );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		$event_object = $this->get_event_object( $event );
 		if ( $this->get_early_fraud_warning_event_handler()->is_supported_event( $event_type ) ) {
 			$this->get_early_fraud_warning_event_handler()->process( $event_type, $event_object );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( $this->dispute_event_handler->is_supported_event( $event_type ) ) {
 			$this->dispute_event_handler->process( $event_type, $event_object );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( $this->refund_event_handler->is_supported_event( $event_type ) ) {
 			$this->refund_event_handler->process( $event_type, $event_object );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( $this->account_event_handler->is_supported_event( $event_type ) ) {
 			$this->account_event_handler->process( $event_type, $event_object );
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( ! $this->is_lifecycle_event_type( $event_type ) ) {
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
@@ -357,7 +363,6 @@ class WooPaymentsEventIngestor {
 		// this cache invalidation and never resolve an order.
 		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
@@ -372,12 +377,10 @@ class WooPaymentsEventIngestor {
 			$order = $this->get_event_order_resolver()->find_order_for_intent_event( $event_object );
 		}
 		if ( ! $order instanceof WC_Order ) {
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
 		if ( 'payment_intent.payment_failed' === $event_type && ! $this->is_actionable_payment_failure( $event_object ) ) {
-			$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 			return;
 		}
 
@@ -388,8 +391,6 @@ class WooPaymentsEventIngestor {
 		if ( 'payment_intent.payment_failed' !== $event_type ) {
 			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
 		}
-
-		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 	}
 
 	/**

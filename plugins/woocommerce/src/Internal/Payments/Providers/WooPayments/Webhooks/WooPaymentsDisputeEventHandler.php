@@ -149,17 +149,12 @@ class WooPaymentsDisputeEventHandler {
 
 		if ( 'charge.dispute.created' === $event_type ) {
 			$this->process_dispute_created( $order, $event_object, $charge_id, $balance_transaction_id );
-			$this->dispute_cache_service->delete_dispute_caches();
-			return;
-		}
-
-		if ( 'charge.dispute.closed' === $event_type ) {
+		} elseif ( 'charge.dispute.closed' === $event_type ) {
 			$this->process_dispute_closed( $order, $event_object, $charge_id, $balance_transaction_id );
-			$this->dispute_cache_service->delete_dispute_caches();
-			return;
+		} else {
+			$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id );
 		}
 
-		$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id );
 		$this->dispute_cache_service->delete_dispute_caches();
 	}
 

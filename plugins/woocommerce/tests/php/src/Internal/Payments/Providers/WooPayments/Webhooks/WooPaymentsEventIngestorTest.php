@@ -4153,6 +4153,42 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An event whose handler throws fires the before-delivery hook only and keeps the dispute caches.
+	 */
+	public function test_event_whose_handler_throws_skips_the_after_delivery_hook_and_the_dispute_cache_purge(): void {
+		$order = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+		$this->seed_dispute_cache_options();
+		$hook_calls = array();
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			function ( string $event_type ) use ( &$hook_calls ): void {
+				$hook_calls[] = array( 'before', $event_type );
+			}
+		);
+		add_action(
+			'woocommerce_payments_after_webhook_delivery',
+			function ( string $event_type ) use ( &$hook_calls ): void {
+				$hook_calls[] = array( 'after', $event_type );
+			}
+		);
+
+		$exception = null;
+		try {
+			$this->sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost', array( 'id' => array( 'not-scalar' ) ) ) );
+		} catch ( RuntimeException $caught ) {
+			$exception = $caught;
+		}
+
+		$this->assertInstanceOf( RuntimeException::class, $exception );
+		$this->assertSame( array( array( 'before', 'charge.dispute.closed' ) ), $hook_calls );
+		foreach ( $this->get_dispute_cache_option_keys() as $key ) {
+			$this->assertSame( array( 'stale' => true ), get_option( $key, false ), "Expected dispute cache option {$key} to remain after the handler threw." );
+		}
+	}
+
+	/**
 	 * @testdox A delivery hook callback that throws $_dataName is logged by the platform's status and code, never a message.
 	 *
 	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text.
