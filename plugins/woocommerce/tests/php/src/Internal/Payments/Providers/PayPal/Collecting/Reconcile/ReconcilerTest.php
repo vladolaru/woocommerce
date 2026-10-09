@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconci
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\SellerStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\BootsCollectingContainer;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\TransportBindingModule;
@@ -222,5 +223,89 @@ class ReconcilerTest extends WalletTestCase {
 		foreach ( $orders as $order ) {
 			$this->assertSame( 1, $this->count_notes( $order, 'Payment successfully captured.' ) );
 		}
+	}
+
+	/**
+	 * The autoload flag of a stored option.
+	 *
+	 * @param string $name The option name.
+	 * @return string|null The flag, or null when the row does not exist.
+	 */
+	private function autoload_flag( string $name ): ?string {
+		global $wpdb;
+
+		return $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/**
+	 * @testdox Should cache the last seller status in a non-autoloaded option while onboarding is incomplete.
+	 */
+	public function test_run_caches_an_incomplete_seller_status(): void {
+		$this->set_collecting();
+		$sut = $this->sut( new SellerStatus( '', true, false, true ) );
+
+		$sut->run();
+
+		$cached = get_option( Options::SELLER_STATUS );
+		$this->assertSame( array( 'payments_receivable', 'primary_email_confirmed', 'checked_at' ), array_keys( $cached ) );
+		$this->assertTrue( $cached['payments_receivable'] );
+		$this->assertFalse( $cached['primary_email_confirmed'] );
+		$this->assertEqualsWithDelta( time(), $cached['checked_at'], 5 );
+		$this->assertContains( $this->autoload_flag( Options::SELLER_STATUS ), array( 'no', 'off' ), 'Not autoloaded' );
+		$this->assertSame( $cached, ( new Options() )->seller_status() );
+		delete_option( Options::SELLER_STATUS );
+	}
+
+	/**
+	 * @testdox Should delete the cached seller status once onboarding completes.
+	 */
+	public function test_run_deletes_the_cached_seller_status_when_the_state_completes(): void {
+		$this->set_collecting();
+		$this->set_wallet_option(
+			Options::SELLER_STATUS,
+			array(
+				'payments_receivable'     => true,
+				'primary_email_confirmed' => false,
+				'checked_at'              => 1,
+			)
+		);
+		$sut = $this->sut( new SellerStatus( 'M-SELLER', true, true, true ) );
+
+		$sut->run();
+
+		$this->assertFalse( get_option( Options::SELLER_STATUS ) );
+		$this->assertSame( 'M-SELLER', get_option( Options::PLATFORM )['merchant_id'] ?? null );
+	}
+
+	/**
+	 * @testdox Should keep the cached seller status when the seller status cannot be read.
+	 */
+	public function test_run_keeps_the_cache_on_a_failed_read(): void {
+		$this->set_collecting();
+		$cache = array(
+			'payments_receivable'     => true,
+			'primary_email_confirmed' => false,
+			'checked_at'              => 1,
+		);
+		$this->set_wallet_option( Options::SELLER_STATUS, $cache );
+		$this->transport = new FakePlatformTransport( array( 'seller_status' => new RuntimeException( 'offline' ) ) );
+		$sut             = $this->boot_container( array( new TransportBindingModule( $this->transport ) ) )->get( 'collecting.reconciler' );
+
+		$summary = $sut->run();
+
+		$this->assertSame( 'failed', $summary['onboarding'] );
+		$this->assertSame( $cache, get_option( Options::SELLER_STATUS ) );
+	}
+
+	/**
+	 * @testdox Should read and cache nothing when the store is not collecting.
+	 */
+	public function test_run_caches_nothing_off_collecting(): void {
+		$this->set_platform_connected();
+		$sut = $this->sut( new SellerStatus( '', true, false, true ) );
+
+		$sut->run();
+
+		$this->assertFalse( get_option( Options::SELLER_STATUS ) );
 	}
 }

@@ -291,4 +291,82 @@ class RefundLockTest extends WalletTestCase {
 		$this->assertSame( self::MESSAGE, $result->get_error_message() );
 		$this->assertSame( array(), $this->http_requests, 'No PayPal call is made' );
 	}
+
+	/**
+	 * @testdox Should decide base_locked() as is_locked() does, without asking the filter.
+	 * @testWith ["collecting", true, true]
+	 *           ["collecting", false, true]
+	 *           ["platform_connected", true, true]
+	 *           ["platform_connected", false, false]
+	 *
+	 * @param string $state    The store state.
+	 * @param bool   $held     Whether the order carries the held-capture meta.
+	 * @param bool   $expected Whether the order is locked before the filter.
+	 */
+	public function test_base_locked_ignores_the_filter( string $state, bool $held, bool $expected ): void {
+		$this->set_state( $state );
+		$order = $this->wallet_order( false, $held );
+		$calls = $this->spy_filter( 'woocommerce_paypal_wallet_refund_locked', ! $expected );
+
+		$sut = new RefundLock( new ConnectionState() );
+
+		$this->assertSame( $expected, $sut->base_locked( $order ) );
+		$this->assertCount( 0, $calls, 'The base predicate never calls the filter' );
+	}
+
+	/**
+	 * @testdox Should lock through the module callback on the filter the order view applies, and keep is_locked() unchanged with one filter call and no recursion.
+	 */
+	public function test_module_callback_locks_a_held_order_for_the_view(): void {
+		$this->set_platform_connected();
+		$this->boot_container( array( new TransportBindingModule( new FakePlatformTransport() ) ) );
+		$held   = $this->wallet_order( true, true );
+		$normal = $this->wallet_order( true, false );
+		$calls  = array();
+		add_filter(
+			'woocommerce_paypal_wallet_refund_locked',
+			static function ( $locked, $order ) use ( &$calls ) {
+				$calls[] = array( $locked, $order->get_id() );
+				return $locked;
+			},
+			10,
+			2
+		);
+
+		$this->assertTrue( apply_filters( 'woocommerce_paypal_wallet_refund_locked', false, $held ), 'The view applies the filter to false and gets the lock' );
+		$this->assertFalse( apply_filters( 'woocommerce_paypal_wallet_refund_locked', false, $normal ), 'An order that is not locked stays unlocked' );
+
+		$calls = array();
+		$sut   = new RefundLock( new ConnectionState() );
+		$this->assertTrue( $sut->is_locked( $held ) );
+		$this->assertFalse( $sut->is_locked( $normal ) );
+		$this->assertSame( array( array( true, $held->get_id() ), array( false, $normal->get_id() ) ), $calls, 'One filter call per decision' );
+	}
+
+	/**
+	 * @testdox Should let a callback after the module's unlock a refund through is_locked(), as it could before the module hooked the filter.
+	 */
+	public function test_a_later_callback_can_still_unlock(): void {
+		$this->set_collecting();
+		$this->boot_container( array( new TransportBindingModule( new FakePlatformTransport() ) ) );
+		$order = $this->wallet_order( true, true );
+		add_filter( 'woocommerce_paypal_wallet_refund_locked', '__return_false', 10 );
+
+		$this->assertFalse( ( new RefundLock( new ConnectionState() ) )->is_locked( $order ) );
+	}
+
+	/**
+	 * @testdox Should keep a lock a callback set, compute the base for a false value, and pass a non-order or non-bool through.
+	 */
+	public function test_callback_handles_its_inputs(): void {
+		$this->set_collecting();
+		$sut    = new RefundLock( new ConnectionState() );
+		$wallet = $this->wallet_order( true, false );
+
+		$this->assertTrue( $sut->handle_woocommerce_paypal_wallet_refund_locked( true, $wallet ) );
+		$this->assertTrue( $sut->handle_woocommerce_paypal_wallet_refund_locked( false, $wallet ), 'False becomes the base answer: a wallet order while collecting' );
+		$this->assertFalse( $sut->handle_woocommerce_paypal_wallet_refund_locked( false, null ), 'Not an order: unchanged' );
+		$this->assertSame( 'x', $sut->handle_woocommerce_paypal_wallet_refund_locked( 'x', $wallet ), 'Not a bool: unchanged' );
+		$this->assertNull( $sut->handle_woocommerce_paypal_wallet_refund_locked( null, $wallet ) );
+	}
 }

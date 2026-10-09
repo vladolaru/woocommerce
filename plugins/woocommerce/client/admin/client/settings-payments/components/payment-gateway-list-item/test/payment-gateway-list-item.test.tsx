@@ -108,6 +108,15 @@ jest.mock( '~/settings-payments/components/official-badge', () => ( {
 	),
 } ) );
 
+jest.mock(
+	'~/settings-payments/components/payment-gateway-list-item/provider-notice',
+	() => ( {
+		ProviderNotice: ( { notice }: { notice: { title: string } } ) => (
+			<div data-testid="provider-notice">{ notice.title }</div>
+		),
+	} )
+);
+
 jest.mock( '@wordpress/components', () => ( {
 	Tooltip: ( { children }: { children: React.ReactNode } ) => (
 		<div>{ children }</div>
@@ -1325,6 +1334,50 @@ describe( 'PaymentGatewayListItem', () => {
 			const completeSetupButton = getByTestId( 'complete-setup-button' );
 			expect( completeSetupButton ).toBeInTheDocument();
 			expect( completeSetupButton ).not.toBeDisabled();
+		} );
+	} );
+
+	describe( 'Provider notice', () => {
+		it( 'renders the provider notice under the row when the gateway reports one', () => {
+			const gateway = createMockGateway( {
+				_notice: {
+					title: 'Complete setup to receive your payment',
+					text: 'Some text',
+					action_label: 'Complete setup',
+					action_url: '/settings',
+					dismissible: true,
+				},
+			} );
+			const { getByTestId, container } = render(
+				<PaymentGatewayListItem
+					gateway={ gateway }
+					{ ...defaultProps }
+				/>
+			);
+
+			expect( getByTestId( 'provider-notice' ) ).toHaveTextContent(
+				'Complete setup to receive your payment'
+			);
+			const item = container.querySelector(
+				'.woocommerce-item__payment-gateway'
+			);
+			expect( item?.lastElementChild ).toBe(
+				getByTestId( 'provider-notice' )
+			);
+		} );
+
+		it( 'renders no notice when the gateway reports none', () => {
+			const gateway = createMockGateway();
+			const { queryByTestId } = render(
+				<PaymentGatewayListItem
+					gateway={ gateway }
+					{ ...defaultProps }
+				/>
+			);
+
+			expect(
+				queryByTestId( 'provider-notice' )
+			).not.toBeInTheDocument();
 		} );
 	} );
 } );

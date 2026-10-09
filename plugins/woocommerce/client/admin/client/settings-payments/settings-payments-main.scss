@@ -181,6 +181,19 @@ $payments-header-row-height: 38px;
 		cursor: pointer;
 	}
 
+	// The notice a provider reports under its row (the PayPal Wallet setup reminder).
+	.woocommerce-list__item-notice {
+		padding: 0 $gap-large $gap-large;
+
+		.components-notice {
+			margin: 0;
+		}
+
+		.woocommerce-list__item-notice-text {
+			margin: $gap-smaller 0 0;
+		}
+	}
+
 	.other-payment-gateways__header__title-image-placeholder {
 		width: 24px;
 		height: 24px;

@@ -4,6 +4,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
@@ -18,6 +20,56 @@ defined( 'ABSPATH' ) || exit;
  * This class handles all the custom logic for the PayPal payment gateway provider.
  */
 class PayPal extends PaymentGateway {
+
+	/**
+	 * Get the provider details, with the setup notice the PayPal Wallet row shows once a customer paid with it.
+	 *
+	 * The notice is the core-owned `woocommerce_paypal_wallet_provider_notice` filter's answer, added as `_notice` only when
+	 * it is an array. The NOX list item renders it under the row.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Payment_Gateway $gateway      The payment gateway object.
+	 * @param int                $order        Optional. The order of the gateway in the list.
+	 * @param string             $country_code Optional. The country code for which the details are being gathered.
+	 *
+	 * @return array The provider details.
+	 */
+	public function get_details( WC_Payment_Gateway $gateway, int $order = 0, string $country_code = '' ): array {
+		$details = parent::get_details( $gateway, $order, $country_code );
+
+		/**
+		 * Filters the setup notice shown under a payment gateway row of the Payments settings list.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param array|null $notice     The notice, with the keys `title`, `text`, `action_label`, `action_url` and `dismissible`, or null for none.
+		 * @param string     $gateway_id The ID of the payment gateway.
+		 */
+		$notice = apply_filters( 'woocommerce_paypal_wallet_provider_notice', null, $gateway->id );
+		if ( is_array( $notice ) ) {
+			$details['_notice'] = $notice;
+		}
+
+		return $details;
+	}
+
+	/**
+	 * Whether the store sells with PayPal Wallet in the collecting state.
+	 *
+	 * Reads the state only when a collecting or platform option exists in the autoloaded set, so a store with no wallet
+	 * history runs no added query.
+	 *
+	 * @return bool
+	 */
+	private function is_collecting_wallet(): bool {
+		$options = new Options();
+		if ( ! $options->has_autoloaded( Options::COLLECTING ) && ! $options->has_autoloaded( Options::PLATFORM ) ) {
+			return false;
+		}
+
+		return ConnectionState::COLLECTING === ( new ConnectionState( $options ) )->resolve();
+	}
 
 	/**
 	 * Get the provider title, naming the row "PayPal Wallet" when core provides the gateway.
@@ -223,6 +275,11 @@ class PayPal extends PaymentGateway {
 	 *              If the payment gateway does not provide the information, it will return true.
 	 */
 	public function is_account_connected( WC_Payment_Gateway $payment_gateway ): bool {
+		// A store that sells with PayPal Wallet before it has a PayPal account is not connected, so the row reads "Action needed" from the first request.
+		if ( $this->is_core_provided( $payment_gateway ) && $this->is_collecting_wallet() ) {
+			return false;
+		}
+
 		return $this->is_paypal_onboarded( $payment_gateway ) ?? parent::is_account_connected( $payment_gateway );
 	}
 

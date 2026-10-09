@@ -105,6 +105,16 @@ export type PaymentsEntity = {
 	_suggestion_id?: string;
 };
 
+// Represents a notice shown under a provider's row in the main providers list (PayPal Wallet proof of concept).
+export type PaymentsProviderNotice = {
+	title: string;
+	text: string;
+	action_label: string;
+	action_url: string;
+	dismissible: boolean;
+	dismiss_url?: string; // A `wc_ajax` URL, with its nonce, that stores the dismissal when requested.
+};
+
 // Represents a payments provider for the main providers list.
 export type PaymentsProvider = PaymentsEntity & {
 	_type: PaymentsProviderType;
@@ -128,6 +138,7 @@ export type PaymentsProvider = PaymentsEntity & {
 	};
 	tags?: string[];
 	_incentive?: PaymentsProviderIncentive;
+	_notice?: PaymentsProviderNotice;
 };
 
 // Represents a payment gateway in the main providers list.

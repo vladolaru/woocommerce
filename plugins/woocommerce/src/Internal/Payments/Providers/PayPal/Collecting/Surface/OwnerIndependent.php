@@ -18,7 +18,8 @@ use WC_Order;
 
 /**
  * Registers the surfaces that concern held orders, which must work whoever owns the wallet and whether or not the
- * wallet booted: the Home task, the Inbox note and the two admin emails.
+ * wallet booted: the Home task, the Inbox note, the two admin emails and the notices on the Payments row, the order
+ * screen and the Plugins page.
  *
  * The shell calls register() before any ownership check. It needs no container: it reads the autoloaded options
  * directly and builds the held-orders query only when the task is read. On a store that has no collecting or platform
@@ -54,6 +55,27 @@ class OwnerIndependent {
 	private ?LoggerInterface $logger;
 
 	/**
+	 * The Payments row notice, built once so that a repeated register() attaches nothing new.
+	 *
+	 * @var ProviderRow|null
+	 */
+	private ?ProviderRow $provider_row = null;
+
+	/**
+	 * The order screen notice, built once.
+	 *
+	 * @var OrderScreen|null
+	 */
+	private ?OrderScreen $order_screen = null;
+
+	/**
+	 * The Plugins page notice, built once.
+	 *
+	 * @var PluginsPageNotice|null
+	 */
+	private ?PluginsPageNotice $plugins_page_notice = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Options|null         $options The option reader; the stored options by default.
@@ -84,6 +106,15 @@ class OwnerIndependent {
 		add_action( 'woocommerce_paypal_wallet_first_order', array( $this, 'handle_woocommerce_paypal_wallet_first_order' ), 10, 2 );
 		add_action( 'woocommerce_paypal_wallet_capture_pending', array( $this, 'handle_woocommerce_paypal_wallet_capture_pending' ), self::AFTER_CAPTURE_RECORDED, 2 );
 		add_filter( 'woocommerce_email_classes', array( $this, 'register_emails' ) );
+
+		// The notices on the Payments row, the order screen and the Plugins page read only the options and the orders.
+		// The same three objects every time: a repeated register() must hit WordPress's duplicate check.
+		$this->provider_row        = $this->provider_row ?? new ProviderRow( $this->options );
+		$this->order_screen        = $this->order_screen ?? new OrderScreen( $this->options );
+		$this->plugins_page_notice = $this->plugins_page_notice ?? new PluginsPageNotice( $this->options );
+		$this->provider_row->register();
+		add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->order_screen, 'handle_woocommerce_admin_order_data_after_payment_info' ) );
+		$this->plugins_page_notice->register();
 
 		// Action the note from the connection change itself: the platform option is written when setup completes, and the
 		// shared settings option when a merchant connects first-party. admin_init stays as a marker-gated fallback.

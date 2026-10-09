@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\C
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldSettlement;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
@@ -234,6 +235,16 @@ final class Reconciler {
 		try {
 			$status = $this->transport->seller_status( $this->state->tracking_id() );
 			if ( ! $status->is_complete() ) {
+				// The order screen reads the last status to tell "set up" from "confirm the email"; not autoloaded.
+				update_option(
+					Options::SELLER_STATUS,
+					array(
+						'payments_receivable'     => $status->payments_receivable(),
+						'primary_email_confirmed' => $status->primary_email_confirmed(),
+						'checked_at'              => time(),
+					),
+					false
+				);
 				return 'incomplete';
 			}
 			$this->state->complete( $status->merchant_id() );

@@ -48,6 +48,15 @@ class Options {
 	public const WEBHOOKS = 'woocommerce_paypal_wallet_webhooks';
 
 	/**
+	 * The last seller status the reconcile read from PayPal, kept for the order screen. Not autoloaded; deleted when the
+	 * collecting state completes or is abandoned.
+	 * Keys: payments_receivable, primary_email_confirmed, checked_at.
+	 *
+	 * @since 11.3.0
+	 */
+	public const SELLER_STATUS = 'wc_paypal_wallet_seller_status';
+
+	/**
 	 * Where the Inbox note stands: `added` once it exists, `actioned` once the store is connected. Absent before the note
 	 * is first added. Autoloaded, so the admin requests that check it run no query.
 	 *
@@ -100,6 +109,35 @@ class Options {
 	 */
 	public function webhooks(): array {
 		return $this->read( self::WEBHOOKS );
+	}
+
+	/**
+	 * The last seller status the reconcile cached; an empty array when none is.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return array
+	 */
+	public function seller_status(): array {
+		return $this->read( self::SELLER_STATUS );
+	}
+
+	/**
+	 * The email of the PayPal account the store collects for: the collecting payee, else the platform connection's.
+	 * An empty string when neither is set.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return string
+	 */
+	public function payee_email(): string {
+		foreach ( array( $this->collecting(), $this->platform() ) as $data ) {
+			if ( isset( $data['payee_email'] ) && is_string( $data['payee_email'] ) && '' !== $data['payee_email'] ) {
+				return $data['payee_email'];
+			}
+		}
+
+		return '';
 	}
 
 	/**

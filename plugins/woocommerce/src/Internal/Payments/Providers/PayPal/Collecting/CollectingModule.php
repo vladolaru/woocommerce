@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\PayeeFilters;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
@@ -56,6 +57,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	private const SCHEDULE_PRIORITY = 20;
 
 	/**
+	 * The priority of the refund-lock callback: before the default 10, so a callback at 10 can still unlock.
+	 */
+	private const REFUND_LOCK_PRIORITY = 1;
+
+	/**
 	 * {@inheritDoc}
 	 */
 	public function services(): array {
@@ -83,6 +89,9 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 		$gates = new PlatformServedGates( $connection_state );
 		add_filter( 'woocommerce_paypal_payments_order_intent', array( $gates, 'handle_woocommerce_paypal_payments_order_intent' ), self::GATE_PRIORITY );
 		add_filter( 'woocommerce_paypal_payments_rest_common_merchant_features', array( $gates, 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ), self::GATE_PRIORITY );
+
+		// The order screen applies this filter to false, so the module answers it with the refund lock's own decision. Early, so a later callback can still unlock.
+		add_filter( 'woocommerce_paypal_wallet_refund_locked', array( new RefundLock( $connection_state ), 'handle_woocommerce_paypal_wallet_refund_locked' ), self::REFUND_LOCK_PRIORITY, 2 );
 
 		if ( $connection_state->is_served_by_platform() ) {
 			$transport = $container->get( 'collecting.transport' );

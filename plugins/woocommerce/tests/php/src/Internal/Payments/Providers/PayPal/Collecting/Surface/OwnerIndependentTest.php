@@ -15,7 +15,10 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\InboxNote;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\PluginsPageNotice;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SetUpPayPalWalletTask;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 
@@ -102,6 +105,29 @@ class OwnerIndependentTest extends WalletTestCase {
 	}
 
 	/**
+	 * Whether a hook has a callback that is a method of an object of a class: other plugins hook some of these hooks too.
+	 *
+	 * @param string $hook           The hook.
+	 * @param string $callback_class The class of the callback's object.
+	 * @return bool
+	 */
+	private function has_surface_callback( string $hook, string $callback_class ): bool {
+		global $wp_filter;
+		if ( ! isset( $wp_filter[ $hook ] ) ) {
+			return false;
+		}
+		foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof $callback_class ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Record every SQL statement from now on.
 	 */
 	private function record_queries(): void {
@@ -142,11 +168,55 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'sync_note' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_paypal_wallet_first_order', array( $this->sut, 'handle_woocommerce_paypal_wallet_first_order' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $this->sut, 'register_emails' ) ) );
+		$this->assertTrue( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'The Payments row notice' );
+		$this->assertTrue( $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ), 'The row notice dismissal' );
+		$this->assertTrue( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'The order screen notice' );
+		$this->assertTrue( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'The Plugins page notice' );
 		$this->assertSame( 30, has_action( 'woocommerce_paypal_wallet_capture_pending', array( $this->sut, 'handle_woocommerce_paypal_wallet_capture_pending' ) ), 'After the collecting module records the held capture at 10' );
 		foreach ( array( Options::PLATFORM, 'woocommerce-ppcp-data-common' ) as $option ) {
 			$this->assertSame( 10, has_action( 'add_option_' . $option, array( $this->sut, 'handle_connection_change' ) ) );
 			$this->assertSame( 10, has_action( 'update_option_' . $option, array( $this->sut, 'handle_connection_change' ) ) );
 		}
+	}
+
+	/**
+	 * The number of callbacks on a hook that are methods of an object of a class.
+	 *
+	 * @param string $hook           The hook.
+	 * @param string $callback_class The class of the callback's object.
+	 * @return int
+	 */
+	private function count_surface_callbacks( string $hook, string $callback_class ): int {
+		global $wp_filter;
+		$count = 0;
+		if ( ! isset( $wp_filter[ $hook ] ) ) {
+			return 0;
+		}
+		foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof $callback_class ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * @testdox Should attach exactly one callback per hook when register() runs twice, as maybe_boot() can.
+	 */
+	public function test_register_twice_attaches_each_callback_once(): void {
+		$this->set_first_order( 7 );
+
+		$this->sut->register();
+		$this->sut->register();
+
+		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'load-plugins.php', PluginsPageNotice::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'admin_init', OwnerIndependent::class ) );
 	}
 
 	/**
@@ -174,6 +244,10 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( $attached, (bool) has_action( 'admin_init', array( $this->sut, 'sync_note' ) ) );
 		$this->assertSame( $attached, (bool) has_action( 'woocommerce_paypal_wallet_first_order', array( $this->sut, 'handle_woocommerce_paypal_wallet_first_order' ) ) );
 		$this->assertSame( $attached, (bool) has_filter( 'woocommerce_email_classes', array( $this->sut, 'register_emails' ) ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ) );
 	}
 
 	/**
@@ -287,6 +361,9 @@ class OwnerIndependentTest extends WalletTestCase {
 
 		$this->assertSame( array(), $this->queries, 'No query of any kind' );
 		$this->assertFalse( has_action( 'init', array( $this->sut, 'register_task' ) ), 'Nothing is attached' );
+		$this->assertFalse( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'No row notice' );
+		$this->assertFalse( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'No order screen notice' );
+		$this->assertFalse( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'No Plugins page notice' );
 		$this->assertNotContains( 'wc-paypal-wallet-setup', $this->extended_task_ids() );
 		$this->assertSame( array(), $this->note_ids() );
 	}

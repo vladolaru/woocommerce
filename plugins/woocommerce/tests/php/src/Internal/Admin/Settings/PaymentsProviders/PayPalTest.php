@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PayPal;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
@@ -519,5 +520,144 @@ class PayPalTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $connected, 'The extension container says not connected, unlike the base provider default of true' );
 		$this->assertTrue( $test_mode, 'The extension container says sandbox, unlike the base provider default' );
+	}
+
+	/**
+	 * @testdox Should add the notice a filter returns to the row details as `_notice`, and nothing for a null or non-array answer.
+	 * @testWith ["array", true]
+	 *           ["null", false]
+	 *           ["string", false]
+	 *
+	 * @param string $kind     What the filter returns.
+	 * @param bool   $expected Whether `_notice` is present.
+	 */
+	public function test_adds_the_notice_from_the_filter( string $kind, bool $expected ): void {
+		$gateway = $this->fake_ppcp_gateway();
+		$notice  = array(
+			'title'        => 'A title',
+			'text'         => 'Some text',
+			'action_label' => 'Do it',
+			'action_url'   => 'https://example.com/do-it',
+			'dismissible'  => true,
+		);
+		$seen    = array();
+		add_filter(
+			'woocommerce_paypal_wallet_provider_notice',
+			static function ( $current, $gateway_id ) use ( $kind, $notice, &$seen ) {
+				$seen = array( $current, $gateway_id );
+				if ( 'array' === $kind ) {
+					return $notice;
+				}
+				return 'string' === $kind ? 'not an array' : null;
+			},
+			10,
+			2
+		);
+
+		$details = $this->sut->get_details( $gateway );
+
+		$this->assertSame( array( null, 'ppcp-gateway' ), $seen, 'The filter starts from null and names the gateway' );
+		$this->assertSame( $expected, array_key_exists( '_notice', $details ) );
+		if ( $expected ) {
+			$this->assertSame( $notice, $details['_notice'] );
+		}
+	}
+
+	/**
+	 * @testdox Should report the account as not connected while collecting, connected once the platform is connected, and leave other stores alone.
+	 */
+	public function test_account_connected_is_false_while_collecting(): void {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( true, true ) );
+
+		try {
+			$before = $this->sut->is_account_connected( $gateway );
+			update_option( 'woocommerce_paypal_wallet_collecting', array( 'payee_email' => 'payee@example.com' ) );
+			$collecting = $this->sut->is_account_connected( $gateway );
+			update_option( 'woocommerce_paypal_wallet_platform', array( 'merchant_id' => 'M2' ) );
+			$platform = $this->sut->is_account_connected( $gateway );
+		} finally {
+			delete_option( 'woocommerce_paypal_wallet_collecting' );
+			delete_option( 'woocommerce_paypal_wallet_platform' );
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertTrue( $before, 'No collecting state: the wallet\'s own answer' );
+		$this->assertFalse( $collecting, 'Collecting: the badge reads Action needed from the first request' );
+		$this->assertTrue( $platform, 'Platform connected: the wallet\'s own answer' );
+	}
+
+	/**
+	 * @testdox Should run no query on the wallet options when the store has no wallet history.
+	 */
+	public function test_account_connected_runs_no_option_query_without_wallet_history(): void {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( true, true ) );
+		wp_load_alloptions();
+		$queries  = array();
+		$recorder = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $recorder );
+
+		try {
+			$connected = $this->sut->is_account_connected( $gateway );
+		} finally {
+			remove_filter( 'query', $recorder );
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertTrue( $connected );
+		foreach ( $queries as $sql ) {
+			$this->assertStringNotContainsString( 'woocommerce_paypal_wallet', $sql, 'No query for the collecting or platform option' );
+		}
+	}
+
+	/**
+	 * @testdox Should give the PayPal row both the setup notice and an account that is not connected, on a collecting store with a first order.
+	 */
+	public function test_collecting_row_carries_the_notice_and_the_action_needed_state(): void {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( true, true ) );
+		update_option( 'woocommerce_paypal_wallet_collecting', array( 'payee_email' => 'payee@example.com' ), true );
+		add_option( 'woocommerce_paypal_wallet_first_order', 7, '', true );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		( new OwnerIndependent() )->register();
+
+		try {
+			$details = $this->sut->get_details( $gateway );
+		} finally {
+			wp_set_current_user( 0 );
+			delete_option( 'woocommerce_paypal_wallet_collecting' );
+			delete_option( 'woocommerce_paypal_wallet_first_order' );
+			$this->swap_wallet_container( $previous );
+		}
+
+		$this->assertFalse( $details['state']['account_connected'] );
+		$this->assertSame( 'Complete setup to receive your payment', $details['_notice']['title'] );
+		$this->assertSame( 'A customer placed an order and paid using PayPal Wallet. To receive the payment, connect PayPal Wallet to your store and complete the setup.', $details['_notice']['text'] );
+		$this->assertSame( 'Complete setup', $details['_notice']['action_label'] );
+		$this->assertSame( PayPalWalletBootstrap::get_settings_url(), $details['_notice']['action_url'] );
+	}
+
+	/**
+	 * @testdox Should leave the account state alone while collecting when the gateway is not core provided.
+	 */
+	public function test_account_connected_is_unchanged_for_a_gateway_core_does_not_provide(): void {
+		$gateway = $this->fake_ppcp_gateway();
+		$before  = $this->sut->is_account_connected( $gateway );
+		update_option( 'woocommerce_paypal_wallet_collecting', array( 'payee_email' => 'payee@example.com' ) );
+
+		try {
+			$collecting = $this->sut->is_account_connected( $gateway );
+		} finally {
+			delete_option( 'woocommerce_paypal_wallet_collecting' );
+		}
+
+		$this->assertSame( $before, $collecting );
 	}
 }

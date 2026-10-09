@@ -320,8 +320,21 @@ if ( wc_tax_enabled() ) {
 		<?php else : ?>
 			<span class="description"><?php echo wc_help_tip( __( 'To edit this order change the status back to "Pending payment"', 'woocommerce' ) ); ?> <?php esc_html_e( 'This order is no longer editable.', 'woocommerce' ); ?></span>
 		<?php endif; ?>
-		<?php if ( $render_refunds ) : ?>
-			<button type="button" class="button refund-items"><?php esc_html_e( 'Refund', 'woocommerce' ); ?></button>
+		<?php
+		if ( $render_refunds ) :
+			/**
+			 * Filters whether the Refund button of an order is locked until PayPal Wallet setup is complete.
+			 *
+			 * The PayPal Wallet proof of concept disables the button of a wallet order that waits for setup. It stays visible.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param bool     $refund_locked Whether the Refund button is locked. Default false.
+			 * @param WC_Order $order         The Order object.
+			 */
+			$refund_locked = isset( $order ) && (bool) apply_filters( 'woocommerce_paypal_wallet_refund_locked', false, $order );
+			?>
+			<button type="button" class="button refund-items"<?php echo $refund_locked ? ' disabled title="' . esc_attr__( 'Refunds are available once PayPal Wallet setup is complete', 'woocommerce' ) . '"' : ''; ?>><?php esc_html_e( 'Refund', 'woocommerce' ); ?></button>
 		<?php endif; ?>
 		<?php
 			// Allow adding custom buttons.

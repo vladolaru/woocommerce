@@ -299,6 +299,7 @@ class CollectingState {
 			true
 		);
 		delete_option( Options::COLLECTING );
+		delete_option( Options::SELLER_STATUS );
 	}
 
 	/**
@@ -331,10 +332,12 @@ class CollectingState {
 	}
 
 	/**
-	 * Delete the collecting option and the platform apps' cached tokens, which only the collecting state used.
+	 * Delete the collecting option, the cached seller status and the platform apps' cached tokens, which only the
+	 * collecting state used.
 	 */
 	private function delete_collecting_state(): void {
 		delete_option( Options::COLLECTING );
+		delete_option( Options::SELLER_STATUS );
 		PerAppBearer::forget_stored_tokens();
 	}
 
