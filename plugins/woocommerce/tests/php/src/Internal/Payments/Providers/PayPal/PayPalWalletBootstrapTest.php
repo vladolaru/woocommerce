@@ -6,11 +6,16 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 use Automattic\WooCommerce\Blocks\AssetsController;
 use Automattic\WooCommerce\Blocks\Package as BlocksPackage;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\SettingsModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use WC_Unit_Test_Case;
 
 /**
@@ -1025,5 +1030,362 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $this->build_guarded_sut( 'wc_test_no_such_extension_init' )->is_extension_loaded_elsewhere() );
 		$this->build_sut( true );
 		$this->assertFalse( $this->sut->is_extension_loaded_elsewhere(), 'The real extension function must not exist in the test process' );
+	}
+
+	/**
+	 * Build the SUT with a collecting state whose held-orders count answers the given number.
+	 *
+	 * @param int $held_orders The number of held orders.
+	 */
+	private function build_sut_with_held_orders( int $held_orders ): void {
+		$arbiter = $this->getMockBuilder( PayPalWalletRuntimeArbiter::class )
+			->onlyMethods( array( 'should_native_register', 'get_runtime_owner', 'is_native_enabled' ) )
+			->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+
+		$this->sut = new class( $held_orders ) extends PayPalWalletBootstrap {
+			/**
+			 * The number of held orders.
+			 *
+			 * @var int
+			 */
+			private $held_orders;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int $held_orders The number of held orders.
+			 */
+			public function __construct( int $held_orders ) {
+				$this->held_orders = $held_orders;
+			}
+
+			/**
+			 * The collecting state, with the held-orders count the test chose.
+			 *
+			 * @return CollectingState
+			 */
+			protected function collecting_state(): CollectingState {
+				return new CollectingState( new Options(), new FixedHeldOrders( $this->held_orders ) );
+			}
+		};
+		$this->sut->init( $arbiter );
+	}
+
+	/**
+	 * @testdox Should not be dormant when the store is collecting and the gateway is not disabled.
+	 *
+	 * @testWith ["missing"]
+	 *           ["yes"]
+	 *           ["no-key"]
+	 *
+	 * @param string $gateway_setting How the gateway's enabled setting is stored.
+	 */
+	public function test_collecting_store_is_not_dormant_unless_the_gateway_is_disabled( string $gateway_setting ): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		if ( 'yes' === $gateway_setting ) {
+			update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		} elseif ( 'no-key' === $gateway_setting ) {
+			update_option( 'woocommerce_ppcp-gateway_settings', array( 'title' => 'PayPal' ) );
+		}
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @testdox Should not be dormant when the stored gateway settings are not an array, as a missing row.
+	 */
+	public function test_collecting_store_with_malformed_gateway_settings_is_not_dormant(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		update_option( 'woocommerce_ppcp-gateway_settings', 'garbage' );
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @testdox Should be dormant when the store is served by the platform but the gateway is disabled.
+	 *
+	 * @testWith ["collecting"]
+	 *           ["platform"]
+	 *
+	 * @param string $state The platform-served state.
+	 */
+	public function test_platform_served_store_is_dormant_while_the_gateway_is_disabled( string $state ): void {
+		if ( 'collecting' === $state ) {
+			update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		} else {
+			update_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+		}
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'no' ) );
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @testdox Should not be dormant for a platform-connected store with the gateway enabled.
+	 */
+	public function test_platform_connected_store_is_not_dormant(): void {
+		update_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @testdox Should still boot a first-party connected store whose gateway is disabled, as before.
+	 */
+	public function test_first_party_connected_store_with_a_disabled_gateway_is_not_dormant(): void {
+		$this->set_connected_merchant_option();
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'no' ) );
+		$this->build_sut( true );
+
+		$this->assertFalse( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @testdox Should stay dormant with neither a collecting nor a platform option, as before.
+	 */
+	public function test_stays_dormant_without_collecting_or_platform_options(): void {
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		$this->build_sut( true );
+
+		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a collecting store and append the collecting module after the wallet gateway module.
+	 */
+	public function test_boots_a_collecting_store_with_the_collecting_module_last(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$seen = null;
+		add_filter(
+			'woocommerce_paypal_payments_modules',
+			static function ( $modules ) use ( &$seen ) {
+				$seen = $modules;
+				return $modules;
+			},
+			20
+		);
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_booted(), 'A collecting store boots without credentials' );
+		$this->assertIsArray( $seen );
+		$classes = array_map( 'get_class', $seen );
+		$this->assertContains( CollectingModule::class, $classes );
+		$this->assertGreaterThan( array_search( WCGatewayModule::class, $classes, true ), array_search( CollectingModule::class, $classes, true ), 'The collecting module comes after the wallet gateway module' );
+		$this->assertSame( CollectingModule::class, end( $classes ), 'The collecting module is the last module' );
+		$this->assertTrue( \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container()->has( 'collecting.state' ), 'The collecting services are registered' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should not add the collecting module for a first-party connected store.
+	 */
+	public function test_does_not_add_the_collecting_module_for_a_first_party_store(): void {
+		$this->set_connected_merchant_option();
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$seen = null;
+		add_filter(
+			'woocommerce_paypal_payments_modules',
+			static function ( $modules ) use ( &$seen ) {
+				$seen = $modules;
+				return $modules;
+			},
+			20
+		);
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertNotContains( CollectingModule::class, array_map( 'get_class', (array) $seen ) );
+	}
+
+	/**
+	 * @testdox Should leave the modules filter alone when the store is dormant.
+	 */
+	public function test_attaches_no_modules_filter_callback_when_dormant(): void {
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'append_collecting_module' ) ) );
+	}
+
+	/**
+	 * @testdox Should keep a list that is not an array unchanged when appending the collecting module.
+	 */
+	public function test_append_collecting_module_ignores_a_non_array(): void {
+		$this->build_sut( true );
+
+		$this->assertSame( 'oops', $this->sut->append_collecting_module( 'oops' ) );
+	}
+
+	/**
+	 * @testdox Should register the takeover and gateway-disable listeners.
+	 */
+	public function test_register_hooks_the_collecting_listeners(): void {
+		$this->build_sut( false );
+		$this->sut->register();
+
+		$this->assertSame( 10, has_action( 'activated_plugin', array( $this->sut, 'on_plugin_activated' ) ) );
+		$this->assertSame( 10, has_action( 'update_option_woocommerce_ppcp-gateway_settings', array( $this->sut, 'on_gateway_settings_updated' ) ) );
+		$this->assertSame( 10, has_action( 'add_option_woocommerce_ppcp-gateway_settings', array( $this->sut, 'on_gateway_settings_added' ) ) );
+	}
+
+	/**
+	 * @testdox Should abandon the collecting state on takeover only when no orders are held.
+	 *
+	 * @testWith [0, false]
+	 *           [1, true]
+	 *
+	 * @param int  $held_orders The number of held orders.
+	 * @param bool $kept        Whether the collecting option stays.
+	 */
+	public function test_activating_the_extension_abandons_the_collecting_state_unless_orders_are_held( int $held_orders, bool $kept ): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( $held_orders );
+
+		$this->sut->on_plugin_activated( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+
+		$this->assertSame( $kept, (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should ignore the activation of any other plugin and a basename that is not a string.
+	 */
+	public function test_activating_another_plugin_keeps_the_collecting_state(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( 0 );
+
+		$this->sut->on_plugin_activated( 'akismet/akismet.php' );
+		$this->sut->on_plugin_activated( array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE ) );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should leave the options alone when the extension is activated and there is no collecting state.
+	 */
+	public function test_activation_without_a_collecting_option_changes_nothing(): void {
+		$this->build_sut_with_held_orders( 0 );
+
+		$this->sut->on_plugin_activated( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should abandon the collecting state through the real hooks when the gateway moves from enabled to disabled.
+	 *
+	 * @testWith ["yes"]
+	 *           ["missing-key"]
+	 *
+	 * @param string $before How the gateway was enabled before.
+	 */
+	public function test_disabling_the_gateway_abandons_the_collecting_state( string $before ): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		update_option( 'woocommerce_ppcp-gateway_settings', 'yes' === $before ? array( 'enabled' => 'yes' ) : array( 'title' => 'PayPal' ) );
+		$this->build_sut_with_held_orders( 0 );
+		$this->sut->register();
+
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'no' ) );
+
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should abandon the collecting state when the gateway row does not exist yet and is created disabled.
+	 */
+	public function test_creating_the_gateway_row_disabled_abandons_the_collecting_state(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		delete_option( 'woocommerce_ppcp-gateway_settings' );
+		$this->build_sut_with_held_orders( 0 );
+		$this->sut->register();
+
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'no' ) );
+
+		$this->assertFalse( get_option( Options::COLLECTING ), 'update_option() on an absent row only fires the add hook' );
+	}
+
+	/**
+	 * @testdox Should keep the collecting state when the gateway row is created enabled, or disabled while orders are held.
+	 *
+	 * @testWith ["yes", 0]
+	 *           ["no", 1]
+	 *
+	 * @param string $enabled     The enabled value the row is created with.
+	 * @param int    $held_orders The number of held orders.
+	 */
+	public function test_creating_the_gateway_row_keeps_the_state_when_it_should( string $enabled, int $held_orders ): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( $held_orders );
+
+		$this->sut->on_gateway_settings_added( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => $enabled ) );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should keep the collecting state when the gateway is disabled while orders are held.
+	 */
+	public function test_disabling_the_gateway_keeps_the_state_while_orders_are_held(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( 1 );
+
+		$this->sut->on_gateway_settings_updated( array( 'enabled' => 'yes' ), array( 'enabled' => 'no' ) );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should keep the collecting state when the gateway settings change without a disable.
+	 *
+	 * @testWith ["yes", "yes"]
+	 *           ["no", "no"]
+	 *           ["no", "yes"]
+	 *
+	 * @param string $before The enabled value before.
+	 * @param string $after  The enabled value after.
+	 */
+	public function test_other_gateway_setting_changes_keep_the_collecting_state( string $before, string $after ): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( 0 );
+
+		$this->sut->on_gateway_settings_updated( array( 'enabled' => $before ), array( 'enabled' => $after ) );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should ignore gateway settings values that are not arrays.
+	 */
+	public function test_gateway_settings_listener_ignores_non_array_values(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut_with_held_orders( 0 );
+
+		$this->sut->on_gateway_settings_updated( array( 'enabled' => 'yes' ), 'no' );
+		$this->sut->on_gateway_settings_updated( 'yes', array( 'enabled' => 'no' ) );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should build the default collecting state with no held orders.
+	 */
+	public function test_default_collecting_state_has_no_held_orders(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut( false );
+
+		$this->sut->on_plugin_activated( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The default factory must delete the state: NoHeldOrders counts zero' );
 	}
 }

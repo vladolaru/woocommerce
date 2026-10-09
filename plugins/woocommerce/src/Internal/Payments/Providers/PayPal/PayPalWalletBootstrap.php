@@ -7,12 +7,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CollectCommand;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\NoHeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\Module;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
+use WP_CLI;
 
 /**
  * Boots the forked PayPal wallet from core when the native wallet owns the site.
@@ -86,6 +93,106 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 */
 	public function register() {
 		add_action( 'plugins_loaded', array( $this, 'maybe_boot' ), 10 );
+		// The collecting state is core's, not the wallet container's: these listeners run whoever owns the wallet and whether or not it booted.
+		add_action( 'activated_plugin', array( $this, 'on_plugin_activated' ), 10, 1 );
+		// update_option() on a gateway row that does not exist yet falls through to add_option(), which fires the add hook only.
+		add_action( 'update_option_woocommerce_ppcp-gateway_settings', array( $this, 'on_gateway_settings_updated' ), 10, 2 );
+		add_action( 'add_option_woocommerce_ppcp-gateway_settings', array( $this, 'on_gateway_settings_added' ), 10, 2 );
+		// A dormant store never boots the collecting module, so the shell owns the command.
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			WP_CLI::add_command( 'wc paypal-wallet collect', array( new CollectCommand( $this->collecting_state() ), 'collect' ) ); // @phpstan-ignore class.notFound (WP-CLI is not installed when PHPStan runs.)
+		}
+	}
+
+	/**
+	 * Leave the collecting state when the PayPal Payments extension is activated: the extension takes over.
+	 *
+	 * Hooked to `activated_plugin`. The state is kept while orders are still held for the payee.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $plugin The activated plugin's basename.
+	 */
+	public function on_plugin_activated( $plugin ): void {
+		if ( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE !== $plugin || ! $this->has_collecting_option() ) {
+			return;
+		}
+
+		$this->collecting_state()->abandon( CollectingState::ABANDON_TAKEOVER );
+	}
+
+	/**
+	 * Leave the collecting state when the merchant turns the PayPal gateway off.
+	 *
+	 * Hooked to `update_option_woocommerce_ppcp-gateway_settings`. Acts only on the move from enabled to disabled; a
+	 * missing `enabled` key counts as enabled, as in {@see self::is_dormant()}. The state is kept while orders are still
+	 * held for the payee.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $old_value The settings before the update.
+	 * @param mixed $value     The settings after the update.
+	 */
+	public function on_gateway_settings_updated( $old_value, $value ): void {
+		if ( ! is_array( $old_value ) || ! is_array( $value ) ) {
+			return;
+		}
+		if ( 'no' === ( $old_value['enabled'] ?? null ) || 'no' !== ( $value['enabled'] ?? null ) ) {
+			return;
+		}
+		if ( ! $this->has_collecting_option() ) {
+			return;
+		}
+
+		$this->collecting_state()->abandon( CollectingState::ABANDON_DISABLED );
+	}
+
+	/**
+	 * Leave the collecting state when the gateway's settings row is created with the gateway turned off.
+	 *
+	 * Hooked to `add_option_woocommerce_ppcp-gateway_settings`. A row that did not exist counts as enabled, so creating
+	 * it with `enabled` set to `no` is a move from enabled to disabled, handled as {@see self::on_gateway_settings_updated()}.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $option The option name.
+	 * @param mixed $value  The settings that were added.
+	 */
+	public function on_gateway_settings_added( $option, $value ): void {
+		unset( $option );
+		$this->on_gateway_settings_updated( array(), $value );
+	}
+
+	/**
+	 * Append the collecting module after the wallet's own modules, so its extensions wrap theirs.
+	 *
+	 * Hooked to `woocommerce_paypal_payments_modules` at priority 10, only for a store the platform serves.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $modules The module list.
+	 *
+	 * @return mixed The list with the collecting module last, or the value unchanged when it is not an array.
+	 */
+	public function append_collecting_module( $modules ) {
+		if ( ! is_array( $modules ) ) {
+			return $modules;
+		}
+		$modules[] = new CollectingModule();
+
+		return $modules;
+	}
+
+	/**
+	 * The collecting state, with no container and no held-orders query of its own.
+	 *
+	 * The container is not booted when the listeners run, so the state is built directly. A test overrides this to
+	 * substitute a held-orders count.
+	 *
+	 * @return CollectingState
+	 */
+	protected function collecting_state(): CollectingState {
+		return new CollectingState( new Options(), new NoHeldOrders() );
 	}
 
 	/**
@@ -147,6 +254,10 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 			return;
 		}
 
+		if ( ( new ConnectionState() )->is_served_by_platform() ) {
+			add_filter( 'woocommerce_paypal_payments_modules', array( $this, 'append_collecting_module' ), 10 );
+		}
+
 		$this->define_constants();
 		// The DTOs the wallet stores as PHP objects keep the extension's class names; see the loader for why.
 		require_once __DIR__ . '/Wallet/SerializedClasses/load.php';
@@ -191,12 +302,20 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * request, which runs the migration into the shared settings option. The install and update migrations run on
 	 * `init` only after a boot.
 	 *
+	 * A store the platform serves (a platform merchant ID or a collecting payee) boots like a connected one, as long as
+	 * the wallet gateway is not turned off.
+	 *
 	 * @since 11.3.0
 	 *
 	 * @return bool
 	 */
 	public function is_dormant(): bool {
 		if ( $this->is_merchant_connected() ) {
+			return false;
+		}
+		// A store the platform serves (connected or collecting) boots like a connected one, unless its gateway is turned off.
+		// First-party credentials are ruled out above, so the platform options alone decide; they are not read twice.
+		if ( ( new ConnectionState() )->has_platform_state() && $this->is_gateway_enabled() ) {
 			return false;
 		}
 
@@ -245,6 +364,30 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		$gateways[] = DormantPayPalGateway::class;
 
 		return $gateways;
+	}
+
+	/**
+	 * Whether the wallet gateway is not turned off: its `enabled` setting is anything but `no`.
+	 *
+	 * A missing option or key counts as enabled, so a store that never saved the gateway's settings still boots. The
+	 * gateway's own form default is `no`, but WooCommerce only stores `no` once a merchant saves or toggles the gateway.
+	 * Reads only.
+	 *
+	 * @return bool
+	 */
+	private function is_gateway_enabled(): bool {
+		$settings = get_option( 'woocommerce_ppcp-gateway_settings' );
+
+		return ! is_array( $settings ) || 'no' !== ( $settings['enabled'] ?? null );
+	}
+
+	/**
+	 * Whether the collecting option is present.
+	 *
+	 * @return bool
+	 */
+	private function has_collecting_option(): bool {
+		return array() !== ( new Options() )->collecting();
 	}
 
 	/**

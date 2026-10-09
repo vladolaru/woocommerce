@@ -1,0 +1,417 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\State;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * Tests for the CollectingState class.
+ *
+ * @group paypal-wallet
+ */
+class CollectingStateTest extends WalletTestCase {
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var CollectingState
+	 */
+	private $sut;
+
+	/**
+	 * Build the SUT with no held orders.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->sut = $this->state_with_held_orders( 0 );
+	}
+
+	/**
+	 * Build a state whose held-orders count answers the given number.
+	 *
+	 * @param int $held The number of held orders.
+	 *
+	 * @return CollectingState
+	 */
+	private function state_with_held_orders( int $held ): CollectingState {
+		return new CollectingState( new Options(), new FixedHeldOrders( $held ) );
+	}
+
+	/**
+	 * @testdox Should write exactly the payee, a 32-character hex tracking ID, the environment and an unbound flag on enter.
+	 */
+	public function test_enter_writes_the_collecting_option(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$data = get_option( Options::COLLECTING );
+		$this->assertSame( array( 'payee_email', 'tracking_id', 'environment', 'payee_bound' ), array_keys( $data ), 'Only the four keys are written' );
+		$this->assertSame( 'payee@example.com', $data['payee_email'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{32}$/', $data['tracking_id'] );
+		$this->assertSame( 'sandbox', $data['environment'] );
+		$this->assertFalse( $data['payee_bound'] );
+		$this->assertTrue( $this->sut->is_collecting() );
+		$this->assertFalse( $this->sut->is_platform_connected() );
+		$this->assertSame( 'payee@example.com', $this->sut->payee_email() );
+		$this->assertSame( $data['tracking_id'], $this->sut->tracking_id() );
+		$this->assertSame( 'sandbox', $this->sut->environment() );
+	}
+
+	/**
+	 * @testdox Should generate a different tracking ID on each fresh enter.
+	 */
+	public function test_enter_generates_a_fresh_tracking_id(): void {
+		$this->sut->enter( 'payee@example.com', 'production' );
+		$first = $this->sut->tracking_id();
+		$this->sut->enter( 'payee@example.com', 'production' );
+
+		$this->assertNotSame( $first, $this->sut->tracking_id() );
+	}
+
+	/**
+	 * @testdox Should refuse an invalid email or environment on enter and write nothing.
+	 */
+	public function test_enter_validates_its_input(): void {
+		foreach ( array( array( 'not-an-email', 'sandbox' ), array( 'payee@example.com', 'staging' ) ) as $args ) {
+			try {
+				$this->sut->enter( ...$args );
+				$this->fail( 'enter() must refuse ' . implode( ' / ', $args ) );
+			} catch ( InvalidArgumentException $exception ) {
+				$this->assertFalse( get_option( Options::COLLECTING ), 'Nothing is written for invalid input' );
+			}
+		}
+	}
+
+	/**
+	 * @testdox Should refuse to enter with a different payee once the payee is bound.
+	 */
+	public function test_enter_refuses_to_replace_a_bound_payee(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$tracking_id = $this->sut->tracking_id();
+
+		$this->expectException( RuntimeException::class );
+		try {
+			$this->sut->enter( 'other@example.com', 'sandbox' );
+		} finally {
+			$this->assertSame( $tracking_id, $this->sut->tracking_id(), 'The bound state must be untouched' );
+		}
+	}
+
+	/**
+	 * @testdox Should do nothing, and write nothing, when entering the same payee again after it is bound.
+	 */
+	public function test_enter_with_the_same_bound_payee_is_a_no_op(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$before  = get_option( Options::COLLECTING );
+		$updates = $this->spy_filter( 'pre_update_option_' . Options::COLLECTING );
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertSame( $before, get_option( Options::COLLECTING ), 'The bound state keeps its tracking ID and flag' );
+		$this->assertCount( 0, $updates, 'A repeated enter must not write' );
+	}
+
+	/**
+	 * @testdox Should refuse to enter on a platform-connected store and write no collecting option.
+	 */
+	public function test_enter_refuses_a_platform_connected_store(): void {
+		$this->set_wallet_option(
+			Options::PLATFORM,
+			array(
+				'merchant_id' => 'M2',
+				'payee_email' => 'old@example.com',
+				'tracking_id' => 't',
+			)
+		);
+
+		try {
+			$this->sut->enter( 'payee@example.com', 'sandbox' );
+			$this->fail( 'enter() must refuse a platform-connected store' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( Options::COLLECTING ) );
+			$this->assertSame( 'old@example.com', $this->sut->payee_email(), 'The platform payee still answers' );
+		}
+	}
+
+	/**
+	 * @testdox Should store the collecting and platform options as autoloaded.
+	 */
+	public function test_state_options_are_autoloaded(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->assertContains( $this->stored_autoload( Options::COLLECTING ), wp_autoload_values_to_autoload(), 'The collecting option is read on every request' );
+
+		$this->sut->complete( 'M2' );
+		$this->assertContains( $this->stored_autoload( Options::PLATFORM ), wp_autoload_values_to_autoload(), 'The platform option is read on every request' );
+	}
+
+	/**
+	 * The stored autoload value of an option row.
+	 *
+	 * @param string $name The option name.
+	 *
+	 * @return string
+	 */
+	private function stored_autoload( string $name ): string {
+		global $wpdb;
+
+		return (string) $wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Reading the stored flag.
+	}
+
+	/**
+	 * @testdox Should refuse a payee change when the payee gets bound while the change is being validated.
+	 */
+	public function test_set_payee_email_rereads_the_bound_flag_before_writing(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$binder = $this->sut;
+		add_filter(
+			'sanitize_email',
+			static function ( $email ) use ( $binder ) {
+				$binder->bind_payee();
+				return $email;
+			}
+		);
+
+		try {
+			$this->sut->set_payee_email( 'new@example.com' );
+			$this->fail( 'The change must be refused once the payee is bound' );
+		} catch ( RuntimeException $exception ) {
+			remove_all_filters( 'sanitize_email' );
+			$this->assertSame( 'payee@example.com', $this->sut->payee_email(), 'The bind must not be overwritten by a stale write' );
+			$this->assertFalse( $this->sut->can_change_payee_email() );
+		}
+	}
+
+	/**
+	 * @testdox Should change the payee email until the payee is bound, then throw.
+	 */
+	public function test_set_payee_email_throws_once_bound(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->assertTrue( $this->sut->can_change_payee_email() );
+
+		$this->sut->set_payee_email( 'new@example.com' );
+		$this->assertSame( 'new@example.com', $this->sut->payee_email() );
+
+		$this->sut->bind_payee();
+		$this->assertFalse( $this->sut->can_change_payee_email() );
+
+		$this->expectException( RuntimeException::class );
+		$this->sut->set_payee_email( 'late@example.com' );
+	}
+
+	/**
+	 * @testdox Should refuse to set a payee email when not collecting.
+	 */
+	public function test_set_payee_email_throws_when_not_collecting(): void {
+		$this->assertFalse( $this->sut->can_change_payee_email() );
+
+		$this->expectException( RuntimeException::class );
+		$this->sut->set_payee_email( 'new@example.com' );
+	}
+
+	/**
+	 * @testdox Should refuse an invalid payee email.
+	 */
+	public function test_set_payee_email_validates(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->expectException( InvalidArgumentException::class );
+		$this->sut->set_payee_email( 'nope' );
+	}
+
+	/**
+	 * @testdox Should flip the bound flag on bind_payee and keep the other keys.
+	 */
+	public function test_bind_payee_flips_the_flag(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$before = get_option( Options::COLLECTING );
+
+		$this->sut->bind_payee();
+
+		$this->assertSame( array_merge( $before, array( 'payee_bound' => true ) ), get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should do nothing on bind_payee when not collecting.
+	 */
+	public function test_bind_payee_does_not_create_the_option(): void {
+		$this->sut->bind_payee();
+
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should let only the first order claim the first-order slot, without touching the collecting option.
+	 */
+	public function test_claim_first_order_succeeds_once(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$before  = get_option( Options::COLLECTING );
+		$updates = $this->spy_filter( 'pre_update_option_' . Options::COLLECTING );
+
+		$this->assertTrue( $this->sut->claim_first_order( 17 ) );
+		$this->assertFalse( $this->sut->claim_first_order( 18 ) );
+
+		$this->assertSame( 17, (int) get_option( Options::FIRST_ORDER ), 'The first claim stays' );
+		$this->assertSame( $before, get_option( Options::COLLECTING ) );
+		$this->assertCount( 0, $updates, 'Claiming must not update the collecting option' );
+		delete_option( Options::FIRST_ORDER );
+	}
+
+	/**
+	 * @testdox Should write the platform option and delete the collecting option on complete.
+	 */
+	public function test_complete_moves_the_state_to_the_platform_option(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$tracking_id = $this->sut->tracking_id();
+
+		$this->sut->complete( 'M2' );
+
+		$platform = get_option( Options::PLATFORM );
+		$this->assertSame( array( 'merchant_id', 'tracking_id', 'payee_email', 'connected_at', 'environment' ), array_keys( $platform ) );
+		$this->assertSame( 'M2', $platform['merchant_id'] );
+		$this->assertSame( $tracking_id, $platform['tracking_id'] );
+		$this->assertSame( 'payee@example.com', $platform['payee_email'] );
+		$this->assertSame( 'sandbox', $platform['environment'] );
+		$this->assertEqualsWithDelta( time(), $platform['connected_at'], 5 );
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The collecting option is deleted' );
+		$this->assertTrue( $this->sut->is_platform_connected() );
+		$this->assertFalse( $this->sut->is_collecting() );
+		$this->assertSame( 'M2', $this->sut->merchant_id() );
+		$this->assertSame( 'payee@example.com', $this->sut->payee_email(), 'The payee reads from the platform option after completing' );
+		$this->assertSame( $tracking_id, $this->sut->tracking_id() );
+	}
+
+	/**
+	 * @testdox Should refuse to complete when the store is not collecting and write no platform option.
+	 */
+	public function test_complete_refuses_when_not_collecting(): void {
+		try {
+			$this->sut->complete( 'M2' );
+			$this->fail( 'complete() must refuse when not collecting' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( Options::PLATFORM ) );
+		}
+	}
+
+	/**
+	 * @testdox Should refuse to complete with an empty merchant ID and keep the collecting option.
+	 */
+	public function test_complete_refuses_an_empty_merchant_id(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		try {
+			$this->sut->complete( '' );
+			$this->fail( 'complete() must refuse an empty merchant ID' );
+		} catch ( InvalidArgumentException $exception ) {
+			$this->assertTrue( $this->sut->is_collecting() );
+			$this->assertFalse( get_option( Options::PLATFORM ) );
+		}
+	}
+
+	/**
+	 * @testdox Should keep the collecting option on takeover or disable while orders are held, and delete it when none are.
+	 *
+	 * @testWith ["takeover"]
+	 *           ["disabled"]
+	 *
+	 * @param string $reason The abandon reason.
+	 */
+	public function test_takeover_and_disable_keep_the_option_while_orders_are_held( string $reason ): void {
+		$held = $this->state_with_held_orders( 1 );
+		$held->enter( 'payee@example.com', 'sandbox' );
+
+		$held->abandon( $reason );
+		$this->assertTrue( $held->is_collecting(), 'A held order keeps the collecting option' );
+
+		$this->sut->abandon( $reason );
+		$this->assertFalse( get_option( Options::COLLECTING ), 'No held order deletes the collecting option' );
+	}
+
+	/**
+	 * @testdox Should always delete the collecting option on a first-party connection, even with held orders.
+	 */
+	public function test_first_party_always_deletes_the_option(): void {
+		$held = $this->state_with_held_orders( 3 );
+		$held->enter( 'payee@example.com', 'sandbox' );
+
+		$held->abandon( 'first_party' );
+
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should refuse an unknown abandon reason and keep the option.
+	 */
+	public function test_abandon_refuses_an_unknown_reason(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		try {
+			$this->sut->abandon( 'bogus' );
+			$this->fail( 'abandon() must refuse an unknown reason' );
+		} catch ( InvalidArgumentException $exception ) {
+			$this->assertTrue( $this->sut->is_collecting() );
+		}
+	}
+
+	/**
+	 * @testdox Should never write an option from the readers, whether the options are present, malformed or absent.
+	 *
+	 * @testWith ["present"]
+	 *           ["malformed"]
+	 *           ["absent"]
+	 *
+	 * @param string $seed How the options are seeded.
+	 */
+	public function test_readers_never_write( string $seed ): void {
+		if ( 'present' === $seed ) {
+			$this->sut->enter( 'payee@example.com', 'sandbox' );
+			$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+		} elseif ( 'malformed' === $seed ) {
+			$this->set_wallet_option( Options::COLLECTING, 'not-an-array' );
+			$this->set_wallet_option( Options::PLATFORM, array( 'tracking_id' => 't' ) );
+		}
+		$writes = 0;
+		$count  = static function () use ( &$writes ) {
+			++$writes;
+		};
+		foreach ( array( Options::COLLECTING, Options::PLATFORM, Options::FIRST_ORDER ) as $name ) {
+			add_action( 'add_option_' . $name, $count );
+			add_action( 'delete_option_' . $name, $count );
+		}
+		$updates = array(
+			$this->spy_filter( 'pre_update_option_' . Options::COLLECTING ),
+			$this->spy_filter( 'pre_update_option_' . Options::PLATFORM ),
+		);
+
+		$this->sut->is_collecting();
+		$this->sut->is_platform_connected();
+		$this->sut->payee_email();
+		$this->sut->tracking_id();
+		$this->sut->environment();
+		$this->sut->merchant_id();
+		$this->sut->can_change_payee_email();
+
+		$this->assertSame( 0, $writes, 'No reader may add or delete an option' );
+		$this->assertCount( 0, $updates[0], 'No reader may update the collecting option' );
+		$this->assertCount( 0, $updates[1], 'No reader may update the platform option' );
+	}
+
+	/**
+	 * @testdox Should read an empty or malformed option as no state.
+	 */
+	public function test_malformed_options_read_as_empty(): void {
+		$this->set_wallet_option( Options::COLLECTING, 'garbage' );
+		$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 5 ) );
+
+		$this->assertFalse( $this->sut->is_collecting() );
+		$this->assertFalse( $this->sut->is_platform_connected() );
+		$this->assertSame( '', $this->sut->payee_email() );
+		$this->assertSame( 'production', $this->sut->environment() );
+	}
+}
