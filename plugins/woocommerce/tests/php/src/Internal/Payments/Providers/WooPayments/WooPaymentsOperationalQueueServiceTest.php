@@ -98,7 +98,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
 		// Native never fires the plugin's update hook (no plugin version); a WooCommerce update queues the sync instead.
 		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		$this->assertSame( 10, has_action( 'wcpay_update_saved_payment_method', array( $service, 'handle_wcpay_update_saved_payment_method' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $service, 'schedule_compatibility_data_update' ) ) );
@@ -123,7 +122,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 
 		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		$this->assertFalse( has_action( 'wcpay_update_saved_payment_method', array( $service, 'handle_wcpay_update_saved_payment_method' ) ) );
 		$this->assertFalse( has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
 		$this->assertFalse( has_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) ) );
 		$this->assertFalse( has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
@@ -904,38 +902,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Saved-payment-method jobs preserve test-mode context and update billing details.
-	 */
-	public function test_update_saved_payment_method_updates_billing_details_with_test_mode_context(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_billing_first_name( 'Ada' );
-		$order->set_billing_last_name( 'Lovelace' );
-		$order->set_billing_email( 'ada@example.com' );
-		$order->set_billing_country( 'US' );
-		$order->save();
-
-		$api_client = $this->create_api_client( array( 'update_payment_method' ) );
-		$api_client->expects( $this->once() )
-			->method( 'update_payment_method' )
-			->with(
-				'pm_123',
-				$this->callback(
-					function ( array $payload ): bool {
-						return true === $this->is_wcpay_test_mode()
-							&& 'Ada Lovelace' === $payload['billing_details']['name']
-							&& 'ada@example.com' === $payload['billing_details']['email'];
-					}
-				)
-			)
-			->willReturn( array( 'result' => 'success' ) );
-
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), true );
-
-		$this->assertFalse( $this->is_wcpay_test_mode() );
-	}
-
-	/**
 	 * Fee-breakdown jobs write the note client 11.1.0 renders for the recorded captured timeline event.
 	 *
 	 * @dataProvider recorded_captured_event_names
@@ -1037,7 +1003,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testWith ["site language"]
 	 *           ["store setup sync"]
 	 *           ["compatibility data update"]
-	 *           ["saved payment method update"]
 	 *           ["store launch"]
 	 *
 	 * Client 11.1.0 appends the platform's message to these lines. The fee-breakdown job is covered above.
@@ -1046,11 +1011,10 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_job_platform_error_log_leaves_out_platform_text( string $job ): void {
 		$methods    = array(
-			'site language'               => array( 'update_account' ),
-			'store setup sync'            => array( 'is_available', 'send_store_setup' ),
-			'compatibility data update'   => array( 'update_compatibility_data' ),
-			'saved payment method update' => array( 'update_payment_method' ),
-			'store launch'                => array( 'update_account' ),
+			'site language'             => array( 'update_account' ),
+			'store setup sync'          => array( 'is_available', 'send_store_setup' ),
+			'compatibility data update' => array( 'update_compatibility_data' ),
+			'store launch'              => array( 'update_account' ),
 		);
 		$api_client = $this->create_api_client( $methods[ $job ] );
 		if ( 'store setup sync' === $job ) {
@@ -1077,13 +1041,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 				$service->handle_store_launch( 'yes', 'no' );
 				$expected = 'Failed to re-send the WooPayments business URL after the store went live.';
 				break;
-			default:
-				$order = wc_create_order();
-				$order->set_billing_email( 'ada@example.com' );
-				$order->set_billing_first_name( 'Ada' );
-				$order->save();
-				$service->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), false );
-				$expected = null;
 		}
 
 		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
@@ -1641,7 +1598,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function remove_operational_hooks( WooPaymentsOperationalQueueService $service ): void {
 		remove_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) );
-		remove_action( 'wcpay_update_saved_payment_method', array( $service, 'handle_wcpay_update_saved_payment_method' ) );
 		remove_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) );
 		remove_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) );
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );

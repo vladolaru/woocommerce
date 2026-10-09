@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -842,7 +843,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
-			$container->get( WooPaymentsAccountService::class )
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( WooPaymentsOrderDataService::class )
 		);
 
 		return $token_service;

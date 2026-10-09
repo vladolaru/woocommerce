@@ -376,7 +376,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				throw WooPaymentsRedirectReturnControllerTest::make_provider_error();
 			}
 		};
-		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, $token_service ), $api_client );
@@ -2362,7 +2362,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 
 		return $token_service;
 	}

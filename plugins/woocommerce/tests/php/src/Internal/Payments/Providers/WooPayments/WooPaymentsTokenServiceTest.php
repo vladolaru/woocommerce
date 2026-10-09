@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
@@ -57,6 +58,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_get_customer_payment_tokens', array( $service, 'handle_woocommerce_get_customer_payment_tokens' ), 10 );
 			remove_filter( 'woocommerce_payment_methods_list_item', array( $service, 'handle_woocommerce_payment_methods_list_item' ), 10 );
 			remove_filter( 'woocommerce_get_credit_card_type_label', array( $service, 'normalize_saved_method_label' ), 10 );
+			remove_action( 'wcpay_update_saved_payment_method', array( $service, 'handle_wcpay_update_saved_payment_method' ), 10 );
 		}
 		$this->created_services = array();
 		if ( null !== $this->gateway_initializer ) {
@@ -484,6 +486,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_payment_token_set_default', array( $sut, 'handle_woocommerce_payment_token_set_default' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_payment_methods_list_item', array( $sut, 'handle_woocommerce_payment_methods_list_item' ) ) );
+		$this->assertSame( 10, has_action( 'wcpay_update_saved_payment_method', array( $sut, 'handle_wcpay_update_saved_payment_method' ) ) );
 	}
 
 	/**
@@ -496,6 +499,73 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_payment_token_set_default', array( $sut, 'handle_woocommerce_payment_token_set_default' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_payment_methods_list_item', array( $sut, 'handle_woocommerce_payment_methods_list_item' ) ) );
+		$this->assertFalse( has_action( 'wcpay_update_saved_payment_method', array( $sut, 'handle_wcpay_update_saved_payment_method' ) ) );
+	}
+
+	/**
+	 * @testdox The saved-payment-method job updates billing details in the test mode it was scheduled in, and restores the mode after.
+	 */
+	public function test_update_saved_payment_method_updates_billing_details_with_test_mode_context(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->set_billing_email( 'ada@example.com' );
+		$order->set_billing_country( 'US' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'update_payment_method' ) )
+			->getMock();
+		$api_client->expects( $this->once() )
+			->method( 'update_payment_method' )
+			->with(
+				'pm_123',
+				$this->callback(
+					function ( array $payload ): bool {
+						return true === $this->is_wcpay_test_mode()
+							&& 'Ada Lovelace' === $payload['billing_details']['name']
+							&& 'ada@example.com' === $payload['billing_details']['email'];
+					}
+				)
+			)
+			->willReturn( array( 'result' => 'success' ) );
+
+		$this->create_service( array(), $api_client )->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), true );
+
+		$this->assertFalse( $this->is_wcpay_test_mode() );
+	}
+
+	/**
+	 * @testdox A platform error in the saved-payment-method job is logged with its status and code, never its message.
+	 *
+	 * Client 11.1.0 appends the platform's message to this line (class-wc-payment-gateway-wcpay.php:1611-1614).
+	 */
+	public function test_update_saved_payment_method_platform_error_log_leaves_out_platform_text(): void {
+		$order = wc_create_order();
+		$order->set_billing_email( 'ada@example.com' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'update_payment_method' ) )
+			->getMock();
+		$api_client->method( 'update_payment_method' )->willThrowException( self::make_provider_error() );
+		$service = $this->create_service( array(), $api_client );
+		$logger  = RecordingWcLogger::install();
+
+		$service->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), false );
+
+		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'Failed to update native WooPayments saved payment method.', $logger->lines[ $errors[0] ][1] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $errors[0] ]['http_status'], $logger->contexts[ $errors[0] ]['error_code'] ) );
+		$this->assertSame(
+			array( 'wcpay_update_saved_payment_method', $order->get_id(), 'pm_123' ),
+			array( $logger->contexts[ $errors[0] ]['action'], $logger->contexts[ $errors[0] ]['order_id'], $logger->contexts[ $errors[0] ]['payment_method'] )
+		);
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -2275,7 +2345,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true ),
 			wc_get_container()->get( WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsCustomerService::class ),
-			wc_get_container()->get( WooPaymentsAccountService::class )
+			wc_get_container()->get( WooPaymentsAccountService::class ),
+			wc_get_container()->get( WooPaymentsOrderDataService::class )
 		);
 		$this->created_services[] = $sut;
 		$logger                   = RecordingWcLogger::install();
@@ -2337,7 +2408,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, $arbiter ?? new StaticWooPaymentsRuntimeArbiter( true ), $api_client ?? wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut->init( $details_service, $arbiter ?? new StaticWooPaymentsRuntimeArbiter( true ), $api_client ?? wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$this->created_services[] = $sut;
 
 		return $sut;
@@ -2580,5 +2651,19 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$token->save();
 
 		return $token;
+	}
+
+	/**
+	 * Tell whether WooPayments runs in test mode for this request.
+	 *
+	 * @return bool
+	 */
+	private function is_wcpay_test_mode(): bool {
+		/**
+		 * Filters whether the current WooPayments request runs in test mode.
+		 *
+		 * @since 11.0.0
+		 */
+		return (bool) apply_filters( 'wcpay_test_mode', false );
 	}
 }

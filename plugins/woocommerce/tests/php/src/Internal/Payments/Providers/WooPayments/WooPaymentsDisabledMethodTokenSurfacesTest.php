@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Utilities\PaymentUtils;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
@@ -251,7 +252,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsTokenService();
-		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service );
+		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$this->services[] = $service;
 
 		return $service;

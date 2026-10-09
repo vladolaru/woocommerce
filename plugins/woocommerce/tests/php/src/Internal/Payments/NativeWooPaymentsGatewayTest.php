@@ -7302,7 +7302,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
-			$container->get( WooPaymentsAccountService::class )
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( WooPaymentsOrderDataService::class )
 		);
 
 		return $token_service;
@@ -7715,7 +7716,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );

@@ -1547,6 +1547,31 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Run a callback in the test mode a queued job was scheduled in.
+	 *
+	 * The callback runs with the `wcpay_test_mode` filter that is_test_mode_enabled() reads set to the job's mode, so its
+	 * platform requests use the mode the job recorded even when the store's mode changed since. The filter is removed when
+	 * the callback ends.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool     $is_test_mode Whether the callback runs in test mode.
+	 * @param callable $callback     Callback to run.
+	 */
+	public function run_in_test_mode_context( bool $is_test_mode, callable $callback ): void {
+		$apply_test_mode_context = static function () use ( $is_test_mode ): bool {
+			return $is_test_mode;
+		};
+
+		add_filter( 'wcpay_test_mode', $apply_test_mode_context );
+		try {
+			$callback();
+		} finally {
+			remove_filter( 'wcpay_test_mode', $apply_test_mode_context );
+		}
+	}
+
+	/**
 	 * Get the current WooPayments mode slug.
 	 *
 	 * @return string

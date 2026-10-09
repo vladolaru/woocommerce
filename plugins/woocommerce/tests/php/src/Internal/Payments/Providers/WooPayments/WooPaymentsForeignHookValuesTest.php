@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Token_CC;
@@ -114,7 +115,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'woocommerce_get_customer_payment_tokens':
 			case 'woocommerce_payment_methods_list_item':
-				( new WooPaymentsTokenService() )->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $arbiter, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ) );
+				( new WooPaymentsTokenService() )->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $arbiter, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsOrderDataService::class ) );
 				break;
 			case 'woocommerce_address_providers':
 				$provider = new WooPaymentsAddressProvider();

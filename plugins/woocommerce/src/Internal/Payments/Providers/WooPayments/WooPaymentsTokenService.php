@@ -39,6 +39,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 */
 	public const CACHED_PAYMENT_METHODS_META_KEY = '_wcpay_payment_methods';
 
+	/**
+	 * Action Scheduler hook of the job that copies an order's billing details onto the saved payment method it paid with.
+	 *
+	 * @var string
+	 */
+	public const UPDATE_SAVED_PAYMENT_METHOD_ACTION = 'wcpay_update_saved_payment_method';
+
 	private const CACHE_CLEAR_BATCH_SIZE = 500;
 
 	private const PAYMENT_METHOD_TYPE_CARD = 'card';
@@ -108,6 +115,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Order data service.
+	 *
+	 * @var WooPaymentsOrderDataService
+	 */
+	private WooPaymentsOrderDataService $order_data_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -120,13 +134,15 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param WooPaymentsApiClient                   $api_client                     Native API client.
 	 * @param WooPaymentsCustomerService             $customer_service               Native customer service.
 	 * @param WooPaymentsAccountService              $account_service                Native account service.
+	 * @param WooPaymentsOrderDataService            $order_data_service             Order data service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 		$this->arbiter                        = $arbiter;
 		$this->api_client                     = $api_client;
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
+		$this->order_data_service             = $order_data_service;
 		$this->register_hooks();
 	}
 
@@ -166,6 +182,61 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		if ( false === has_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) ) ) {
 			add_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) );
 		}
+
+		if ( false === has_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ) ) ) {
+			add_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ), 10, 3 );
+		}
+	}
+
+	/**
+	 * Copy an order's billing details onto the saved payment method it paid with, as the queued job asks.
+	 *
+	 * The job runs in the test mode it was scheduled in. Client 11.1.0 runs the same job from its gateway
+	 * (class-wc-payment-gateway-wcpay.php:575, :1598-1615).
+	 *
+	 * @internal
+	 *
+	 * @param string $payment_method Payment method ID.
+	 * @param int    $order_id       Order ID.
+	 * @param bool   $is_test_mode   Whether this queued job should run in test mode.
+	 */
+	public function handle_wcpay_update_saved_payment_method( $payment_method, $order_id, $is_test_mode = false ): void {
+		$this->account_service->run_in_test_mode_context(
+			(bool) $is_test_mode,
+			function () use ( $payment_method, $order_id ): void {
+				$order = wc_get_order( $order_id );
+				if ( ! $order instanceof WC_Order || ! is_string( $payment_method ) || '' === $payment_method ) {
+					return;
+				}
+
+				$billing_details = $this->order_data_service->get_billing_data_from_order( $order );
+				if ( empty( $billing_details ) ) {
+					return;
+				}
+
+				try {
+					$this->api_client->update_payment_method(
+						$payment_method,
+						array(
+							'billing_details' => $billing_details,
+						)
+					);
+				} catch ( Throwable $exception ) {
+					wc_get_logger()->error(
+						'Failed to update native WooPayments saved payment method.',
+						array_merge(
+							array(
+								'action'         => self::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+								'order_id'       => $order->get_id(),
+								'payment_method' => $payment_method,
+							),
+							WooPaymentsLogger::get_failure_context( $exception ),
+							array( 'source' => WooPaymentsLogger::SOURCE )
+						)
+					);
+				}
+			}
+		);
 	}
 
 	/**

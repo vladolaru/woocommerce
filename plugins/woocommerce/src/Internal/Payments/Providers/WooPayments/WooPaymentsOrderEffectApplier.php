@@ -1033,7 +1033,7 @@ class WooPaymentsOrderEffectApplier {
 		$this->token_service->attach_token_to_order( $order, $token );
 		$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $outcome->get_customer_id() );
 		wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
-			WooPaymentsOperationalQueueService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
+			WooPaymentsTokenService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
 			array(
 				'payment_method' => $payment_method_id,
 				'order_id'       => $order->get_id(),

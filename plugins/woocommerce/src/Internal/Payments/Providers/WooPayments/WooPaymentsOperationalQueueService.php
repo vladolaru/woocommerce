@@ -37,13 +37,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	const STORE_SETUP_SYNC_ACTION = 'wcpay_store_setup_sync';
 
 	/**
-	 * Preserved saved-payment-method update hook.
-	 *
-	 * @var string
-	 */
-	const UPDATE_SAVED_PAYMENT_METHOD_ACTION = 'wcpay_update_saved_payment_method';
-
-	/**
 	 * Preserved fee-breakdown order note hook.
 	 *
 	 * @var string
@@ -282,7 +275,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		}
 
 		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'handle_wcpay_store_setup_sync' ) );
-		add_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ), 10, 3 );
 		add_action( self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, array( $this, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10, 3 );
 		add_action( self::UPDATE_COMPATIBILITY_DATA_ACTION, array( $this, 'handle_wcpay_update_compatibility_data' ), 10, 0 );
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'schedule_compatibility_data_update' ) );
@@ -835,51 +827,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Update a saved payment method with the order billing details.
-	 *
-	 * @internal
-	 *
-	 * @param string $payment_method Payment method ID.
-	 * @param int    $order_id       Order ID.
-	 * @param bool   $is_test_mode   Whether this queued job should run in test mode.
-	 */
-	public function handle_wcpay_update_saved_payment_method( $payment_method, $order_id, $is_test_mode = false ): void {
-		$this->with_test_mode_context(
-			(bool) $is_test_mode,
-			function () use ( $payment_method, $order_id ): void {
-				$order = wc_get_order( $order_id );
-				if ( ! $order instanceof WC_Order || ! is_string( $payment_method ) || '' === $payment_method ) {
-					return;
-				}
-
-				$billing_details = $this->order_data_service->get_billing_data_from_order( $order );
-				if ( empty( $billing_details ) ) {
-					return;
-				}
-
-				try {
-					$this->api_client->update_payment_method(
-						$payment_method,
-						array(
-							'billing_details' => $billing_details,
-						)
-					);
-				} catch ( Throwable $exception ) {
-					$this->log_exception(
-						'Failed to update native WooPayments saved payment method.',
-						$exception,
-						array(
-							'action'         => self::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
-							'order_id'       => $order->get_id(),
-							'payment_method' => $payment_method,
-						)
-					);
-				}
-			}
-		);
-	}
-
-	/**
 	 * Add fee-breakdown details to an order note from the intent timeline.
 	 *
 	 * @internal
@@ -889,7 +836,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @param bool   $is_test_mode Whether this queued job should run in test mode.
 	 */
 	public function handle_wcpay_add_fee_breakdown_to_order_notes( $order_id, $intent_id, $is_test_mode = false ): void {
-		$this->with_test_mode_context(
+		$this->account_service->run_in_test_mode_context(
 			(bool) $is_test_mode,
 			function () use ( $order_id, $intent_id ): void {
 				$order = wc_get_order( $order_id );
@@ -1173,25 +1120,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'wc_subscriptions_version'    => $this->get_plugin_version( 'woocommerce-subscriptions/woocommerce-subscriptions.php' ),
 			),
 		);
-	}
-
-	/**
-	 * Apply a queued job's test-mode context for the duration of a callback.
-	 *
-	 * @param bool     $is_test_mode Whether the job should run in test mode.
-	 * @param callable $callback     Callback to run.
-	 */
-	private function with_test_mode_context( bool $is_test_mode, callable $callback ): void {
-		$apply_test_mode_context = static function () use ( $is_test_mode ): bool {
-			return $is_test_mode;
-		};
-
-		add_filter( 'wcpay_test_mode', $apply_test_mode_context );
-		try {
-			$callback();
-		} finally {
-			remove_filter( 'wcpay_test_mode', $apply_test_mode_context );
-		}
 	}
 
 	/**
