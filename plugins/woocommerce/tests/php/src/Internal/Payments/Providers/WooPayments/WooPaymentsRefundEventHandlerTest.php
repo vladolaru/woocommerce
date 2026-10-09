@@ -544,68 +544,167 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded event refunds the order its charge resolves to, whatever the order's payment method.
+	 * @testdox A charge.refunded event on a charge recorded on an order another gateway paid adds one note and no refund, and logs one line.
 	 *
-	 * Client 11.1.0 looks the order up with order_from_charge_id() and no gateway check
-	 * (class-wc-payments-webhook-processing-service.php:1108-1119).
+	 * Client 11.1.0 refunds the charge's order whatever its gateway (class-wc-payments-webhook-processing-service.php:1108-1119);
+	 * here the refund is recorded, because the charge is not the order's payment. The charge carries its `payment_intent`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
 	 */
-	public function test_charge_refunded_applies_to_an_order_of_another_gateway(): void {
-		$order = $this->create_refundable_order();
-		$order->set_payment_method( 'cod' );
-		$order->update_meta_data( '_charge_id', 'ch_cod' );
-		$order->save();
+	public function test_charge_refunded_on_an_order_paid_by_another_gateway_is_recorded(): void {
+		$order                                  = $this->create_order_paid_by_another_gateway( 'cod', 'ch_cod' );
 		$charge                                 = $this->get_successful_refund_charge();
 		$charge['id']                           = 'ch_cod';
+		$charge['payment_intent']               = 'pi_cod';
 		$charge['refunds']['data'][0]['amount'] = 1000;
+		$logger                                 = RecordingWcLogger::install();
 
 		$this->sut->process( 'charge.refunded', $charge );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$refunds = $order->get_refunds();
-		$this->assertCount( 1, $refunds );
-		$this->assertSame( '-10.00', $refunds[0]->get_total() );
-		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$record_notes = $this->get_notes_containing( $order, 'No refund was added to the order.' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 're_123', $record_notes[0]->content );
+		$this->assertStringContainsString( 'ch_cod', $record_notes[0]->content );
+		$record_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', charge.refunded, charge ch_cod, order payment method cod' === $line[1]
+			)
+		);
+		$this->assertCount( 1, $record_lines );
+		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
 	}
 
 	/**
-	 * @testdox A partial charge.refunded on an order paid by another gateway keeps its status, adds one note and logs the mismatch.
+	 * @testdox A charge.refunded event on a WooPayments order paid by another intent is recorded, even though the order holds the charge ID.
 	 *
-	 * Client 11.1.0 refunds the charge's order whatever its gateway (class-wc-payments-webhook-processing-service.php:1108-1119).
+	 * The order's transaction ID names the intent that paid it; the refunded charge belongs to a second intent.
 	 */
-	public function test_partial_charge_refunded_on_an_order_paid_by_another_gateway_logs_the_mismatch(): void {
+	public function test_charge_refunded_on_an_order_paid_by_another_intent_is_recorded(): void {
 		$order = $this->create_refundable_order();
-		$order->set_payment_method( 'cod' );
-		$order->update_meta_data( '_charge_id', 'ch_cod_partial' );
+		$order->update_meta_data( '_charge_id', 'ch_second' );
 		$order->save();
-		$charge       = $this->get_successful_refund_charge();
-		$charge['id'] = 'ch_cod_partial';
-		$logger       = RecordingWcLogger::install();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_second';
+		$charge['payment_intent'] = 'pi_second';
 
 		$this->sut->process( 'charge.refunded', $charge );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertCount( 1, $order->get_refunds() );
-		$refund_notes = array_filter(
-			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => false !== strpos( (string) $note->content, 'A refund of' )
-		);
-		$this->assertCount( 1, $refund_notes );
-		$mismatch_lines = array_keys(
-			array_filter(
-				$logger->lines,
-				static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', ' )
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
+	 * @testdox A failed charge.refund.updated on a charge recorded on an order another gateway paid keeps its refund row and status, and adds one note.
+	 *
+	 * Refund object fields: https://docs.stripe.com/api/refunds/object.
+	 */
+	public function test_failed_refund_update_on_another_charge_changes_nothing_but_a_note(): void {
+		$order  = $this->create_order_paid_by_another_gateway( 'cod', 'ch_other' );
+		$refund = wc_create_refund(
+			array(
+				'amount'   => '10.00',
+				'order_id' => $order->get_id(),
 			)
 		);
-		$this->assertCount( 1, $mismatch_lines );
-		$context = $logger->contexts[ $mismatch_lines[0] ];
-		$this->assertSame( 'order-payments', $context['source'] );
-		$this->assertSame( $order->get_id(), $context['order_id'] );
-		$this->assertSame( 'charge.refunded', $context['applied_operation'] );
-		$this->assertSame( 'cod', $context['payment_method'] );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_other' );
+		$refund->save();
+		$this->assertSame( 'refunded', wc_get_order( $order->get_id() )->get_status() );
+
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'             => 're_other',
+				'charge'         => 'ch_other',
+				'payment_intent' => 'pi_other',
+				'amount'         => 1000,
+				'currency'       => 'usd',
+				'status'         => 'failed',
+				'failure_reason' => 'lost_or_stolen_card',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order_Refund::class, wc_get_order( $refund->get_id() ), 'The refund row must stay.' );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$record_notes = $this->get_notes_containing( $order, 'which does not pay this order, is now failed.' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 're_other', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A succeeded charge.refund.updated on a charge recorded on an order another gateway paid adds one note.
+	 *
+	 * Refund object fields: https://docs.stripe.com/api/refunds/object.
+	 */
+	public function test_succeeded_refund_update_on_another_charge_adds_one_note(): void {
+		$order = $this->create_order_paid_by_another_gateway( 'cod', 'ch_other' );
+
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'             => 're_other',
+				'charge'         => 'ch_other',
+				'payment_intent' => 'pi_other',
+				'amount'         => 400,
+				'currency'       => 'usd',
+				'status'         => 'succeeded',
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 'which does not pay this order, is now successful.' ) );
+	}
+
+	/**
+	 * Create an order another gateway paid, holding a WooPayments charge recorded on it.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $charge_id      Recorded charge ID.
+	 * @return WC_Order
+	 */
+	private function create_order_paid_by_another_gateway( string $payment_method, string $charge_id ): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->set_date_paid( time() );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Get an order's notes containing a text.
+	 *
+	 * @param WC_Order $order Order.
+	 * @param string   $text  Text the note contains.
+	 * @return array<int,object>
+	 */
+	private function get_notes_containing( WC_Order $order, string $text ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, $text )
+			)
+		);
 	}
 
 	/**

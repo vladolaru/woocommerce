@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -61,20 +62,29 @@ class WooPaymentsRefundEventHandler {
 	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
 
 	/**
+	 * Recorder of events on a charge that does not pay the order.
+	 *
+	 * @var WooPaymentsOtherChargeRecorder|null
+	 */
+	private ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime           $legacy_runtime         WooPayments legacy runtime.
-	 * @param OrderPaymentLock                   $order_payment_lock     Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary   $persistence_vocabulary WooPayments persistence profile.
-	 * @param WooPaymentsEventOrderResolver|null $event_order_resolver   Webhook event order resolver.
+	 * @param WooPaymentsLegacyRuntime            $legacy_runtime         WooPayments legacy runtime.
+	 * @param OrderPaymentLock                    $order_payment_lock     Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary WooPayments persistence profile.
+	 * @param WooPaymentsEventOrderResolver|null  $event_order_resolver   Webhook event order resolver.
+	 * @param WooPaymentsOtherChargeRecorder|null $other_charge_recorder  Recorder of events on another charge.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, ?WooPaymentsEventOrderResolver $event_order_resolver = null ): void {
+	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
 		$this->legacy_runtime         = $legacy_runtime;
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->event_order_resolver   = $event_order_resolver;
+		$this->other_charge_recorder  = $other_charge_recorder;
 	}
 
 	/**
@@ -138,9 +148,9 @@ class WooPaymentsRefundEventHandler {
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
-		$order             = $this->get_order_for_charge_id( $charge_id, 'charge.refunded', $charge );
+		$order             = $this->get_order_for_charge_id( $charge_id, $charge );
 
-		if ( $charge_amount < 0 || $refund_amount < 0 || $refunded_amount > (float) $order->get_total() ) {
+		if ( $charge_amount < 0 || $refund_amount < 0 ) {
 			throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 		}
 
@@ -148,7 +158,16 @@ class WooPaymentsRefundEventHandler {
 		try {
 			// Read the order again under the lock: a WP Admin refund of the same platform refund links its local row while
 			// it holds the lock, and a lookup made before the claim would miss it and create a second refund.
-			$order           = $this->get_fresh_order( $order );
+			$order = $this->get_fresh_order( $order );
+			if ( ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
+				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency );
+				return;
+			}
+
+			if ( $refunded_amount > (float) $order->get_total() ) {
+				throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
+			}
+
 			$existing_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
 			if ( $existing_refund instanceof WC_Order_Refund && $is_pending_refund && 'successful' === $order->get_meta( '_wcpay_refund_status', true ) ) {
 				return;
@@ -182,40 +201,45 @@ class WooPaymentsRefundEventHandler {
 		$currency       = $this->get_required_string( $refund, 'currency' );
 		$status         = $this->get_required_string( $refund, 'status' );
 		$balance_txn_id = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
-		$order          = $this->get_order_for_charge_id( $charge_id, 'charge.refund.updated' );
+		$order          = $this->get_order_for_charge_id( $charge_id );
 
-		// Each branch looks the local refund up again on the order read under the lock, as charge.refunded does: a WP
-		// Admin refund of the same platform refund links its row while it holds the lock.
+		// Each branch decides, and looks the local refund up again, on the order read under the lock, as charge.refunded
+		// does: a WP Admin refund of the same platform refund links its row while it holds the lock.
 		switch ( $status ) {
 			case 'failed':
-				$lock_token = $this->claim_refund_lock( $order, $refund_id );
-				try {
-					$order = $this->get_fresh_order( $order );
-					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), false, $this->get_optional_string( $refund, 'failure_reason' ) );
-				} finally {
-					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
-				}
-				return;
 			case 'canceled':
 			case 'cancelled':
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
 					$order = $this->get_fresh_order( $order );
-					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), true );
+					if ( ! $this->is_own_payment( $order, $refund, $charge_id ) ) {
+						$this->record_other_charge_refund( $order, 'charge.refund.updated', $refund, $charge_id, $refund_id, $status );
+						return;
+					}
+
+					$is_cancelled = 'failed' !== $status;
+					$this->handle_failed_refund( $order, $refund_id, $amount, $currency, $this->get_refund_by_provider_refund_id( $order, $refund_id ), $is_cancelled, $is_cancelled ? '' : $this->get_optional_string( $refund, 'failure_reason' ) );
 				} finally {
 					$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 				}
 				return;
 			case 'succeeded':
-				// Only a refund this store already has gets the success note; one it does not have needs no lock. The check
-				// reads the order again too, so refund IDs cached earlier in the request cannot hide a linked refund.
-				if ( ! $this->get_refund_by_provider_refund_id( $this->get_fresh_order( $order ), $refund_id ) instanceof WC_Order_Refund ) {
+				// Only a refund this store already has gets the success note, so the order's own refund that the store does
+				// not have needs no lock. The check reads the order again too, so refund IDs cached earlier in the request
+				// cannot hide a linked refund.
+				$fresh_order = $this->get_fresh_order( $order );
+				if ( $this->is_own_payment( $fresh_order, $refund, $charge_id ) && ! $this->get_refund_by_provider_refund_id( $fresh_order, $refund_id ) instanceof WC_Order_Refund ) {
 					return;
 				}
 
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
-					$order     = $this->get_fresh_order( $order );
+					$order = $this->get_fresh_order( $order );
+					if ( ! $this->is_own_payment( $order, $refund, $charge_id ) ) {
+						$this->record_other_charge_refund( $order, 'charge.refund.updated', $refund, $charge_id, $refund_id, $status );
+						return;
+					}
+
 					$wc_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
 					if ( $wc_refund instanceof WC_Order_Refund ) {
 						$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, false );
@@ -460,22 +484,59 @@ class WooPaymentsRefundEventHandler {
 	 * Resolve the order of a charge ID, whatever its payment method, as client 11.1.0 does (webhook processing service :1108-1119).
 	 *
 	 * @param string              $charge_id    Charge ID.
-	 * @param string              $event_type   Event type, for the payment method mismatch warning.
 	 * @param array<string,mixed> $event_object Provider object.
 	 * @return WC_Order
 	 * @throws RuntimeException When the charge resolves to no order, or to one whose key does not match the event.
 	 */
-	private function get_order_for_charge_id( string $charge_id, string $event_type, array $event_object = array() ): WC_Order {
+	private function get_order_for_charge_id( string $charge_id, array $event_object = array() ): WC_Order {
 		$order = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $event_object );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}
 
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
-			$this->order_payment_lock->log_payment_method_mismatch( $order, $event_type );
+		return $order;
+	}
+
+	/**
+	 * Tell whether a refund event's charge is the payment of its order.
+	 *
+	 * @param WC_Order            $order        Order read under the order payment lock, or read again for the lock-free check.
+	 * @param array<string,mixed> $event_object Charge or refund object; its `payment_intent` names the event's intent.
+	 * @param string              $charge_id    The event's charge ID.
+	 * @return bool
+	 */
+	private function is_own_payment( WC_Order $order, array $event_object, string $charge_id ): bool {
+		$resolver = $this->get_event_order_resolver();
+
+		return $resolver->is_own_payment( $order, $resolver->get_event_intent_id( $event_object, $order ), $charge_id );
+	}
+
+	/**
+	 * Record a refund event on a charge that does not pay its order: one note and one warning line, no refund row.
+	 *
+	 * @param WC_Order            $order         Order read under the order payment lock.
+	 * @param string              $event_type    Event type.
+	 * @param array<string,mixed> $event_object  Charge or refund object.
+	 * @param string              $charge_id     The event's charge ID.
+	 * @param string              $refund_id     Provider refund ID.
+	 * @param string              $refund_status Provider refund status.
+	 * @param float|null          $amount        Refunded amount, for a refund made on the charge.
+	 * @param string              $currency      Refund currency, for a refund made on the charge.
+	 */
+	private function record_other_charge_refund( WC_Order $order, string $event_type, array $event_object, string $charge_id, string $refund_id, string $refund_status, ?float $amount = null, string $currency = '' ): void {
+		$facts = array(
+			'object_id' => $refund_id,
+			'status'    => $refund_status,
+			'intent_id' => $this->get_event_order_resolver()->get_event_intent_id( $event_object, $order ),
+			'charge_id' => $charge_id,
+			'refund_id' => $refund_id,
+		);
+		if ( null !== $amount ) {
+			$facts['amount']   = $amount;
+			$facts['currency'] = $currency;
 		}
 
-		return $order;
+		$this->get_other_charge_recorder()->record( $order, $event_type, $facts );
 	}
 
 	/**
@@ -506,6 +567,19 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return $this->event_order_resolver;
+	}
+
+	/**
+	 * Get the recorder of events on a charge that does not pay the order.
+	 *
+	 * @return WooPaymentsOtherChargeRecorder
+	 */
+	private function get_other_charge_recorder(): WooPaymentsOtherChargeRecorder {
+		if ( null === $this->other_charge_recorder ) {
+			$this->other_charge_recorder = wc_get_container()->get( WooPaymentsOtherChargeRecorder::class );
+		}
+
+		return $this->other_charge_recorder;
 	}
 
 	/**

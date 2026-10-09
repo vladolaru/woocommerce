@@ -4116,6 +4116,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$envelope        = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
 		$recorded_refund = $envelope['data']['object'];
 		$order           = $this->create_refundable_woopayments_order( '100.00' );
+		$order->set_transaction_id( (string) $recorded_refund['payment_intent'] );
+		$order->update_meta_data( '_intent_id', (string) $recorded_refund['payment_intent'] );
 		$order->update_meta_data( '_charge_id', (string) $recorded_refund['charge'] );
 		$order->save();
 		$refund = $this->create_local_refund( $order, 100.00, 'Existing refund' );
@@ -5310,7 +5312,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments order with a captured charge for refund webhook tests.
+	 * Create a WooPayments order with a captured charge for refund webhook tests, paid by its intent as a WooPayments payment leaves it.
 	 *
 	 * @param string $total Order total.
 	 * @return WC_Order
@@ -5332,6 +5334,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$charge_id = 'ch_' . $order->get_id();
 		$order->set_total( $total );
 		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_' . $order->get_id() );
+		$order->update_meta_data( '_intent_id', 'pi_' . $order->get_id() );
 		$order->update_meta_data( '_charge_id', $charge_id );
 		$order->save();
 		$this->last_refund_charge_id = $charge_id;
