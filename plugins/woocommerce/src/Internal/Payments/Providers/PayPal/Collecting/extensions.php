@@ -12,16 +12,20 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\MerchantlessPartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Logging\RedactingLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\LockingRefundProcessor;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\RefundProcessor;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
 // The transport, when it serves the store and is ready. Values the wallet reads once, when it builds a service, keep
 // the wallet's own until then: a transport that is not ready would throw while the container builds the service.
@@ -49,6 +53,10 @@ $platform_referrals = static function ( PartnerReferrals $previous, ContainerInt
 };
 
 return array(
+	// The wallet's endpoints log a failed request's arguments, Authorization header included: keep the apps' tokens out.
+	'woocommerce.logger.woocommerce'                   => static function ( LoggerInterface $previous, ContainerInterface $c ): LoggerInterface {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? new RedactingLogger( $previous ) : $previous;
+	},
 	// Connected: SmartButton builds real buttons, EarlyOrderHandler accepts early orders and the gateway reports onboarded.
 	'settings.flag.is-connected'                       => static function ( bool $previous, ContainerInterface $c ): bool {
 		return $previous || $c->get( 'collecting.connection-state' )->is_served_by_platform();
@@ -122,6 +130,23 @@ return array(
 		$transport = $ready_transport( $c );
 
 		return null === $transport ? $previous : $transport->sdk_client_id( PlatformTransport::APP_PLATFORM );
+	},
+	// A collecting store has no merchant ID, so its seller status cannot be looked up: refuse it without a request.
+	'api.endpoint.partners'                            => static function ( PartnersEndpoint $previous, ContainerInterface $c ): PartnersEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() || '' !== $c->get( 'api.merchant_id' ) ) {
+			return $previous;
+		}
+
+		return new MerchantlessPartnersEndpoint(
+			$c->get( 'api.host' ),
+			$c->get( 'api.bearer' ),
+			$c->get( 'woocommerce.logger.woocommerce' ),
+			$c->get( 'api.factory.sellerstatus' ),
+			$c->get( 'api.partner_merchant_id' ),
+			'',
+			$c->get( 'api.helper.failure-registry' ),
+			$c->get( 'api.partners-seller-status-cache' )
+		);
 	},
 	'api.endpoint.partner-referrals'                   => $platform_referrals,
 	'api.endpoint.partner-referrals-sandbox'           => $platform_referrals,

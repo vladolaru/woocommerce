@@ -53,6 +53,7 @@ class CollectingModuleTest extends WalletTestCase {
 		);
 		$this->assertSame(
 			array(
+				'woocommerce.logger.woocommerce',
 				'settings.flag.is-connected',
 				'settings.environment',
 				'webhook.is-registered',
@@ -66,6 +67,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'api.merchant_id',
 				'api.partner_merchant_id',
 				'button.client_id',
+				'api.endpoint.partners',
 				'api.endpoint.partner-referrals',
 				'api.endpoint.partner-referrals-sandbox',
 				'api.endpoint.partner-referrals-production',

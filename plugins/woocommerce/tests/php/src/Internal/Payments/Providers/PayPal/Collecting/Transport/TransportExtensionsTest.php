@@ -34,6 +34,8 @@ class TransportExtensionsTest extends WalletTestCase {
 	 * The services the transport extensions replace.
 	 */
 	private const EXTENDED_SERVICES = array(
+		'woocommerce.logger.woocommerce',
+		'api.endpoint.partners',
 		'api.bearer',
 		'api.host-resolver',
 		'api.host',

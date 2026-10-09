@@ -22,10 +22,12 @@ trait BootsCollectingContainer {
 	 * The collecting module is added whatever the store's state, so a store the platform does not serve shows that the
 	 * extensions hand the wallet's own values through.
 	 *
-	 * @param Module[] $extra_modules Modules added after the collecting module, such as a transport binding.
+	 * @param Module[] $extra_modules   Modules added after the collecting module, such as a transport binding.
+	 * @param Module[] $wallet_bindings Modules added before the collecting module, so its extensions wrap theirs, as they
+	 *                                  wrap the wallet's own.
 	 * @return ContainerInterface
 	 */
-	private function boot_container( array $extra_modules = array() ): ContainerInterface {
+	private function boot_container( array $extra_modules = array(), array $wallet_bindings = array() ): ContainerInterface {
 		foreach ( PayPalWalletBootstrap::get_extension_constants() as $name => $value ) {
 			if ( ! defined( $name ) ) {
 				define( $name, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- The constants the shell defines before a boot.
@@ -35,7 +37,7 @@ trait BootsCollectingContainer {
 		// The SDK v6 module loads unless the store is flagged ineligible; load it for certain.
 		add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled', '__return_true' );
 
-		$modules   = ( require WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/modules.php' )();
+		$modules   = array_merge( ( require WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/modules.php' )(), $wallet_bindings );
 		$modules[] = new CollectingModule();
 
 		$package = Package::new( WalletProperties::new() );
