@@ -65,7 +65,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_session_store_id' );
 		delete_transient( 'woocommerce_woopayments_public_fraud_services' );
 		remove_all_filters( 'pre_http_request' );
-		remove_all_filters( 'woocommerce_woopayments_fraud_service_config' );
+		remove_all_filters( 'wcpay_prepare_fraud_config' );
 		wp_set_current_user( 0 );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'] );
 		$GLOBALS['current_screen'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Leave the admin screen the test set.
@@ -114,7 +114,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_prints_the_filtered_sift_values_and_loads_the_script(): void {
 		add_filter(
-			'woocommerce_woopayments_fraud_service_config',
+			'wcpay_prepare_fraud_config',
 			static function ( $config ) {
 				$config['beacon_key'] = '</script><script>alert("x")</script>';
 				$config['session_id'] = 'sess_known';
@@ -141,7 +141,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_prints_no_sift_tracker_for_a_malformed_filtered_field( string $field ): void {
 		add_filter(
-			'woocommerce_woopayments_fraud_service_config',
+			'wcpay_prepare_fraud_config',
 			static function ( $config ) use ( $field ) {
 				$config[ $field ] = new \stdClass();
 				return $config;
@@ -359,7 +359,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let the per-service filter disable a single service by returning null.
+	 * @testdox Should let the per-service filter disable a single service by returning null, as the extension documents.
 	 */
 	public function test_per_service_filter_can_disable_a_service(): void {
 		$this->seed_account_fraud_services(
@@ -370,7 +370,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		);
 
 		add_filter(
-			'woocommerce_woopayments_fraud_service_config',
+			'wcpay_prepare_fraud_config',
 			function ( $config, string $service_id ) {
 				return 'sift' === $service_id ? null : $config;
 			},
@@ -385,16 +385,15 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply a callback on the deprecated wcpay_prepare_fraud_config filter and emit a deprecation notice.
+	 * @testdox Should pass each prepared service config and its ID to wcpay_prepare_fraud_config and serve the result, with no deprecation notice.
 	 */
-	public function test_legacy_per_service_filter_changes_config_with_deprecation_notice(): void {
-		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+	public function test_per_service_filter_changes_config(): void {
 		$this->seed_account_fraud_services( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
 
 		add_filter(
 			'wcpay_prepare_fraud_config',
 			static function ( $config, string $service_id ) {
-				$config['legacy_service_id'] = $service_id;
+				$config['filtered_service_id'] = $service_id;
 				return $config;
 			},
 			10,
@@ -403,51 +402,19 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 
 		$config = $this->make_sut()->get_fraud_services_config();
 
-		$this->assertSame( 'sift', $config['sift']['legacy_service_id'], 'The legacy filter result must reach the served config.' );
-		$this->assertSame( 'prod_beacon', $config['sift']['beacon_key'], 'The legacy filter must receive the prepared config.' );
+		$this->assertSame( 'sift', $config['sift']['filtered_service_id'], 'The filter result must reach the served config.' );
+		$this->assertSame( 'prod_beacon', $config['sift']['beacon_key'], 'The filter must receive the prepared config.' );
 	}
 
 	/**
-	 * @testdox Should fire the deprecated filter before the native filter, and pass its result to the native filter.
-	 */
-	public function test_legacy_per_service_filter_fires_before_native_filter(): void {
-		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
-		$this->seed_account_fraud_services( array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) );
-
-		$calls = array();
-		add_filter(
-			'wcpay_prepare_fraud_config',
-			static function ( $config ) use ( &$calls ) {
-				$calls[]         = 'legacy';
-				$config['order'] = array( 'legacy' );
-				return $config;
-			}
-		);
-		add_filter(
-			'woocommerce_woopayments_fraud_service_config',
-			static function ( $config ) use ( &$calls ) {
-				$calls[]           = 'native';
-				$config['order'][] = 'native';
-				return $config;
-			}
-		);
-
-		$config = $this->make_sut()->get_fraud_services_config();
-
-		$this->assertSame( array( 'legacy', 'native' ), $calls, 'The deprecated filter must fire first.' );
-		$this->assertSame( array( 'legacy', 'native' ), $config['sift']['order'], 'The native filter must receive the deprecated filter result.' );
-	}
-
-	/**
-	 * @testdox Should fall back to the unfiltered config when a deprecated filter callback returns an invalid value.
+	 * @testdox Should fall back to the unfiltered config when a filter callback returns an invalid value.
 	 * @testWith ["not-an-array"]
 	 *           [42]
 	 *           [false]
 	 *
-	 * @param mixed $invalid Invalid value returned by the legacy callback.
+	 * @param mixed $invalid Invalid value returned by the callback.
 	 */
-	public function test_legacy_per_service_filter_invalid_return_falls_back( $invalid ): void {
-		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
+	public function test_per_service_filter_invalid_return_falls_back( $invalid ): void {
 		$this->seed_account_fraud_services( array( 'stripe' => array( 'publishable' => 'pk_test' ) ) );
 
 		add_filter(
@@ -460,34 +427,6 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$config = $this->make_sut()->get_fraud_services_config();
 
 		$this->assertSame( array( 'stripe' => array( 'publishable' => 'pk_test' ) ), $config );
-	}
-
-	/**
-	 * @testdox Should let a deprecated filter callback disable a service by returning null, as the plugin documented.
-	 */
-	public function test_legacy_per_service_filter_can_disable_a_service(): void {
-		$this->setExpectedDeprecated( 'wcpay_prepare_fraud_config' );
-		$this->seed_account_fraud_services(
-			array(
-				'stripe' => array(),
-				'sift'   => array( 'beacon_key' => 'prod_beacon' ),
-			)
-		);
-
-		add_filter(
-			'wcpay_prepare_fraud_config',
-			static function ( $config, string $service_id ) {
-				return 'sift' === $service_id ? null : $config;
-			},
-			10,
-			2
-		);
-
-		$config = $this->make_sut()->get_fraud_services_config();
-
-		$this->assertArrayHasKey( 'sift', $config );
-		$this->assertNull( $config['sift'] );
-		$this->assertSame( array(), $config['stripe'] );
 	}
 
 	/**

@@ -1,4 +1,4 @@
 Significance: patch
 Type: dev
-Comment: Fire the WooPayments plugin's wcpay_prepare_fraud_config filter again through apply_filters_deprecated() before woocommerce_woopayments_fraud_service_config, until WooCommerce 12.0.0.
+Comment: Fire the WooPayments extension's wcpay_prepare_fraud_config filter for each fraud service config, under its own name, as the extension does.
 

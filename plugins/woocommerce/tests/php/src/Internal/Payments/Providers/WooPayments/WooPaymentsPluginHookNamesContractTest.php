@@ -68,7 +68,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 *
 	 * The decided `hooks` rows of the program's BC inventory (54 rows, less
 	 * `wpcay_get_account_login_data`, which native fires again since F-T60-24, and
-	 * `wcpay_prepare_fraud_config`, which native fires through `apply_filters_deprecated()` since N-196).
+	 * `wcpay_prepare_fraud_config`, which native fires under that name as its per-service fraud config filter).
 	 * Every citation below is copied verbatim from that inventory's authority column,
 	 * which already corrected the seven wrong Decision 1 citations the review found.
 	 *
@@ -125,21 +125,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'woocommerce_payments_abilities_enabled'           => 'data/client-delta-10.8.0-11.1.0.tsv:20 (10.9.0 Abilities API registration, n/a)',
 		'woocommerce_payments_order_failed'                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:96 §1(a)',
 		'woocommerce_woocommerce_payments_updated'         => 'data/bc-surface-diff.md:124 §1(b) dropped by design (no plugin version)',
-	);
-
-	/**
-	 * `wcpay_prepare_fraud_config` was renamed; its successor is asserted separately with its own
-	 * arity (D4's `test_renamed_hooks_fire_their_successor`). The old name still fires through
-	 * `apply_filters_deprecated()` until WooCommerce 12.0.0 (N-196), so the fire-site scan resolves
-	 * it too and it carries no `ALLOWED_DIFFERENCES` entry.
-	 *
-	 * @var array<string,array{successor:string,arity:int}>
-	 */
-	private const RENAMED_HOOKS = array(
-		'wcpay_prepare_fraud_config' => array(
-			'successor' => 'woocommerce_woopayments_fraud_service_config',
-			'arity'     => 2,
-		),
 	);
 
 	/**
@@ -288,22 +273,6 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $stale, "These ALLOWED_DIFFERENCES hooks are now fired natively; remove the allowance:\n" . implode( "\n", $stale ) );
-	}
-
-	/**
-	 * @testdox The renamed wcpay_prepare_fraud_config filter fires under its native successor name and arity.
-	 */
-	public function test_renamed_hooks_fire_their_successor(): void {
-		$sites   = $this->native_hook_fire_sites();
-		$missing = array();
-
-		foreach ( self::RENAMED_HOOKS as $old_name => $rename ) {
-			if ( ! $this->native_has_matching_site( $sites, $rename['successor'], $rename['arity'] ) ) {
-				$missing[] = $old_name . ' -> ' . $rename['successor'] . ' (arity ' . $rename['arity'] . ')';
-			}
-		}
-
-		$this->assertSame( array(), $missing, "Every renamed hook's native successor must fire with the recorded arity:\n" . implode( "\n", $missing ) );
 	}
 
 	/**

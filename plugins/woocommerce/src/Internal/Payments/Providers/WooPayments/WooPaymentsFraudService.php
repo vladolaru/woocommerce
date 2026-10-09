@@ -31,13 +31,6 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsFraudService implements RegisterHooksInterface {
 
 	/**
-	 * Filter applied to each prepared fraud-service config before it is served to clients.
-	 *
-	 * Returning null disables the service for the current request.
-	 */
-	public const FILTER_FRAUD_SERVICE_CONFIG = 'woocommerce_woopayments_fraud_service_config';
-
-	/**
 	 * Transient caching the platform's public fraud-services config.
 	 */
 	private const PUBLIC_CONFIG_TRANSIENT = 'woocommerce_woopayments_public_fraud_services';
@@ -239,33 +232,14 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			/**
 			 * Filters a single prepared fraud-service config before it is served to clients.
 			 *
-			 * Bridges the WooPayments plugin's filter name for existing callbacks.
-			 *
 			 * @since 11.0.0
-			 * @deprecated 11.0.0 Use woocommerce_woopayments_fraud_service_config instead. Scheduled for removal in WooCommerce 12.0.0.
 			 *
 			 * @param array<string,mixed>|null $service_config Prepared service config, or null when the service should not be used.
 			 * @param string                   $service_id     Fraud service identifier (e.g. 'sift').
 			 */
-			$legacy_service_config = apply_filters_deprecated(
-				'wcpay_prepare_fraud_config',
-				array( $service_config, $service_id ),
-				'11.0.0',
-				self::FILTER_FRAUD_SERVICE_CONFIG
-			);
-			if ( is_array( $legacy_service_config ) || null === $legacy_service_config ) {
-				$service_config = $legacy_service_config;
-			}
+			$filtered_service_config = apply_filters( 'wcpay_prepare_fraud_config', $service_config, $service_id );
 
-			/**
-			 * Filters a single prepared fraud-service config before it is served to clients.
-			 *
-			 * @since 11.0.0
-			 *
-			 * @param array<string,mixed>|null $service_config Prepared service config, or null when the service should not be used.
-			 * @param string                   $service_id     Fraud service identifier (e.g. 'sift').
-			 */
-			$services_config[ $service_id ] = apply_filters( self::FILTER_FRAUD_SERVICE_CONFIG, $service_config, $service_id );
+			$services_config[ $service_id ] = is_array( $filtered_service_config ) || null === $filtered_service_config ? $filtered_service_config : $service_config;
 		}
 
 		return $services_config;
