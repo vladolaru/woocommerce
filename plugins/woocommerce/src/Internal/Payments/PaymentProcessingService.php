@@ -712,7 +712,9 @@ class PaymentProcessingService {
 	 *
 	 * When applying a capture or cancel the provider already made fails, the provider's outcome is returned as it is: the
 	 * money moved, and the reference saved on the order lets the provider's next event settle the order; checkout throws
-	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed.
+	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed. When applying a
+	 * failed capture or cancel fails, the failed outcome is returned and nothing is saved: the provider still holds the
+	 * authorization the order records, as client 11.1.0 leaves it when its failure handling throws.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param ProviderInterface       $provider  Provider.
@@ -752,7 +754,8 @@ class PaymentProcessingService {
 				}
 
 				$outcome                  = $provider_outcome;
-				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
+				$reconciliation_persisted = PaymentOutcome::STATUS_FAILED !== $provider_outcome->get_status()
+					&& $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, $operation, $apply_exception, $reconciliation_persisted );
 			}
 

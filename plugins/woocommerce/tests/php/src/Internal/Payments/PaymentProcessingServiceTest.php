@@ -3307,6 +3307,108 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed $operation whose local application throws leaves the authorization the provider still holds as the order records it.
+	 *
+	 * The platform refuses the operation and the re-fetched intent still requires capture, so nothing moved. A note hook then
+	 * throws while the failure is applied. Client 11.1.0 writes nothing after such a throw: the capture failure adds its note
+	 * before it saves `requires_capture` (includes/class-wc-payments-order-service.php:491-508, :2889-2895), and the cancel
+	 * failure adds its note before it saves the re-fetched status (includes/class-wc-payment-gateway-wcpay.php:4104-4130).
+	 *
+	 * @dataProvider provide_refused_authorization_operations
+	 *
+	 * @param string              $operation Operation: capture or cancel.
+	 * @param array<string,mixed> $refusal   Platform answer to the operation.
+	 */
+	public function test_failed_authorization_operation_keeps_the_authorization_when_applying_it_throws( string $operation, array $refusal ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_auth' );
+		$order->update_meta_data( '_intent_id', 'pi_auth' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$order->update_status( 'on-hold' );
+
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$refusal,
+			// The re-fetch after a failed capture or cancel (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:4014, :4084);
+			// the fields are those of a PaymentIntent (https://docs.stripe.com/api/payment_intents/object).
+			$this->json_transport_response(
+				200,
+				array(
+					'id'       => 'pi_auth',
+					'object'   => 'payment_intent',
+					'status'   => 'requires_capture',
+					'amount'   => 1000,
+					'currency' => 'usd',
+				)
+			),
+		);
+
+		$provider    = $this->timeout_transport_provider( $http_client );
+		$hook_throws = 0;
+		add_action(
+			'woocommerce_order_note_added',
+			static function () use ( &$hook_throws ): void {
+				++$hook_throws;
+				throw new RuntimeException( 'A note hook failed.' );
+			}
+		);
+
+		$outcome = 'capture' === $operation
+			? $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
+			: $this->sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $hook_throws, 'Applying the failure must reach the throwing note hook.' );
+		$this->assertCount( 2, $http_client->requests, 'The operation and the re-fetch reach the platform.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( 'pi_auth', $order->get_transaction_id() );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'The provider still holds the authorization.' );
+	}
+
+	/**
+	 * Capture and cancel refusals that leave the authorization in place.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
+	 */
+	public function provide_refused_authorization_operations(): array {
+		return array(
+			// Stripe's decline passed through by the platform, parsed by client 11.1.0
+			// includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871 (error.code, error.message, error.type).
+			'declined capture' => array(
+				'capture',
+				$this->json_transport_response(
+					402,
+					array(
+						'error' => array(
+							'type'         => 'card_error',
+							'code'         => 'card_declined',
+							'decline_code' => 'generic_decline',
+							'message'      => 'Your card was declined.',
+						),
+					)
+				),
+			),
+			// Stripe's lock_timeout (https://docs.stripe.com/error-codes#lock-timeout), parsed at the same client lines.
+			'refused cancel'   => array(
+				'cancel',
+				$this->json_transport_response(
+					429,
+					array(
+						'error' => array(
+							'type'    => 'invalid_request_error',
+							'code'    => 'lock_timeout',
+							'message' => 'This object cannot be accessed right now because another API request or Stripe process is currently accessing it.',
+						),
+					)
+				),
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should support non-Stripe redirect providers through neutral outcomes.
 	 */
 	public function test_process_checkout_supports_non_stripe_redirect_provider(): void {
