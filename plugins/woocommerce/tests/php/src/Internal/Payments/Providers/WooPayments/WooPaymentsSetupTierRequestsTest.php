@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use ActionScheduler;
 use ActionScheduler_Store;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -403,6 +405,136 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->stored_tier(), 'The WooPayments extension owns this option too; the built-in WooPayments must not rewrite its tier.' );
 	}
 
+	/**
+	 * @testdox $label: the gateway list, the renewal handler, the authorization routes, the order actions and a refund reach the payment operations only while the built-in WooPayments owns payments.
+	 * @dataProvider payment_operation_entry_point_requests
+	 *
+	 * @param string $label         Case label.
+	 * @param bool   $builtin_owner Whether the built-in WooPayments owns payments; otherwise the WooPayments extension does.
+	 * @param string $request       Request class.
+	 */
+	public function test_payment_operations_are_reached_only_while_the_builtin_owns_payments( string $label, bool $builtin_owner, string $request ): void {
+		unset( $label );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		if ( $builtin_owner ) {
+			$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
+		} else {
+			// A store set up for the built-in WooPayments, then switched back to the extension: the stored tier stays active.
+			update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		}
+		$adapter = new class() extends WooPaymentsProviderGatewayAdapter {
+			/**
+			 * Operations that reached the adapter, in order.
+			 *
+			 * @var array<int,string>
+			 */
+			public array $operations = array();
+
+			/**
+			 * Record a charge.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->operations[] = 'charge';
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+			}
+
+			/**
+			 * Record a refund.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->operations[] = 'refund';
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+			}
+
+			/**
+			 * Record a capture.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->operations[] = 'capture';
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+			}
+
+			/**
+			 * Record a cancel.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+				$this->operations[] = 'cancel';
+				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
+			}
+		};
+		wc_get_container()->replace( WooPaymentsProviderGatewayAdapter::class, $adapter );
+		$this->arrange_request( $request );
+
+		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
+		$this->reload_payment_gateways();
+		$authorization_routes = array_filter(
+			array_keys( rest_get_server()->get_routes() ),
+			static fn( string $route ): bool => 1 === preg_match( '#^/wc/v3/payments/orders/.+/(capture|cancel)_authorization$#', $route )
+		);
+		$renewal_hooked       = has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$gateway_classes      = array_map( 'get_class', array_filter( WC()->payment_gateways()->payment_gateways(), 'is_object' ) );
+
+		$authorized = $this->create_woopayments_order( 'on-hold', array( '_intention_status' => 'requires_capture' ) );
+		do_action( 'woocommerce_order_action_capture_charge', $authorized );
+		do_action( 'woocommerce_order_action_cancel_authorization', $authorized );
+		$this->create_woopayments_order( 'on-hold', array( '_intention_status' => 'requires_capture' ) )->update_status( 'completed' );
+		$this->create_woopayments_order( 'on-hold', array( '_intention_status' => 'requires_capture' ) )->update_status( 'cancelled' );
+		$paid = $this->create_woopayments_order( 'processing', array( '_charge_id' => 'ch_entry_points' ) );
+		wc_create_refund(
+			array(
+				'amount'         => 5,
+				'order_id'       => $paid->get_id(),
+				'refund_payment' => true,
+			)
+		);
+
+		$this->assertSame( $builtin_owner, in_array( NativeWooPaymentsGateway::class, $gateway_classes, true ), 'Checkout, order-pay and refunds reach the built-in gateway only through the gateway list.' );
+		$this->assertSame( $builtin_owner, $renewal_hooked, 'Subscription renewals reach the built-in gateway only through this handler.' );
+		$this->assertSame( $builtin_owner ? 2 : 0, count( $authorization_routes ), 'The capture and cancel authorization routes register only while the built-in WooPayments owns payments.' );
+		$this->assertSame( $builtin_owner ? array( 'capture', 'cancel', 'capture', 'cancel', 'refund' ) : array(), $adapter->operations, 'Only a request the built-in WooPayments owns may reach the gateway adapter.' );
+	}
+
+	/** @return array<string,array{string,bool,string}> */
+	public static function payment_operation_entry_point_requests(): array {
+		return array(
+			'extension-owned front'         => array( 'extension-owned front', false, 'front' ),
+			'extension-owned admin'         => array( 'extension-owned admin', false, 'admin' ),
+			'extension-owned AJAX'          => array( 'extension-owned AJAX', false, 'ajax' ),
+			'extension-owned REST'          => array( 'extension-owned REST', false, 'rest' ),
+			'extension-owned cron'          => array( 'extension-owned cron', false, 'cron' ),
+			'extension-owned WP-CLI'        => array( 'extension-owned WP-CLI', false, 'cli' ),
+			'built-in owned REST (control)' => array( 'built-in owned REST', true, 'rest' ),
+		);
+	}
+
 	/** @return array<string,array{string,string,string,bool}> */
 	public static function gateway_availability_cases(): array {
 		return array(
@@ -615,6 +747,27 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Create a WooPayments card order of 10.00 with a payment intent.
+	 *
+	 * @param string               $status Order status.
+	 * @param array<string,string> $meta   Further order meta.
+	 * @return WC_Order
+	 */
+	private function create_woopayments_order( string $status, array $meta ): WC_Order {
+		$order = new WC_Order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '10.00' );
+		$order->set_status( $status );
+		$order->update_meta_data( '_intent_id', 'pi_entry_points' );
+		foreach ( $meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		$order->save();
+
+		return $order;
 	}
 
 	/**
