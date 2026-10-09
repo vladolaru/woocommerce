@@ -407,17 +407,24 @@ class WooPaymentsOrderNoteService {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string                                                                                                     $event_type Provider event type.
-	 * @param array{intent_id?:string,charge_id?:string,refund_id?:string,status?:string,amount?:float,currency?:string} $facts      The event's intent, charge and refund IDs, its status, and its amount and currency when it moves money.
+	 * @param string                                                                                                                                                            $event_type Provider event type.
+	 * @param array{intent_id?:string,charge_id?:string,refund_id?:string,dispute_id?:string,status?:string,message?:string,dispute_url?:string,amount?:float,currency?:string} $facts      The event's intent, charge, refund and dispute IDs, its status and message, the dispute details URL, and its amount and currency when it moves money.
 	 * @return string
 	 * @throws \InvalidArgumentException When the event type has no note.
 	 */
 	public function format_other_charge_note( string $event_type, array $facts ): string {
-		$intent_id       = (string) ( $facts['intent_id'] ?? '' );
-		$charge_id       = (string) ( $facts['charge_id'] ?? '' );
-		$refund_id       = (string) ( $facts['refund_id'] ?? '' );
-		$transaction_url = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
-		$link            = static fn( string $url_placeholder ): array => array(
+		$intent_id        = (string) ( $facts['intent_id'] ?? '' );
+		$charge_id        = (string) ( $facts['charge_id'] ?? '' );
+		$refund_id        = (string) ( $facts['refund_id'] ?? '' );
+		$dispute_id       = (string) ( $facts['dispute_id'] ?? '' );
+		$status           = (string) ( $facts['status'] ?? '' );
+		$transaction_url  = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
+		$dispute_url      = esc_url( (string) ( $facts['dispute_url'] ?? '' ) );
+		$dispute_elements = array(
+			'code' => '<code>',
+			'a'    => '<a href="%3$s" target="_blank" rel="noopener noreferrer">',
+		);
+		$link             = static fn( string $url_placeholder ): array => array(
 			'a' => '' !== $transaction_url ? '<a href="' . $url_placeholder . '" target="_blank" rel="noopener noreferrer">' : '<code>',
 		);
 
@@ -451,10 +458,26 @@ class WooPaymentsOrderNoteService {
 					'canceled'  => __( 'canceled', 'woocommerce' ),
 					'cancelled' => __( 'canceled', 'woocommerce' ),
 				);
-				$status   = (string) ( $facts['status'] ?? '' );
 				/* translators: %1$s: WooPayments refund ID, %2$s: WooPayments charge ID, %3$s: refund status, such as "failed", %4$s: transaction URL. */
 				$format = __( 'The refund <code>%1$s</code> on WooPayments charge <a>%2$s</a>, which does not pay this order, is now %3$s.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), esc_html( $refund_id ), esc_html( $charge_id ), esc_html( $statuses[ $status ] ?? $status ), $transaction_url );
+
+			case 'charge.dispute.created':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL. */
+				$format = __( 'A dispute (<code>%1$s</code>) was opened on WooPayments charge <code>%2$s</code>, which does not pay this order. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url );
+
+			case 'charge.dispute.closed':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "lost". */
+				$format = __( 'The dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, was closed with status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ) );
+
+			case 'charge.dispute.updated':
+			case 'charge.dispute.funds_withdrawn':
+			case 'charge.dispute.funds_reinstated':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "under_review", %5$s: what happened, such as "Payment dispute has been updated". */
+				$format = __( '%5$s: the dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, has status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( (string) ( $facts['message'] ?? '' ) ) );
 		}
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Event types are fixed strings, not HTML output.

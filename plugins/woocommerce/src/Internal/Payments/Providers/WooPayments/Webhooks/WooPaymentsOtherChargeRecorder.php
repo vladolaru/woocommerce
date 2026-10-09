@@ -53,9 +53,9 @@ class WooPaymentsOtherChargeRecorder {
 	 * A redelivery of the same event adds no second note: the note's identity is the event type, the event object's ID
 	 * and its status.
 	 *
-	 * @param WC_Order                                                                                                                    $order      Order the event resolved to, read under the order payment lock.
-	 * @param string                                                                                                                      $event_type Provider event type.
-	 * @param array{object_id:string,status?:string,intent_id?:string,charge_id?:string,refund_id?:string,amount?:float,currency?:string} $facts      The event object's ID and status, its intent, charge and refund IDs, and its amount and currency when it moves money.
+	 * @param WC_Order                                                                                                                                                                           $order      Order the event resolved to, read under the order payment lock.
+	 * @param string                                                                                                                                                                             $event_type Provider event type.
+	 * @param array{object_id:string,status?:string,intent_id?:string,charge_id?:string,refund_id?:string,dispute_id?:string,message?:string,dispute_url?:string,amount?:float,currency?:string} $facts      The event object's ID and status, its intent, charge, refund and dispute IDs, what it says happened, the dispute details URL, and its amount and currency when it moves money.
 	 */
 	public function record( WC_Order $order, string $event_type, array $facts ): void {
 		$charge_id = (string) ( $facts['charge_id'] ?? '' );

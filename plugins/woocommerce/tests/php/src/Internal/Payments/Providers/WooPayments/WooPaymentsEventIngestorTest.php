@@ -238,10 +238,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A test-mode event reaches the order when the store runs in test mode through wcpay_test_mode while its gateway setting says live.
 	 */
 	public function test_webhook_mode_follows_the_full_test_mode_check(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
 		add_filter( 'wcpay_test_mode', '__return_true' );
 
@@ -2493,9 +2490,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * 2026-10-03).
 	 */
 	public function test_dispute_created_marks_order_on_hold(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
 		$order->save();
 		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
@@ -2528,9 +2523,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * fired once per dispatch, so the dispute note's own dedupe cannot hide a second run.
 	 */
 	public function test_dispute_created_replay_in_a_later_request_runs_the_handler_once(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_3UJbTlBzWlxcwgpP0vNaexjT' );
+		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
 		$order->save();
 		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
@@ -2571,10 +2564,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.dispute.created deletes stale dispute caches.
 	 */
 	public function test_dispute_created_deletes_dispute_caches(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 		$this->seed_dispute_cache_options();
 
 		$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response' ) );
@@ -2586,10 +2576,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.dispute.created uses inquiry wording for warning dispute statuses.
 	 */
 	public function test_dispute_created_uses_inquiry_note_for_warning_status(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'warning_needs_response' ) );
 
@@ -2614,10 +2601,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A created dispute without an ID records one bare note and clears caches on replay.
 	 */
 	public function test_dispute_created_without_id_adds_bare_note_and_invalidates_caches_on_replay(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$missing_id_event       = $this->create_dispute_event( 'charge.dispute.created', 'needs_response' );
 		$missing_id_event['id'] = 'evt_row_39_missing_id';
@@ -2682,10 +2666,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $message    Expected message.
 	 */
 	public function test_dispute_updates_add_notes_without_changing_status( string $event_type, string $message ): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$this->sut->process( $this->create_dispute_event( $event_type, 'needs_response' ) );
 
@@ -2700,10 +2681,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.dispute.updated deletes stale dispute caches when an update note is applied.
 	 */
 	public function test_dispute_updated_deletes_dispute_caches(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 		$this->seed_dispute_cache_options();
 
 		$this->sut->process( $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' ) );
@@ -2715,10 +2693,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.dispute.updated de-duplicates update notes structurally across locales.
 	 */
 	public function test_dispute_updated_dedupes_notes_across_locale_renderings(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 		$event = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' );
 
 		$event['id'] = 'evt_dispute_updated_locale_dedupe_1';
@@ -2745,10 +2720,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox Distinct disputes on one charge each record their own funds-withdrawn note.
 	 */
 	public function test_dispute_updates_record_a_note_per_dispute(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$first_event        = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_first' ) );
 		$second_event       = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_second' ) );
@@ -2773,10 +2745,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A duplicate dispute update keeps one note and still clears stale dispute caches.
 	 */
 	public function test_dispute_update_redelivery_invalidates_caches_without_duplicate_note(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$first_event        = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response', array( 'id' => 'dp_cache_replay' ) );
 		$replay_event       = $first_event;
@@ -2797,10 +2766,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A dispute update without an ID records the bare note and clears stale caches.
 	 */
 	public function test_dispute_update_without_id_adds_bare_note_and_invalidates_caches(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'processing' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
+		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
 		$event       = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' );
 		$event['id'] = 'evt_row_38_missing_id';
@@ -4909,6 +4875,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create an order WooPayments paid with an intent and its charge, as a WooPayments payment leaves it.
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @param string $intent_id Payment intent ID, the order's transaction ID.
+	 * @return WC_Order
+	 */
+	private function create_paid_woopayments_order( string $charge_id, string $intent_id ): WC_Order {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( $intent_id );
+		$order->update_meta_data( '_intent_id', $intent_id );
+		$order->update_meta_data( '_charge_id', $charge_id );
 		$order->save();
 
 		return $order;

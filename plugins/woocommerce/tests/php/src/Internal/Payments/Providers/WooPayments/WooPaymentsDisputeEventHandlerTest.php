@@ -301,9 +301,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A won dispute close on an already refunded order keeps the refunded status instead of completing it.
 	 */
 	public function test_dispute_closed_keeps_refunded_status_on_fully_refunded_order(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( \WC_Order::class, $order );
-		$order->set_total( '10.00' );
+		$order = $this->create_disputable_order();
 		$order->set_status( 'refunded' );
 		$order->save();
 
@@ -329,10 +327,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A won dispute close moves an over-refunded on-hold order to refunded, not completed.
 	 */
 	public function test_dispute_closed_moves_over_refunded_order_to_refunded(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( \WC_Order::class, $order );
-		$order->set_total( '10.00' );
-		$order->save();
+		$order = $this->create_disputable_order();
 
 		$refund = wc_create_refund(
 			array(
@@ -368,9 +363,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A won dispute close on an unrefunded order still completes it.
 	 */
 	public function test_dispute_closed_completes_unrefunded_order(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( \WC_Order::class, $order );
-		$order->set_total( '10.00' );
+		$order = $this->create_disputable_order();
 		$order->set_status( 'on-hold' );
 		$order->save();
 
@@ -523,8 +516,11 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * hand-built `get_created_event_object()` fixture.
 	 */
 	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
-		$order   = $this->create_disputable_order();
 		$dispute = $this->load_recorded_dispute_object( 'accept_case_created' );
+		$order   = $this->create_disputable_order();
+		$order->set_transaction_id( (string) $dispute['payment_intent'] );
+		$order->update_meta_data( '_intent_id', (string) $dispute['payment_intent'] );
+		$order->save();
 
 		$this->invoke_private(
 			'process_dispute_created',
@@ -859,61 +855,144 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.dispute.created event holds the order its charge resolves to, whatever the order's payment method.
+	 * @testdox A charge.dispute.created event on a charge recorded on an order another gateway paid adds one note, keeps the status and logs one line.
 	 *
-	 * Client 11.1.0 looks the order up with order_from_charge_id() and no gateway check
-	 * (class-wc-payments-webhook-processing-service.php:712-724), then records the dispute and holds the order.
+	 * Client 11.1.0 holds the charge's order whatever its gateway (class-wc-payments-webhook-processing-service.php:712-724);
+	 * here the dispute is recorded, because the charge is not the order's payment. The dispute carries its `payment_intent`
+	 * (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
 	 */
-	public function test_dispute_created_applies_to_an_order_of_another_gateway(): void {
-		$order = $this->create_disputable_order();
-		$order->set_payment_method( 'bacs' );
-		$order->update_meta_data( '_charge_id', 'ch_bacs_created' );
-		$order->save();
-		$event           = $this->get_created_event_object( 'dp_bacs_created', 'needs_response' );
-		$event['charge'] = 'ch_bacs_created';
+	public function test_dispute_created_on_an_order_paid_by_another_gateway_is_recorded(): void {
+		$order                   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_created' );
+		$event                   = $this->get_created_event_object( 'dp_bacs_created', 'needs_response' );
+		$event['charge']         = 'ch_bacs_created';
+		$event['payment_intent'] = 'pi_bacs_created';
+		$logger                  = RecordingWcLogger::install();
 
 		$this->sut->process( 'charge.dispute.created', $event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( \WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status() );
-		$this->assertSame( array( 'dp_bacs_created' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
-		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment has been disputed' ) );
+		$record_notes = $this->find_order_note( $order, 'was opened on WooPayments charge' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'dp_bacs_created', $record_notes[0]->content );
+		$this->assertStringContainsString( 'ch_bacs_created', $record_notes[0]->content );
+		$record_lines = array_keys(
+			array_filter(
+				$logger->lines,
+				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', charge.dispute.created, charge ch_bacs_created, order payment method bacs' === $line[1]
+			)
+		);
+		$this->assertCount( 1, $record_lines );
+		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
 	}
 
 	/**
-	 * @testdox A charge.dispute.updated event on an order paid by another gateway keeps its status, adds one note and logs the mismatch.
+	 * @testdox A charge.dispute.updated event on a charge recorded on an order another gateway paid adds one note naming the update, and keeps the status.
 	 *
 	 * Client 11.1.0 notes the update on the charge's order whatever its gateway
 	 * (class-wc-payments-webhook-processing-service.php:712-724).
 	 */
-	public function test_dispute_updated_on_an_order_paid_by_another_gateway_logs_the_mismatch(): void {
-		$order = $this->create_disputable_order();
-		$order->set_payment_method( 'bacs' );
-		$order->update_meta_data( '_charge_id', 'ch_bacs_updated' );
-		$order->save();
-		$event           = $this->get_created_event_object( 'dp_bacs_updated', 'needs_response' );
-		$event['charge'] = 'ch_bacs_updated';
-		$logger          = RecordingWcLogger::install();
+	public function test_dispute_updated_on_an_order_paid_by_another_gateway_is_recorded(): void {
+		$order                   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_updated' );
+		$event                   = $this->get_created_event_object( 'dp_bacs_updated', 'under_review' );
+		$event['charge']         = 'ch_bacs_updated';
+		$event['payment_intent'] = 'pi_bacs_updated';
 
 		$this->sut->process( 'charge.dispute.updated', $event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertCount( 1, $this->find_order_note( $order, 'Payment dispute has been updated' ) );
-		$mismatch_lines = array_keys(
-			array_filter(
-				$logger->lines,
-				static fn( array $line ): bool => 'warning' === $line[0] && 0 === strpos( $line[1], 'order payment method mismatch: order ' . $order->get_id() . ', ' )
+		$this->assertCount( 0, $this->find_order_note( $order, 'Payment dispute has been updated. See' ) );
+		$record_notes = $this->find_order_note( $order, 'Payment dispute has been updated: the dispute' );
+		$this->assertCount( 1, $record_notes );
+		$this->assertStringContainsString( 'under_review', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A lost charge.dispute.closed on a charge recorded on an order another gateway paid adds no refund, fetches nothing and keeps the status.
+	 */
+	public function test_lost_dispute_on_another_charge_adds_no_refund(): void {
+		$order   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_lost' );
+		$fetched = array();
+		$handler = new WooPaymentsDisputeEventHandler();
+		$handler->init(
+			wc_get_container()->get( WooPaymentsLegacyRuntime::class ),
+			new class( $fetched ) extends WooPaymentsApiClient {
+				/**
+				 * Dispute IDs the handler asked a summary for.
+				 *
+				 * @var array<int,string>
+				 */
+				private array $fetched;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param array<int,string> $fetched Receives the dispute IDs asked for.
+				 */
+				public function __construct( array &$fetched ) {
+					$this->fetched = &$fetched;
+				}
+
+				/**
+				 * Record the dispute ID asked for.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					$this->fetched[] = $dispute_id;
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
+		);
+
+		$handler->process(
+			'charge.dispute.closed',
+			array(
+				'id'             => 'dp_bacs_lost',
+				'charge'         => 'ch_bacs_lost',
+				'payment_intent' => 'pi_bacs_lost',
+				'status'         => 'lost',
+				'amount'         => 1000,
+				'currency'       => 'usd',
 			)
 		);
-		$this->assertCount( 1, $mismatch_lines );
-		$context = $logger->contexts[ $mismatch_lines[0] ];
-		$this->assertSame( 'order-payments', $context['source'] );
-		$this->assertSame( $order->get_id(), $context['order_id'] );
-		$this->assertSame( 'charge.dispute.updated', $context['applied_operation'] );
-		$this->assertSame( 'bacs', $context['payment_method'] );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( array(), $fetched );
+		$record_notes = $this->find_order_note( $order, 'was closed with status lost' );
+		$this->assertCount( 1, $record_notes );
+	}
+
+	/**
+	 * Create an order another gateway paid, holding a WooPayments charge recorded on it.
+	 *
+	 * @param string $payment_method Order payment method.
+	 * @param string $charge_id      Recorded charge ID.
+	 * @return \WC_Order
+	 */
+	private function create_order_paid_by_another_gateway( string $payment_method, string $charge_id ): \WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_payment_method( $payment_method );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->set_date_paid( time() );
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		return $order;
 	}
 
 	/**
