@@ -82,7 +82,8 @@ return array(
 
 		return array_values( array_diff( $previous, array( 'wcgateway.settings.wc-tasks.pay-later-task-config' ) ) );
 	},
-	// Saved PayPal and Venmo reads as off for every checkout reader; built from the same settings models as the wallet's.
+	// Saved PayPal and Venmo reads as off for every checkout reader, and the merchant email is the payee's, so the wallet's
+	// gateway disabler keeps the gateway available; built from the same settings models as the wallet's.
 	'settings.settings-provider'                       => static function ( SettingsProvider $previous, ContainerInterface $c ): SettingsProvider {
 		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
 			return $previous;
@@ -94,7 +95,8 @@ return array(
 			$c->get( 'settings.data.payment' ),
 			$c->get( 'settings.data.settings' ),
 			$c->get( 'settings.data.styling' ),
-			$c->get( 'settings.data.paylater-messaging-settings' )
+			$c->get( 'settings.data.paylater-messaging-settings' ),
+			$c->get( 'collecting.state' )
 		);
 	},
 	// The bearer resolves the app on every token, so a not-ready transport fails the call, as a failed token does.

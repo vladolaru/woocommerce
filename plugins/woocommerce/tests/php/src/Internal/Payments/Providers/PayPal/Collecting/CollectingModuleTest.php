@@ -138,6 +138,20 @@ class CollectingModuleTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should turn the wallet gateway on from the collect command, on a store whose wallet has not booted.
+	 */
+	public function test_collect_command_turns_the_gateway_on(): void {
+		$this->assertFalse( get_option( 'woocommerce_ppcp-gateway_settings' ), 'The store starts with no gateway row' );
+
+		( $this->command() )->enter_collecting( 'payee@example.com', true );
+
+		$settings = get_option( 'woocommerce_ppcp-gateway_settings' );
+		$this->assertIsArray( $settings );
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertIsArray( get_option( Options::COLLECTING ), 'Turning the gateway on keeps the store collecting' );
+	}
+
+	/**
 	 * @testdox Should use production without the sandbox flag.
 	 */
 	public function test_collect_command_defaults_to_production(): void {

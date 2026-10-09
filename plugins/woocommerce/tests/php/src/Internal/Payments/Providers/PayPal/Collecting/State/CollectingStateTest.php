@@ -4,9 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\State;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\GatewaySwitch;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException as WalletRuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
+use Error;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -16,6 +19,11 @@ use RuntimeException;
  * @group paypal-wallet
  */
 class CollectingStateTest extends WalletTestCase {
+
+	/**
+	 * The wallet gateway's settings row.
+	 */
+	private const GATEWAY_SETTINGS = 'woocommerce_ppcp-gateway_settings';
 
 	/**
 	 * The System Under Test.
@@ -60,6 +68,105 @@ class CollectingStateTest extends WalletTestCase {
 		$this->assertSame( 'payee@example.com', $this->sut->payee_email() );
 		$this->assertSame( $data['tracking_id'], $this->sut->tracking_id() );
 		$this->assertSame( 'sandbox', $this->sut->environment() );
+	}
+
+	/**
+	 * @testdox Should turn the wallet gateway on through its settings API on enter, writing the gateway's own defaults.
+	 */
+	public function test_enter_turns_the_gateway_on_with_its_defaults(): void {
+		$this->assertFalse( get_option( self::GATEWAY_SETTINGS ), 'The store starts with no gateway row' );
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertSame(
+			array(
+				'enabled' => 'yes',
+				'ppcp'    => '',
+			),
+			get_option( self::GATEWAY_SETTINGS ),
+			'The row holds the gateway\'s form defaults with the gateway on'
+		);
+		$this->assertTrue( $this->sut->is_collecting(), 'Turning the gateway on does not leave the state again' );
+	}
+
+	/**
+	 * @testdox Should turn a gateway the merchant had turned off back on at enter, keeping its other settings.
+	 */
+	public function test_enter_turns_a_disabled_gateway_on_and_keeps_its_settings(): void {
+		$this->set_wallet_option(
+			self::GATEWAY_SETTINGS,
+			array(
+				'enabled' => 'no',
+				'ppcp'    => '',
+				'title'   => 'Kept',
+			)
+		);
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$settings = get_option( self::GATEWAY_SETTINGS );
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertSame( 'Kept', $settings['title'] );
+		$this->assertTrue( $this->sut->is_collecting() );
+	}
+
+	/**
+	 * @testdox Should leave the gateway row alone when enter refuses its input or the store.
+	 */
+	public function test_refused_enter_leaves_the_gateway_alone(): void {
+		try {
+			$this->sut->enter( 'not-an-email', 'sandbox' );
+			$this->fail( 'enter() must refuse an invalid email' );
+		} catch ( InvalidArgumentException $exception ) {
+			$this->assertFalse( get_option( self::GATEWAY_SETTINGS ) );
+		}
+
+		$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+		try {
+			$this->sut->enter( 'payee@example.com', 'sandbox' );
+			$this->fail( 'enter() must refuse a platform-connected store' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( self::GATEWAY_SETTINGS ) );
+		}
+	}
+
+	/**
+	 * @testdox Should leave the store as it was, log the cause and throw the wallet's exception when the gateway cannot be turned on.
+	 */
+	public function test_enter_writes_nothing_when_the_gateway_cannot_be_turned_on(): void {
+		$failing = new class() extends GatewaySwitch {
+			/**
+			 * Fail as a change to the gateway class would.
+			 */
+			protected function save_enabled(): void {
+				throw new Error( 'init_form_fields() drifted' );
+			}
+		};
+		$sut     = new CollectingState( new Options(), new FixedHeldOrders( 0 ), $failing );
+		$logged  = $this->spy_filter( 'woocommerce_logger_log_message' );
+
+		try {
+			$sut->enter( 'payee@example.com', 'sandbox' );
+			$this->fail( 'enter() must fail when the gateway cannot be turned on' );
+		} catch ( WalletRuntimeException $exception ) {
+			$this->assertInstanceOf( RuntimeException::class, $exception, 'The collect command catches it and reports the message' );
+			$this->assertStringContainsString( 'Could not turn the PayPal gateway on', $exception->getMessage() );
+			$this->assertInstanceOf( Error::class, $exception->getPrevious() );
+		}
+
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The store is not left half-entered' );
+		$this->assertFalse( $sut->is_collecting() );
+		$this->assertFalse( get_option( self::GATEWAY_SETTINGS ) );
+		$messages = array_column( $logged->getArrayCopy(), 0 );
+		$this->assertNotEmpty(
+			array_filter(
+				$messages,
+				static function ( $message ): bool {
+					return is_string( $message ) && false !== strpos( $message, 'Could not turn the PayPal gateway on: Error: init_form_fields() drifted' );
+				}
+			),
+			'The cause is logged'
+		);
 	}
 
 	/**

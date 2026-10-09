@@ -72,14 +72,23 @@ class CollectingState {
 	private HeldOrdersCount $held_orders;
 
 	/**
+	 * The switch that turns the wallet gateway on.
+	 *
+	 * @var GatewaySwitch
+	 */
+	private GatewaySwitch $gateway;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Options         $options     The option reader.
-	 * @param HeldOrdersCount $held_orders The held-orders count.
+	 * @param Options            $options     The option reader.
+	 * @param HeldOrdersCount    $held_orders The held-orders count.
+	 * @param GatewaySwitch|null $gateway     The switch that turns the wallet gateway on; the settings API one by default.
 	 */
-	public function __construct( Options $options, HeldOrdersCount $held_orders ) {
+	public function __construct( Options $options, HeldOrdersCount $held_orders, ?GatewaySwitch $gateway = null ) {
 		$this->options     = $options;
 		$this->held_orders = $held_orders;
+		$this->gateway     = $gateway ?? new GatewaySwitch();
 	}
 
 	/**
@@ -164,7 +173,8 @@ class CollectingState {
 	 * Enter the collecting state with a fresh payee and tracking ID.
 	 *
 	 * A platform-connected store is refused: it already has a merchant ID. A bound payee has been paid, so a different
-	 * payee is refused; entering the same payee again changes nothing and writes nothing.
+	 * payee is refused; entering the same payee again changes nothing and writes nothing. Entering turns the wallet
+	 * gateway on, through its own settings, so the store takes PayPal payments; turning it off stays the merchant's.
 	 *
 	 * @since 11.3.0
 	 *
@@ -172,7 +182,8 @@ class CollectingState {
 	 * @param string $environment  `sandbox` or `production`.
 	 *
 	 * @throws InvalidArgumentException When the email or the environment is not valid.
-	 * @throws RuntimeException         When the store is platform connected, or a different payee is already bound.
+	 * @throws RuntimeException         When the store is platform connected, a different payee is already bound, or the
+	 *                                  gateway cannot be turned on; nothing is written then.
 	 */
 	public function enter( string $payee_email, string $environment ): void {
 		$payee_email = $this->valid_email( $payee_email );
@@ -189,6 +200,8 @@ class CollectingState {
 			throw new RuntimeException( 'The payee is already bound; it cannot be replaced.' );
 		}
 
+		// The gateway first: when it cannot be turned on, the store is left as it was, not collecting with PayPal off.
+		$this->gateway->turn_on();
 		update_option(
 			Options::COLLECTING,
 			array(
