@@ -43,11 +43,6 @@ class WooPaymentsChargeAmbiguityService {
 	public const LOOKUP_CANNOT_CHECK = 'cannot_check';
 
 	/**
-	 * PaymentIntent statuses in which the intent holds the shopper's money.
-	 */
-	private const MONEY_STATUSES = array( 'succeeded', 'requires_capture', 'processing' );
-
-	/**
 	 * Most intents one lookup reads; Stripe's page limit.
 	 */
 	private const LIST_LIMIT = 100;
@@ -222,7 +217,7 @@ class WooPaymentsChargeAmbiguityService {
 	 */
 	public static function find_intent_with_money( array $order_intents ): ?array {
 		foreach ( $order_intents as $intent ) {
-			if ( in_array( (string) ( $intent['status'] ?? '' ), self::MONEY_STATUSES, true ) && ! WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
+			if ( WooPaymentsIntentCodec::holds_money( (string) ( $intent['status'] ?? '' ) ) && ! WooPaymentsIntentCodec::is_fully_refunded( $intent ) ) {
 				return $intent;
 			}
 		}

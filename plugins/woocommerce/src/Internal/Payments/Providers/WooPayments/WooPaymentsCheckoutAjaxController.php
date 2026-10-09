@@ -298,7 +298,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		$payment_method_details                        = array();
 		$previous_payment_method_id                    = (string) $order->get_meta( '_payment_method_id', true );
 
-		if ( $this->is_authorized_intent_status( $status ) ) {
+		if ( WooPaymentsIntentCodec::holds_money( $status ) ) {
 			$token_save_result      = $this->maybe_save_payment_method_for_order(
 				$order,
 				$intent,
@@ -335,11 +335,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 
 		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
 		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event );
-		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
+		if ( WooPaymentsIntentCodec::holds_money( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}
 
-		if ( ! $is_redirect_return && ! $this->is_authorized_intent_status( $status ) ) {
+		if ( ! $is_redirect_return && ! WooPaymentsIntentCodec::holds_money( $status ) ) {
 			throw new WooPaymentsIntentConfirmationException( esc_html__( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
 	}
@@ -617,16 +617,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		return $this->order_effect_applier;
-	}
-
-	/**
-	 * Tell whether an intent status should be treated as authorized.
-	 *
-	 * @param string $status Intent status.
-	 * @return bool
-	 */
-	private function is_authorized_intent_status( string $status ): bool {
-		return in_array( $status, array( 'succeeded', 'requires_capture', 'processing' ), true );
 	}
 
 	/**

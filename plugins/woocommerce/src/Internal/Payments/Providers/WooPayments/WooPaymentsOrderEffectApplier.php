@@ -315,7 +315,7 @@ class WooPaymentsOrderEffectApplier {
 	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta ): array {
 		$status          = (string) ( $result['status'] ?? '' );
 		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
-		$settlement_meta = ! empty( $charge ) && in_array( $status, array( 'processing', 'requires_capture', 'succeeded' ), true )
+		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() )
 			: array();
 		$display_effects = $this->compose_payment_method_display_details( $order, $result );

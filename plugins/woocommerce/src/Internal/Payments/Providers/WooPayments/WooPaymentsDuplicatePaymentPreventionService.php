@@ -333,7 +333,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		if ( ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $status ) ) {
+		if ( ! WooPaymentsIntentCodec::holds_money( $status ) ) {
 			return null;
 		}
 

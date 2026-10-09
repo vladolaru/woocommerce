@@ -813,7 +813,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	private function repair_recurring_order_token( WC_Order $order, array $event_object ): void {
 		$payment_method_id = $this->get_payment_method_id_from_intent( $event_object );
 		$intent_status     = isset( $event_object['status'] ) ? (string) $event_object['status'] : '';
-		if ( '' === $payment_method_id || ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) ) {
+		if ( '' === $payment_method_id || ! WooPaymentsIntentCodec::holds_money( $intent_status ) ) {
 			return;
 		}
 

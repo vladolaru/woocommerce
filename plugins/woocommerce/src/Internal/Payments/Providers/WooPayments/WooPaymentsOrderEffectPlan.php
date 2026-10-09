@@ -146,7 +146,7 @@ class WooPaymentsOrderEffectPlan {
 		return new self(
 			self::TYPE_PAYMENT_INTENT,
 			$provider_result,
-			in_array( $status, array( 'succeeded', 'requires_capture', 'processing' ), true ),
+			WooPaymentsIntentCodec::holds_money( $status ),
 			$is_recurring
 		);
 	}

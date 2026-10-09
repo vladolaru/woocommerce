@@ -252,7 +252,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				true // The redirect return: it completes the order despite a token-save error and does not throw for an unauthorized status.
 			);
 		} catch ( Throwable $exception ) {
-			if ( ! $is_payment_intent || ! WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) ) {
+			if ( ! $is_payment_intent || ! WooPaymentsIntentCodec::holds_money( $intent_status ) ) {
 				$this->end_return_with_failure( $fresh_order, $intent_id, $intent_status, $exception );
 				return;
 			}
@@ -262,7 +262,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		// A requires_action intent stays on order-received until the webhook settles it: the client's next-action redirect
 		// (gw:2409-2426) cannot complete there (decided, monitor ruling on area 2a f18).
-		if ( WooPaymentsIntentCodec::is_authorized_native_intent_status( $intent_status ) && null !== WC()->cart ) {
+		if ( WooPaymentsIntentCodec::holds_money( $intent_status ) && null !== WC()->cart ) {
 			WC()->cart->empty_cart();
 		}
 	}

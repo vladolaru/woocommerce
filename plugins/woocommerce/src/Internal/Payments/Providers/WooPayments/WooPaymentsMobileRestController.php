@@ -601,7 +601,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 			// The client's is_authorized() statuses (Intent_Status::AUTHORIZED_STATUSES, class-intent-status.php:35-39).
-			if ( ! in_array( $status, array( 'requires_capture', 'succeeded', 'processing' ), true ) ) {
+			if ( ! WooPaymentsIntentCodec::holds_money( $status ) ) {
 				return new WP_Error( 'wcpay_payment_uncapturable', __( 'The payment cannot be captured', 'woocommerce' ), array( 'status' => 409 ) );
 			}
 			// A reader that captured the payment itself (Interac) has charged the card before any write below.

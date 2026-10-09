@@ -334,12 +334,12 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Tell whether a native intent status represents an authorized payment.
+	 * Whether the intent has taken or reserved the shopper's money: succeeded, authorized for capture, or processing.
 	 *
 	 * @param string $status Intent status.
 	 * @return bool
 	 */
-	public static function is_authorized_native_intent_status( string $status ): bool {
+	public static function holds_money( string $status ): bool {
 		return in_array( $status, array( 'succeeded', 'requires_capture', 'processing' ), true );
 	}
 
