@@ -846,7 +846,7 @@ class WooPaymentsPaymentIntentEventHandler {
 					$previous_token->get_id(),
 					$token->get_id()
 				);
-				wc_get_logger()->info( $note, array( 'source' => 'woopayments-subscriptions' ) );
+				wc_get_logger()->info( $note, array( 'source' => WooPaymentsLogger::SOURCE ) );
 				$order->add_order_note( $note );
 			}
 		} catch ( Throwable $exception ) {
@@ -856,7 +856,7 @@ class WooPaymentsPaymentIntentEventHandler {
 				array_merge(
 					WooPaymentsLogger::get_failure_context( $exception ),
 					array(
-						'source'   => 'woopayments-subscriptions',
+						'source'   => WooPaymentsLogger::SOURCE,
 						'order_id' => $order->get_id(),
 					)
 				)

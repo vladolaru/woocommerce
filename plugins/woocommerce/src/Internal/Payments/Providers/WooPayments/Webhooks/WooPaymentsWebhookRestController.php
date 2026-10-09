@@ -157,7 +157,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 					$event_id,
 					$refused ? WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) : ''
 				),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		} catch ( Throwable $logger_exception ) {
 			unset( $logger_exception );

@@ -903,7 +903,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $store->get_event( 'evt_process' ), 'A refused event should be dropped so it is not processed again.' );
 		$this->assertSame(
-			array( array( 'error', 'Failed processing event evt_process. Reason: malformed event', 'native-payments-webhook' ) ),
+			array( array( 'error', 'Failed processing event evt_process. Reason: malformed event', 'woopayments' ) ),
 			$logger->get_errors()
 		);
 	}
@@ -940,7 +940,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $store->get_event( 'evt_process' ) );
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
 		$this->assertSame(
-			array( array( 'error', 'Failed processing event evt_process. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ),
+			array( array( 'error', 'Failed processing event evt_process. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'woopayments' ) ),
 			$logger->get_errors()
 		);
 	}

@@ -233,7 +233,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			// written here, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
 			wc_get_logger()->error(
 				sprintf( 'Failed processing event %1$s.%2$s', $event_id, WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) ),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 			return;
 		} catch ( \Throwable $exception ) {
@@ -307,7 +307,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 					isset( $event['type'] ) && is_string( $event['type'] ) ? $event['type'] : 'unknown type',
 					$attempts
 				),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 			return;
 		}
@@ -349,7 +349,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			try {
 				wc_get_logger()->error(
 					sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ),
-					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 				);
 			} catch ( \Throwable $logger_exception ) {
 				unset( $logger_exception );

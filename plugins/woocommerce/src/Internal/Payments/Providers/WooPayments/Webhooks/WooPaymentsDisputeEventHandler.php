@@ -417,7 +417,7 @@ class WooPaymentsDisputeEventHandler {
 					$error_message
 				),
 				array(
-					'source'         => 'native-payments-webhook',
+					'source'         => WooPaymentsLogger::SOURCE,
 					'order_id'       => $order->get_id(),
 					'charge_id'      => $charge_id,
 					'dispute_id'     => $dispute_id,
@@ -479,7 +479,7 @@ class WooPaymentsDisputeEventHandler {
 						$dispute_id,
 						$charge_id
 					),
-					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 				);
 			} catch ( Throwable $logger_exception ) {
 				unset( $logger_exception );

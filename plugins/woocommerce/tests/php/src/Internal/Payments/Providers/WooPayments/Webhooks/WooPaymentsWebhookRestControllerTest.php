@@ -179,7 +179,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
 		$this->assertCount( 1, $logger->get_errors() );
-		$this->assertSame( 'native-payments-webhook', $logger->get_errors()[0][2] );
+		$this->assertSame( 'woopayments', $logger->get_errors()[0][2] );
 		$this->assertStringContainsString( 'bad payload', $logger->get_errors()[0][1] );
 	}
 
@@ -207,7 +207,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
 		$this->assertCount( 1, $logger->get_errors() );
-		$this->assertSame( 'native-payments-webhook', $logger->get_errors()[0][2] );
+		$this->assertSame( 'woopayments', $logger->get_errors()[0][2] );
 		// Processing calls the platform, so a failure's message is left out; its class names it.
 		$this->assertSame( RuntimeException::class, $this->get_logged_context( $logger, 'Failed processing a WooPayments webhook event.' )['exception'] );
 	}
@@ -429,7 +429,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
-		$this->assertSame( array( array( 'error', 'Failed processing event evt_invoice_controller. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'native-payments-webhook' ) ), $logger->get_errors() );
+		$this->assertSame( array( array( 'error', 'Failed processing event evt_invoice_controller. Reason: Cannot find subscription for the incoming "invoice.paid" event.', 'woopayments' ) ), $logger->get_errors() );
 	}
 
 	/**

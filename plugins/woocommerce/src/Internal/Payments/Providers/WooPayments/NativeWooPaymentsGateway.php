@@ -2012,7 +2012,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			wc_get_logger()->error(
 				'A WooPayments refund failed to complete.',
 				array(
-					'source'     => 'woopayments-payments',
+					'source'     => WooPaymentsLogger::SOURCE,
 					'order_id'   => $order->get_id(),
 					'error_code' => WooPaymentsLogger::get_loggable_error_code( (string) $error->get_error_code() ),
 				)

@@ -410,7 +410,7 @@ class WooPaymentsEventIngestor {
 		try {
 			wc_get_logger()->error(
 				sprintf( 'Webhook event mode did not match the gateway mode (event ID: %s)', $this->get_event_id( $event ) ),
-				array( 'source' => 'native-payments-webhook' )
+				array( 'source' => WooPaymentsLogger::SOURCE )
 			);
 		} catch ( Throwable $exception ) {
 			unset( $exception );
@@ -507,7 +507,7 @@ class WooPaymentsEventIngestor {
 					array_merge(
 						WooPaymentsLogger::get_failure_context( $exception ),
 						array(
-							'source' => 'native-payments-webhook',
+							'source' => WooPaymentsLogger::SOURCE,
 							'hook'   => $hook,
 						)
 					)

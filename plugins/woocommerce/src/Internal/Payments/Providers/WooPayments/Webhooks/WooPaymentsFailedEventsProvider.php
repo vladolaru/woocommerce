@@ -66,7 +66,7 @@ class WooPaymentsFailedEventsProvider {
 				// The client appends the platform's message; native logs its status and code.
 				wc_get_logger()->error(
 					'Can not fetch failed events from the server.',
-					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 				);
 			}
 		}

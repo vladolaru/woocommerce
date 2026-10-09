@@ -3303,7 +3303,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		// Client 11.1.0 `class-wc-payments-webhook-processing-service.php:162-164`: the mode check runs before any hook or handler.
 		$this->assertSame( 0, $hook_calls );
-		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: evt_invoice_without_module_live)', 'native-payments-webhook' ) ), $logger->get_errors() );
+		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: evt_invoice_without_module_live)', 'woopayments' ) ), $logger->get_errors() );
 	}
 
 	/**
@@ -4222,7 +4222,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( array( 'before', 'customer.created' ), array( 'after', 'customer.created' ) ), $hook_calls, 'The failure stops neither the event nor the next hook.' );
 		$context = $this->get_logged_context( $logger, 'A WooPayments webhook delivery hook callback failed.' );
 		$this->assertSame( array( get_class( $thrown ), 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
-		$this->assertSame( array( 'woocommerce_payments_before_webhook_delivery', 'native-payments-webhook' ), array( $context['hook'], $context['source'] ) );
+		$this->assertSame( array( 'woocommerce_payments_before_webhook_delivery', 'woopayments' ), array( $context['hook'], $context['source'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
@@ -4285,8 +4285,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'A WooPayments webhook delivery hook callback failed.:native-payments-webhook',
-				'A WooPayments webhook delivery hook callback failed.:native-payments-webhook',
+				'A WooPayments webhook delivery hook callback failed.:woopayments',
+				'A WooPayments webhook delivery hook callback failed.:woopayments',
 			),
 			array_map( static fn( array $line ): string => $line[1] . ':' . $line[2], $logger->get_errors() )
 		);
