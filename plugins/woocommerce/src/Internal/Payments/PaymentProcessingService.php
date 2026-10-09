@@ -105,7 +105,7 @@ class PaymentProcessingService {
 
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
-				$this->apply_checkout_outcome( $order, $outcome, $provider );
+				$this->apply_outcome_lifecycle_event( $order, $outcome, $provider );
 				$this->apply_provider_post_lifecycle_effects( $context, $outcome, $provider, self::OPERATION_CHARGE );
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -901,17 +901,17 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$this->apply_checkout_outcome( $order, $outcome, $provider );
+		$this->apply_outcome_lifecycle_event( $order, $outcome, $provider );
 	}
 
 	/**
-	 * Apply a provider checkout outcome to the order lifecycle.
+	 * Apply the lifecycle event a provider outcome maps to: every checkout outcome, and captures and cancels that did not fail.
 	 *
 	 * @param WC_Order          $order    Order object.
 	 * @param PaymentOutcome    $outcome  Provider outcome.
 	 * @param ProviderInterface $provider Provider.
 	 */
-	private function apply_checkout_outcome( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
+	private function apply_outcome_lifecycle_event( WC_Order $order, PaymentOutcome $outcome, ProviderInterface $provider ): void {
 		$this->lifecycle_service->apply_under_lock(
 			$order,
 			new PaymentLifecycleEvent(
