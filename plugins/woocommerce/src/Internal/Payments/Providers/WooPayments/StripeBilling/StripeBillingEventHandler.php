@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
@@ -62,11 +62,11 @@ class StripeBillingEventHandler {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Event ingestor, which records a succeeded payment intent on its order.
+	 * Payment intent event handler, which records a succeeded payment intent on its order.
 	 *
-	 * @var WooPaymentsEventIngestor
+	 * @var WooPaymentsPaymentIntentEventHandler
 	 */
-	private WooPaymentsEventIngestor $event_ingestor;
+	private WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler;
 
 	/**
 	 * Account service, for the mode a renewal is recorded in.
@@ -94,22 +94,22 @@ class StripeBillingEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param StripeBillingInvoiceService      $invoice_service      Invoice service.
-	 * @param StripeBillingSubscriptionService $subscription_service Subscription service.
-	 * @param WooPaymentsApiClient             $api_client           Platform API client.
-	 * @param WooPaymentsEventIngestor         $event_ingestor       Event ingestor.
-	 * @param WooPaymentsAccountService        $account_service      Account service.
-	 * @param WooPaymentsLogger                $logger               Module logger.
-	 * @param TransientRowLock                 $row_lock             Lock held in the database rows of a transient.
+	 * @param StripeBillingInvoiceService          $invoice_service              Invoice service.
+	 * @param StripeBillingSubscriptionService     $subscription_service         Subscription service.
+	 * @param WooPaymentsApiClient                 $api_client                   Platform API client.
+	 * @param WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler Payment intent event handler.
+	 * @param WooPaymentsAccountService            $account_service              Account service.
+	 * @param WooPaymentsLogger                    $logger                       Module logger.
+	 * @param TransientRowLock                     $row_lock                     Lock held in the database rows of a transient.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsEventIngestor $event_ingestor, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, TransientRowLock $row_lock ): void {
-		$this->invoice_service      = $invoice_service;
-		$this->subscription_service = $subscription_service;
-		$this->api_client           = $api_client;
-		$this->event_ingestor       = $event_ingestor;
-		$this->account_service      = $account_service;
-		$this->logger               = $logger;
-		$this->row_lock             = $row_lock;
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, TransientRowLock $row_lock ): void {
+		$this->invoice_service              = $invoice_service;
+		$this->subscription_service         = $subscription_service;
+		$this->api_client                   = $api_client;
+		$this->payment_intent_event_handler = $payment_intent_event_handler;
+		$this->account_service              = $account_service;
+		$this->logger                       = $logger;
+		$this->row_lock                     = $row_lock;
 	}
 
 	/**
@@ -286,7 +286,7 @@ class StripeBillingEventHandler {
 					$subscription->update_status( 'on-hold' );
 
 					if ( null !== $intent ) {
-						$this->event_ingestor->apply_succeeded_payment_intent( $order, $intent );
+						$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent );
 					} else {
 						$this->complete_order_without_intent( $order, $intent_id, $event_object );
 					}
@@ -301,7 +301,7 @@ class StripeBillingEventHandler {
 				throw new RuntimeException( sprintf( 'Renewal order #%1$d is still unpaid after recording invoice %2$s.', $order->get_id(), $wcpay_invoice_id ) );
 			}
 		} elseif ( null !== $intent ) {
-			$this->event_ingestor->apply_succeeded_payment_intent( $order, $intent );
+			$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent );
 		} elseif ( '' !== $intent_id ) {
 			$order->add_order_note( __( 'The payment info couldn\'t be added to the order.', 'woocommerce' ) );
 		}

@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -69,6 +70,8 @@ trait WooPaymentsEventHandlerTestTrait {
 	/**
 	 * Build an event ingestor from the given handlers and collaborators, with the rest from the container.
 	 *
+	 * The lifecycle service and the API client also go to the payment intent event handler the ingestor routes to.
+	 *
 	 * @param OrderPaymentLifecycleService                  $lifecycle_service                 Order lifecycle service.
 	 * @param LegacyProxy                                   $legacy_proxy                      Legacy proxy.
 	 * @param WooPaymentsApiClient                          $api_client                        Native WooPayments API client.
@@ -80,24 +83,30 @@ trait WooPaymentsEventHandlerTestTrait {
 	 * @return WooPaymentsEventIngestor
 	 */
 	private function build_event_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
-		$container = wc_get_container();
-		$ingestor  = new WooPaymentsEventIngestor();
-		$ingestor->init(
+		$container      = wc_get_container();
+		$intent_handler = new WooPaymentsPaymentIntentEventHandler();
+		$intent_handler->init(
 			$lifecycle_service,
+			$api_client,
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( WooPaymentsOrderEffectApplier::class ),
+			$container->get( WooPaymentsOrderNoteService::class ),
+			$container->get( WooPaymentsAdminMenuBadgeService::class ),
+			$container->get( WooPaymentsEventOrderResolver::class ),
+			$container->get( WooPaymentsOtherChargeRecorder::class )
+		);
+		$ingestor = new WooPaymentsEventIngestor();
+		$ingestor->init(
 			$legacy_proxy,
 			$api_client,
 			$dispute_event_handler,
 			$refund_event_handler,
 			$account_event_handler,
 			$notification_event_handler,
-			$container->get( WooPaymentsOrderDataService::class ),
 			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderEffectApplier::class ),
-			$container->get( WooPaymentsOrderNoteService::class ),
-			$container->get( WooPaymentsAdminMenuBadgeService::class ),
 			$early_fraud_warning_event_handler ?? $container->get( WooPaymentsEarlyFraudWarningEventHandler::class ),
-			$container->get( WooPaymentsEventOrderResolver::class ),
-			$container->get( WooPaymentsOtherChargeRecorder::class )
+			$intent_handler
 		);
 
 		return $ingestor;

@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -4828,7 +4829,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$payment_completions = did_action( 'woocommerce_payment_complete' );
 		$event               = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
 
-		$this->sut->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
+		wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class )->apply_succeeded_payment_intent( $stale, $event['data']['object'] );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
