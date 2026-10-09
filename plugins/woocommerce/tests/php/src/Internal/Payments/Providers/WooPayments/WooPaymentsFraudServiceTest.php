@@ -65,7 +65,6 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_session_store_id' );
 		delete_transient( 'woocommerce_woopayments_public_fraud_services' );
 		remove_all_filters( 'pre_http_request' );
-		remove_all_filters( 'woocommerce_woopayments_fraud_services_config' );
 		remove_all_filters( 'woocommerce_woopayments_fraud_service_config' );
 		wp_set_current_user( 0 );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'] );
@@ -357,26 +356,6 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $config );
 		$this->assertCount( 0, $this->intercepted_request_urls );
-	}
-
-	/**
-	 * @testdox Should expose the whole prepared config through the fraud-services filter.
-	 */
-	public function test_whole_config_filter_applies_to_prepared_config(): void {
-		$this->seed_account_fraud_services( array( 'stripe' => array() ) );
-
-		add_filter(
-			'woocommerce_woopayments_fraud_services_config',
-			static function ( array $config ): array {
-				$config['sift'] = array( 'beacon_key' => 'beacon_test' );
-				return $config;
-			}
-		);
-
-		$config = $this->make_sut()->get_fraud_services_config();
-
-		$this->assertSame( array(), $config['stripe'] );
-		$this->assertSame( array( 'beacon_key' => 'beacon_test' ), $config['sift'] );
 	}
 
 	/**

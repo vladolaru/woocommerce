@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
  *
  * Every fixture hook is covered by exactly one of three routes: proven at runtime by the arity
  * test's `probed_hooks()` (70 names), resolved here by a static native fire-site scan, or listed in
- * `ALLOWED_DIFFERENCES` with its recorded authority. `NATIVE_ONLY_HOOKS` (D6) separately pins the 19
+ * `ALLOWED_DIFFERENCES` with its recorded authority. `NATIVE_ONLY_HOOKS` (D6) separately pins the 9
  * native-only filters that carry no plugin fixture entry at all.
  *
  * @since 11.2.0
@@ -144,7 +144,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The native-only filters `test-native-hook-naming-gate.py` pinned (D6), less the five cutover readiness
-	 * filters deleted with their overrides. Not plugin data, so
+	 * filters deleted with their overrides and the ten that only tests read. Not plugin data, so
 	 * not part of `plugin-11.1.0-hooks.json`. The retired gate itself pinned per-hook *site counts*
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
 	 * hook's fire site directly (`WooPaymentsRuntimeArbiter`, `NativePaymentsShadowMode`, and the
@@ -152,13 +152,12 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * `WooPaymentsTokenService`/`NativeWooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
 	 * `WooPaymentsExpressCheckoutService`/`WooPaymentsCutoverController` sites the gate's `PROVIDER_HOOKS` names).
 	 *
-	 * `woocommerce_woopayments_is_recurring_payment` fires from two sites at the same arity
-	 * (`WooPaymentsCheckoutAjaxController` and `WooPaymentsIntentRequestBuilder`). So does
-	 * `woocommerce_native_payments_shadow_mode_enabled`: `NativePaymentsShadowMode::is_shadow_mode_enabled()`
-	 * and `NativePaymentsShadowMode::register_when_enabled()` both fire it via `self::FILTER_SHADOW_ENABLED`.
-	 * The retired gate's `expected.total() == 25` predates the second site (it then fired through a
-	 * cross-class reference its `self::`-only regex did not match), so its 24 names fired from 26 sites.
-	 * Less the five deleted cutover filters, the total below is 21 fire sites for 19 names.
+	 * `woocommerce_native_payments_shadow_mode_enabled` fires from two sites at the same arity:
+	 * `NativePaymentsShadowMode::is_shadow_mode_enabled()` and `NativePaymentsShadowMode::register_when_enabled()`
+	 * both fire it via `self::FILTER_SHADOW_ENABLED`. The retired gate's `expected.total() == 25` predates that
+	 * second site (it then fired through a cross-class reference its `self::`-only regex did not match), so its
+	 * 24 names fired from 26 sites. Less the five deleted cutover filters and the ten test-only filters (eleven
+	 * sites), the total below is 10 fire sites for 9 names.
 	 *
 	 * @var array<string,int>
 	 */
@@ -167,19 +166,9 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		'woocommerce_native_payments_shadow_mode_enabled' => 1,
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
 		'woocommerce_native_payments_shadow_mode_allow_live_reads' => 2,
-		'woocommerce_woopayments_failed_webhook_events'   => 1,
-		'woocommerce_woopayments_live_mode'               => 1,
 		'woocommerce_woopayments_gateway_duplicate_payment_method_ids' => 3,
-		'woocommerce_woopayments_is_recurring_payment'    => 2,
-		'woocommerce_woopayments_related_subscriptions_for_order' => 2,
-		'woocommerce_woopayments_subscriptions_for_renewal_order' => 2,
 		'woocommerce_woopayments_woopay_blog_id'          => 1,
 		'woocommerce_woopayments_woopay_blog_token'       => 1,
-		'woocommerce_woopayments_express_checkout_enabled_methods' => 3,
-		'woocommerce_woopayments_express_checkout_product_types' => 3,
-		'woocommerce_woopayments_express_checkout_is_product_supported' => 3,
-		'woocommerce_woopayments_express_checkout_product_data' => 3,
-		'woocommerce_woopayments_fraud_services_config'   => 1,
 		'woocommerce_woopayments_soft_cutover_enabled'    => 1,
 		'woocommerce_woopayments_mandatory_cutover_enabled' => 1,
 	);
@@ -318,7 +307,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The 19 native-only hooks (D6) keep exactly their pinned names and arity, at 21 fire sites total.
+	 * @testdox The 9 native-only hooks (D6) keep exactly their pinned names and arity, at 10 fire sites total.
 	 */
 	public function test_native_only_hooks_keep_their_names_and_arity(): void {
 		$sites       = $this->native_hook_fire_sites();
@@ -343,7 +332,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $missing, "Every native-only hook must have at least one fire site:\n" . implode( "\n", $missing ) );
 		$this->assertSame( array(), $wrong_arity, "Every native-only hook fire site must keep its pinned arity:\n" . implode( "\n", $wrong_arity ) );
-		$this->assertSame( 21, $total_sites, 'The 19 native-only hooks must fire from exactly 21 sites total (see the NATIVE_ONLY_HOOKS docblock).' );
+		$this->assertSame( 10, $total_sites, 'The 9 native-only hooks must fire from exactly 10 sites total (see the NATIVE_ONLY_HOOKS docblock).' );
 	}
 
 	/**

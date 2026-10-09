@@ -23,13 +23,6 @@ use WC_Payment_Tokens;
 class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 
 	/**
-	 * Filters the native WooPayments fraud services config used by order tracking.
-	 *
-	 * @var string
-	 */
-	const FILTER_FRAUD_SERVICES_CONFIG = WooPaymentsFraudService::FILTER_FRAUD_SERVICES_CONFIG;
-
-	/**
 	 * Preserved WooPayments new-order tracking hook.
 	 *
 	 * @var string

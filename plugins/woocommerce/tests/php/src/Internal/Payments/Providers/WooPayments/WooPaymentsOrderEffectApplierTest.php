@@ -36,7 +36,6 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
 		unset( $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		parent::tearDown();

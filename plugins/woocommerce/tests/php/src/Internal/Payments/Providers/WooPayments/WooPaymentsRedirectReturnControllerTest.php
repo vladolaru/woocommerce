@@ -156,7 +156,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		}
 		remove_all_filters( 'woocommerce_is_order_received_page' );
 		remove_all_filters( 'woocommerce_logging_class' );
-		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
 		remove_all_filters( 'wcpay_dev_mode' );
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		WC()->cart->empty_cart();

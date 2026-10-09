@@ -37,7 +37,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_registration_generate_password' );
 		wp_set_current_user( 0 );
 		unset( $_GET['pay_for_order'], $_GET['key'], $_GET['attribute_size'] );
-		remove_all_filters( 'woocommerce_woopayments_express_checkout_enabled_methods' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
 		remove_all_filters( 'wcpay_payment_request_is_cart_supported' );
 		remove_all_filters( 'wcpay_payment_request_hide_itemization' );
@@ -1133,10 +1132,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$events        = array();
 		$legacy_filter = static function ( bool $supported ) use ( &$events ): bool {
 			$events[] = 'legacy';
-			return $supported;
-		};
-		$native_filter = static function ( bool $supported ) use ( &$events ): bool {
-			$events[] = 'native';
 			self::assertTrue( $supported );
 			return true;
 		};
@@ -1149,15 +1144,13 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			return $purchasable;
 		};
 		add_filter( 'wcpay_payment_request_is_product_supported', $legacy_filter );
-		add_filter( 'woocommerce_woopayments_express_checkout_is_product_supported', $native_filter );
 		add_filter( 'woocommerce_is_purchasable', $deny_purchase, 10, 2 );
 
 		try {
 			$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
-			$this->assertSame( array( 'legacy', 'native', 'purchasable' ), $events );
+			$this->assertSame( array( 'legacy', 'purchasable' ), $events );
 		} finally {
 			remove_filter( 'wcpay_payment_request_is_product_supported', $legacy_filter );
-			remove_filter( 'woocommerce_woopayments_express_checkout_is_product_supported', $native_filter );
 			remove_filter( 'woocommerce_is_purchasable', $deny_purchase );
 		}
 	}
@@ -1361,50 +1354,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		)->get_express_checkout_params( 'checkout' );
 
 		$this->assertFalse( $params['is_shopper_tracking_enabled'] );
-	}
-
-	/**
-	 * @testdox Should allow the enabled platform methods list to be narrowed without coupling it to WooPay.
-	 */
-	public function test_enabled_methods_can_be_filtered(): void {
-		add_filter(
-			'woocommerce_woopayments_express_checkout_enabled_methods',
-			static function ( array $methods, string $context ): array {
-				return 'checkout' === $context ? array( 'payment_request', 'klarna' ) : $methods;
-			},
-			10,
-			2
-		);
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertSame( array( 'payment_request', 'klarna' ), $params['enabled_methods'] );
-	}
-
-	/**
-	 * @testdox Should pass the store currency, never an empty one, to the enabled-methods filter on the button path.
-	 *
-	 * The charge path passes the order currency (`WooPaymentsIntentRequestBuilder`), so a callback keyed on the currency
-	 * must see a real currency on the button path too, or it shows a method the charge then refuses (review 46 F1).
-	 */
-	public function test_enabled_methods_filter_gets_the_store_currency_on_the_button_path(): void {
-		update_option( 'woocommerce_currency', 'EUR' );
-		$this->set_up_virtual_product_context( 'checkout' );
-		$seen = array();
-		add_filter(
-			'woocommerce_woopayments_express_checkout_enabled_methods',
-			static function ( array $methods, string $context, string $currency ) use ( &$seen ): array {
-				unset( $context );
-				$seen[] = $currency;
-
-				return 'EUR' === $currency ? $methods : array();
-			},
-			10,
-			3
-		);
-
-		$this->assertTrue( $this->create_service()->should_show_payment_request_button( 'checkout' ) );
-		$this->assertSame( array( 'EUR' ), array_values( array_unique( $seen ) ) );
 	}
 
 	/**

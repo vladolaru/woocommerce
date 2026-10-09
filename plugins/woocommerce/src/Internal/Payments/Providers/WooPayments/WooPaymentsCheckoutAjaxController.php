@@ -794,15 +794,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			$is_recurring = (bool) wcs_order_contains_renewal( $order->get_id() );
 		}
 
-		/**
-		 * Filters whether a native WooPayments callback requires saved-token persistence.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool     $is_recurring Whether the order requires saved-token persistence.
-		 * @param WC_Order $order        Order object.
-		 */
-		return (bool) apply_filters( 'woocommerce_woopayments_is_recurring_payment', $is_recurring, $order );
+		return $is_recurring;
 	}
 
 	/**

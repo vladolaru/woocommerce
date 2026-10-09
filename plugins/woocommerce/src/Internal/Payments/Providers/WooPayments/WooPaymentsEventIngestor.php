@@ -31,13 +31,6 @@ use WC_Payment_Token;
 class WooPaymentsEventIngestor {
 
 	/**
-	 * Filter that reports whether the native WooPayments runtime is in live mode.
-	 *
-	 * @var string
-	 */
-	const FILTER_LIVE_MODE = 'woocommerce_woopayments_live_mode';
-
-	/**
 	 * Transient prefix for the per-event "already processed" idempotency marker.
 	 *
 	 * @var string
@@ -1337,16 +1330,7 @@ class WooPaymentsEventIngestor {
 	 * @return bool
 	 */
 	private function is_native_live_mode(): bool {
-		$live = ! $this->get_account_service()->is_test_mode_enabled();
-
-		/**
-		 * Filters whether native WooPayments webhook processing is in live mode.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $live Whether native WooPayments is in live mode.
-		 */
-		return (bool) apply_filters( self::FILTER_LIVE_MODE, $live );
+		return ! $this->get_account_service()->is_test_mode_enabled();
 	}
 
 	/**

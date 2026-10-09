@@ -93,26 +93,12 @@ class WooPaymentsExpressPaymentMethodTypes {
 	public static function get_enabled_methods_for_context( WooPaymentsAccountService $account_service, string $context = 'checkout', string $currency = '' ): array {
 		$context = self::normalize_context( $context );
 		$methods = self::get_configured_methods_for_context( $account_service, $context );
-		// The buttons pass no currency and the charge passes the order's, so the filter always gets a real one to key on.
+		// The buttons pass no currency and the charge passes the order's; Amazon Pay's availability depends on it.
 		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
-
-		/**
-		 * Filters native WooPayments platform express checkout methods for a context.
-		 *
-		 * Applies to the express buttons and to the payment types the charge accepts from them.
-		 *
-		 * @param array<int,string> $methods  Enabled method IDs.
-		 * @param string            $context  Express checkout context.
-		 * @param string            $currency Order or cart currency; the store currency when none is given.
-		 *
-		 * @since 11.0.0
-		 */
-		$filtered_methods = apply_filters( 'woocommerce_woopayments_express_checkout_enabled_methods', $methods, $context, $currency );
-		$filtered_methods = is_array( $filtered_methods ) ? self::normalize_express_method_ids( $filtered_methods ) : $methods;
 
 		return array_values(
 			array_filter(
-				$filtered_methods,
+				$methods,
 				static function ( string $method ) use ( $account_service, $context, $currency ): bool {
 					return self::EXPRESS_METHOD_AMAZON_PAY !== $method || self::is_amazon_pay_usable( $account_service, $context, $currency );
 				}

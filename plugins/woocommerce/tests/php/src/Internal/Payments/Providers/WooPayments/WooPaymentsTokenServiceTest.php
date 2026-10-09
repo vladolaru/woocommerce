@@ -71,7 +71,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'not_wcpay_pm_customer' );
 		remove_all_filters( 'pre_option_wcpay_pm_customer_1' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
-		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		unset( $GLOBALS['wcpay_test_order_subscription_relationships'] );
 		parent::tearDown();
 	}

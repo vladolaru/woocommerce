@@ -19,13 +19,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 class WooPaymentsFailedEventsProvider {
 
 	/**
-	 * Filter used by native tests and development harnesses to inspect or override fetched events.
-	 *
-	 * @var string
-	 */
-	const FILTER_FAILED_WEBHOOK_EVENTS = 'woocommerce_woopayments_failed_webhook_events';
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient|null
@@ -76,20 +69,6 @@ class WooPaymentsFailedEventsProvider {
 				);
 			}
 		}
-		$events = $this->normalize_events_page( $events );
-
-		/**
-		 * Filters failed WooPayments webhook events fetched by the native replay service.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array{data:array<int,array<string,mixed>>,has_more:bool} $events Failed webhook events page.
-		 */
-		$events = apply_filters(
-			self::FILTER_FAILED_WEBHOOK_EVENTS,
-			$events
-		);
-
 		return $this->normalize_events_page( $events );
 	}
 

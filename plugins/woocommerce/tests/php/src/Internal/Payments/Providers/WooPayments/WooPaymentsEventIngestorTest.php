@@ -125,7 +125,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( WooPaymentsEventIngestor::FILTER_LIVE_MODE );
 		remove_all_actions( 'woocommerce_payments_before_webhook_delivery' );
 		remove_all_actions( 'woocommerce_payments_after_webhook_delivery' );
 		foreach ( $this->email_class_filters as $filter ) {

@@ -59,7 +59,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
-		remove_all_filters( 'woocommerce_woopayments_fraud_services_config' );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		set_current_screen( 'front' );
 		parent::tearDown();

@@ -1284,18 +1284,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			);
 		}
 
-		$subscriptions = is_array( $subscriptions ) ? $subscriptions : array();
-
-		/**
-		 * Filters native WooPayments subscriptions related through parent, switch, or renewal orders.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<int,mixed> $subscriptions Related subscriptions.
-		 * @param WC_Order         $order         Related order.
-		 */
-		$subscriptions = apply_filters( 'woocommerce_woopayments_related_subscriptions_for_order', $subscriptions, $order );
-
 		return is_array( $subscriptions ) ? $subscriptions : array();
 	}
 

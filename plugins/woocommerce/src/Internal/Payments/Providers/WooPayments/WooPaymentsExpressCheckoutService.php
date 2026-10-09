@@ -360,17 +360,6 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		$supported_types = $this->get_supported_product_types();
-
-		/**
-		 * Filters native WooPayments product types that can render product-page express checkout.
-		 *
-		 * @param array<int,string>                 $supported_types Product type IDs.
-		 * @param \WC_Product                       $product         Product object.
-		 * @param WooPaymentsExpressCheckoutService $service         Native express checkout service.
-		 *
-		 * @since 11.0.0
-		 */
-		$supported_types = apply_filters( 'woocommerce_woopayments_express_checkout_product_types', $supported_types, $product, $this );
 		if ( ! is_array( $supported_types ) || ! in_array( $product->get_type(), $supported_types, true ) ) {
 			return false;
 		}
@@ -387,17 +376,6 @@ class WooPaymentsExpressCheckoutService {
 		 * @since 11.0.0
 		 */
 		$supported = (bool) apply_filters( 'wcpay_payment_request_is_product_supported', $supported, $product );
-
-		/**
-		 * Filters whether a product can show native WooPayments product-page express checkout.
-		 *
-		 * @param bool                              $supported Whether the product is supported.
-		 * @param \WC_Product                       $product   Product object.
-		 * @param WooPaymentsExpressCheckoutService $service   Native express checkout service.
-		 *
-		 * @since 11.0.0
-		 */
-		$supported = (bool) apply_filters( 'woocommerce_woopayments_express_checkout_is_product_supported', $supported, $product, $this );
 
 		return $supported && $product->is_purchasable() && $product->is_in_stock();
 	}
@@ -633,18 +611,7 @@ class WooPaymentsExpressCheckoutService {
 		 */
 		$data = apply_filters( 'wcpay_payment_request_product_data', $data, $product );
 
-		/**
-		 * Filters native WooPayments product-page express checkout product data.
-		 *
-		 * @param array<string,mixed>                $data    Product data.
-		 * @param \WC_Product                       $product Product object.
-		 * @param WooPaymentsExpressCheckoutService $service Native express checkout service.
-		 *
-		 * @since 11.0.0
-		 */
-		$filtered_data = apply_filters( 'woocommerce_woopayments_express_checkout_product_data', $data, $product, $this );
-
-		return is_array( $filtered_data ) ? $filtered_data : $data;
+		return $data;
 	}
 
 	/**

@@ -1246,17 +1246,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$subscriptions = is_array( $subscriptions ) ? $subscriptions : array();
-
-		/**
-		 * Filters native WooPayments subscriptions related to a renewal order.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<int,mixed> $subscriptions Related subscriptions.
-		 * @param WC_Order         $renewal_order Renewal order.
-		 */
-		$subscriptions = apply_filters( 'woocommerce_woopayments_subscriptions_for_renewal_order', $subscriptions, $renewal_order );
-		$subscriptions = is_array( $subscriptions ) ? $subscriptions : array();
 		$subscription  = reset( $subscriptions );
 
 		return $subscription instanceof WC_Order ? $subscription : null;

@@ -31,11 +31,6 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsFraudService implements RegisterHooksInterface {
 
 	/**
-	 * Filter applied to the whole prepared fraud-services config before it is served to clients.
-	 */
-	public const FILTER_FRAUD_SERVICES_CONFIG = 'woocommerce_woopayments_fraud_services_config';
-
-	/**
 	 * Filter applied to each prepared fraud-service config before it is served to clients.
 	 *
 	 * Returning null disables the service for the current request.
@@ -273,16 +268,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			$services_config[ $service_id ] = apply_filters( self::FILTER_FRAUD_SERVICE_CONFIG, $service_config, $service_id );
 		}
 
-		/**
-		 * Filters native WooPayments fraud-services config.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $services_config Prepared fraud-services config keyed by service ID.
-		 */
-		$services_config = apply_filters( self::FILTER_FRAUD_SERVICES_CONFIG, $services_config );
-
-		return is_array( $services_config ) ? $services_config : array();
+		return $services_config;
 	}
 
 	/**

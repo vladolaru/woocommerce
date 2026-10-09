@@ -56,8 +56,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wp_ajax_update_order_status' );
 		remove_all_actions( 'wp_ajax_nopriv_update_order_status' );
 		remove_all_actions( 'wp_ajax_create_setup_intent' );
-		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
-		remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		remove_all_filters( 'woocommerce_payment_token_class' );
 		unset( $GLOBALS['wcpay_test_order_subscription_relationships'], $GLOBALS['wcpay_test_renewal_order_ids'] );
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && method_exists( 'WC_Subscriptions_Change_Payment_Gateway', 'reset' ) ) {
