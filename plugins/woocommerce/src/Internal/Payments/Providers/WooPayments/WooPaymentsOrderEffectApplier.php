@@ -742,11 +742,8 @@ class WooPaymentsOrderEffectApplier {
 
 		$details = $effects['payment_method_details'];
 		if ( empty( $details ) ) {
-			$type    = $effects['payment_method_type'];
-			$details = array(
-				'type' => $type,
-				$type  => array(),
-			);
+			// With no charge details yet, a card falls back to its definition's title ("Card"), not a card title built from nothing.
+			$details = array( 'type' => $effects['payment_method_type'] );
 		}
 
 		return $this->payment_method_title( $details, $display_country );

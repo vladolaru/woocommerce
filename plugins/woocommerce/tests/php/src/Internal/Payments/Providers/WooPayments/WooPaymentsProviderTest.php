@@ -169,6 +169,41 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card payment waiting for 3D Secure, with no charge yet, titles the order "Card".
+	 *
+	 * The intent is REC-3DS-1's recorded new-card requires_action response (`Fixtures/rec-t3-3ds-requires-action.json`, pair
+	 * `new_card_requires_action`), whose `charges.data` is empty. Client 11.1.0 titles the order from the charge's card
+	 * details when it has them (gw:2162-2195), and with none falls back to the card definition's title
+	 * (class-upe-payment-method.php:176-182, CardDefinition.php:62-64): "Card".
+	 */
+	public function test_post_lifecycle_effects_title_a_card_payment_without_a_charge_card(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-requires-action.json' ), true );
+		$intent  = array();
+		foreach ( $fixture['entries'] as $entry ) {
+			if ( 'new_card_requires_action' === $entry['pair'] ) {
+				$intent = $entry['response']['body'];
+			}
+		}
+		$this->assertSame( array(), $intent['charges']['data'] );
+
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->save();
+		$outcome = ( new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, (string) $intent['id'] ) )
+			->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+
+		$this->sut->apply_post_lifecycle_effects(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
+			$outcome,
+			'charge'
+		);
+
+		$this->assertSame( 'Card', wc_get_order( $order->get_id() )->get_payment_method_title() );
+	}
+
+	/**
 	 * @testdox The post-lifecycle effects schedule the Fee details job only when the lifecycle added the payment's capture note ($_dataName).
 	 *
 	 * @dataProvider capture_note_before_the_lifecycle
