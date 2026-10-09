@@ -2494,7 +2494,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
 		$order->save();
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$this->sut->process( $this->load_recorded_dispute_created_event( 'accept_case_created' ) );
 
@@ -2527,7 +2527,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
 		$order->save();
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$event          = $this->load_recorded_dispute_created_event( 'accept_case_created' );
 		$delivery_count = 0;
@@ -3229,7 +3229,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_invoice_event_without_the_stripe_billing_module_is_refused_like_the_client( string $event_type, string $reason ): void {
 		$logger = RecordingWcLogger::install();
 		$sut    = $this->create_ingestor_without_the_stripe_billing_module();
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$hook_calls = array();
 		foreach ( array( 'before', 'after' ) as $moment ) {
 			add_action(
@@ -3280,7 +3280,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_invoice_event_without_the_stripe_billing_module_is_dropped_on_mode_mismatch(): void {
 		$logger = RecordingWcLogger::install();
 		$sut    = $this->create_ingestor_without_the_stripe_billing_module();
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$hook_calls = 0;
 		add_action(
 			'woocommerce_payments_before_webhook_delivery',
@@ -3425,7 +3425,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		);
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		foreach ( array( 'before', 'after' ) as $moment ) {
 			add_action(
 				"woocommerce_payments_{$moment}_webhook_delivery",
@@ -3473,7 +3473,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * second before its `invoice.paid`, when the renewal order may already exist unpaid.
 	 */
 	public function test_succeeded_intent_with_an_invoice_and_no_order_id_is_left_to_the_invoice_event(): void {
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
 		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t63-invoice-events.json' ), true );
 		$event     = array_values( array_filter( $recording['supporting_entries'], static fn( array $entry ) => 'payment_intent_succeeded_with_invoice' === $entry['pair'] ) )[0]['body'];
@@ -4257,7 +4257,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox Webhook mode mismatch skips processing and delivery hooks.
 	 */
 	public function test_mode_mismatch_skips_processing_and_delivery_hooks(): void {
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$hook_calls = array();
 		add_action(
 			'woocommerce_payments_before_webhook_delivery',

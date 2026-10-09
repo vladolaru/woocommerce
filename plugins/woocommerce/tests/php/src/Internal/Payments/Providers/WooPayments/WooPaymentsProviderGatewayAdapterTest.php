@@ -42,6 +42,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Payment_Token;
@@ -82,7 +83,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
-		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'] );
+		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		// Guest customer creation stores the customer in the shared session; leave none for later classes.
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
@@ -6893,14 +6894,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->save();
 
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_order' )

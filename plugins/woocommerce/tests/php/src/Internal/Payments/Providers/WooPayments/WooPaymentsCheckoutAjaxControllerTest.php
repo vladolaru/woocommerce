@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
@@ -282,7 +283,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$token_class_map->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$token_class_map->register();
 		$sut = $this->create_controller( $api_client, null, $token_service, $account_service );
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
+		$this->ensure_wcs_order_contains_renewal_double();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
 		$response = $sut->get_update_order_status_response(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
@@ -320,14 +323,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->set_customer_id( $user_id );
 		$subscription->set_payment_method_title( 'Card' );
 		$subscription->save();
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		// Relates the subscription without marking the order recurring: the renewal check reads its own registry.
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
 		$api_client           = new class() extends WooPaymentsApiClient {
 			/**
@@ -468,15 +466,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				++$lifecycle_runs;
 			}
 		};
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		$this->make_parent_order_of( $order, $subscription );
 		add_action( 'woocommerce_payment_complete', $observer, 1 );
 
 		try {
@@ -581,15 +571,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				++$lifecycle_runs;
 			}
 		};
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		$this->make_parent_order_of( $order, $subscription );
 		add_action( 'woocommerce_payment_complete', $observer, 1 );
 		$request = array(
 			'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
@@ -2806,7 +2788,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
+		$this->ensure_wcs_order_contains_renewal_double();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
 
 		$response = $sut->get_update_order_status_response(
 			array(
@@ -3826,6 +3809,18 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Make an order the parent order of a subscription, as WooCommerce Subscriptions reports it.
+	 *
+	 * @param WC_Order $order        Parent order.
+	 * @param WC_Order $subscription Subscription.
+	 */
+	private function make_parent_order_of( WC_Order $order, WC_Order $subscription ): void {
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$this->ensure_wcs_subscriptions_for_order_double();
+		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 	}
 
 	/**

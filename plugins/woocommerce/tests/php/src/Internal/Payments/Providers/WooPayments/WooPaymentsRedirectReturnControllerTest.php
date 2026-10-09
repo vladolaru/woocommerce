@@ -29,6 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Throwable;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -157,6 +158,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_logging_class' );
 		remove_all_filters( 'woocommerce_woopayments_is_recurring_payment' );
 		remove_all_filters( 'wcpay_dev_mode' );
+		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		WC()->cart->empty_cart();
 		wc_clear_notices();
 		wp_set_current_user( 0 );
@@ -353,9 +355,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 * callback stops a recurring order on that error (gw:4309-4321). Native logs the platform error's status and code, never its message.
 	 */
 	public function test_handle_wp_completes_order_when_token_save_fails(): void {
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-		$user_id                    = self::factory()->user->create( array( 'role' => 'customer' ) );
-		$order                      = $this->create_order( '50.00', $user_id, true );
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '50.00', $user_id, true );
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
+
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_token_fails', 'pm_token_fails' );
 		$token_service              = new class() extends WooPaymentsTokenService {
@@ -1996,15 +2000,9 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$confirmation_owner       = $this->create_confirmation_owner( $api_client, $token_service );
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
 		$observed                 = array();
-		add_filter( 'woocommerce_woopayments_is_recurring_payment', '__return_true' );
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 		$capture_observer_state    = static function ( int $order_id, string $hook ) use ( $order, $subscription, &$observed ): void {
 			if ( $order->get_id() !== $order_id ) {
 				return;
@@ -2056,7 +2054,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_action( 'woocommerce_order_status_completed', $status_observer, 1 );
 			remove_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
-			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
 		}
 
 		$order        = wc_get_order( $order->get_id() );

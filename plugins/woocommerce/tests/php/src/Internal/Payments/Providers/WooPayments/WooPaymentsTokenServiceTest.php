@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -1873,12 +1874,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->add_payment_token( $token_a );
 		$subscription->save();
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function () use ( $subscription ): array {
-				return array( $subscription );
-			}
-		);
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
 		$sut = $this->create_service();
 		$sut->sync_related_subscriptions_payment_token( $order, $token_b, 'pm_subscription_b', 'cus_subscription' );

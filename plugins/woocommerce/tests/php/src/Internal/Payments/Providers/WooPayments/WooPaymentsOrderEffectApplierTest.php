@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use RuntimeException;
 use WC_Order;
 use WC_Payment_Token_CC;
@@ -520,14 +521,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method_title( 'Card' );
 		$subscription->save();
 
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 		add_filter(
 			'wcpay_payment_request_payment_method_title_suffix',
 			static function ( string $suffix ) use ( &$title_filter_calls ): string {

@@ -916,7 +916,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$module->method( 'is_loaded' )->willReturn( false );
 		$module->expects( $this->never() )->method( 'handle_invoice_event' );
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
-		add_filter( WooPaymentsEventIngestor::FILTER_LIVE_MODE, '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$scheduler = new RecordingActionSchedulerService();

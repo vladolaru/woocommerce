@@ -1879,20 +1879,18 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal->add_payment_token( $active_token );
 		$renewal->save();
 
-		add_filter(
-			'woocommerce_woopayments_subscriptions_for_renewal_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $renewal, $subscription ): array {
-				return $renewal->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		$this->ensure_wcs_renewal_subscriptions_double();
 
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
-		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $renewal->get_id() ) );
+		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		try {
+			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $renewal->get_id() ) );
+		} finally {
+			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
+		}
 
 		$renewal = wc_get_order( $renewal->get_id() );
 

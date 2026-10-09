@@ -36,6 +36,9 @@ final class WooCommerceSubscriptionsDoubles {
 
 	/**
 	 * Global holding, per order ID, the subscription IDs `wcs_get_subscriptions_for_order()` returns for each relation (`parent`, `renewal`, ...).
+	 *
+	 * A `parent`, `resubscribe` or `switch` relation also makes `wcs_order_contains_subscription()` true; a `renewal` relation does
+	 * not, and `wcs_order_contains_renewal()` reads its own global, so a test can relate a subscription without making the order recurring.
 	 */
 	public const ORDER_SUBSCRIPTIONS = 'wcpay_test_order_subscription_relationships';
 
@@ -90,10 +93,7 @@ final class WooCommerceSubscriptionsDoubles {
 	public static function load(): void {
 		self::load_product();
 
-		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
-			eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["' . self::ORDER_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
-		}
+		self::load_order_subscriptions();
 
 		if ( ! function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the gateway tests define, reading the same registry.
@@ -129,6 +129,28 @@ final class WooCommerceSubscriptionsDoubles {
 
 		// The test's hook snapshot removes this filter when the test ends.
 		add_filter( 'woocommerce_order_class', array( self::class, 'get_subscription_order_class' ), 10, 3 );
+	}
+
+	/**
+	 * Define `wcs_get_subscriptions_for_order()`, which returns the subscriptions `ORDER_SUBSCRIPTIONS` relates to an order.
+	 *
+	 * The registry may hold an `ArrayAccess` object in place of an array, so a test can see each lookup as it happens.
+	 */
+	public static function load_order_subscriptions(): void {
+		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["' . self::ORDER_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
+		}
+	}
+
+	/**
+	 * Define `wcs_order_contains_renewal()`, which reports only the order IDs in the `wcpay_test_renewal_order_ids` global as renewals.
+	 */
+	public static function load_renewal_detector(): void {
+		if ( ! function_exists( 'wcs_order_contains_renewal' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
+		}
 	}
 
 	/**

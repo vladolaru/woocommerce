@@ -33,6 +33,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionRelationshipsProbe;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Exception;
 use RuntimeException;
 use WC_Order;
@@ -1233,24 +1235,22 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				return $suffix;
 			}
 		);
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription, &$credential_sync_calls, &$display_sync_calls, $sequence ): array {
-				if ( $order->get_id() !== $filtered_order->get_id() ) {
-					return $subscriptions;
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = new SubscriptionRelationshipsProbe(
+			static function ( int $order_id ) use ( $order, $subscription, &$credential_sync_calls, &$display_sync_calls, $sequence ): array {
+				if ( $order->get_id() !== $order_id ) {
+					return array();
 				}
 
-				if ( 'Link (WooPayments)' === $filtered_order->get_payment_method_title() ) {
+				if ( 'Link (WooPayments)' === wc_get_order( $order_id )->get_payment_method_title() ) {
 					++$display_sync_calls;
 					$sequence[] = 'display-sync';
 				} else {
 					++$credential_sync_calls;
 					$sequence[] = 'credential-sync';
 				}
-				return array( $subscription );
-			},
-			10,
-			2
+				return array( 'renewal' => array( $subscription->get_id() ) );
+			}
 		);
 		$observed = array();
 		$observer = static function ( int $order_id ) use ( $order, &$observed, $sequence ): void {
@@ -1279,7 +1279,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_action( 'woocommerce_payment_complete', $observer );
 			remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
-			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		}
 
 		$order           = wc_get_order( $order->get_id() );
@@ -3924,14 +3924,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			array( 'recurring_payment' => true )
 		);
 		$observed = array();
-		add_filter(
-			'woocommerce_woopayments_related_subscriptions_for_order',
-			static function ( array $subscriptions, WC_Order $filtered_order ) use ( $order, $subscription ): array {
-				return $order->get_id() === $filtered_order->get_id() ? array( $subscription ) : $subscriptions;
-			},
-			10,
-			2
-		);
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 		$capture_observer_state    = static function ( int $order_id, string $hook ) use ( $order, $subscription, &$observed ): void {
 			if ( $order->get_id() !== $order_id ) {
 				return;
@@ -3985,7 +3979,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_action( 'woocommerce_order_status_completed', $status_observer, 1 );
 			remove_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
-			remove_all_filters( 'woocommerce_woopayments_related_subscriptions_for_order' );
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		}
 
 		$order        = wc_get_order( $order->get_id() );

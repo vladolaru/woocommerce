@@ -27,6 +27,13 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	private array $services = array();
 
 	/**
+	 * Fraud-services config the fraud-service double returns.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $fraud_services_config = array();
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -34,7 +41,6 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			$this->remove_tracking_hooks( $service );
 		}
 
-		remove_all_filters( WooPaymentsOrderTrackingService::FILTER_FRAUD_SERVICES_CONFIG );
 		parent::tearDown();
 	}
 
@@ -256,19 +262,16 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should skip scheduling when Sift tracking is disabled.
 	 */
 	public function test_skips_scheduling_when_sift_is_disabled(): void {
-		$disable_sift = static function (): array {
-			return array( 'stripe' => array() );
-		};
-		$scheduler    = new RecordingActionSchedulerService();
-		$service      = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
-		$order        = $this->create_order(
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			array(
 				'_payment_method_id' => 'pm_123',
 			)
 		);
 
-		add_filter( WooPaymentsOrderTrackingService::FILTER_FRAUD_SERVICES_CONFIG, $disable_sift );
+		$this->fraud_services_config = array( 'stripe' => array() );
 
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
@@ -394,12 +397,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * Enable Sift tracking for scheduling tests.
 	 */
 	private function enable_sift_tracking(): void {
-		add_filter(
-			WooPaymentsOrderTrackingService::FILTER_FRAUD_SERVICES_CONFIG,
-			static function (): array {
-				return array( 'sift' => array() );
-			}
-		);
+		$this->fraud_services_config = array( 'sift' => array() );
 	}
 
 	/**
@@ -608,9 +606,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments fraud service mock whose config is driven by the
-	 * production fraud-services filter, so tests control Sift presence the same
-	 * way site code would.
+	 * Create a WooPayments fraud service mock that returns the test's fraud-services config, so tests control Sift presence.
 	 *
 	 * @return WooPaymentsFraudService
 	 */
@@ -623,14 +619,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$fraud_service
 			->method( 'get_fraud_services_config' )
 			->willReturnCallback(
-				static function (): array {
-					/**
-					 * Filters the fraud-services fixture returned by this fraud-service mock.
-					 *
-					 * @since 11.0.0
-					 */
-					return (array) apply_filters( WooPaymentsFraudService::FILTER_FRAUD_SERVICES_CONFIG, array() );
-				}
+				fn(): array => $this->fraud_services_config
 			);
 
 		return $fraud_service;
