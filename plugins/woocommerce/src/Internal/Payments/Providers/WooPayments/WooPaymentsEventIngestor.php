@@ -1162,7 +1162,7 @@ class WooPaymentsEventIngestor {
 	 * @return WooPaymentsIppReceiptEmail|null
 	 */
 	private function get_ipp_receipt_email(): ?WooPaymentsIppReceiptEmail {
-		if ( ! function_exists( 'WC' ) || ! WC()->mailer() ) {
+		if ( ! WC()->mailer() ) {
 			return null;
 		}
 

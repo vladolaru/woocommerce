@@ -131,7 +131,7 @@ final class WooPaymentsOrderPayAccess {
 			return sanitize_email( wp_unslash( $_POST['email'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		}
 
-		$session  = function_exists( 'WC' ) && WC() ? WC()->session : null;
+		$session  = WC() ? WC()->session : null;
 		$customer = $session instanceof \WC_Session ? $session->get( 'customer' ) : null;
 
 		return is_array( $customer ) && isset( $customer['email'] ) && is_string( $customer['email'] ) ? $customer['email'] : '';

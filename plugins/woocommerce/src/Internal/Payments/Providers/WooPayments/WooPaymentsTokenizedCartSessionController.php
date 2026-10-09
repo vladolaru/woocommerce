@@ -556,7 +556,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function handle_store_api_response( $response, $server = null, $request = null ) {
-		if ( ! $response instanceof WP_REST_Response || ! function_exists( 'WC' ) || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
+		if ( ! $response instanceof WP_REST_Response || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
 			return $response;
 		}
 
@@ -576,7 +576,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Save the real cart data before WooCommerce empties the checkout cart on order-received.
 	 */
 	public function save_old_cart_data_for_restore(): void {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->cart ) {
+		if ( ! WC() || ! WC()->cart ) {
 			return;
 		}
 
@@ -595,7 +595,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Restore the real cart data after WooCommerce empties the checkout cart on order-received.
 	 */
 	public function restore_old_cart_data(): void {
-		if ( null === $this->saved_cart_data || ! function_exists( 'WC' ) || ! WC() || ! WC()->cart ) {
+		if ( null === $this->saved_cart_data || ! WC() || ! WC()->cart ) {
 			return;
 		}
 
@@ -624,7 +624,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return array<string,mixed>
 	 */
 	private function get_cart_session_snapshot(): array {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->session ) {
+		if ( ! WC() || ! WC()->session ) {
 			return array();
 		}
 
@@ -654,7 +654,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @param array<string,mixed> $snapshot Session values to restore.
 	 */
 	private function restore_cart_session_snapshot( array $snapshot ): void {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'set' ) ) ) {
+		if ( ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'set' ) ) ) {
 			return;
 		}
 
@@ -879,7 +879,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function is_normalized_state( string $state, string $country ): bool {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->countries ) {
+		if ( ! WC() || ! WC()->countries ) {
 			return false;
 		}
 
@@ -896,7 +896,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	private function get_normalized_state_from_wc_states( string $state, string $country ): string {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->countries ) {
+		if ( ! WC() || ! WC()->countries ) {
 			return $state;
 		}
 

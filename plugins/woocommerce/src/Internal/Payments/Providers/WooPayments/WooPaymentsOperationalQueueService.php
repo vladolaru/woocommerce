@@ -1084,7 +1084,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @return WooPaymentsPostKycActivationEmail|null
 	 */
 	private function get_post_kyc_activation_email(): ?WooPaymentsPostKycActivationEmail {
-		if ( ! function_exists( 'WC' ) || ! WC()->mailer() ) {
+		if ( ! WC()->mailer() ) {
 			return null;
 		}
 
@@ -1458,10 +1458,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *                                       merged into the log entry alongside the source.
 	 */
 	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
-		if ( ! function_exists( 'wc_get_logger' ) ) {
-			return;
-		}
-
 		wc_get_logger()->error(
 			$message,
 			array_merge( $context, WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments' ) )

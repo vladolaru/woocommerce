@@ -546,7 +546,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			),
 			'fraudServices'                            => $this->get_fraud_services_config(),
 			'features'                                 => array_values( $supports ),
-			'isCheckout'                               => function_exists( 'is_checkout' ) && is_checkout(),
+			'isCheckout'                               => is_checkout(),
 			'isPreview'                                => function_exists( 'is_preview' ) && is_preview(),
 			'isShortcodeCheckout'                      => $this->is_shortcode_checkout(),
 			'isCoreNativeCheckoutAvailable'            => $this->should_expose_checkout_surface(),
@@ -872,15 +872,15 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_express_button_context(): string {
 		$post = get_post();
-		if ( ( function_exists( 'is_product' ) && is_product() ) || ( $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' ) ) ) {
+		if ( is_product() || ( $post instanceof \WP_Post && has_shortcode( $post->post_content, 'product_page' ) ) ) {
 			return 'product';
 		}
 
-		if ( ( function_exists( 'is_cart' ) && is_cart() ) || has_block( 'woocommerce/cart' ) ) {
+		if ( is_cart() || has_block( 'woocommerce/cart' ) ) {
 			return 'cart';
 		}
 
-		$is_checkout = function_exists( 'is_checkout' ) && is_checkout();
+		$is_checkout = is_checkout();
 		if ( $is_checkout && isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag, as in the client.
 			return 'pay_for_order';
 		}
@@ -1344,7 +1344,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		$currency = strtoupper( get_woocommerce_currency() );
-		$total    = function_exists( 'WC' ) && WC() && WC()->cart instanceof \WC_Cart
+		$total    = WC() && WC()->cart instanceof \WC_Cart
 			? (float) WC()->cart->get_total( '' )
 			: 0.0;
 
@@ -1397,7 +1397,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_shortcode_checkout(): bool {
-		if ( ! function_exists( 'is_checkout' ) || ! is_checkout() ) {
+		if ( ! is_checkout() ) {
 			return false;
 		}
 
@@ -1579,7 +1579,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			? strtoupper( (string) $account_data['country'] )
 			: '';
 
-		if ( '' === $country && function_exists( 'WC' ) && WC() && WC()->countries ) {
+		if ( '' === $country && WC() && WC()->countries ) {
 			$country = strtoupper( (string) WC()->countries->get_base_country() );
 		}
 
@@ -1678,7 +1678,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return array<string,array{required:bool}>
 	 */
 	private function get_enabled_billing_fields(): array {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->checkout() ) {
+		if ( ! WC() || ! WC()->checkout() ) {
 			return array();
 		}
 
@@ -1714,7 +1714,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_stripe_locale(): string {
-		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
+		$locale = determine_locale();
 
 		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}

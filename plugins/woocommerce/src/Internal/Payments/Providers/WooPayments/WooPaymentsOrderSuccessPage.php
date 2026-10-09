@@ -231,7 +231,6 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			|| 'order-received' !== $context
 			|| ! $order instanceof WC_Order
 			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method()
-			|| ! function_exists( 'WC' )
 			|| ! WC()
 			|| ! WC()->session
 		) {

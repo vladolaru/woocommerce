@@ -779,7 +779,7 @@ class WooPaymentsRefundEventHandler {
 			$country = strtoupper( (string) $account_data['data']['country'] );
 		}
 
-		if ( '' === $country && function_exists( 'WC' ) && WC() && WC()->countries ) {
+		if ( '' === $country && WC() && WC()->countries ) {
 			$country = strtoupper( (string) WC()->countries->get_base_country() );
 		}
 

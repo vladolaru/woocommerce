@@ -125,7 +125,7 @@ class WooPaymentsExpressCheckoutService {
 		$context          = $this->normalize_button_context( $context );
 		$context_currency = $this->get_context_currency( $context );
 		$currency         = strtolower( '' === $context_currency ? get_woocommerce_currency() : $context_currency );
-		$decimals         = function_exists( 'wc_get_price_decimals' ) ? wc_get_price_decimals() : 2;
+		$decimals         = wc_get_price_decimals();
 		$tracking_enabled = $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled( false, true );
 
 		$params = array(
@@ -144,9 +144,9 @@ class WooPaymentsExpressCheckoutService {
 				'currency_decimals'          => $decimals,
 				'stripe_minor_unit'          => WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ),
 				'country_code'               => $this->get_store_base_country(),
-				'needs_shipping'             => function_exists( 'WC' ) && WC() && WC()->cart ? WC()->cart->needs_shipping() : false,
+				'needs_shipping'             => WC() && WC()->cart ? WC()->cart->needs_shipping() : false,
 				'needs_payer_phone'          => 'required' === get_option( 'woocommerce_checkout_phone_field', 'required' ),
-				'allowed_shipping_countries' => function_exists( 'WC' ) && WC() && WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
+				'allowed_shipping_countries' => WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
 			'has_subscription'            => $this->context_has_subscription( $context ),
@@ -442,7 +442,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	private function is_cart_supported(): bool {
-		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$woocommerce = WC();
 		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
 		if ( ! $cart instanceof \WC_Cart ) {
 			return false;
@@ -512,7 +512,7 @@ class WooPaymentsExpressCheckoutService {
 			return $product instanceof \WC_Product && ! $this->product_needs_shipping( $product );
 		}
 
-		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$woocommerce = WC();
 		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
 
 		return $cart instanceof \WC_Cart && ! $cart->needs_shipping();
@@ -534,7 +534,7 @@ class WooPaymentsExpressCheckoutService {
 			return $product instanceof \WC_Product && 0.0 === (float) $product->get_price();
 		}
 
-		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$woocommerce = WC();
 		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
 
 		return $cart instanceof \WC_Cart && 0.0 === (float) $cart->get_total( 'edit' );
@@ -1145,7 +1145,7 @@ class WooPaymentsExpressCheckoutService {
 	 */
 	private function get_store_base_country(): string {
 		$country = (string) get_option( 'woocommerce_default_country', 'US' );
-		if ( function_exists( 'WC' ) && WC() && WC()->countries ) {
+		if ( WC() && WC()->countries ) {
 			$country = (string) WC()->countries->get_base_country();
 		}
 
@@ -1165,7 +1165,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return string
 	 */
 	private function get_stripe_locale(): string {
-		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
+		$locale = determine_locale();
 
 		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}

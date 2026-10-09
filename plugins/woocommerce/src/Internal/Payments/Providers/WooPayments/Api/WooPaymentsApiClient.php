@@ -2729,7 +2729,7 @@ class WooPaymentsApiClient {
 		if ( ! in_array( $error_code, array( 'fraudulent', 'wcpay_card_testing_prevention' ), true ) ) {
 			return;
 		}
-		if ( ! function_exists( 'WC' ) || null === WC()->session ) {
+		if ( null === WC()->session ) {
 			return;
 		}
 

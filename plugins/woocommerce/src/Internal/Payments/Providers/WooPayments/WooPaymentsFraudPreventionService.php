@@ -179,7 +179,7 @@ class WooPaymentsFraudPreventionService {
 			return $this->session;
 		}
 
-		$woocommerce = function_exists( 'WC' ) ? WC() : null;
+		$woocommerce = WC();
 		if ( $woocommerce && $woocommerce->session instanceof \WC_Session ) {
 			$this->session = $woocommerce->session;
 		}

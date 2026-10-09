@@ -1662,7 +1662,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$country_locale = function_exists( 'WC' ) && WC() && WC()->countries
+		$country_locale = WC() && WC()->countries
 			? WC()->countries->get_country_locale()
 			: array();
 		$fields         = array( 'state', 'city', 'postcode', 'address_1' );
@@ -1923,7 +1923,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if (
 			PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
 			|| '' === $intent_id
-			|| ! function_exists( 'WC' )
 			|| ! WC()
 			|| ! WC()->session
 		) {
@@ -2021,16 +2020,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$tracks_reason = $note;
 
 			// Client 11.1.0 logs the note (gw:2994), which carries the platform's message; native logs the listed code instead.
-			if ( function_exists( 'wc_get_logger' ) ) {
-				wc_get_logger()->error(
-					'A WooPayments refund failed to complete.',
-					array(
-						'source'     => 'woopayments-payments',
-						'order_id'   => $order->get_id(),
-						'error_code' => WooPaymentsLogger::get_loggable_error_code( (string) $error->get_error_code() ),
-					)
-				);
-			}
+			wc_get_logger()->error(
+				'A WooPayments refund failed to complete.',
+				array(
+					'source'     => 'woopayments-payments',
+					'order_id'   => $order->get_id(),
+					'error_code' => WooPaymentsLogger::get_loggable_error_code( (string) $error->get_error_code() ),
+				)
+			);
 		}
 
 		$order->add_order_note( $note );
