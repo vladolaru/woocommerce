@@ -893,7 +893,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A charge.dispute.updated event on a charge recorded on an order another gateway paid adds one note naming the update, and keeps the status.
 	 *
 	 * Client 11.1.0 notes the update on the charge's order whatever its gateway
-	 * (class-wc-payments-webhook-processing-service.php:712-724).
+	 * (class-wc-payments-webhook-processing-service.php:794-853).
 	 */
 	public function test_dispute_updated_on_an_order_paid_by_another_gateway_is_recorded(): void {
 		$order                   = $this->create_order_paid_by_another_gateway( 'bacs', 'ch_bacs_updated' );

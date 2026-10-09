@@ -13,6 +13,11 @@ use WC_Unit_Test_Case;
  * Event objects carry the Stripe `metadata` the store attached at checkout: `order_id` and `order_key` on a
  * PaymentIntent and its charges (client 11.1.0 class-wc-payments-webhook-processing-service.php:968-1002;
  * https://docs.stripe.com/api/charges/object#charge_object-metadata).
+ *
+ * The intent lookup differs from client 11.1.0 in two places. When the order holding the intent fails the key check,
+ * the order the metadata names is tried next, so an intent ID that another site's order holds does not hide this
+ * site's order (the client returns no order, :1002-1012). The first charge is read from `charges.data[0]`, the Stripe
+ * list shape (https://docs.stripe.com/api/payment_intents/object), where the client reads `charges[0]` (:984-986).
  */
 class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 
@@ -81,6 +86,8 @@ class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A payment intent whose intent order has another key falls back to the order its metadata names.
+	 *
+	 * Client 11.1.0 returns no order here (class-wc-payments-webhook-processing-service.php:1002-1012); see the class docblock.
 	 */
 	public function test_intent_event_falls_back_to_metadata_when_the_intent_order_key_differs(): void {
 		$this->create_order( array( '_intent_id' => 'pi_shared' ) );
