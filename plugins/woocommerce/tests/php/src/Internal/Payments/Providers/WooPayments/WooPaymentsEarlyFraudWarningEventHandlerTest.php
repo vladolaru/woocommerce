@@ -79,7 +79,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $notes );
 		$this->assertStringContainsString( 'Made with stolen card', $notes[0]->content );
 		$this->assertTrue( $note_service->saw_persisted_warning );
-		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ), 'A WooPayments order logs no gateway mismatch.' );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ), 'A warning on the order\'s own payment is not recorded as another charge.' );
 	}
 
 	/**
@@ -365,7 +365,6 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $record_lines );
 		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
 		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ) );
-		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
 	}
 
 	/**

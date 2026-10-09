@@ -577,7 +577,6 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $record_lines );
 		$this->assertSame( 'woopayments', $logger->contexts[ $record_lines[0] ]['source'] );
-		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment method mismatch:' ) ) );
 	}
 
 	/**

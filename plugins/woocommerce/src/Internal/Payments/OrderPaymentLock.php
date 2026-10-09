@@ -11,7 +11,7 @@ use Throwable;
 use WC_Order;
 
 /**
- * Holds the order payment lock, and logs lock refusals and payment method mismatches.
+ * Holds the order payment lock, and logs lock refusals.
  *
  * @since 11.0.0
  * @internal
@@ -26,14 +26,7 @@ class OrderPaymentLock {
 	private const LOCK_REFUSAL_LOG_PREFIX = 'order payment lock refused';
 
 	/**
-	 * Fixed prefix of the warning logged when an event applies to an order of another gateway.
-	 *
-	 * @var string
-	 */
-	private const PAYMENT_METHOD_MISMATCH_LOG_PREFIX = 'order payment method mismatch';
-
-	/**
-	 * Log source for lock refusals and payment method mismatches when the caller names none.
+	 * Log source for lock refusals when the caller names none.
 	 *
 	 * @var string
 	 */
@@ -152,41 +145,6 @@ class OrderPaymentLock {
 						'lock_age_seconds'  => $lock_age_seconds,
 						'lock_value'        => false === $lock_value ? null : (string) $lock_value,
 					)
-				)
-			);
-		} catch ( Throwable $exception ) {
-			return;
-		}
-	}
-
-	/**
-	 * Log a warning when a provider event applies to an order whose payment method is another gateway.
-	 *
-	 * Same line shape as the lock refusal: a fixed prefix, the order, the applied operation and the order's payment
-	 * method. Logging is best-effort and never throws.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param WC_Order    $order             Order the event applies to.
-	 * @param string      $applied_operation Operation being applied, such as the event type.
-	 * @param string|null $source            Log source, when the caller logs to its own file.
-	 */
-	public function log_payment_method_mismatch( WC_Order $order, string $applied_operation, ?string $source = null ): void {
-		try {
-			$payment_method = (string) $order->get_payment_method();
-			wc_get_logger()->warning(
-				sprintf(
-					'%1$s: order %2$d, applied %3$s, order payment method %4$s',
-					self::PAYMENT_METHOD_MISMATCH_LOG_PREFIX,
-					$order->get_id(),
-					$applied_operation,
-					'' === $payment_method ? 'none' : $payment_method
-				),
-				array(
-					'source'            => $source ?? self::LOCK_REFUSAL_LOG_SOURCE,
-					'order_id'          => $order->get_id(),
-					'applied_operation' => $applied_operation,
-					'payment_method'    => $payment_method,
 				)
 			);
 		} catch ( Throwable $exception ) {
