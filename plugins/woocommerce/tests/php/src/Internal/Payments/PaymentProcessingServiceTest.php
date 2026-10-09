@@ -1038,6 +1038,61 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A declined charge whose failure handling throws keeps the declined intent ID and never makes it the transaction ID.
+	 *
+	 * The platform declines the charge and names the declined intent in its error envelope; a `woocommerce_order_status_failed`
+	 * callback then fails with an Error while the order is failed (WC_Order::status_transition() catches only Exception).
+	 * On a decline client 11.1.0 stores only `_intent_id` (includes/class-wc-payment-gateway-wcpay.php:1330-1334), never
+	 * the transaction ID.
+	 */
+	public function test_process_checkout_keeps_declined_intent_off_the_transaction_id_when_failure_handling_throws(): void {
+		$order                  = $this->create_woopayments_order( '10.00' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			// Stripe's decline passed through by the platform, with the declined intent read from error.payment_intent.id
+			// by client 11.1.0 includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871.
+			$this->json_transport_response(
+				402,
+				array(
+					'error' => array(
+						'type'           => 'card_error',
+						'code'           => 'card_declined',
+						'decline_code'   => 'generic_decline',
+						'message'        => 'Your card was declined.',
+						'payment_intent' => array(
+							'id'     => 'pi_declined',
+							'object' => 'payment_intent',
+							'status' => 'requires_payment_method',
+						),
+					),
+				)
+			),
+		);
+
+		$provider    = $this->timeout_transport_provider( $http_client );
+		$hook_throws = 0;
+		add_action(
+			'woocommerce_order_status_failed',
+			static function () use ( &$hook_throws ): void {
+				++$hook_throws;
+				throw new \Error( 'A failed-order hook failed.' );
+			}
+		);
+
+		$exception = $this->expect_outcome_apply_exception(
+			fn() => $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_declined' ), $provider )
+		);
+		$order     = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 1, $hook_throws, 'Failing the order must reach the throwing hook.' );
+		$this->assertCount( 1, $http_client->requests, 'Only the declined charge reaches the platform.' );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $exception->get_outcome()->get_status() );
+		$this->assertSame( 'pi_declined', $order->get_meta( '_intent_id', true ), 'The declined intent stays traceable.' );
+		$this->assertSame( '', $order->get_transaction_id(), 'A declined intent is not a payment the order can claim.' );
+	}
+
+	/**
 	 * @testdox Provider effects are applied before payment completion hooks run.
 	 */
 	public function test_process_checkout_outcome_applies_provider_effects_before_lifecycle(): void {

@@ -250,6 +250,8 @@ class PaymentProcessingService {
 	 * by later confirmation and reconciliation paths, so persisting only the transaction ID is not enough.
 	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
 	 * outcome after the provider call returned.
+	 * A failed outcome's reference names a payment that never succeeded, so it is saved only through the provider's meta and
+	 * never becomes the transaction ID.
 	 *
 	 * @param WC_Order          $order   Order object.
 	 * @param PaymentOutcome    $outcome Provider outcome with a durable reference.
@@ -283,7 +285,7 @@ class PaymentProcessingService {
 				$reloaded_order->update_meta_data( $key, $value );
 			}
 
-			if ( '' !== $payment_reference && '' === $existing_transaction_id ) {
+			if ( '' !== $payment_reference && '' === $existing_transaction_id && PaymentOutcome::STATUS_FAILED !== $outcome->get_status() ) {
 				$reloaded_order->set_transaction_id( $payment_reference );
 			}
 
