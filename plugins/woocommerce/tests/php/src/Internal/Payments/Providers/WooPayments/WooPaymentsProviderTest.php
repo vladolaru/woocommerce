@@ -233,6 +233,74 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The post-lifecycle effects schedule the Fee details job once when the lifecycle's capture note was written without its identity meta.
+	 *
+	 * WC_Order::add_order_note() stores the note's meta with update_comment_meta() and ignores the result
+	 * (includes/class-wc-order.php:2128-2133), so a plugin that short-circuits update_comment_metadata leaves the note
+	 * without its identity. Before this unit the job was scheduled whenever the note was inserted.
+	 */
+	public function test_post_lifecycle_effects_schedule_the_fee_details_job_when_the_note_lost_its_identity_meta(): void {
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = wc_create_order();
+		$order->save();
+		$context        = PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$outcome        = ( new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_fee_details',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_NOTE      => 'Captured.',
+				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+			)
+		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array() ) );
+		$effect_applier = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$effect_applier->method( 'apply' )->willReturn( $outcome );
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( WooPaymentsAccountService::class ),
+			null,
+			$effect_applier
+		);
+		$refuse_identity_meta = static function ( $check, $object_id, $meta_key ) {
+			unset( $object_id );
+			return WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY === $meta_key ? true : $check;
+		};
+
+		$applied = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		add_filter( 'update_comment_metadata', $refuse_identity_meta, 10, 3 );
+		try {
+			// The payment lifecycle adds the note between the two ports; its identity meta is refused.
+			$order->add_order_note( 'Captured.', 0, false, array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', 'payment_lifecycle:pi_fee_details|completed|capture_success' ) ) );
+		} finally {
+			remove_filter( 'update_comment_metadata', $refuse_identity_meta, 10 );
+		}
+		$provider->apply_post_lifecycle_effects( $context, $applied, 'capture' );
+
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'args'     => array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_fee_details',
+					'is_test_mode' => false,
+				),
+				'group'    => 'woocommerce_payments',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		);
+		$this->assertCount( 1, $jobs );
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+	}
+
+	/**
 	 * Whether the order had the capture note before the lifecycle, and whether the job is scheduled.
 	 *
 	 * @return array<string,array{bool,bool}>

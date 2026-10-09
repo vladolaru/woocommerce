@@ -230,12 +230,15 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	/**
 	 * Schedule the job after the payment runtime applied an outcome whose success or capture note the order did not have.
 	 *
+	 * The note was absent, by identity and by text, before the runtime applied the outcome under its lock, so a note found
+	 * now either way was written by the lifecycle, even when its identity meta was not stored.
+	 *
 	 * @param WC_Order       $order   Order object.
 	 * @param PaymentOutcome $outcome Applied provider outcome, with its order note.
 	 */
 	public function schedule_when_outcome_note_added( WC_Order $order, PaymentOutcome $outcome ): void {
 		$event = $this->get_outcome_event( $outcome );
-		if ( null !== $event && 0 < $this->order_payment_notes->find_by_identity( $order, $event->get_note_identity(), $this->vocabulary ) ) {
+		if ( null !== $event && $this->has_note( $order, $event ) ) {
 			$this->schedule( $order, (string) $event->get_payment_reference() );
 		}
 	}
