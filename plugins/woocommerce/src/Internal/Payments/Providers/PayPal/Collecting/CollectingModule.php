@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExtendingModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTrait;
@@ -26,6 +27,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	use ModuleClassNameIdTrait;
 
 	/**
+	 * The priority of the gate filters: late, so they have the last word over the wallet's own callbacks at 10.
+	 */
+	private const GATE_PRIORITY = 100;
+
+	/**
 	 * {@inheritDoc}
 	 */
 	public function services(): array {
@@ -40,11 +46,15 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
 	public function run( ContainerInterface $container ): bool {
+		$gates = new PlatformServedGates( $container->get( 'collecting.connection-state' ) );
+		add_filter( 'woocommerce_paypal_payments_order_intent', array( $gates, 'handle_woocommerce_paypal_payments_order_intent' ), self::GATE_PRIORITY );
+		add_filter( 'woocommerce_paypal_payments_rest_common_merchant_features', array( $gates, 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ), self::GATE_PRIORITY );
+
 		return true;
 	}
 }

@@ -58,7 +58,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ResumedOrderShippingRestorer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\AuthorizeOrderActionNotice;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\ConnectAdminNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\SendOnlyCountryNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\UnsupportedCurrencyAdminNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\AuthorizedPaymentsProcessor;
@@ -164,12 +163,6 @@ return array(
 			);
 		}
 	),
-	'wcgateway.notice.connect'                            => static function ( ContainerInterface $container ): ConnectAdminNotice {
-		return new ConnectAdminNotice(
-			$container->get( 'settings.flag.is-connected' ),
-			$container->get( 'wcgateway.is-send-only-country' )
-		);
-	},
 	'wcgateway.notice.currency-unsupported'               => static function ( ContainerInterface $container ): UnsupportedCurrencyAdminNotice {
 		return new UnsupportedCurrencyAdminNotice(
 			$container->get( 'settings.flag.is-connected' ),
@@ -790,24 +783,6 @@ return array(
 		return array();
 	},
 
-	'wcgateway.settings.wc-tasks.connect-task-config'     => static function ( ContainerInterface $container ): array {
-		$is_connected                 = $container->get( 'settings.flag.is-connected' );
-		$is_current_country_send_only = $container->get( 'wcgateway.is-send-only-country' );
-
-		if ( ! $is_connected && ! $is_current_country_send_only ) {
-			return array(
-				array(
-					'id'           => 'connect-to-paypal-task',
-					'title'        => __( 'Connect PayPal to complete setup', 'woocommerce' ),
-					'description'  => __( 'PayPal Wallet is almost ready. To get started, connect your account with the Activate PayPal Wallet button.', 'woocommerce' ),
-					'redirect_url' => admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet' ),
-				),
-			);
-		}
-
-		return array();
-	},
-
 	'wcgateway.settings.wc-tasks.working-capital-config'  => static function ( ContainerInterface $container ): array {
 		$settings_provider = $container->get( 'settings.settings-provider' );
 		assert( $settings_provider instanceof SettingsProvider );
@@ -847,7 +822,6 @@ return array(
 	'wcgateway.settings.wc-tasks.task-config-services'    => static function (): array {
 		return array(
 			'wcgateway.settings.wc-tasks.pay-later-task-config',
-			'wcgateway.settings.wc-tasks.connect-task-config',
 			'wcgateway.settings.wc-tasks.working-capital-config',
 		);
 	},

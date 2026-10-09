@@ -43,7 +43,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\ConnectionUrlGenerator;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\GatewayRedirectService;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\LoadingScreenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\SettingsMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\PaymentSettingsMigration;
@@ -631,9 +630,6 @@ return array(
 	},
 	'settings.service.gateway-redirect'                   => static function (): GatewayRedirectService {
 		return new GatewayRedirectService();
-	},
-	'settings.services.loading-screen-service'            => static function ( ContainerInterface $container ): LoadingScreenService { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The container factory signature is fixed.
-		return new LoadingScreenService();
 	},
 	/**
 	 * Returns a list of all payment gateway IDs created by this plugin.

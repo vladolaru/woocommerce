@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Blocks\AssetsController;
 use Automattic\WooCommerce\Blocks\Package as BlocksPackage;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
@@ -1206,6 +1207,65 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->sut->maybe_boot();
 
 		$this->assertNotContains( CollectingModule::class, array_map( 'get_class', (array) $seen ) );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should boot a collecting store as connected, with webhooks counted as registered and the SDK v6 buttons off.
+	 */
+	public function test_boots_a_collecting_store_as_connected(): void {
+		update_option(
+			Options::COLLECTING,
+			array(
+				'payee_email' => 'payee@example.com',
+				'environment' => 'sandbox',
+			)
+		);
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled', '__return_true' );
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$container = \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container();
+		$this->assertTrue( $container->get( 'settings.flag.is-connected' ) );
+		$this->assertTrue( $container->get( 'settings.environment' )->is_sandbox() );
+		$this->assertTrue( $container->get( 'webhook.is-registered' ) );
+		$this->assertFalse( $container->get( 'sdk-v6.buttons-available' ) );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register neither the old connect task nor the Pay Later task for a collecting store.
+	 */
+	public function test_collecting_store_registers_no_connect_or_pay_later_task(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut( true );
+		if ( null === TaskLists::get_list( 'extended' ) ) {
+			TaskLists::init_default_lists();
+		}
+
+		$this->sut->maybe_boot();
+		$container  = \Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP::container();
+		$config_ids = array_column( $container->get( 'wcgateway.settings.wc-tasks.simple-redirect-tasks-config' ), 'id' );
+		// The task registration runs on init; run only the wallet gateway module's callback.
+		$ran = 0;
+		foreach ( $GLOBALS['wp_filter']['init']->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( WCGatewayModule::class === $this->get_callback_owner( $callback['function'] ) ) {
+					call_user_func( $callback['function'] );
+					++$ran;
+				}
+			}
+		}
+
+		$this->assertSame( 1, $ran, 'The wallet gateway module registers its tasks from one init callback' );
+		foreach ( array( 'connect-to-paypal-task', 'pay-later-messaging-task' ) as $id ) {
+			$this->assertNotContains( $id, $config_ids, "$id must not be configured" );
+			$this->assertFalse( TaskLists::get_list( 'extended' )->get_task( $id ), "$id must not be registered" );
+		}
 	}
 
 	/**

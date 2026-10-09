@@ -45,7 +45,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\InstallmentsProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ResumedOrderShippingRestorer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\ConnectAdminNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\SendOnlyCountryNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\UnsupportedCurrencyAdminNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\AuthorizedPaymentsProcessor;
@@ -179,13 +178,6 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 		add_filter(
 			Repository::NOTICES_FILTER,
 			static function ( $notices ) use ( $c ): array {
-				$notice = $c->get( 'wcgateway.notice.connect' );
-				assert( $notice instanceof ConnectAdminNotice );
-				$connect_message = $notice->connect_message();
-				if ( $connect_message ) {
-					$notices[] = $connect_message;
-				}
-
 				$notice = $c->get( 'wcgateway.notice.currency-unsupported' );
 				assert( $notice instanceof UnsupportedCurrencyAdminNotice );
 				$unsupported_currency_message = $notice->unsupported_currency_message();

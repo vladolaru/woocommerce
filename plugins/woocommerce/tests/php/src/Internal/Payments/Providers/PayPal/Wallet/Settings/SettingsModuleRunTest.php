@@ -25,7 +25,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\WebhookSettingsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\BrandedExperience\PathRepository;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\GatewayRedirectService;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\LoadingScreenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\ScriptDataHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\SettingsModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
@@ -37,8 +36,7 @@ use WP_REST_Server;
 /**
  * SettingsModule::run() only registers hooks, so the tests run it over a container that serves the services the hooks
  * ask for, then fire the hooks the way WordPress does: the REST routes of the settings app are registered on
- * rest_api_init, its loading screen is added on admin_head and its scripts are loaded on admin_enqueue_scripts, and
- * both only on the PayPal settings page.
+ * rest_api_init, and its scripts are loaded on admin_enqueue_scripts only on the PayPal settings page.
  *
  * The REST endpoints are the real ones, over mocks of their own collaborators. The hooks the module adds are removed
  * again by the test case, and the admin hooks that exist before run() are cleared first so that firing one runs only
@@ -119,7 +117,6 @@ class SettingsModuleRunTest extends WalletTestCase {
 		return new ContainerDouble(
 			array_merge(
 				array(
-					'settings.services.loading-screen-service' => new LoadingScreenService(),
 					'settings.service.gateway-redirect' => new GatewayRedirectService(),
 				),
 				$this->rest_endpoint_services(),
@@ -217,72 +214,6 @@ class SettingsModuleRunTest extends WalletTestCase {
 
 		wp_set_current_user( 0 );
 		$this->assertSame( 401, $server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/wc_paypal/onboarding' ) )->get_status(), 'A visitor should be refused' );
-	}
-
-	/**
-	 * @testdox Should add the loading screen styles on the PayPal settings page and nowhere else.
-	 *
-	 * @dataProvider data_settings_page_requests
-	 *
-	 * @param array<string, string> $query     The query arguments of the admin request.
-	 * @param bool                  $is_loaded Whether the loading screen is expected.
-	 */
-	public function test_run_adds_the_loading_screen_on_the_paypal_settings_page_only( array $query, bool $is_loaded ): void {
-		$this->simulate_admin_request( $query );
-		$this->run_module( $this->container() );
-
-		ob_start();
-		do_action( 'admin_head' );
-		$output = (string) ob_get_clean();
-
-		if ( $is_loaded ) {
-			$this->assertStringContainsString( '#ppcp-settings-container', $output, 'The loading screen should hide the WooCommerce settings form' );
-		} else {
-			$this->assertSame( '', $output, 'The loading screen should not appear' );
-		}
-	}
-
-	/**
-	 * Admin requests and whether they are the PayPal settings page.
-	 *
-	 * @return array<string, array{array<string, string>, bool}>
-	 */
-	public function data_settings_page_requests(): array {
-		return array(
-			'the PayPal settings section' => array(
-				array(
-					'page'    => 'wc-settings',
-					'tab'     => 'checkout',
-					'section' => 'ppcp-gateway',
-				),
-				true,
-			),
-			'another payment gateway'     => array(
-				array(
-					'page'    => 'wc-settings',
-					'tab'     => 'checkout',
-					'section' => 'bacs',
-				),
-				false,
-			),
-			'another settings tab'        => array(
-				array(
-					'page'    => 'wc-settings',
-					'tab'     => 'shipping',
-					'section' => 'ppcp-gateway',
-				),
-				false,
-			),
-		);
-	}
-
-	/**
-	 * @testdox Should not add the loading screen outside the admin.
-	 */
-	public function test_run_adds_no_loading_screen_outside_the_admin(): void {
-		$this->run_module( $this->container() );
-
-		$this->assertFalse( has_action( 'admin_head' ), 'No admin_head hook should be added to a front-end request' );
 	}
 
 	/**

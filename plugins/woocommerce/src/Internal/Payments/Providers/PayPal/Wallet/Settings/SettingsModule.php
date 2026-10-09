@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Handler\ConnectionListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\BrandedExperience\PathRepository;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\GatewayRedirectService;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\LoadingScreenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\ScriptDataHandler;
@@ -58,11 +57,6 @@ class SettingsModule implements ServiceModule, ExecutableModule {
 	 * @param ContainerInterface $container The service container.
 	 */
 	public function run( ContainerInterface $container ): bool {
-		// Suppress WooCommerce Settings UI elements via CSS to improve the loading experience.
-		$loading_screen_service = $container->get( 'settings.services.loading-screen-service' );
-		assert( $loading_screen_service instanceof LoadingScreenService );
-		$loading_screen_service->register();
-
 		add_action( 'init', fn() => $this->apply_branded_only_limitations( $container ), 1 );
 
 		add_action(
