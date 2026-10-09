@@ -2940,6 +2940,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
@@ -3125,6 +3127,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->init( $service, new WooPaymentsProvider() );
 		WC()->session = null;
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
 		try {
 			$result = $gateway->process_payment( $order->get_id() );
 		} finally {
@@ -3171,6 +3174,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		};
 		add_filter( 'woocommerce_get_checkout_payment_url', $payment_url_filter, 10, 2 );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
 		try {
 			$result = $gateway->process_payment( $order->get_id() );
 		} finally {
@@ -3326,6 +3330,57 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $total checkout with no payment method and no saved token is refused before any payment runs ($scenario).
+	 *
+	 * Client 11.1.0 builds its payment information right after the already-paid check (`class-wc-payment-gateway-wcpay.php:1270`,
+	 * `:1451`), and the constructor throws `payment_method_not_provided` when the request has neither a payment method nor a
+	 * token (`includes/class-payment-information.php:157-162`). The catch fails the order without a payment note, because no
+	 * payment information was built (`gw:1326-1328`, `:1354`), and shows the exception's message (`gw:1425`). A $0 order that
+	 * needs payment, such as a WooCommerce Subscriptions free trial, must not complete without a payment method, and a step that
+	 * throws while completing it must not leave a succeeded intent status behind.
+	 *
+	 * @testWith ["0.00", "nothing throws", false]
+	 *           ["0.00", "a completion hook throws", true]
+	 *           ["12.00", "nothing throws", false]
+	 *
+	 * @param string $total             Order total.
+	 * @param string $scenario          Scenario label.
+	 * @param bool   $completion_throws Whether a woocommerce_payment_complete callback fails with an Error.
+	 */
+	public function test_process_payment_refuses_a_checkout_without_a_payment_method_or_token( string $total, string $scenario, bool $completion_throws ): void {
+		unset( $scenario );
+		wc_clear_notices();
+		$logger = $this->capture_logs();
+		$order  = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( $total );
+		$order->save();
+		if ( $completion_throws ) {
+			add_action(
+				'woocommerce_payment_complete',
+				static function (): void {
+					throw new \Error( 'A completion hook failed.' );
+				}
+			);
+		}
+
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
+
+		$result = $gateway->process_payment( $order->get_id() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'No intent exists, so no intent status is written.' );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), preg_grep( '/downstream error|<strong>failed<\/strong> to complete/', $notes ), 'Neither a downstream-error note nor a payment-failed note is added.' );
+		$this->assertSame( array(), preg_grep( '/reconcilable outcome/', array_column( $logger->entries, 'message' ) ), 'No provider operation is logged.' );
+	}
+
+	/**
 	 * Gateways, crossed with a tampered vs. absent token, the refusal must cover.
 	 *
 	 * @return array<string,array{0:string|null,1:bool}>
@@ -3369,6 +3424,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->create_fraud_prevention_service( true, $session )
 		);
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
@@ -3409,6 +3466,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			null,
 			$this->create_fraud_prevention_service( true, $session )
 		);
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$result = $gateway->process_payment( $order->get_id() );
 
@@ -3451,6 +3510,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			null,
 			$this->create_fraud_prevention_service( false, $session )
 		);
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$result = $gateway->process_payment( $order->get_id() );
 
@@ -3827,6 +3888,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                     = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $subscription->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
@@ -4177,6 +4240,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                     = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $subscription->get_id() );
 
 		$this->assertSame( 'failure', $result['result'] ?? '' );
@@ -4495,6 +4560,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new WooPaymentsFailedTransactionRateLimiter( $session )
 		);
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'failure', $result['result'] );
@@ -4595,6 +4662,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new WooPaymentsFailedTransactionRateLimiter( $session )
 		);
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result  = $sut->process_payment( $order->get_id() );
 		$notices = wc_get_notices( 'error' );
 
@@ -4637,6 +4706,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->create_fraud_prevention_service( false, $session ),
 			new WooPaymentsFailedTransactionRateLimiter( $session )
 		);
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$result  = $sut->process_payment( $order->get_id() );
 		$notices = wc_get_notices( 'error' );
@@ -4695,7 +4766,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$context = new StoreApiPaymentContext();
 		$context->set_order( $order );
 		$context->set_payment_method( $gateway->id );
-		$context->set_payment_data( array() );
+		$context->set_payment_data( array( 'wcpay-payment-method' => 'pm_card' ) );
 		$result = new StoreApiPaymentResult();
 
 		try {
@@ -4980,6 +5051,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		};
 		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11, 2 );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
 		try {
 			$result = $gateway->process_payment( $order->get_id() );
 		} finally {
@@ -5031,6 +5103,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST['update_all_subscriptions_payment_method'] = '1';
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 		$order  = wc_get_order( $order->get_id() );
 
@@ -5065,6 +5139,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
@@ -5073,15 +5149,20 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject no-external-payment success semantics when a new subscription credential is missing.
+	 * @testdox A subscription payment-method change with no payment method and no saved token is refused and keeps the subscription as it is.
+	 *
+	 * Client 11.1.0 refuses the request when it builds the payment information (`includes/class-payment-information.php:157-162`).
+	 * Its catch then asks the subscription to move to failed (`class-wc-payment-gateway-wcpay.php:1326-1328`), which WooCommerce
+	 * Subscriptions turns into on-hold for an active subscription or refuses with an exception; native leaves the subscription
+	 * as it is, as for a client payment-method error.
 	 */
 	public function test_process_payment_does_not_complete_subscription_change_without_provider_credential(): void {
+		wc_clear_notices();
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
-		$order                     = $this->create_order();
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$order   = $this->create_order();
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -5090,23 +5171,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
-		$return_filter_calls = 0;
-		$return_url_filter   = static function () use ( &$return_filter_calls ): string {
-			++$return_filter_calls;
-			return 'https://example.test/my-account/';
-		};
-		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
+		$result = $gateway->process_payment( $order->get_id() );
 
-		try {
-			$result = $gateway->process_payment( $order->get_id() );
-		} finally {
-			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
-		}
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
-		$this->assertSame( '', $result['payment_method'] );
-		$this->assertSame( 0, $return_filter_calls );
+		$this->assertSame( 'failure', $result['result'] );
+		$this->assertNull( $service->last_checkout_context, 'Nothing reaches payment processing.' );
+		$this->assertSame( array( 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 	}
 
@@ -5167,6 +5237,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$gateway->process_payment( $order->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
@@ -5199,6 +5271,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['woocommerce_change_payment'] = (string) $request_id;
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$gateway->process_payment( $order->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
@@ -5223,6 +5297,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$token   = $this->create_card_token( $user_id, 'pm_saved_card' );
+		$order->set_customer_id( $user_id );
+		$order->save();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
@@ -5230,7 +5308,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = '123';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 		// WooCommerce Subscriptions points the return URL at My Account during a change request and then sends the shopper to the subscription.
 		$return_url_filter = static function ( string $return_url, WC_Order $filtered_order ) use ( $order ): string {
 			return $order->get_id() === $filtered_order->get_id() ? 'https://example.test/my-account/' : $return_url;
@@ -5260,7 +5338,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_saved_token_subscription_change_skips_the_already_paid_check(): void {
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
-		$order = $this->create_order();
+		$order   = $this->create_order();
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$token   = $this->create_card_token( $user_id, 'pm_saved_card' );
+		$order->set_customer_id( $user_id );
 		$order->set_status( 'on-hold' );
 		$order->save();
 		$service = new RecordingPaymentProcessingService();
@@ -5272,7 +5353,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = '123';
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 
 		try {
 			$gateway->process_payment( $order->get_id() );
@@ -5948,6 +6029,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 		$notes  = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 
@@ -5966,6 +6049,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service = new RecordingPaymentProcessingService();
 		wc_get_container()->replace( PaymentProcessingService::class, $service );
 		$gateway = new NativeWooPaymentsGateway();
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$result = $gateway->process_payment( $order->get_id() );
 

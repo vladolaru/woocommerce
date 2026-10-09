@@ -1847,6 +1847,23 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$order->save_meta_data();
 		}
 
+		// Client 11.1.0 refuses a request with neither a payment method nor a usable saved token when it builds the payment
+		// information (includes/class-payment-information.php:157-162), whatever the total; with network-wide saved cards the
+		// platform picks the card. No payment information exists yet, so the catch adds no payment-failed note (gw:1354). A
+		// subscription whose payment method is being changed stays as it is, as for a client payment-method error below.
+		if (
+			'' === $this->get_request_payment_method_id()
+			&& ! $this->get_token_service()->get_valid_token_from_token_id( $this->sanitize_post_string( 'wc-' . $this->id . '-payment-token' ), $order->get_user_id() ) instanceof WC_Payment_Token
+			&& ! $this->is_network_saved_cards_enabled()
+		) {
+			return $this->refuse_checkout(
+				$order,
+				__( 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.', 'woocommerce' ),
+				'payment_method_not_provided',
+				! $is_subscription_payment_method_change
+			);
+		}
+
 		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order, $is_subscription_change );
 		if ( is_array( $client_error_result ) ) {
 			return $client_error_result;
