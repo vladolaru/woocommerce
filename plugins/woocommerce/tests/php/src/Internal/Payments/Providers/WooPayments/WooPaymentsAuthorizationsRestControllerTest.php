@@ -502,7 +502,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$capture_prefix = 'Payment capture failed to complete with the following message: ';
 
 		return array(
-			'capture declined'         => array(
+			'capture declined'                  => array(
 				'capture',
 				array(
 					PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
@@ -521,7 +521,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 					),
 				),
 			),
-			'capture amount too small' => array(
+			'capture amount too small'          => array(
 				'capture',
 				array(
 					PaymentOutcome::DATA_ERROR_CODE    => 'amount_too_small',
@@ -546,7 +546,35 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 					),
 				),
 			),
-			'capture without message'  => array(
+			// Client 11.1.0 formats the minimum with WC_Payments_Utils::format_explicit_currency() (gw:4003-4009): wc_price() in the
+			// currency's locale-info format, which for EUR is a comma decimal and the symbol on the right after a space
+			// (WC_Payments_Utils::get_woocommerce_price_format() 'right_space', class-wc-payments-utils.php:1147-1148).
+			'capture amount too small in euros' => array(
+				'capture',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'amount_too_small',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Amount must be at least €0.50 eur',
+					'http_code'                        => 400,
+					'extra_details'                    => array(
+						'minimum_amount'          => 50,
+						'minimum_amount_currency' => 'EUR',
+					),
+				),
+				array(
+					'status'  => 400,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'Amount must be at least €0.50 eur The minimum amount to capture is 0,50 € EUR.',
+					'data'    => array(
+						'status'        => 400,
+						'extra_details' => array(
+							'minimum_amount'          => 50,
+							'minimum_amount_currency' => 'EUR',
+						),
+						'error_type'    => 'amount_too_small',
+					),
+				),
+			),
+			'capture without message'           => array(
 				'capture',
 				array(),
 				array(
@@ -560,7 +588,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 					),
 				),
 			),
-			'cancel refused'           => array(
+			'cancel refused'                    => array(
 				'cancel',
 				array(
 					PaymentOutcome::DATA_ERROR_CODE    => 'payment_intent_unexpected_state',

@@ -1338,7 +1338,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$message .= ' ' . sprintf(
 				/* translators: %s: formatted minimum amount with currency. */
 				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
-				$this->order_data_service->format_explicit_currency_amount( (int) $error_data['minimum_amount'], (string) $error_data['currency'] )
+				WooPaymentsCurrencyUtils::format_explicit_currency(
+					WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $error_data['minimum_amount'], (string) $error_data['currency'] ),
+					(string) $error_data['currency']
+				)
 			);
 		}
 

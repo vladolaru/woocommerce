@@ -597,7 +597,10 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 			$message .= ' ' . sprintf(
 				/* translators: %s: formatted minimum amount with currency. */
 				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
-				wc_get_container()->get( WooPaymentsOrderDataService::class )->format_explicit_currency_amount( (int) $extra_details['minimum_amount'], (string) $extra_details['minimum_amount_currency'] )
+				WooPaymentsCurrencyUtils::format_explicit_currency(
+					WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $extra_details['minimum_amount'], (string) $extra_details['minimum_amount_currency'] ),
+					(string) $extra_details['minimum_amount_currency']
+				)
 			);
 		}
 

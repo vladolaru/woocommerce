@@ -180,19 +180,6 @@ class WooPaymentsOrderDataService {
 	}
 
 	/**
-	 * Format a Stripe integer amount with an explicit currency code.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function format_explicit_currency_amount( int $amount, string $currency ): string {
-		return $this->format_currency_minor_amount( $amount, $currency ) . ' ' . strtoupper( $currency );
-	}
-
-	/**
 	 * Format a provider exchange rate without changing its meaningful precision.
 	 *
 	 * @param mixed $exchange_rate Provider exchange rate.
@@ -206,20 +193,5 @@ class WooPaymentsOrderDataService {
 		}
 
 		return rtrim( rtrim( $formatted, '0' ), '.' );
-	}
-
-	/**
-	 * Format a Stripe integer amount with its currency symbol.
-	 *
-	 * @param int    $amount   Stripe integer amount.
-	 * @param string $currency Currency code.
-	 * @return string
-	 */
-	private function format_currency_minor_amount( int $amount, string $currency ): string {
-		$decimals = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ? 0 : 2;
-		$value    = number_format( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $decimals, '.', '' );
-		$symbol   = html_entity_decode( get_woocommerce_currency_symbol( strtoupper( $currency ) ), ENT_QUOTES, 'UTF-8' );
-
-		return $symbol . $value;
 	}
 }
