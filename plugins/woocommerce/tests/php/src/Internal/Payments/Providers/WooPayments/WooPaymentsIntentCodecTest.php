@@ -582,30 +582,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy mapping uses the supplied snapshot without reloading an order.
-	 */
-	public function test_legacy_result_uses_supplied_snapshot_without_reloading_order(): void {
-		$outcome = WooPaymentsIntentCodec::outcome_from_legacy_result(
-			array(
-				'result'   => 'success',
-				'redirect' => 'https://example.test/order-received/42',
-			),
-			WooPaymentsIntentMappingContext::for_legacy(
-				42,
-				'https://example.test/order-received/42',
-				10.0,
-				'pi_manual',
-				'pm_manual',
-				'requires_capture'
-			)
-		);
-
-		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
-		$this->assertSame( 'pi_manual', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_manual', $outcome->get_payment_method_id() );
-	}
-
-	/**
 	 * @testdox Failed refund mapping preserves raw provider error facts.
 	 */
 	public function test_failed_refund_mapping_preserves_raw_error_facts(): void {

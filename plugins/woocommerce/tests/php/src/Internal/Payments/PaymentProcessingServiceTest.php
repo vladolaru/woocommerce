@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -4200,11 +4199,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
-		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_logger' ) )
-			->getMock();
-		$legacy_runtime->method( 'get_logger' )->willReturn( null );
 		$effect_applier = new WooPaymentsOrderEffectApplier();
 		$effect_applier->init(
 			$token_service,
@@ -4250,7 +4244,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
-			$legacy_runtime,
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
@@ -4404,11 +4397,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
-		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_logger' ) )
-			->getMock();
-		$legacy_runtime->method( 'get_logger' )->willReturn( null );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -4418,7 +4406,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
-			$legacy_runtime,
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
@@ -4465,11 +4452,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$api_client->init( $http_client, $account_service );
-		$legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_logger' ) )
-			->getMock();
-		$legacy_runtime->method( 'get_logger' )->willReturn( null );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -4479,7 +4461,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
-			$legacy_runtime,
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),

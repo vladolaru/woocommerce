@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -92,119 +91,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should normalize legacy confirmation redirects to customer-action outcomes.
-	 */
-	public function test_charge_normalizes_confirmation_redirect_to_customer_action(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array(
-				'result'         => 'success',
-				'redirect'       => '#wcpay-confirm-pi:123:secret:nonce',
-				'payment_method' => 'pm_123',
-			)
-		);
-		$sut     = $this->create_adapter( $gateway );
-
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_123' ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
-		$this->assertSame( '#wcpay-confirm-pi:123:secret:nonce', $outcome->get_redirect_url() );
-		$this->assertSame( 'pm_123', $outcome->get_payment_method_id() );
-		$this->assertSame( $order->get_id(), $gateway->processed_order_id );
-		$this->assertSame( 'key_charge', $gateway->last_idempotency_key );
-	}
-
-	/**
-	 * @testdox Charge should normalize legacy offsite redirects to redirect outcomes.
-	 */
-	public function test_charge_normalizes_offsite_redirect_to_redirect_outcome(): void {
-		$order = $this->create_woopayments_order();
-		$sut   = $this->create_adapter(
-			new RecordingLegacyGateway(
-				array(
-					'result'   => 'success',
-					'redirect' => 'https://example.test/redirect',
-				)
-			)
-		);
-
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
-		$this->assertSame( 'https://example.test/redirect', $outcome->get_redirect_url() );
-	}
-
-	/**
-	 * @testdox Charge should preserve manual-capture outcomes written by the legacy gateway.
-	 */
-	public function test_charge_preserves_manual_capture_outcome_from_order_meta(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array(
-				'result'   => 'success',
-				'redirect' => $order->get_checkout_order_received_url(),
-			)
-		);
-
-		$gateway->intent_id_to_write         = 'pi_manual';
-		$gateway->intention_status_to_write  = 'requires_capture';
-		$gateway->payment_method_id_to_write = 'pm_manual';
-
-		$sut = $this->create_adapter( $gateway );
-
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_manual' ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
-		$this->assertSame( 'pi_manual', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'pm_manual', $outcome->get_payment_method_id() );
-	}
-
-	/**
-	 * @testdox Charge should preserve pending successful legacy responses without completing the order.
-	 */
-	public function test_charge_preserves_pending_success_without_order_completion(): void {
-		$order = $this->create_woopayments_order();
-		$sut   = $this->create_adapter(
-			new RecordingLegacyGateway(
-				array(
-					'result'   => 'success',
-					'redirect' => '',
-				)
-			)
-		);
-
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_PENDING_ASYNC, $outcome->get_status() );
-		$this->assertArrayHasKey( 'checkout_redirect', $outcome->get_data() );
-		$this->assertSame( '', $outcome->get_data()['checkout_redirect'] );
-	}
-
-	/**
-	 * @testdox Charge should normalize legacy failures to failed outcomes.
-	 */
-	public function test_charge_normalizes_failure_to_failed_outcome(): void {
-		$order = $this->create_woopayments_order();
-		$sut   = $this->create_adapter(
-			new RecordingLegacyGateway(
-				array(
-					'result' => 'fail',
-				)
-			)
-		);
-
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'legacy_process_payment_failed', $outcome->get_data()['error_code'] );
-	}
-
-	/**
-	 * @testdox Charge should prefer the native positive-amount transport before the legacy gateway bridge.
+	 * @testdox Charge should send a positive-amount payment through the platform API.
 	 */
 	public function test_charge_prefers_native_positive_amount_transport_when_available(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Create and confirm a payment intention.
@@ -412,7 +302,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->with( $this->isInstanceOf( WC_Order::class ) )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$order   = wc_get_order( $order->get_id() );
 
@@ -421,7 +311,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_native', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pm_native', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
-		$this->assertSame( 0, $gateway->processed_order_id );
 		$this->assertSame( '', $order->get_meta( 'last4', true ) );
 		$this->assertSame( '', $order->get_meta( '_card_brand', true ) );
 		$this->assertSame( '', $order->get_payment_method_title() );
@@ -442,7 +331,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		set_transient( 'wcpay_minimum_amount_usd', 100, DAY_IN_SECONDS );
 
 		$order      = $this->create_woopayments_order( '0.50' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
@@ -474,14 +362,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->expects( $this->never() )
 			->method( 'get_or_create_customer_id_for_order' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'amount_too_small', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
 		$this->assertSame( 'The selected payment method requires a total amount of at least $1.00.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
-		$this->assertSame( 0, $gateway->processed_order_id );
 
 		delete_transient( 'wcpay_minimum_amount_usd' );
 	}
@@ -494,7 +381,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		set_transient( 'wcpay_minimum_amount_usd', 50, DAY_IN_SECONDS );
 
 		$order      = $this->create_woopayments_order( '0.50' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Create and confirm a payment intention.
@@ -526,7 +412,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -588,7 +474,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_reused' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		$ambiguous_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_reused' ), 'key_a' );
 		$sut->finalize_charge_idempotency_key( $order, $ambiguous_outcome );
@@ -633,7 +519,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_new_key' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		$declined_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_d' );
 		$sut->finalize_charge_idempotency_key( $order, $declined_outcome );
@@ -686,7 +572,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_after_decline' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_after_decline' ), 'key_declined' );
 		$fresh_order = wc_get_order( $order->get_id() );
@@ -743,7 +629,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_conflict' );
-		$sut    = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
+		$sut    = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$logger = RecordingWcLogger::install();
 
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_card' ), 'key_fresh' );
@@ -845,7 +731,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client->init( $http_client, $account_service );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_kept_key' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 
 		$failed = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_kept_key' ), 'key_first' );
 		$sut->finalize_charge_idempotency_key( $order, $failed );
@@ -892,7 +778,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_different_order' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		$sut->charge( PaymentOperationContext::for_checkout( $first_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_a' );
 		$sut->charge( PaymentOperationContext::for_checkout( $second_order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_different_order' ), 'key_c' );
@@ -933,7 +819,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_setup_failure' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_setup_failure' ), 'key_setup' );
 		$sut->finalize_charge_idempotency_key( $order, $outcome );
@@ -963,7 +849,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_order' );
-		$sut = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		try {
 			$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_pre_dispatch_failure' ), 'key_pre_dispatch' );
@@ -2364,7 +2250,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( $customer_id );
 		}
 
-		return $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, null, $account_service );
+		return $this->create_adapter( $api_client, $customer_service, null, $account_service );
 	}
 
 	/**
@@ -2724,7 +2610,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_decline_composes_failed_note_and_allow_fraud_meta(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
@@ -2764,7 +2649,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
@@ -2782,7 +2667,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_decline_without_card_error_writes_note_without_fraud_meta(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
@@ -2813,7 +2697,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 
@@ -2827,7 +2711,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_blocked_by_fraud_rules_records_block_state(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = new class() extends WooPaymentsApiClient {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
 			/**
@@ -2866,7 +2749,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 		$meta    = $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
@@ -2931,8 +2814,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$order   = $this->create_woopayments_order( '25.00' );
-		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ) );
-		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$meta    = $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
 
@@ -2949,7 +2831,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_fraud_protection_settings' );
 
 		$order   = $this->create_woopayments_order( '25.00' );
-		$sut     = $this->create_adapter( $gateway, $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
+		$sut     = $this->create_adapter( $make_api_client(), $customer_service, null, $this->create_account_service( true ) );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$data    = $outcome->get_data();
 		$meta    = $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
@@ -2967,7 +2849,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'GBP' );
 		$order->save();
 
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Create and confirm a payment intention.
@@ -3041,7 +2922,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			$customer_service,
 			null,
@@ -3067,7 +2947,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -3119,7 +2998,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -3141,7 +3020,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_sends_manual_capture_method_to_native_payment_intents_when_enabled(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -3198,7 +3076,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_manual_native' );
 
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			$customer_service,
 			null,
@@ -3215,7 +3092,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_adds_customer_notification_note_for_pre_debit_approval(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$completes_at     = 1893510000;
 		$api_client       = new class( $completes_at ) extends WooPaymentsApiClient {
 			/**
@@ -3276,7 +3152,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_notification' );
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut = $this->create_adapter( $api_client, $customer_service );
 		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_notification' ), 'key_notification' );
 
 		$expected_note = sprintf(
@@ -3299,7 +3175,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_skips_customer_notification_note_without_approval(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -3338,7 +3213,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_no_notification' );
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut = $this->create_adapter( $api_client, $customer_service );
 		$sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_no_notification' ), 'key_no_notification' );
 
 		$notes    = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
@@ -3356,7 +3231,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_keeps_scheduled_renewal_capture_method_automatic_when_manual_capture_is_enabled(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -3413,7 +3287,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->willReturn( 'cus_renewal_native' );
 
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			$customer_service,
 			null,
@@ -3439,7 +3312,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_defers_account_mode_to_effect_application(): void {
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -3483,7 +3355,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -3499,7 +3371,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_retries_after_missing_customer_by_recreating_customer(): void {
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Number of attempts.
@@ -3574,12 +3445,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->with( $this->isInstanceOf( WC_Order::class ) )
 			->willReturn( 'cus_recreated' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
 		$this->assertSame( 'cus_recreated', $outcome->get_customer_id() );
-		$this->assertSame( 0, $gateway->processed_order_id );
 		$this->assertSame( array( 'key_charge', 'key_charge:customer-recovery' ), $api_client->keys );
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
@@ -3591,7 +3461,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_uses_the_subscription_change_customer_resolver_for_validated_context(): void {
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -3640,7 +3509,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->expects( $this->never() )
 			->method( 'get_or_create_customer_id_for_order' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -3665,14 +3534,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_validated_subscription_change_uses_real_customer_service_without_update( string $total, string $expected_intent ): void {
 		$order      = $this->create_woopayments_order( $total );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = $this->create_recording_customer_intent_api_client();
 
 		$order->update_meta_data( '_stripe_customer_id', 'cus_change' );
 		$order->save();
 
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			$this->create_real_customer_service( $api_client )
 		);
@@ -3702,14 +3569,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_ordinary_native_charge_updates_existing_customer_with_real_customer_service(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = $this->create_recording_customer_intent_api_client();
 
 		$order->set_billing_email( 'subject@example.com' );
 		$order->update_meta_data( '_stripe_customer_id', 'cus_ordinary' );
 		$order->save();
 
-		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+		$outcome = $this->create_adapter( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_ordinary' ),
 			'key_ordinary_real'
 		);
@@ -3743,13 +3609,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_validated_subscription_change_recovers_missing_remote_customer( string $total, string $expected_intent ): void {
 		$order      = $this->create_woopayments_order( $total );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client = $this->create_recording_customer_intent_api_client( true );
 
 		$order->update_meta_data( '_stripe_customer_id', 'cus_missing' );
 		$order->save();
 
-		$outcome = $this->create_adapter( $gateway, $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+		$outcome = $this->create_adapter( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),
 			'key_recovery_real'
 		);
@@ -3771,7 +3636,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_preserves_allowed_express_payment_method_types(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -3858,7 +3722,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -3880,7 +3744,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_rejects_unallowed_express_payment_method_types(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -3942,7 +3805,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -3965,7 +3828,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'EUR' );
 		$order->save();
 
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4023,7 +3885,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut = $this->create_adapter( $api_client, $customer_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4079,7 +3941,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_shipping_country( 'US' );
 		$order->save();
 
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4136,7 +3997,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4190,7 +4051,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_single_card_checkout_without_save_matches_11_1_request_shape(): void {
 		$order            = $this->create_woopayments_order( '10.99' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4254,7 +4114,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut = $this->create_adapter( $api_client, $customer_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4344,7 +4204,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
 		try {
-			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service )
+			$outcome = $this->create_adapter( $api_client, $customer_service )
 				->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' ), 'key_charge' );
 		} finally {
 			remove_filter( 'clean_url', $clean_url, 10 );
@@ -4363,7 +4223,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'EUR' );
 		$order->save();
 
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4428,7 +4287,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4448,7 +4307,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_charge_validates_express_payment_method_types_against_checkout_context_settings(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4511,7 +4369,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4537,7 +4395,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_calc_taxes', 'yes' );
 
 		$order            = $this->create_woopayments_order( '50.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -4601,7 +4458,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4724,7 +4581,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ) ), $api_client, $customer_service, null, $account_service );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$sut->charge(
 			PaymentOperationContext::for_checkout(
 				$this->create_woopayments_order( '50.00' ),
@@ -4761,7 +4618,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_charge_resolves_saved_payment_token_before_native_transport(): void {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order();
-		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token           = $this->create_card_token( $user_id, 'pm_saved' );
 		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'saved_payment_method_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4787,7 +4643,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, $token_service, $account_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -4941,7 +4797,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$geolocate_filter = static fn() => 'US';
 		add_filter( 'woocommerce_geolocate_ip', $geolocate_filter );
 		try {
-			$outcome = $this->create_adapter( new RecordingLegacyGateway(), $api_client, $customer_service, $token_service )->charge(
+			$outcome = $this->create_adapter( $api_client, $customer_service, $token_service )->charge(
 				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method, $payment_data, $provider_data ),
 				'key_subscription_composition'
 			);
@@ -5001,7 +4857,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_scheduled_subscription_charge_uses_merchant_initiated_recurring_request_shape(): void {
 		$user_id                = $this->factory()->user->create();
 		$order                  = $this->create_woopayments_order();
-		$gateway                = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token            = $this->create_card_token( $user_id, 'pm_saved' );
 		$metadata_payment_types = array();
 		$api_client             = new class() extends WooPaymentsApiClient {
@@ -5074,7 +4929,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		add_filter( 'wcpay_metadata_from_order', $metadata_filter, 10, 3 );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -5119,7 +4974,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_order_renewal_detector_double();
 		$user_id          = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order            = $this->create_woopayments_order( '9.99' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
@@ -5183,7 +5037,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() labels a customer-present renewal as recurring/renewal, and the read-only :8082 provider family records it without off_session.
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			$customer_service,
 			$this->create_single_resolution_token_service( $saved_token, $user_id, 'pm_plugin_subscription' ),
@@ -5255,7 +5108,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_zero_total_scheduled_link_renewal_completes_without_intent(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token      = $this->create_link_token( $user_id, 'pm_link' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/** @var array<string,mixed> */
@@ -5321,7 +5173,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+			$sut     = $this->create_adapter( $api_client, $customer_service, $token_service );
 			$outcome = $sut->charge(
 				PaymentOperationContext::for_checkout(
 					$order,
@@ -5363,7 +5215,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$token            = $this->create_card_token( $user_id, 'pm_unusable_method' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$expected_result  = array(
 			'id'                 => 'pi_unusable_method',
 			'status'             => 'requires_payment_method',
@@ -5421,7 +5272,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->add_payment_token( $token );
 		$order->save();
 
-		$outcome                  = $this->create_adapter( $gateway, $api_client, $customer_service )->charge(
+		$outcome                  = $this->create_adapter( $api_client, $customer_service )->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
@@ -5492,7 +5343,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param bool   $expected Whether the failure is an unusable saved method.
 	 */
 	public function test_unusable_saved_method_failure_classification( string $error_code, string $message, bool $expected ): void {
-		$sut    = $this->create_adapter( new RecordingLegacyGateway() );
+		$sut    = $this->create_adapter();
 		$method = new \ReflectionMethod( WooPaymentsProviderGatewayAdapter::class, 'is_unusable_saved_payment_method_failure' );
 		$method->setAccessible( true );
 
@@ -5528,7 +5379,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_scheduled_subscription_charge_uses_saved_sepa_token_payment_method_type(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token      = $this->create_sepa_token( $user_id, 'pm_sepa_saved' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
@@ -5597,7 +5447,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -5626,7 +5476,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_native_charge_plans_requested_token_persistence_without_writes(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -5694,7 +5543,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -5723,7 +5572,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_native_recurring_charge_returns_provider_outcome_with_required_token_plan(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -5786,7 +5634,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -5804,7 +5652,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertTrue( $outcome->get_effect_plan()->should_apply_token_effects() );
 		$this->assertTrue( $outcome->get_effect_plan()->is_recurring() );
-		$this->assertSame( 0, $gateway->processed_order_id );
 	}
 
 	/**
@@ -5812,7 +5659,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_failure_maps_structured_card_decline_to_shopper_message(): void {
 		$order                 = $this->create_woopayments_order( '50.00' );
-		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$account_service       = $this->create_account_service( false );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
@@ -5841,7 +5687,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_declined' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_declined' ), 'key_declined' );
 		$data    = $outcome->get_data();
 
@@ -5891,7 +5737,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message, bool $mutate_raw_message = false ): void {
 		$order           = $this->create_woopayments_order( '10.00' );
-		$gateway         = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$account_service = $this->create_account_service( false );
 		$recorded        = $this->load_recorded_decline_entry( $pair );
 
@@ -5919,7 +5764,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_rec1' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec1' ), 'key_rec1' );
 		$data    = $outcome->get_data();
 
@@ -6513,7 +6358,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_returns_referenced_plan_before_settlement_enrichment(): void {
 		$order              = $this->create_woopayments_order();
-		$gateway            = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'create_and_confirm_payment_intention' ) )
@@ -6550,7 +6394,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order_data_service->expects( $this->never() )
 			->method( 'get_settlement_exchange_rate_order_meta' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, null, $order_data_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, null, $order_data_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_before_enrichment' ), 'key_before_enrichment' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -6572,7 +6416,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_returns_display_effect_plan_without_mutating_order(): void {
 		$order                 = $this->create_woopayments_order();
-		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'new_card_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
@@ -6592,7 +6435,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$order   = wc_get_order( $order->get_id() );
 
@@ -6609,7 +6452,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $order->get_payment_method_title() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
-		$this->assertSame( 0, $gateway->processed_order_id );
 		$this->assertSame( 1, $http_client->request_count );
 	}
 
@@ -6793,7 +6635,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_charge_confirms_zero_total_checkout_with_saved_card_without_intent(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_zero' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/** @var int */
@@ -6836,7 +6677,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->with( $this->isInstanceOf( WC_Order::class ) )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -6854,7 +6695,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $outcome->get_provider_payment_id(), 'No intent, so no transaction id (client gw:1702 payment_complete() without one).' );
 		$this->assertSame( 'pm_zero', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_native', $outcome->get_customer_id() );
-		$this->assertSame( 0, $gateway->processed_order_id );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( $saved_token->get_id(), $outcome->get_effect_plan()->get_provider_result()['token_id'] );
@@ -6884,7 +6724,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	public function test_zero_total_setup_intent_requiring_action_returns_si_confirmation_redirect(): void {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order( '0.00' );
-		$gateway               = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
@@ -6904,7 +6743,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( (string) $recorded['body']['customer'] );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service, null, $account_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service, null, $account_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -6929,7 +6768,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_zero_total_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '0.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Last request data.
@@ -6976,7 +6814,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, $customer_service );
+		$sut     = $this->create_adapter( $api_client, $customer_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -7001,7 +6839,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order( '0.00' );
 		$subscription     = $this->create_woopayments_order( '10.00' );
-		$gateway          = new RecordingLegacyGateway( array( 'result' => 'success' ) );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
@@ -7068,7 +6905,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
-		$sut          = $this->create_adapter( $gateway, $api_client, $customer_service, $token_service );
+		$sut          = $this->create_adapter( $api_client, $customer_service, $token_service );
 		$outcome      = $sut->charge(
 			PaymentOperationContext::for_checkout(
 				$order,
@@ -7097,32 +6934,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund should normalize legacy success and errors.
-	 */
-	public function test_refund_normalizes_legacy_success_and_errors(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
-		$sut     = $this->create_adapter( $gateway );
-
-		$success = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
-
-		$gateway->refund_result = new WP_Error( 'refund_failed', 'Refund failed.' );
-		$failure                = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $success->get_status() );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $failure->get_status() );
-		$this->assertSame( 'refund_failed', $failure->get_data()['error_code'] );
-		$this->assertSame( 3.50, $gateway->refund_amount );
-		$this->assertSame( 'Adjustment', $gateway->refund_reason );
-		$this->assertSame( 'key_refund', $gateway->last_idempotency_key );
-	}
-
-	/**
-	 * @testdox Refund should prefer the native transport before the legacy gateway bridge.
+	 * @testdox Refund should go through the platform API.
 	 */
 	public function test_refund_prefers_native_transport_when_available(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'refund_charge' ) )
@@ -7145,7 +6960,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -7158,7 +6973,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_REFUND, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 're_native', $outcome->get_effect_plan()->get_provider_result()['id'] );
-		$this->assertNull( $gateway->refund_amount );
 	}
 
 	/**
@@ -7166,7 +6980,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_refund_retains_provider_identity_before_local_effects(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'refund_charge' ) )
@@ -7184,7 +6997,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$outcome = $this->create_adapter( $gateway, $api_client )->refund(
+		$outcome = $this->create_adapter( $api_client )->refund(
 			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ),
 			'key_refund_effect_boundary'
 		);
@@ -7202,7 +7015,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refund_fails_closed_for_failed_native_refund_status(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'refund_charge' ) )
@@ -7225,7 +7037,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -7236,7 +7048,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'refund_meta', $outcome->get_data() );
 		$this->assertArrayNotHasKey( 'order_meta', $outcome->get_data() );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertNull( $gateway->refund_amount );
 	}
 
 	/**
@@ -7837,7 +7648,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service );
 
-		$adapter = $this->create_adapter( null, $api_client, $customer_service, $token_service, $account_service );
+		$adapter = $this->create_adapter( $api_client, $customer_service, $token_service, $account_service );
 
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -7960,89 +7771,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should normalize legacy capture statuses.
-	 */
-	public function test_capture_normalizes_legacy_capture_statuses(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array( 'result' => 'success' ),
-			true,
-			array(
-				'status' => 'succeeded',
-				'id'     => 'pi_captured',
-			)
-		);
-		$sut     = $this->create_adapter( $gateway );
-
-		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'pi_captured', $outcome->get_provider_payment_id() );
-		$this->assertSame( 1, $gateway->capture_calls );
-		$this->assertSame( '', $gateway->last_idempotency_key, 'Legacy capture must not send the derived key: the client mints a fresh key per request.' );
-		$this->assertContains(
-			$outcome->get_data()[ PaymentOutcome::DATA_NOTE ],
-			$outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
-		);
-	}
-
-	/**
-	 * @testdox Legacy capture on a live account stores the client's live order mode.
-	 *
-	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
-	 */
-	public function test_legacy_capture_on_live_account_stores_prod_order_mode(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array( 'result' => 'success' ),
-			true,
-			array(
-				'status'   => 'succeeded',
-				'id'       => 'pi_captured_live',
-				'currency' => 'usd',
-				'charges'  => array( 'data' => array( array( 'id' => 'ch_captured_live' ) ) ),
-			)
-		);
-		$sut     = $this->create_adapter( $gateway, null, null, null, $this->create_account_service( false ) );
-
-		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_live' );
-
-		$this->assertSame( 'prod', $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_mode'] );
-		// Plugin 11.1.0 capture keeps the authorization's uppercase intent currency (class-wc-payments-api-payment-intention.php:93).
-		$this->assertSame( 'USD', $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_intent_currency'] );
-	}
-
-	/**
-	 * @testdox Legacy capture failures carry exact note equivalents with the diagnostic.
-	 */
-	public function test_capture_legacy_failure_carries_note_equivalents(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array( 'result' => 'failure' ),
-			true,
-			array(
-				'status'  => 'requires_capture',
-				'id'      => 'pi_capture_failed',
-				'message' => 'Provider diagnostic.',
-			)
-		);
-		$sut     = $this->create_adapter( $gateway );
-
-		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture_failed' );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertNotEmpty( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
-		foreach ( $outcome->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] as $note_equivalent ) {
-			$this->assertStringEndsWith( ' Provider diagnostic.', $note_equivalent );
-		}
-	}
-
-	/**
-	 * @testdox Capture should prefer the native transport before the legacy gateway bridge.
+	 * @testdox Capture should go through the platform API.
 	 */
 	public function test_capture_prefers_native_transport_when_available(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8073,11 +7805,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -8105,7 +7836,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$outcome = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
+		$outcome = $this->create_adapter( $api_client )
 			->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, null, $provider_data ), 'key_capture_fee' );
 
 		$plan = $outcome->get_effect_plan();
@@ -8130,7 +7861,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_sends_context_amount_to_native_transport(): void {
 		$order      = $this->create_woopayments_order( '10.00' );
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8161,11 +7891,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.25 ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -8232,7 +7961,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		try {
-			$this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ), true ), $api_client )
+			$this->create_adapter( $api_client )
 				->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount ), 'key_capture_level3' );
 		} finally {
 			wc_get_container()->reset_replacement( WooPaymentsLevel3Service::class );
@@ -8257,7 +7986,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_capture_returns_fee_effect_plan_without_writing_notes(): void {
 		$order              = $this->create_woopayments_order( '50.00' );
-		$gateway            = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8323,7 +8051,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order_data_service->expects( $this->never() )
 			->method( 'get_settlement_exchange_rate_order_meta' );
 
-		$sut     = $this->create_adapter( $gateway, $api_client, null, null, null, $order_data_service );
+		$sut     = $this->create_adapter( $api_client, null, null, null, $order_data_service );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
@@ -8354,7 +8082,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_preserves_authorized_meta_for_native_failure(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8392,7 +8119,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 		$data    = $outcome->get_data();
 
@@ -8403,7 +8130,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
 		$this->assertSame( 'The authorization could not be captured.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -8411,7 +8137,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_self_heals_when_intent_is_already_canceled(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
@@ -8439,7 +8164,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status(), 'A transport failure on an intent the provider already canceled is a completed cancel, as in the plugin.' );
@@ -8454,7 +8179,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_stays_failed_when_intent_is_not_canceled(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
@@ -8477,7 +8201,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8485,7 +8209,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $plan );
 		$this->assertSame( 'cancel', $plan->get_type() );
 		$this->assertSame( 'requires_capture', $plan->get_provider_result()['status'], 'The re-read status rides on the plan so the applier can record it.' );
-		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted after a native transport failure.' );
 	}
 
 	/**
@@ -8493,7 +8216,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_exception_without_refetch_keeps_plain_failure(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention', 'get_payment_intention' ) )
@@ -8508,7 +8230,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client->method( 'get_payment_intention' )
 			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8521,7 +8243,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
@@ -8550,7 +8271,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8565,7 +8286,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_exception_keeps_failure_effects_when_refetch_fails(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
@@ -8580,7 +8300,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$api_client->method( 'get_payment_intention' )
 			->willThrowException( new WooPaymentsApiException( 'Fetch failed.', 'wcpay_fetch_error', 500 ) );
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8595,7 +8315,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_exception_keeps_failure_effects_when_intent_is_still_capturable(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention', 'get_payment_intention' ) )
@@ -8615,7 +8334,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
@@ -8632,7 +8351,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$order->set_transaction_id( 'pi_capture_converted' );
 		$order->save();
 
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8686,7 +8404,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			);
 
 		$sut     = $this->create_adapter(
-			$gateway,
 			$api_client,
 			null,
 			null,
@@ -8712,7 +8429,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_capture_uses_intent_meta_when_transaction_id_is_missing(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
@@ -8743,46 +8459,17 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 0, $gateway->capture_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
-	 * @testdox Cancel should normalize legacy canceled authorizations.
-	 */
-	public function test_cancel_normalizes_legacy_canceled_authorization(): void {
-		$order   = $this->create_woopayments_order();
-		$gateway = new RecordingLegacyGateway(
-			array( 'result' => 'success' ),
-			true,
-			array(),
-			array(
-				'status' => 'canceled',
-				'id'     => 'pi_canceled',
-			)
-		);
-		$sut     = $this->create_adapter( $gateway );
-
-		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
-
-		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
-		$this->assertSame( 'pi_canceled', $outcome->get_provider_payment_id() );
-		$this->assertSame( 1, $gateway->cancel_calls );
-		$this->assertSame( '', $gateway->last_idempotency_key, 'Legacy cancel must not send the derived key: the client mints a fresh key per request.' );
-		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_CANCEL, $outcome->get_effect_plan()->get_type() );
-		$this->assertSame( 'pi_canceled', $outcome->get_effect_plan()->get_provider_result()['id'] );
-	}
-
-	/**
-	 * @testdox Cancel should prefer the native transport before the legacy gateway bridge.
+	 * @testdox Cancel should go through the platform API.
 	 */
 	public function test_cancel_prefers_native_transport_when_available(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
@@ -8809,11 +8496,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
-		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( 'cancel', $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 'ch_cancel', $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['id'] );
@@ -8824,7 +8510,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_native_cancel_retains_plan_without_success_effect_data(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
@@ -8847,7 +8532,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$outcome = $this->create_adapter( $gateway, $api_client )->cancel(
+		$outcome = $this->create_adapter( $api_client )->cancel(
 			PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 			'key_cancel_failed'
 		);
@@ -8859,7 +8544,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
-		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
@@ -8867,7 +8551,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_cancel_uses_intent_meta_when_transaction_id_is_missing(): void {
 		$order      = $this->create_woopayments_order();
-		$gateway    = new RecordingLegacyGateway( array( 'result' => 'success' ), true );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'cancel_intention' ) )
@@ -8889,42 +8572,34 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$sut     = $this->create_adapter( $gateway, $api_client );
+		$sut     = $this->create_adapter( $api_client );
 		$outcome = $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' );
 
 		$this->assertSame( PaymentOutcome::STATUS_CANCELED, $outcome->get_status() );
-		$this->assertSame( 0, $gateway->cancel_calls, 'The legacy gateway must not be consulted.' );
 	}
 
 	/**
-	 * @testdox Operations should fail closed when no legacy gateway is available.
+	 * @testdox Each operation fails closed when the platform API client is unavailable.
 	 */
-	public function test_operations_fail_closed_without_gateway(): void {
+	public function test_operations_fail_closed_without_the_api_client(): void {
 		$order = $this->create_woopayments_order();
-		$sut   = $this->create_adapter( null );
+		$order->set_transaction_id( 'pi_unavailable' );
+		$order->update_meta_data( '_charge_id', 'ch_unavailable' );
+		$order->save();
+		$sut = $this->create_adapter();
 
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' );
+		$outcomes = array(
+			'charge'  => $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_charge' ),
+			'refund'  => $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' ),
+			'capture' => $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' ),
+			'cancel'  => $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' ),
+		);
 
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'] );
-	}
-
-	/**
-	 * @testdox Availability should reflect whether the legacy bridge has a gateway.
-	 */
-	public function test_availability_reflects_legacy_gateway_presence(): void {
-		$this->assertTrue( $this->create_adapter( new RecordingLegacyGateway() )->is_available() );
-		$this->assertFalse( $this->create_adapter( null )->is_available() );
-	}
-
-	/**
-	 * @testdox Availability should preserve the legacy gateway availability check.
-	 */
-	public function test_availability_reflects_legacy_gateway_availability(): void {
-		$gateway            = new RecordingLegacyGateway();
-		$gateway->available = false;
-
-		$this->assertFalse( $this->create_adapter( $gateway )->is_available() );
+		foreach ( $outcomes as $operation => $outcome ) {
+			$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status(), "The $operation must fail." );
+			$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'], "The $operation must report the unavailable gateway." );
+			$this->assertSame( $operation, $outcome->get_data()['operation'], "The $operation must name itself." );
+		}
 	}
 
 	/**
@@ -8961,7 +8636,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
 
-		$sut = $this->create_adapter( new RecordingLegacyGateway( array( 'result' => 'success' ) ), $api_client, $customer_service, null, $this->create_account_service( true ) );
+		$sut = $this->create_adapter( $api_client, $customer_service, null, $this->create_account_service( true ) );
 
 		return $sut->charge(
 			PaymentOperationContext::for_checkout(
@@ -9121,9 +8796,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create adapter with a fake legacy gateway.
+	 * Create the adapter, with an unavailable API client unless one is given.
 	 *
-	 * @param RecordingLegacyGateway|null      $gateway Legacy gateway.
 	 * @param WooPaymentsApiClient|null        $api_client Native API client.
 	 * @param WooPaymentsCustomerService|null  $customer_service WooPayments customer service.
 	 * @param WooPaymentsTokenService|null     $token_service WooPayments token service.
@@ -9132,9 +8806,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsSettingsService|null  $settings_service Settings service.
 	 * @return WooPaymentsProviderGatewayAdapter
 	 */
-	private function create_adapter( ?RecordingLegacyGateway $gateway, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsSettingsService $settings_service = null ): WooPaymentsProviderGatewayAdapter {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyProxyWithGateway( $gateway ) );
+	private function create_adapter( ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsSettingsService $settings_service = null ): WooPaymentsProviderGatewayAdapter {
 		$api_client = $api_client ?? $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
@@ -9179,7 +8851,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 		$sut = new WooPaymentsProviderGatewayAdapter();
 		$sut->init(
-			$legacy_runtime,
 			$api_client,
 			$customer_service,
 			$request_builder,

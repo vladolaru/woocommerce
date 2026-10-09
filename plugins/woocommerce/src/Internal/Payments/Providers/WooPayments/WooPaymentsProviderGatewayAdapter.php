@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use WC_Order;
 
 /**
- * Arbitrates WooPayments gateway transport and delegates provider mapping.
+ * Runs WooPayments payment operations against the platform API and delegates provider mapping.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
@@ -53,13 +53,6 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @var string
 	 */
 	private const DEFINITIVE_CHARGE_FAILURE_DATA_KEY = '_wcpay_definitive_charge_failure';
-
-	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
 
 	/**
 	 * Native API client.
@@ -122,7 +115,6 @@ class WooPaymentsProviderGatewayAdapter {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime          $legacy_runtime     Legacy runtime.
 	 * @param WooPaymentsApiClient              $api_client         Native API client.
 	 * @param WooPaymentsCustomerService        $customer_service   Customer service.
 	 * @param WooPaymentsIntentRequestBuilder   $request_builder    Request builder.
@@ -133,7 +125,6 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service  Charge ambiguity service.
 	 */
 	final public function init(
-		WooPaymentsLegacyRuntime $legacy_runtime,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsIntentRequestBuilder $request_builder,
@@ -143,7 +134,6 @@ class WooPaymentsProviderGatewayAdapter {
 		WooPaymentsSettingsService $settings_service,
 		WooPaymentsChargeAmbiguityService $ambiguity_service
 	): void {
-		$this->legacy_runtime     = $legacy_runtime;
 		$this->api_client         = $api_client;
 		$this->customer_service   = $customer_service;
 		$this->request_builder    = $request_builder;
@@ -155,21 +145,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Tell whether the legacy bridge can currently process operations.
-	 *
-	 * @return bool
-	 */
-	public function is_available(): bool {
-		$gateway = $this->legacy_runtime->get_gateway();
-		if ( ! is_object( $gateway ) ) {
-			return false;
-		}
-
-		return is_callable( array( $gateway, 'is_available' ) ) ? (bool) $gateway->is_available() : true;
-	}
-
-	/**
-	 * Charge an order through the active WooPayments transport.
+	 * Charge an order through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A positive-amount charge keeps its
@@ -190,27 +166,11 @@ class WooPaymentsProviderGatewayAdapter {
 			return $this->normalize_unusable_scheduled_renewal_failure( $context, $outcome );
 		}
 
-		$gateway = $this->legacy_runtime->get_gateway();
-		if ( ! is_object( $gateway ) || ! is_callable( array( $gateway, 'process_payment' ) ) ) {
-			return $this->unavailable_outcome( 'charge' );
-		}
-
-		$result = $this->with_idempotency_key(
-			$idempotency_key,
-			static function () use ( $gateway, $context ) {
-				return $gateway->process_payment( $context->get_order_id() );
-			}
-		);
-
-		return WooPaymentsIntentCodec::outcome_from_legacy_result(
-			is_array( $result ) ? $result : null,
-			$this->legacy_mapping_context( $context->get_order() ),
-			$context->get_payment_method_id()
-		);
+		return $this->unavailable_outcome( 'charge' );
 	}
 
 	/**
-	 * Refund an order through the active WooPayments transport.
+	 * Refund an order through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this refund call.
@@ -240,28 +200,11 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 		}
 
-		$gateway = $this->legacy_runtime->get_gateway();
-		if ( ! is_object( $gateway ) || ! is_callable( array( $gateway, 'process_refund' ) ) ) {
-			return $this->unavailable_outcome( 'refund' );
-		}
-
-		$payment_data = $context->get_payment_data();
-		$result       = $this->with_idempotency_key(
-			$idempotency_key,
-			static function () use ( $gateway, $context, $payment_data ) {
-				return $gateway->process_refund(
-					$context->get_order_id(),
-					(float) ( $payment_data['amount'] ?? 0.0 ),
-					(string) ( $payment_data['reason'] ?? '' )
-				);
-			}
-		);
-
-		return WooPaymentsIntentCodec::outcome_from_legacy_refund_result( $result );
+		return $this->unavailable_outcome( 'refund' );
 	}
 
 	/**
-	 * Capture an authorized payment through the active WooPayments transport.
+	 * Capture an authorized payment through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted for this call; not sent to the provider.
@@ -315,24 +258,11 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 		}
 
-		$gateway = $this->legacy_runtime->get_gateway();
-		if ( ! is_object( $gateway ) || ! is_callable( array( $gateway, 'capture_charge' ) ) ) {
-			return $this->unavailable_outcome( 'capture' );
-		}
-
-		$result = $gateway->capture_charge( $context->get_order() );
-		$result = is_array( $result ) ? $result : array();
-		$order  = $this->reload_order( $order );
-
-		return WooPaymentsIntentCodec::outcome_from_capture_result(
-			$result,
-			$this->get_order_intent_id( $order ),
-			$this->legacy_capture_effect_data( $result, $order )
-		);
+		return $this->unavailable_outcome( 'capture' );
 	}
 
 	/**
-	 * Cancel an authorized payment through the active WooPayments transport.
+	 * Cancel an authorized payment through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted for this call; not sent to the provider.
@@ -373,18 +303,7 @@ class WooPaymentsProviderGatewayAdapter {
 			}
 		}
 
-		$gateway = $this->legacy_runtime->get_gateway();
-		if ( ! is_object( $gateway ) || ! is_callable( array( $gateway, 'cancel_authorization' ) ) ) {
-			return $this->unavailable_outcome( 'cancel' );
-		}
-
-		$result  = $gateway->cancel_authorization( $context->get_order() );
-		$result  = is_array( $result ) ? $result : array();
-		$outcome = WooPaymentsIntentCodec::outcome_from_cancel_result( $result );
-
-		return PaymentOutcome::STATUS_CANCELED === $outcome->get_status()
-			? $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $result ) )
-			: $outcome;
+		return $this->unavailable_outcome( 'cancel' );
 	}
 
 	/**
@@ -1472,108 +1391,6 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Snapshot persisted facts after a legacy gateway operation.
-	 *
-	 * @param WC_Order $order Original order object.
-	 * @return WooPaymentsIntentMappingContext
-	 */
-	private function legacy_mapping_context( WC_Order $order ): WooPaymentsIntentMappingContext {
-		$order = $this->reload_order( $order );
-
-		return WooPaymentsIntentMappingContext::for_legacy(
-			$order->get_id(),
-			$order->get_checkout_order_received_url(),
-			(float) $order->get_total(),
-			(string) $order->get_meta( '_intent_id', true ),
-			(string) $order->get_meta( '_payment_method_id', true ),
-			(string) $order->get_meta( '_intention_status', true )
-		);
-	}
-
-	/**
-	 * Compose legacy capture compatibility data after the bridge has completed.
-	 *
-	 * @param array<string,mixed> $result Legacy capture response.
-	 * @param WC_Order            $order  Refreshed order snapshot.
-	 * @return array<string,mixed>
-	 */
-	private function legacy_capture_effect_data( array $result, WC_Order $order ): array {
-		$status    = isset( $result['status'] ) ? (string) $result['status'] : 'failed';
-		$intent_id = isset( $result['id'] ) ? (string) $result['id'] : $this->get_order_intent_id( $order );
-		$charge    = WooPaymentsOrderEffects::latest_charge( $result );
-		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
-
-		if ( 'succeeded' === $status ) {
-			$settlement_meta = empty( $charge )
-				? array()
-				: $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() );
-
-			$note_candidates = $this->note_service->format_capture_success_note_candidates(
-				$order,
-				$intent_id,
-				$charge_id,
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
-			);
-
-			return array(
-				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::completed_capture_meta(
-					$result,
-					(string) $order->get_currency(),
-					$this->account_service->get_order_mode(),
-					$settlement_meta,
-					'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true )
-				),
-				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
-				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
-			);
-		}
-
-		$note_candidates = $this->note_service->format_capture_failed_note_candidates(
-			$order,
-			$intent_id,
-			$charge_id,
-			isset( $result['message'] ) ? (string) $result['message'] : ''
-		);
-
-		return array(
-			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::failed_capture_meta(),
-			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
-			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
-		);
-	}
-
-	/**
-	 * Run a legacy gateway operation with a scoped API idempotency key.
-	 *
-	 * @param string   $idempotency_key Idempotency key.
-	 * @param callable $operation       Operation callback.
-	 * @return mixed
-	 */
-	private function with_idempotency_key( string $idempotency_key, callable $operation ) {
-		$idempotency_filter = static function ( $params, $api = '', $method = '' ) use ( $idempotency_key ) {
-			unset( $api );
-
-			if ( '' === $idempotency_key || ! is_array( $params ) || in_array( strtoupper( (string) $method ), array( 'GET', 'DELETE' ), true ) ) {
-				return $params;
-			}
-
-			$params['idempotency_key'] = $idempotency_key;
-
-			return $params;
-		};
-
-		add_filter( 'wcpay_api_request_params', $idempotency_filter, 10, 3 );
-
-		try {
-			return $operation();
-		} finally {
-			remove_filter( 'wcpay_api_request_params', $idempotency_filter, 10 );
-		}
-	}
-
-	/**
 	 * Get the provider intent ID retained on an order.
 	 *
 	 * @param WC_Order $order Order being processed.
@@ -1583,18 +1400,6 @@ class WooPaymentsProviderGatewayAdapter {
 		$intent_id = (string) $order->get_transaction_id();
 
 		return '' === $intent_id ? (string) $order->get_meta( '_intent_id', true ) : $intent_id;
-	}
-
-	/**
-	 * Reload an order after a legacy gateway operation.
-	 *
-	 * @param WC_Order $order Original order object.
-	 * @return WC_Order
-	 */
-	private function reload_order( WC_Order $order ): WC_Order {
-		$fresh_order = wc_get_order( $order->get_id() );
-
-		return $fresh_order instanceof WC_Order ? $fresh_order : $order;
 	}
 
 	/**

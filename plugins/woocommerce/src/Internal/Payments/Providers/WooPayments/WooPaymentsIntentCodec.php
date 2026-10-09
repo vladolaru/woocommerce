@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use WP_Error;
 
 /**
  * Maps explicit WooPayments provider data to neutral payment outcomes.
@@ -122,91 +121,24 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Normalize a legacy process_payment result using a post-bridge snapshot.
-	 *
-	 * @param array<string,mixed>|null        $result                     Legacy process_payment result.
-	 * @param WooPaymentsIntentMappingContext $context                    Post-bridge order snapshot.
-	 * @param string                          $fallback_payment_method_id Fallback payment method ID.
-	 * @return PaymentOutcome
-	 */
-	public static function outcome_from_legacy_result( ?array $result, WooPaymentsIntentMappingContext $context, string $fallback_payment_method_id = '' ): PaymentOutcome {
-		if ( null === $result ) {
-			return new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_process_payment_empty_response' )
-			);
-		}
-
-		if ( 'success' !== ( $result['result'] ?? '' ) ) {
-			return new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_process_payment_failed' )
-			);
-		}
-
-		$redirect          = isset( $result['redirect'] ) ? (string) $result['redirect'] : '';
-		$payment_method_id = isset( $result['payment_method'] ) ? (string) $result['payment_method'] : $fallback_payment_method_id;
-		$data              = array();
-
-		if ( '' === $payment_method_id ) {
-			$payment_method_id = $context->get_persisted_payment_method_id();
-		}
-
-		if ( array_key_exists( 'redirect', $result ) ) {
-			$data[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] = $redirect;
-		}
-
-		if ( str_starts_with( $redirect, '#wcpay-confirm-' ) ) {
-			return new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $context->get_persisted_intent_id(), $redirect, $payment_method_id, '', $data );
-		}
-
-		if ( '' !== $redirect && $redirect !== $context->get_order_received_url() ) {
-			return new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $context->get_persisted_intent_id(), $redirect, $payment_method_id, '', $data );
-		}
-
-		$status = self::map_intention_status_to_outcome_status( $context->get_persisted_intention_status() );
-		if ( '' === $status && '' === $context->get_persisted_intent_id() && 0.0 < $context->get_order_total() && '' === $redirect ) {
-			$status = PaymentOutcome::STATUS_PENDING_ASYNC;
-		}
-
-		return new PaymentOutcome(
-			'' === $status ? PaymentOutcome::STATUS_COMPLETED : $status,
-			$context->get_persisted_intent_id(),
-			$redirect,
-			$payment_method_id,
-			'',
-			$data
-		);
-	}
-
-	/**
-	 * Normalize a capture result with already-composed compatibility effects.
+	 * Normalize a capture result.
 	 *
 	 * @param array<string,mixed> $result                       Provider capture result.
 	 * @param string              $fallback_provider_payment_id Persisted provider payment ID.
-	 * @param array<string,mixed> $effect_data                  Explicitly composed local effect data.
 	 * @return PaymentOutcome
 	 */
-	public static function outcome_from_capture_result( array $result, string $fallback_provider_payment_id = '', array $effect_data = array() ): PaymentOutcome {
+	public static function outcome_from_capture_result( array $result, string $fallback_provider_payment_id = '' ): PaymentOutcome {
 		$status     = isset( $result['status'] ) ? (string) $result['status'] : 'failed';
 		$intent_id  = isset( $result['id'] ) ? (string) $result['id'] : $fallback_provider_payment_id;
 		$error_code = isset( $result['error_code'] ) ? (string) $result['error_code'] : '';
 		$message    = isset( $result['message'] ) ? (string) $result['message'] : '';
 
 		if ( 'succeeded' === $status ) {
-			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id, '', '', '', $effect_data );
+			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $intent_id );
 		}
 
 		if ( 'requires_capture' === $status && '' === $message ) {
-			return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', '', '', $effect_data );
+			return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id );
 		}
 
 		return new PaymentOutcome(
@@ -215,12 +147,9 @@ class WooPaymentsIntentCodec {
 			'',
 			'',
 			'',
-			array_merge(
-				$effect_data,
-				array(
-					PaymentOutcome::DATA_ERROR_CODE    => $error_code,
-					PaymentOutcome::DATA_ERROR_MESSAGE => $message,
-				)
+			array(
+				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+				PaymentOutcome::DATA_ERROR_MESSAGE => $message,
 			)
 		);
 	}
@@ -271,41 +200,6 @@ class WooPaymentsIntentCodec {
 		}
 
 		return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, $refund_id, '', '', '', $data );
-	}
-
-	/**
-	 * Normalize a legacy refund result.
-	 *
-	 * @param mixed $result Legacy refund result.
-	 * @return PaymentOutcome
-	 */
-	public static function outcome_from_legacy_refund_result( $result ): PaymentOutcome {
-		if ( true === $result ) {
-			return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED );
-		}
-
-		if ( $result instanceof WP_Error ) {
-			return new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array(
-					PaymentOutcome::DATA_ERROR_CODE    => $result->get_error_code(),
-					PaymentOutcome::DATA_ERROR_MESSAGE => $result->get_error_message(),
-				)
-			);
-		}
-
-		return new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array( PaymentOutcome::DATA_ERROR_CODE => 'legacy_refund_failed' )
-		);
 	}
 
 	/**
@@ -605,35 +499,6 @@ class WooPaymentsIntentCodec {
 		}
 
 		return $fallback;
-	}
-
-	/**
-	 * Map a persisted intention status to a neutral outcome status.
-	 *
-	 * @param string $intention_status Persisted intention status.
-	 * @return string
-	 */
-	private static function map_intention_status_to_outcome_status( string $intention_status ): string {
-		switch ( $intention_status ) {
-			case 'succeeded':
-				return PaymentOutcome::STATUS_COMPLETED;
-
-			case 'requires_capture':
-			case 'processing':
-				return PaymentOutcome::STATUS_AUTHORIZED;
-
-			case 'requires_action':
-			case 'requires_confirmation':
-				return PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION;
-
-			case 'requires_payment_method':
-				return PaymentOutcome::STATUS_FAILED;
-
-			case 'canceled':
-				return PaymentOutcome::STATUS_CANCELED;
-		}
-
-		return '';
 	}
 
 	/**

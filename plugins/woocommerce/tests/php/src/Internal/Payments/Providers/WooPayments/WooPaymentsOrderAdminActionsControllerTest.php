@@ -19,7 +19,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -1017,8 +1016,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * Build a real WooPayments provider wired to the real gateway adapter and API client
 	 * over a fake transport, the pattern used by
 	 * {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapterTest::create_provider_over_fake_transport()}.
-	 * The legacy gateway bridge is left unset because native transport (the fake client's
-	 * default `is_available()` true) always takes precedence for capture.
 	 *
 	 * @param FakeWooPaymentsHttpClient $http_client Fake transport queued with the recorded response(s).
 	 * @return WooPaymentsProvider
@@ -1040,12 +1037,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service );
 
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyProxyWithGateway( null ) );
-
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
-			$legacy_runtime,
 			$api_client,
 			$this->createMock( WooPaymentsCustomerService::class ),
 			$this->createMock( WooPaymentsIntentRequestBuilder::class ),

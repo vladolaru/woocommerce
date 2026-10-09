@@ -387,14 +387,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @param bool $expected            Expected readiness.
 	 */
 	public function test_can_process_payments_requires_native_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
-		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available' ) )
-			->getMock();
-		$gateway_adapter
-			->expects( $this->never() )
-			->method( 'is_available' );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -428,14 +422,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider onboarding availability does not require an established WPCOM transport.
 	 */
 	public function test_can_manage_onboarding_before_wpcom_transport_is_connected(): void {
-		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available' ) )
-			->getMock();
-		$gateway_adapter
-			->expects( $this->never() )
-			->method( 'is_available' );
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -492,11 +480,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsProviderGatewayAdapter::class\s*\)/',
 			$source,
 			'WooPaymentsProvider should receive the gateway adapter through init injection.'
-		);
-		$this->assertStringNotContainsString(
-			'get_gateway_adapter()->is_available()',
-			$source,
-			'WooPaymentsProvider readiness should use native transport and account readiness, not legacy gateway adapter availability.'
 		);
 	}
 }
