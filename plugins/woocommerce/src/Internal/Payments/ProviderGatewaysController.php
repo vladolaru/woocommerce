@@ -139,8 +139,8 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	/**
 	 * Tell whether a gateway has already been registered.
 	 *
-	 * A gateway already in the list, as the same object, its class name or its ID, is not added again, so a gateway
-	 * another callback listed under the provider's ID stays and WooCommerce never lists one ID twice.
+	 * A gateway already in the list, as the same object, its class name or its ID, is not added again, so this controller
+	 * never appends a provider gateway the list already contains.
 	 *
 	 * @param array<int|string,mixed> $gateways Registered gateway classes or instances.
 	 * @param WC_Payment_Gateway      $provider_gateway Provider gateway instance.

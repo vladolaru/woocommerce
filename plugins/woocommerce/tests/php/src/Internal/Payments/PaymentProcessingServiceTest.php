@@ -205,8 +205,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * `includes/wc-cart-functions.php:198-207` (`wc_clear_cart_after_payment()`) is the branch the
 	 * Store API's checkout flow relies on instead of the order-received query var branch: it reads
-	 * `WC()->session->order_awaiting_payment`, set by `WC_Checkout::process_checkout()`
-	 * (`includes/class-wc-checkout.php:1163`) when the order is created, and clears the cart only once
+	 * `WC()->session->order_awaiting_payment`, which `WC_Checkout::process_order_payment()`
+	 * (`includes/class-wc-checkout.php:1163`) and the Store API's `CheckoutTrait::process_payment()`
+	 * (`src/StoreApi/Utilities/CheckoutTrait.php:92`) set just before the gateway runs, and clears the cart only once
 	 * that order's status is no longer `pending`, `failed`, or `cancelled`.
 	 */
 	public function test_order_awaiting_payment_session_branch_clears_the_cart_once_the_order_is_paid(): void {
@@ -2181,7 +2182,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
 		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
 
-		$this->assertSame( 1, $throws, 'The refusal line was written once.' );
+		$this->assertSame( 1, $throws, 'The refusal line was attempted once.' );
 		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
@@ -2464,8 +2465,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order_Refund::class, $first_refund );
 
 		// The provider links the processed refund via `_wcpay_refund_id`, mirroring the live
-		// synchronous and webhook paths. Resolution must skip that linked refund so the second
-		// refund instance resolves to its own row and not the first one.
+		// synchronous and webhook paths. The second refund resolves to its own row because that row is the
+		// order's newest refund when the second call reads it.
 		$provider     = new RecordingProvider( $this->successful_refund_outcome( 're_first' ) );
 		$first_result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
 		$first_key    = $provider->last_idempotency_key;

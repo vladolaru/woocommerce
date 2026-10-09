@@ -38,7 +38,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Money-operation claims should block any active order payment lock.
+	 * @testdox Money-operation claims should be refused while any order payment lock is active.
 	 */
 	public function test_claim_order_payment_lock_blocks_any_active_lock(): void {
 		$order = wc_create_order();
@@ -171,7 +171,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 
 		$this->sut->release( $order, $this->persistence_vocabulary, $first_token );
 
-		$this->assertSame( 'capture_key', $this->read_lock_row( '_transient_' . $lock_key ), 'The lock must keep the WooPayments-compatible payment reference.' );
+		$this->assertSame( 'capture_key', $this->read_lock_row( '_transient_' . $lock_key ), 'The lock must keep the current holder\'s lock value.' );
 		$this->assertNotNull( $this->read_lock_row( '_transient_timeout_' . $lock_key ), 'The taken-over lock must keep its expiry.' );
 		$this->assertNull( $this->sut->claim( $order, $this->persistence_vocabulary, 'refund_key', 'refund' ), 'A third operation must not start while the second holds the lock.' );
 
@@ -250,7 +250,8 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 		try {
 			$first_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
 			$this->assertNotNull( $first_token );
-			// The cache drops the expired lock and a second capture with the same derived key claims it.
+			// The cache drops the expired lock and a second claim with the same lock value (for example, a second lifecycle
+			// event for the same payment reference) claims it.
 			wp_cache_delete( $lock_key, 'transient' );
 			$second_token = $this->sut->claim( $order, $this->persistence_vocabulary, 'capture_key', 'capture' );
 			$this->assertNotNull( $second_token );
@@ -576,7 +577,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 
 		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
 
-		$this->assertSame( 1, $throws, 'The refusal line was written once.' );
+		$this->assertSame( 1, $throws, 'The refusal line was attempted once.' );
 	}
 
 	/**

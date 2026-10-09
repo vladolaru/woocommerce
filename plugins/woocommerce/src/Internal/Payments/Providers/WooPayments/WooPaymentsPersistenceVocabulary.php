@@ -22,8 +22,8 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	/**
 	 * WooPayments gateway ID.
 	 *
-	 * Every WooPayments order stores it as its payment method, so it lives with the stored names, and comparing an
-	 * order's payment method does not load the gateway class.
+	 * WooPayments orders store the base or split gateway ID as their payment method, so these names live with the stored
+	 * names, and comparing an order's payment method does not load the gateway class.
 	 *
 	 * @var string
 	 */

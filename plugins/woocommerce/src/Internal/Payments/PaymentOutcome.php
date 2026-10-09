@@ -74,7 +74,7 @@ class PaymentOutcome {
 	public const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
 
 	/**
-	 * Checkout, capture and cancel outcomes: order meta keys to delete.
+	 * Checkout outcomes and completed captures and cancels: order meta keys to delete (ignored for a failed capture or cancel).
 	 *
 	 * @var string
 	 */

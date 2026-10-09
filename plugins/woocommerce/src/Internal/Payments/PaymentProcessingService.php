@@ -21,8 +21,8 @@ use WP_Error;
 class PaymentProcessingService {
 
 	/**
-	 * Operation name for a checkout's provider call; the order payment lock names its holder 'checkout' instead, because a
-	 * zero-total checkout holds the lock without calling the provider.
+	 * Operation name a checkout passes to the provider's effect appliers, whether or not the provider was called; the order
+	 * payment lock names its holder 'checkout'.
 	 */
 	public const OPERATION_CHARGE = 'charge';
 
@@ -84,9 +84,9 @@ class PaymentProcessingService {
 		$idempotency_key        = $this->mint_idempotency_key();
 		$persistence_vocabulary = $provider->get_persistence_vocabulary();
 
-		// A refused checkout claim returns the in-progress outcome without logging: the shopper sees that error, and a second
-		// submission of one checkout is the common case the lock stops; refused refunds, captures, cancels and provider
-		// events are logged.
+		// A refused checkout claim returns the in-progress outcome without logging; the gateway shows the shopper its generic
+		// retry notice. A second submission of one checkout is the common case the lock stops; refused refunds, captures,
+		// cancels and provider events are logged.
 		$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_operation_in_progress_outcome();
@@ -113,7 +113,8 @@ class PaymentProcessingService {
 				}
 
 				// The provider already returned a durable result. Its effects may have replaced the outcome, but applying failed,
-				// so the provider's own outcome is saved and handed back, and a retry finds its reference instead of paying again.
+				// so the service attempts to save the provider's own outcome, best effort, and hands it back, and a retry finds its
+				// reference instead of paying again.
 				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, self::OPERATION_CHARGE, $apply_exception, $reconciliation_persisted );
 
@@ -127,7 +128,8 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get the failed outcome for an operation refused because another payment operation holds the order payment lock.
+	 * Get the failed outcome for a checkout, capture or cancel refused because another operation holds the order payment lock,
+	 * or because the order changed before this request claimed it.
 	 *
 	 * @return PaymentOutcome
 	 */
@@ -151,7 +153,8 @@ class PaymentProcessingService {
 	 * one order can both pass them.
 	 * The order is read again in place, so the charge and everything after it use what the read returns, including the
 	 * unresolved charge key of another attempt. Compared with what this request loaded: a new paid status answers as already
-	 * paid; any other status change, a new payment reference, or a new unresolved charge key (a charge whose outcome is unknown)
+	 * paid; any other status change, or any change to its payment references or unresolved charge key (a charge whose outcome
+	 * is unknown), whether added, replaced or cleared,
 	 * means another request is at work, so the charge is refused. Client 11.1.0 takes no lock in process_payment()
 	 * (class-wc-payment-gateway-wcpay.php:1251-1268) and would charge again.
 	 *
@@ -299,8 +302,9 @@ class PaymentProcessingService {
 	/**
 	 * Tell whether an outcome must be retained after local application fails.
 	 *
-	 * Successful outcomes may represent money movement even without a reference. Other statuses are
-	 * reconcilable when the provider returned a durable payment ID, including customer-action flows.
+	 * Successful outcomes are retained even without a reference, including a zero-total completion the service built without
+	 * calling the provider; any other status is retained when it carries a provider payment ID: declines, failed captures and
+	 * cancels, and customer-action flows.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return bool
@@ -371,14 +375,15 @@ class PaymentProcessingService {
 		}
 
 		try {
-			// Read the row under the lock and before the provider call, so a refund row created
-			// while the request is in flight (a manual refund, or one the lock refuses) is never linked.
+			// Read the newest row under the lock and before the provider call, so a row created after this read (a manual
+			// refund, or one the lock refuses) is never linked; a row another request saves between this call's own row and
+			// this read is.
 			$wc_refund_id = $this->get_newest_refund_id( $order );
 
 			// Refuse a refund with no local row before any money moves, so a retry cannot refund twice.
 			// Client 11.1.0 sends it first and then fails (class-wc-payment-gateway-wcpay.php:3003-3007).
-			// Every core caller (wc_refund_payment(), the REST API) creates the row first, so only a
-			// direct caller without one reaches this.
+			// Core's callers (wc_create_refund(), which the admin and REST refunds use) save the row before calling the
+			// gateway, so only a direct wc_refund_payment() or process_refund() caller on an order with no refund row reaches this.
 			if ( null === $wc_refund_id ) {
 				return new WP_Error(
 					'order_payment_refund_not_found',
@@ -470,7 +475,8 @@ class PaymentProcessingService {
 	/**
 	 * Get the ID of the order's newest refund: the one WooCommerce created for this refund call.
 	 *
-	 * WooCommerce saves the refund row before it calls the gateway, so the newest row is the one
+	 * WooCommerce saves the refund row before it calls the gateway, so when refunds of one order do not overlap and every
+	 * call creates a row, the newest row is the one
 	 * this call refunds. Client 11.1.0 links the provider refund the same way
 	 * (`WC_Payments_Utils::get_last_refund_from_order_id()`).
 	 *
@@ -712,8 +718,9 @@ class PaymentProcessingService {
 	/**
 	 * Run a capture/cancel provider operation under the shared order lock.
 	 *
-	 * When applying a capture or cancel the provider already made fails, the provider's outcome is returned as it is: the
-	 * money moved, and the reference saved on the order lets the provider's next event settle the order; checkout throws
+	 * When applying a capture or cancel outcome that carries a provider reference fails, the provider's outcome is returned as
+	 * it is: a completed capture moved the money and a completed cancel released the authorization, and the service attempts,
+	 * best effort, to save the reference on the order so the provider's next event settles it; checkout throws
 	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed. When applying a
 	 * failed capture or cancel fails, the failed outcome is returned and nothing is saved: the provider still holds the
 	 * authorization the order records, as client 11.1.0 leaves it when its failure handling throws.

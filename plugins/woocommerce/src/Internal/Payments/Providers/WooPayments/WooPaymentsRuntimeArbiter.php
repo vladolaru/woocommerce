@@ -83,8 +83,7 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Option that turns the built-in WooPayments off in the enabled filter's default.
 	 *
-	 * The enabled filter keeps the final say and may override this option. Payment gateway suggestions read it too, so a
-	 * store with the kill switch on is not suggested as having WooPayments active.
+	 * The enabled filter keeps the final say and may override this option. Payment gateway suggestions also read this option.
 	 *
 	 * @var string
 	 */
