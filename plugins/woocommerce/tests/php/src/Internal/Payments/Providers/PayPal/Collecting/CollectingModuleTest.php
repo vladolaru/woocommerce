@@ -50,6 +50,15 @@ class CollectingModuleTest extends WalletTestCase {
 				'collecting.context-bearer',
 				'collecting.context-host-resolver',
 				'collecting.refund-lock',
+				'collecting.held-capture',
+				'collecting.capture-reader',
+				'collecting.held-settlement',
+				'collecting.webhook.guards',
+				'collecting.webhook.foreign-guard',
+				'collecting.webhook.held-completed',
+				'collecting.webhook.held-returned',
+				'collecting.webhook.onboarding-completed',
+				'collecting.reconciler',
 			),
 			array_keys( $services )
 		);
@@ -73,6 +82,11 @@ class CollectingModuleTest extends WalletTestCase {
 				'api.endpoint.partner-referrals',
 				'api.endpoint.partner-referrals-sandbox',
 				'api.endpoint.partner-referrals-production',
+				'webhook.last-webhook-storage.key',
+				'webhook.endpoint.controller',
+				'webhook.registrar',
+				'settings.rest.webhooks',
+				'webhook.endpoint.handler',
 				'wcgateway.processor.refunds',
 			),
 			array_keys( $sut->extensions() )

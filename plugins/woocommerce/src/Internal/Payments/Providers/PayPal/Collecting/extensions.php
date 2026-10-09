@@ -17,13 +17,19 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Logging\RedactingLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\LockingRefundProcessor;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\CollectingWebhookEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\PlatformServedWebhookRegistrar;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\PlatformServedWebhookSettingsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\WebhookSettingsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\RefundProcessor;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\IncomingWebhookEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\WebhookRegistrar;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 
@@ -153,6 +159,75 @@ return array(
 	'api.endpoint.partner-referrals'                   => $platform_referrals,
 	'api.endpoint.partner-referrals-sandbox'           => $platform_referrals,
 	'api.endpoint.partner-referrals-production'        => $platform_referrals,
+	// The endpoint stores the last event it received; under a core-owned name while the platform serves the store.
+	'webhook.last-webhook-storage.key'                 => static function ( string $previous, ContainerInterface $c ): string {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? 'wc_paypal_wallet_last_webhook' : $previous;
+	},
+	// The wallet verifies against its own stored webhook, which a store the platform serves does not have: verify with the apps.
+	'webhook.endpoint.controller'                      => static function ( IncomingWebhookEndpoint $previous, ContainerInterface $c ): IncomingWebhookEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		// As the wallet's factory decides it: verification can be turned off by a constant, never in production.
+		$verify_request = ! defined( 'PAYPAL_WEBHOOK_REQUEST_VERIFICATION' ) || PAYPAL_WEBHOOK_REQUEST_VERIFICATION || $c->get( 'settings.environment' )->is_production();
+
+		return new CollectingWebhookEndpoint(
+			$c->get( 'api.endpoint.webhook' ),
+			$c->get( 'webhook.current' ),
+			$c->get( 'woocommerce.logger.woocommerce' ),
+			$verify_request,
+			$c->get( 'api.factory.webhook-event' ),
+			$c->get( 'webhook.status.simulation' ),
+			$c->get( 'webhook.last-webhook-storage' ),
+			$c->get( 'collecting.transport' ),
+			$c->get( 'collecting.webhook.guards' ),
+			...$c->get( 'webhook.endpoint.handler' )
+		);
+	},
+	// The wallet's registrar would delete the platform's subscriptions and write ppcp-webhook: it does nothing while served.
+	'webhook.registrar'                                => static function ( WebhookRegistrar $previous, ContainerInterface $c ): WebhookRegistrar {
+		return new PlatformServedWebhookRegistrar(
+			$previous,
+			$c->get( 'collecting.connection-state' ),
+			$c->get( 'api.factory.webhook' ),
+			$c->get( 'api.endpoint.webhook' ),
+			$c->get( 'webhook.endpoint.controller' ),
+			$c->get( 'webhook.last-webhook-storage' ),
+			$c->get( 'webhook.status.simulation' ),
+			$c->get( 'webhook.orchestration' ),
+			$c->get( 'woocommerce.logger.woocommerce' ),
+			$c->get( 'webhook.own-resolver' )
+		);
+	},
+	// The settings app's webhook status reports the platform's subscriptions while served, without a request to PayPal.
+	'settings.rest.webhooks'                           => static function ( WebhookSettingsEndpoint $previous, ContainerInterface $c ): WebhookSettingsEndpoint {
+		return new PlatformServedWebhookSettingsEndpoint(
+			$c->get( 'api.endpoint.webhook' ),
+			$c->get( 'webhook.registrar' ),
+			$c->get( 'webhook.status.simulation' ),
+			$c->get( 'webhook.own-resolver' ),
+			$c->get( 'collecting.connection-state' ),
+			$c->get( 'collecting.transport' ),
+			$c->get( 'webhook.endpoint.controller' )
+		);
+	},
+	// The endpoint runs the first responsible handler: another store's events, the held orders and onboarding come first.
+	'webhook.endpoint.handler'                         => static function ( array $previous, ContainerInterface $c ): array {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return array_merge(
+			array(
+				$c->get( 'collecting.webhook.foreign-guard' ),
+				$c->get( 'collecting.webhook.held-completed' ),
+				$c->get( 'collecting.webhook.held-returned' ),
+				$c->get( 'collecting.webhook.onboarding-completed' ),
+			),
+			$previous
+		);
+	},
 	// Refunds the lock refuses never reach PayPal. The lock reads the order, so a held order stays locked in either served
 	// state; after a takeover this module is not booted, the decorator is absent and the extension's own refund runs.
 	'wcgateway.processor.refunds'                      => static function ( RefundProcessor $previous, ContainerInterface $c ): RefundProcessor {

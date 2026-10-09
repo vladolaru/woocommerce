@@ -51,7 +51,7 @@ final class PerAppBearer implements Bearer {
 	 * @param LoggerInterface $logger        The logger.
 	 */
 	public function __construct( string $app, string $host, string $client_id, string $client_secret, LoggerInterface $logger ) {
-		$this->cache  = new Cache( 'wc_paypal_wallet_bearer_' . $app . '_' );
+		$this->cache  = new Cache( self::token_prefix( $app ) );
 		$this->bearer = new PayPalBearer(
 			$this->cache,
 			$host,
@@ -59,7 +59,7 @@ final class PerAppBearer implements Bearer {
 			$client_secret,
 			$logger,
 			null,
-			new TokenRateLimiter( new Cache( 'wc_paypal_wallet_rate_' . $app . '_' ), $logger )
+			new TokenRateLimiter( new Cache( self::rate_prefix( $app ) ), $logger )
 		);
 	}
 
@@ -83,5 +83,44 @@ final class PerAppBearer implements Bearer {
 	 */
 	public function forget(): void {
 		$this->cache->delete( PayPalBearer::CACHE_KEY );
+	}
+
+	/**
+	 * Delete every app's cached token and token rate-limit state, for a store that no longer uses the platform apps.
+	 *
+	 * The known keys are deleted one by one, which also reaches a persistent object cache; the prefix sweep then catches
+	 * any other key stored in the options table.
+	 *
+	 * @since 11.3.0
+	 */
+	public static function forget_stored_tokens(): void {
+		foreach ( array( PlatformTransport::APP_PLATFORM, PlatformTransport::APP_MERCHANT_APP ) as $app ) {
+			$tokens = new Cache( self::token_prefix( $app ) );
+			$rates  = new Cache( self::rate_prefix( $app ) );
+			$tokens->delete( PayPalBearer::CACHE_KEY );
+			$rates->delete( PayPalBearer::RATE_LIMIT_SCOPE . TokenRateLimiter::STATE_KEY_SUFFIX );
+			$tokens->flush();
+			$rates->flush();
+		}
+	}
+
+	/**
+	 * The transient prefix of an app's token.
+	 *
+	 * @param string $app One of the PlatformTransport::APP_ constants.
+	 * @return string
+	 */
+	private static function token_prefix( string $app ): string {
+		return 'wc_paypal_wallet_bearer_' . $app . '_';
+	}
+
+	/**
+	 * The transient prefix of an app's token rate-limit state.
+	 *
+	 * @param string $app One of the PlatformTransport::APP_ constants.
+	 * @return string
+	 */
+	private static function rate_prefix( string $app ): string {
+		return 'wc_paypal_wallet_rate_' . $app . '_';
 	}
 }

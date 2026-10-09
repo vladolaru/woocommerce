@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PerAppBearer;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -304,7 +305,7 @@ class CollectingState {
 	 *
 	 * A takeover or a disabled gateway keeps the state while orders are still held for the payee, so they can be
 	 * settled later; the state is deleted once none are held. A first-party connection always deletes it. An unknown
-	 * reason is refused.
+	 * reason is refused. Deleting the state also deletes the platform apps' cached tokens.
 	 *
 	 * @since 11.3.0
 	 *
@@ -315,17 +316,25 @@ class CollectingState {
 	public function abandon( string $reason ): void {
 		switch ( $reason ) {
 			case self::ABANDON_FIRST_PARTY:
-				delete_option( Options::COLLECTING );
+				$this->delete_collecting_state();
 				return;
 			case self::ABANDON_TAKEOVER:
 			case self::ABANDON_DISABLED:
 				if ( $this->held_orders->count() <= 0 ) {
-					delete_option( Options::COLLECTING );
+					$this->delete_collecting_state();
 				}
 				return;
 		}
 
 		throw new InvalidArgumentException( 'Unknown abandon reason.' );
+	}
+
+	/**
+	 * Delete the collecting option and the platform apps' cached tokens, which only the collecting state used.
+	 */
+	private function delete_collecting_state(): void {
+		delete_option( Options::COLLECTING );
+		PerAppBearer::forget_stored_tokens();
 	}
 
 	/**

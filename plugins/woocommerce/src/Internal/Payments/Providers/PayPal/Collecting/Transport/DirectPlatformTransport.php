@@ -598,19 +598,29 @@ final class DirectPlatformTransport implements PlatformTransport {
 		$previous    = $this->context->current();
 		$this->context->enter( $app );
 		$this->is_request_logging_enabled = $log_body;
+		$own_retry                        = null;
 		try {
-			$args = array(
+			$token = $this->bearer( $app )->bearer()->token();
+			$args  = array(
 				'method'  => $method,
 				'headers' => array(
-					'Authorization' => 'Bearer ' . $this->bearer( $app )->bearer()->token(),
+					'Authorization' => 'Bearer ' . $token,
 					'Content-Type'  => 'application/json',
 				) + $headers,
 			);
 			if ( null !== $body ) {
 				$args['body'] = wp_json_encode( $body );
 			}
+			// Last on the retry filter, for this call only: whatever other listeners did, the retry is signed by this app.
+			$own_retry = function ( $retry_args ) use ( $app, $token ) {
+				return $this->sign_retry( $retry_args, $app, $token );
+			};
+			add_filter( 'ppcp_retry_request_args', $own_retry, PHP_INT_MAX );
 			$response = $this->request( trailingslashit( $this->host( $app ) ) . $path, $args );
 		} finally {
+			if ( null !== $own_retry ) {
+				remove_filter( 'ppcp_retry_request_args', $own_retry, PHP_INT_MAX );
+			}
 			$this->is_request_logging_enabled = true;
 			if ( $was_entered ) {
 				$this->context->enter( $previous );
@@ -633,6 +643,42 @@ final class DirectPlatformTransport implements PlatformTransport {
 		}
 
 		return array( $status, $json );
+	}
+
+	/**
+	 * Sign the retry of one of the transport's calls with a fresh token of the call's app.
+	 *
+	 * After a takeover the first party's retry listener signs a retry with the merchant's own token, and PayPal answers a
+	 * webhook another app owns with a not-found, which would read as deleted. A token another listener already refreshed
+	 * for the app is kept; the token that failed is replaced. When no token can be issued, the retry keeps the failed one,
+	 * so its answer is still the app's.
+	 *
+	 * @param mixed  $args         The retry's request arguments.
+	 * @param string $app          One of the APP_ constants.
+	 * @param string $failed_token The token the failed request carried.
+	 * @return mixed The arguments, signed by the app.
+	 */
+	private function sign_retry( $args, string $app, string $failed_token ) {
+		if ( ! is_array( $args ) ) {
+			return $args;
+		}
+
+		$token = $failed_token;
+		try {
+			$bearer = $this->bearer( $app );
+			$token  = $bearer->bearer()->token();
+			if ( $token === $failed_token ) {
+				$bearer->forget();
+				$token = $bearer->bearer()->token();
+			}
+		} catch ( RuntimeException $exception ) {
+			$this->logger->warning( 'Could not refresh the platform access token for request retry: ' . $exception->getMessage() );
+		}
+
+		$args['headers']                  = isset( $args['headers'] ) && is_array( $args['headers'] ) ? $args['headers'] : array();
+		$args['headers']['Authorization'] = 'Bearer ' . $token;
+
+		return $args;
 	}
 
 	/**

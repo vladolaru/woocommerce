@@ -618,6 +618,83 @@ class DirectPlatformTransportTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should sign the retry of its own call with its app's fresh token, so a not-found signed by another bearer never reads as deleted.
+	 */
+	public function test_unsubscribe_retry_is_signed_by_the_subscriptions_app(): void {
+		$this->set_wallet_option( Options::WEBHOOKS, array( PlatformTransport::APP_MERCHANT_APP => 'WH-B' ) );
+		// After a takeover, the first party's retry filter signs a retry with its own merchant token.
+		add_filter(
+			'ppcp_retry_request_args',
+			static function ( $args ) {
+				$args['headers']['Authorization'] = 'Bearer first-party';
+				return $args;
+			}
+		);
+		$this->stub_http(
+			function ( $request, $url ) {
+				if ( false !== strpos( $url, 'v1/oauth2/token' ) ) {
+					$this->issued['merchant_app'] = ( $this->issued['merchant_app'] ?? 0 ) + 1;
+					return $this->http_response( 200, '{"access_token":"token-merchant_app-' . $this->issued['merchant_app'] . '","expires_in":32400}' );
+				}
+				switch ( $request['headers']['Authorization'] ) {
+					case 'Bearer first-party':
+						return $this->http_response( 404, '{"name":"INVALID_RESOURCE_ID"}' );
+					case 'Bearer token-merchant_app-1':
+						return $this->http_response( 401, '{"error":"invalid_token"}' );
+					default:
+						return $this->http_response( 500, '{"name":"INTERNAL_SERVICE_ERROR"}' );
+				}
+			}
+		);
+
+		try {
+			$this->sut->unsubscribe_webhooks();
+			$this->fail( 'The retry signed by the app fails, so the deletion fails' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertSame( array( PlatformTransport::APP_MERCHANT_APP => 'WH-B' ), get_option( Options::WEBHOOKS ), 'The subscription is kept' );
+		}
+
+		$requests = $this->api_requests();
+		$this->assertCount( 2, $requests );
+		$this->assertSame( 'Bearer token-merchant_app-2', $requests[1]['request']['headers']['Authorization'], 'The retry carries a fresh token of the subscription\'s app' );
+		$after = apply_filters( 'ppcp_retry_request_args', array( 'headers' => array( 'Authorization' => 'Bearer other' ) ), self::SANDBOX_HOST . '/v1/x' );
+		$this->assertSame( 'Bearer first-party', $after['headers']['Authorization'], 'The transport re-signs only its own calls' );
+	}
+
+	/**
+	 * @testdox Should reuse a token another retry listener already refreshed for its app, without issuing a second one.
+	 */
+	public function test_retry_keeps_a_token_already_refreshed_for_the_app(): void {
+		$this->set_wallet_option( Options::WEBHOOKS, array( PlatformTransport::APP_PLATFORM => 'WH-A' ) );
+		$this->stub_api(
+			array(
+				'DELETE /v1/notifications/webhooks/WH-A' => array(
+					$this->http_response( 401, '{"error":"invalid_token"}' ),
+					$this->http_response( 204, '' ),
+				),
+			)
+		);
+		// A listener that refreshes the app's token, as the collecting module's retry filter does while the platform serves the store.
+		$sut = $this->sut;
+		add_filter(
+			'ppcp_retry_request_args',
+			static function ( $args ) use ( $sut ) {
+				$bearer = $sut->bearer( PlatformTransport::APP_PLATFORM );
+				$bearer->forget();
+				$args['headers']['Authorization'] = 'Bearer ' . $bearer->bearer()->token();
+				return $args;
+			},
+			20
+		);
+
+		$this->sut->unsubscribe_webhooks();
+
+		$this->assertFalse( get_option( Options::WEBHOOKS ) );
+		$this->assertSame( 2, $this->issued['platform'] ?? 0, 'One token for the call and one for the retry' );
+		$this->assertSame( 'Bearer token-platform-2', $this->api_requests()[1]['request']['headers']['Authorization'] );
+	}
+
+	/**
 	 * The headers of a delivery PayPal signed.
 	 *
 	 * @return array

@@ -7,16 +7,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\ReconcileCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\PayeeFilters;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExtendingModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTrait;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ServiceModule;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
+use WP_CLI;
 
 /**
  * The collecting module: the services and extensions of the collecting state, added to the wallet's module list.
@@ -47,6 +50,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	private const LEAVE_CONTEXT_PRIORITY = 1000;
 
 	/**
+	 * The priority that checks the reconcile schedule when a capture is held: after the held capture is recorded at 10.
+	 */
+	private const SCHEDULE_PRIORITY = 20;
+
+	/**
 	 * {@inheritDoc}
 	 */
 	public function services(): array {
@@ -64,7 +72,7 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
 	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
-	 * order, and the filters that name the payee.
+	 * order, the reconcile, and the filters that name the payee.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -89,9 +97,14 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			add_action( 'woocommerce_paypal_wallet_paypal_order_created', array( $listeners, 'handle_woocommerce_paypal_wallet_paypal_order_created' ) );
 			add_action( 'woocommerce_paypal_payments_after_order_processor', array( $listeners, 'handle_woocommerce_paypal_payments_after_order_processor' ), self::LEAVE_CONTEXT_PRIORITY, 0 );
 
+			// The wallet's capture-completed handler reads the PayPal order, which only the order's app can do.
+			add_action( 'woocommerce_paypal_payments_payment_capture_completed_webhook_handler', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );
+
 			$held = new HeldCapture( $state, $logger );
 			add_action( 'woocommerce_paypal_wallet_capture_pending', array( $held, 'handle_woocommerce_paypal_wallet_capture_pending' ), 10, 2 );
 			add_action( 'woocommerce_payment_complete', array( $held, 'handle_woocommerce_payment_complete' ) );
+
+			$this->register_reconcile( $container );
 
 			$payee = new PayeeFilters( $connection_state, $state );
 			add_filter( 'ppcp_create_order_request_body_data', array( $payee, 'handle_ppcp_create_order_request_body_data' ), self::GATE_PRIORITY );
@@ -100,5 +113,48 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 		}
 
 		return true;
+	}
+
+	/**
+	 * Run the reconcile from Action Scheduler and WP-CLI, and keep it scheduled while orders are held: checked on admin
+	 * screens (at most hourly) and whenever a capture is held. The reconciler is built only when one of them runs.
+	 *
+	 * @param ContainerInterface $container The service container.
+	 */
+	private function register_reconcile( ContainerInterface $container ): void {
+		$reconciler = static function () use ( $container ): Reconciler {
+			return $container->get( 'collecting.reconciler' );
+		};
+
+		add_action(
+			Reconciler::HOOK,
+			static function () use ( $reconciler ): void {
+				$reconciler()->handle_woocommerce_paypal_wallet_reconcile();
+			}
+		);
+		add_action(
+			'admin_init',
+			static function () use ( $reconciler ): void {
+				$reconciler()->handle_admin_init();
+			}
+		);
+		add_action(
+			'woocommerce_paypal_wallet_capture_pending',
+			static function () use ( $reconciler ): void {
+				$reconciler()->maintain_schedule();
+			},
+			self::SCHEDULE_PRIORITY,
+			0
+		);
+
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			WP_CLI::add_command( // @phpstan-ignore class.notFound (WP-CLI is not installed when PHPStan runs.)
+				'wc paypal-wallet reconcile',
+				static function ( array $args, array $assoc_args ) use ( $reconciler ): void {
+					( new ReconcileCommand( $reconciler() ) )->reconcile( $args, $assoc_args );
+				},
+				array( 'shortdesc' => 'Read each held PayPal wallet order\'s capture from PayPal and settle it, then complete onboarding when PayPal reports it complete.' )
+			);
+		}
 	}
 }

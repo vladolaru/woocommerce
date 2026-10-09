@@ -7,13 +7,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transpo
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\SellerStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Token;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 
 /**
  * A platform transport that answers canned values tagged by app and records every call.
  *
  * Options: `ready` (default true), `pick` (the app pick_order_app() answers, default `merchant_app`), `environment`
  * (default `sandbox`), `partner_merchant_id` (default `PARTNER-FAKE`), `seller_status` (a SellerStatus, default an
- * incomplete one), `webhooks` (the subscription map, default empty), `verify` (default true).
+ * incomplete one, or a RuntimeException to throw), `webhooks` (the subscription map, default empty), `verify` (default
+ * true; a bool for every app, or a map of bools by app, where a missing app does not verify).
  */
 final class FakePlatformTransport implements PlatformTransport {
 
@@ -191,6 +193,10 @@ final class FakePlatformTransport implements PlatformTransport {
 	 */
 	public function seller_status( string $tracking_id ): SellerStatus {
 		$this->record( __FUNCTION__, $tracking_id );
+		if ( $this->options['seller_status'] instanceof RuntimeException ) {
+			throw $this->options['seller_status'];
+		}
+
 		return $this->options['seller_status'];
 	}
 
@@ -235,7 +241,9 @@ final class FakePlatformTransport implements PlatformTransport {
 	 */
 	public function verify_webhook( string $app, array $headers, string $body ): bool {
 		$this->record( __FUNCTION__, $app, $headers, $body );
-		return $this->options['verify'];
+		$verify = $this->options['verify'];
+
+		return is_array( $verify ) ? ! empty( $verify[ $app ] ) : (bool) $verify;
 	}
 
 	/**

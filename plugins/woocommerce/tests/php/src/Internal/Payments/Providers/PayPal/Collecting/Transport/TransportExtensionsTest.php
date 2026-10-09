@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transpo
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\ConnectBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\PayPalBearer;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\ResolvingBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\BootsCollectingContainer;
@@ -359,6 +360,36 @@ class TransportExtensionsTest extends WalletTestCase {
 		$this->assertInstanceOf( OrderAppContext::class, $context );
 		$this->assertSame( $context, $container->get( 'collecting.order-app-context' ) );
 		$this->assertFalse( $context->is_entered() );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's bearer resolver while collecting, so the wallet's webhook API endpoint gets no app token.
+	 */
+	public function test_collecting_store_keeps_the_wallets_bearer_resolver(): void {
+		$this->set_collecting();
+		$container = $this->boot_with( new FakePlatformTransport() );
+
+		$this->assertInstanceOf( ResolvingBearer::class, $container->get( 'api.bearer-resolver' ) );
+		$this->assertNotInstanceOf( ContextBearer::class, $container->get( 'api.bearer-resolver' ) );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's bearer resolver and last-webhook option name on a store the platform does not serve.
+	 */
+	public function test_unserved_store_keeps_the_bearer_resolver_and_last_webhook_key(): void {
+		$container = $this->boot_with( new FakePlatformTransport() );
+
+		$this->assertInstanceOf( ResolvingBearer::class, $container->get( 'api.bearer-resolver' ) );
+		$this->assertSame( 'ppcp-last-webhook', $container->get( 'webhook.last-webhook-storage.key' ) );
+	}
+
+	/**
+	 * @testdox Should store the last webhook event under a core-owned option name while the platform serves the store.
+	 */
+	public function test_collecting_store_last_webhook_key_is_core_owned(): void {
+		$this->set_collecting();
+
+		$this->assertSame( 'wc_paypal_wallet_last_webhook', $this->boot_with( new FakePlatformTransport() )->get( 'webhook.last-webhook-storage.key' ) );
 	}
 
 	/**

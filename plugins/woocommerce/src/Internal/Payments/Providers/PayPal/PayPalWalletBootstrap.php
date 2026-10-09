@@ -10,9 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CollectCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PerAppBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
@@ -64,6 +66,15 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	public const SETTINGS_ROUTE_PATH = '/paypal-wallet';
 
 	/**
+	 * The option that holds the wallet's owner on the previous request, so a hand-back from the extension is noticed.
+	 * An option, not a transient: an evicted transient would skip the hand-back reconcile. Autoloaded, as every request
+	 * reads it.
+	 *
+	 * @since 11.3.0
+	 */
+	public const LAST_OWNER_OPTION = 'wc_paypal_wallet_last_owner';
+
+	/**
 	 * The runtime arbiter.
 	 *
 	 * @var PayPalWalletRuntimeArbiter
@@ -107,18 +118,72 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	/**
 	 * Leave the collecting state when the PayPal Payments extension is activated: the extension takes over.
 	 *
-	 * Hooked to `activated_plugin`. The state is kept while orders are still held for the payee.
+	 * Hooked to `activated_plugin`. The state is kept while orders are still held for the payee; the platform apps' cached
+	 * tokens are deleted either way, since the store leaves the platform.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @param mixed $plugin The activated plugin's basename.
 	 */
 	public function on_plugin_activated( $plugin ): void {
-		if ( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE !== $plugin || ! $this->has_collecting_option() ) {
+		if ( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE !== $plugin ) {
+			return;
+		}
+		// The store leaves the platform: the extension never uses the platform apps' tokens.
+		if ( ( new ConnectionState() )->has_platform_state() ) {
+			PerAppBearer::forget_stored_tokens();
+		}
+		if ( ! $this->has_collecting_option() ) {
 			return;
 		}
 
 		$this->collecting_state()->abandon( CollectingState::ABANDON_TAKEOVER );
+	}
+
+	/**
+	 * Record who owns the wallet, and queue one reconcile when the extension hands it back to native.
+	 *
+	 * While the extension owned the wallet, its webhook endpoint rejected the platform apps' events, so held orders and
+	 * onboarding can be out of date. The reconcile calls PayPal for every held order, so it is queued as an async action
+	 * rather than run in this request. Only a store the platform serves has anything to reconcile. Writes the option
+	 * only when the owner changed.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool Whether this request is the first after a hand-back, and a reconcile was queued.
+	 */
+	public function track_runtime_owner(): bool {
+		$owner = $this->arbiter->get_runtime_owner();
+		$last  = get_option( self::LAST_OWNER_OPTION, false );
+		if ( $last === $owner ) {
+			return false;
+		}
+		update_option( self::LAST_OWNER_OPTION, $owner, true );
+
+		if ( PayPalWalletRuntimeArbiter::OWNER_EXTENSION !== $last || PayPalWalletRuntimeArbiter::OWNER_NATIVE !== $owner || ! ( new ConnectionState() )->has_platform_state() ) {
+			return false;
+		}
+
+		// Action Scheduler takes actions from init on.
+		if ( did_action( 'init' ) ) {
+			$this->queue_hand_back_reconcile();
+		} else {
+			add_action( 'init', array( $this, 'queue_hand_back_reconcile' ), 20 );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Queue one reconcile, unless one is already queued.
+	 *
+	 * @internal
+	 * @since 11.3.0
+	 */
+	public function queue_hand_back_reconcile(): void {
+		if ( function_exists( 'as_enqueue_async_action' ) ) {
+			as_enqueue_async_action( Reconciler::HOOK, array(), Reconciler::GROUP, true );
+		}
 	}
 
 	/**
@@ -222,6 +287,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( $this->booted ) {
 			return;
 		}
+		$this->track_runtime_owner();
 		// Runs before the loaded-elsewhere return: on the extension's deactivation request its main file is already loaded, so that guard would return first.
 		// The extension owns this request; if native is enabled it owns the next one, so keep the PayPal webhooks across the hand-back.
 		if ( PayPalWalletRuntimeArbiter::OWNER_EXTENSION === $this->arbiter->get_runtime_owner() && $this->arbiter->is_native_enabled() ) {
