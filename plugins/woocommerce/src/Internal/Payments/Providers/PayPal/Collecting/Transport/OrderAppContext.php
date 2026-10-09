@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use InvalidArgumentException;
 use WC_Order;
 
@@ -105,9 +106,20 @@ final class OrderAppContext {
 	 * @param PlatformTransport $transport   The transport.
 	 * @param string            $payee_email The store payee.
 	 * @return string
+	 *
+	 * @throws RuntimeException When the transport fails or picks an app it does not know.
 	 */
 	public function for_call( PlatformTransport $transport, string $payee_email ): string {
-		return $this->is_entered() ? $this->current() : $transport->pick_order_app( $payee_email );
+		if ( $this->is_entered() ) {
+			return $this->current();
+		}
+
+		$app = $transport->pick_order_app( $payee_email );
+		if ( ! self::is_app( $app ) ) {
+			throw new RuntimeException( 'The PayPal wallet platform transport picked an unknown app.' );
+		}
+
+		return $app;
 	}
 
 	/**

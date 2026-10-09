@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State;
 
 /**
- * The names of the options the collecting state keeps, and typed readers for the two array options.
+ * The names of the options the collecting state keeps, and typed readers for the array options.
  *
  * The readers never write: a missing or malformed option reads as an empty array.
  *
@@ -41,6 +41,13 @@ class Options {
 	public const FIRST_ORDER = 'woocommerce_paypal_wallet_first_order';
 
 	/**
+	 * The transport's own webhook subscriptions, as webhook IDs by platform app. Never the wallet's `ppcp-webhook`.
+	 *
+	 * @since 11.3.0
+	 */
+	public const WEBHOOKS = 'woocommerce_paypal_wallet_webhooks';
+
+	/**
 	 * The collecting option.
 	 *
 	 * @since 11.3.0
@@ -60,6 +67,17 @@ class Options {
 	 */
 	public function platform(): array {
 		return $this->read( self::PLATFORM );
+	}
+
+	/**
+	 * The transport's webhook subscriptions option.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return array
+	 */
+	public function webhooks(): array {
+		return $this->read( self::WEBHOOKS );
 	}
 
 	/**

@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\O
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
@@ -75,12 +76,24 @@ class ContextHostResolverTest extends WalletTestCase {
 	}
 
 	/**
+	 * The wallet's own host comes from a constant the bootstrap defines when it boots, and the unit tests do not boot the
+	 * wallet. A constant cannot be undefined, so it is defined in a separate process, from the bootstrap's own list, and
+	 * the expected host is read from that list too.
+	 *
 	 * @testdox Should answer the wallet's own host while the transport is not ready, without asking it for one.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_answers_the_wallet_host_while_the_transport_is_not_ready(): void {
+		$constants = PayPalWalletBootstrap::get_extension_constants();
+		foreach ( $constants as $name => $value ) {
+			if ( ! defined( $name ) ) {
+				define( $name, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- The constants the shell defines before a boot.
+			}
+		}
 		$transport = new FakePlatformTransport( array( 'ready' => false ) );
 
-		$this->assertSame( CONNECT_WOO_SANDBOX_URL, $this->build_sut( $transport )->host() );
+		$this->assertSame( $constants['CONNECT_WOO_SANDBOX_URL'], $this->build_sut( $transport )->host() );
 		$this->assertSame( array(), $transport->calls_to( 'host' ) );
 		$this->assertSame( array(), $transport->calls_to( 'pick_order_app' ) );
 	}

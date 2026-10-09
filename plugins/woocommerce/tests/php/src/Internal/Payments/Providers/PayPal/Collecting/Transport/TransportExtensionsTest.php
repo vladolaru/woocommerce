@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextHostResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\DirectPlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\NotReadyTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -18,6 +19,8 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\D
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\TransportBindingModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
+use Automattic\WooCommerce\Vendor\Psr\Log\NullLogger;
+use ReflectionMethod;
 
 /**
  * Tests for the collecting module's extensions that route the wallet's API calls through the platform transport.
@@ -111,17 +114,18 @@ class TransportExtensionsTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use the transport's host for the app of the call as the wallet's API host while collecting.
-	 * @testWith ["merchant_app", "https://api.merchant-app.fake.test"]
-	 *           ["platform", "https://api.platform.fake.test"]
+	 * @testdox Should use the transport's platform host as the wallet's API host while collecting, without picking an app.
+	 * @testWith ["merchant_app"]
+	 *           ["platform"]
 	 *
-	 * @param string $pick     The app the transport picks.
-	 * @param string $expected The host.
+	 * @param string $pick The app the transport would pick.
 	 */
-	public function test_collecting_store_api_host_is_the_transport_host( string $pick, string $expected ): void {
+	public function test_collecting_store_api_host_is_the_transport_platform_host( string $pick ): void {
 		$this->set_collecting();
+		$transport = new FakePlatformTransport( array( 'pick' => $pick ) );
 
-		$this->assertSame( $expected, $this->boot_with( new FakePlatformTransport( array( 'pick' => $pick ) ) )->get( 'api.host' ) );
+		$this->assertSame( 'https://api.platform.fake.test', $this->boot_with( $transport )->get( 'api.host' ) );
+		$this->assertSame( array(), $transport->calls_to( 'pick_order_app' ), 'Building the host does not pick' );
 	}
 
 	/**
@@ -247,7 +251,7 @@ class TransportExtensionsTest extends WalletTestCase {
 
 		$this->assertInstanceOf( NotReadyTransport::class, $container->get( 'collecting.transport' ) );
 		foreach ( self::EXTENDED_SERVICES as $service ) {
-			$this->assertNotNull( $container->get( $service ), "$service resolves" );
+			$container->get( $service ); // Throws when the service cannot be built.
 		}
 		$this->assertInstanceOf( ContextBearer::class, $container->get( 'api.bearer' ), 'The bearer is the context bearer even before the transport is ready' );
 		$this->assertSame( $container->get( 'api.sandbox-host' ), $container->get( 'api.host' ), 'The host stays the wallet\'s until the transport is ready' );
@@ -256,6 +260,89 @@ class TransportExtensionsTest extends WalletTestCase {
 		$this->assertSame( ( new ApiHostResolver( $container->get( 'settings.connection-state' ) ) )->host(), $container->get( 'api.host-resolver' )->host(), 'The host resolver answers the wallet\'s host until the transport is ready' );
 		$this->assertSame( 'payee@example.com', $container->get( 'api.merchant_email' ) );
 		$this->assertSame( array(), $this->http_requests );
+	}
+
+	/**
+	 * @testdox Should bind the direct transport once all six constants are defined, and read nothing from options.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_collecting_store_with_the_constants_binds_the_direct_transport(): void {
+		$logger  = new NullLogger();
+		$context = new OrderAppContext();
+		$values  = array(
+			'WC_PAYPAL_WALLET_PLATFORM_CLIENT_ID'         => 'platform-id',
+			'WC_PAYPAL_WALLET_PLATFORM_CLIENT_SECRET'     => 'platform-secret',
+			'WC_PAYPAL_WALLET_PLATFORM_PARTNER_MERCHANT_ID' => 'PARTNER1',
+			'WC_PAYPAL_WALLET_MERCHANT_APP_CLIENT_ID'     => 'merchant-app-id',
+			'WC_PAYPAL_WALLET_MERCHANT_APP_CLIENT_SECRET' => 'merchant-app-secret',
+			'WC_PAYPAL_WALLET_PLATFORM_SANDBOX'           => true,
+		);
+		$this->assertFalse( DirectPlatformTransport::from_constants( $logger, $context )->is_ready(), 'No constants' );
+		foreach ( $values as $name => $value ) {
+			$this->assertFalse( DirectPlatformTransport::from_constants( $logger, $context )->is_ready(), 'Not ready before the last constant' );
+			define( $name, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- The wp-config.php constants the transport reads.
+		}
+		$this->set_collecting();
+
+		$container = $this->boot_container();
+
+		$transport = $container->get( 'collecting.transport' );
+		$this->assertInstanceOf( DirectPlatformTransport::class, $transport );
+		$this->assertTrue( $transport->is_ready() );
+		$this->assertSame( 'https://api-m.sandbox.paypal.com', $container->get( 'api.host' ) );
+		$this->assertSame( 'platform-id', $container->get( 'button.client_id' ) );
+		$this->assertSame( 'PARTNER1', $container->get( 'api.partner_merchant_id' ) );
+		$this->assertSame( array(), $this->http_requests, 'Building the services needs no request' );
+	}
+
+	/**
+	 * Read the sandbox flag strictly: a bool, or 1, 0, true and false as text in any case; anything else is no flag.
+	 *
+	 * @testdox Should read the sandbox flag strictly and treat anything else as not set.
+	 * @testWith [true, true]
+	 *           [false, false]
+	 *           ["1", true]
+	 *           ["0", false]
+	 *           ["TRUE", true]
+	 *           ["False", false]
+	 *           ["", null]
+	 *           ["yes", null]
+	 *           ["sandbox", null]
+	 *           [" true", null]
+	 *           [1, null]
+	 *           [null, null]
+	 *
+	 * @param mixed     $value    The constant's value.
+	 * @param bool|null $expected The flag.
+	 */
+	public function test_sandbox_flag_is_read_strictly( $value, ?bool $expected ): void {
+		$method = new ReflectionMethod( DirectPlatformTransport::class, 'parse_flag' );
+
+		$this->assertSame( $expected, $method->invoke( null, $value ) );
+	}
+
+	/**
+	 * @testdox Should leave the transport not ready, and bind the not-ready one, when the sandbox constant is an empty string.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_empty_sandbox_constant_is_not_ready(): void {
+		$values = array(
+			'WC_PAYPAL_WALLET_PLATFORM_CLIENT_ID'         => 'platform-id',
+			'WC_PAYPAL_WALLET_PLATFORM_CLIENT_SECRET'     => 'platform-secret',
+			'WC_PAYPAL_WALLET_PLATFORM_PARTNER_MERCHANT_ID' => 'PARTNER1',
+			'WC_PAYPAL_WALLET_MERCHANT_APP_CLIENT_ID'     => 'merchant-app-id',
+			'WC_PAYPAL_WALLET_MERCHANT_APP_CLIENT_SECRET' => 'merchant-app-secret',
+			'WC_PAYPAL_WALLET_PLATFORM_SANDBOX'           => '',
+		);
+		foreach ( $values as $name => $value ) {
+			define( $name, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- The wp-config.php constants the transport reads.
+		}
+		$this->set_collecting();
+
+		$this->assertFalse( DirectPlatformTransport::from_constants( new NullLogger(), new OrderAppContext() )->is_ready() );
+		$this->assertInstanceOf( NotReadyTransport::class, $this->boot_container()->get( 'collecting.transport' ) );
 	}
 
 	/**

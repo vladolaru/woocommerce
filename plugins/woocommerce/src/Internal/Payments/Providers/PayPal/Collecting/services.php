@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\N
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextHostResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\DirectPlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\NotReadyTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -29,9 +30,11 @@ return array(
 	'collecting.connection-state'      => static function ( ContainerInterface $container ): ConnectionState {
 		return new ConnectionState( $container->get( 'collecting.options' ) );
 	},
-	// The one binding point for the transport; nothing configures the platform credentials yet.
+	// The one binding point for the transport: the POC's direct transport where the wp-config.php constants exist, else one that is not ready.
 	'collecting.transport'             => static function ( ContainerInterface $container ): PlatformTransport {
-		return new NotReadyTransport( $container->get( 'collecting.state' ) );
+		$transport = DirectPlatformTransport::from_constants( $container->get( 'woocommerce.logger.woocommerce' ), $container->get( 'collecting.order-app-context' ) );
+
+		return $transport->is_ready() ? $transport : new NotReadyTransport( $container->get( 'collecting.state' ) );
 	},
 	// One per request: the bearer, the host resolver and the code that enters an order share it.
 	'collecting.order-app-context'     => static function (): OrderAppContext {

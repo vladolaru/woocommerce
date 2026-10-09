@@ -101,7 +101,7 @@ return array(
 			return $previous;
 		}
 
-		return $transport->host( $c->get( 'collecting.order-app-context' )->for_call( $transport, $c->get( 'collecting.state' )->payee_email() ) );
+		return $transport->host( PlatformTransport::APP_PLATFORM );
 	},
 	// The store payee and, once platform connected, its merchant ID, which the onboarded check and the seller status read.
 	'api.merchant_email'                               => static function ( string $previous, ContainerInterface $c ): string {

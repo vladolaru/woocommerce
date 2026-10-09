@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use InvalidArgumentException;
@@ -130,5 +131,15 @@ class OrderAppContextTest extends WalletTestCase {
 
 		$this->assertSame( PlatformTransport::APP_PLATFORM, $this->sut->for_call( $transport, 'payee@example.com' ) );
 		$this->assertSame( array(), $transport->calls_to( 'pick_order_app' ) );
+	}
+
+	/**
+	 * @testdox Should throw the wallet's exception when the transport picks an app it does not know.
+	 */
+	public function test_for_call_refuses_an_unknown_pick(): void {
+		$transport = new FakePlatformTransport( array( 'pick' => 'first_party' ) );
+		$this->expectException( RuntimeException::class );
+
+		$this->sut->for_call( $transport, 'payee@example.com' );
 	}
 }

@@ -6,8 +6,10 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\NotReadyTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
@@ -101,5 +103,15 @@ class ContextBearerTest extends WalletTestCase {
 		$second = $sut->bearer()->token();
 
 		$this->assertSame( array( 'token-platform', 'token-merchant_app' ), array( $first, $second ) );
+	}
+
+	/**
+	 * @testdox Should throw the wallet's exception, the one its callers catch, when the transport is not ready.
+	 */
+	public function test_a_not_ready_transport_fails_with_the_wallets_exception(): void {
+		$sut = new ContextBearer( $this->context, new NotReadyTransport( new CollectingState( new Options(), new FixedHeldOrders( 0 ) ) ), new CollectingState( new Options(), new FixedHeldOrders( 0 ) ) );
+		$this->expectException( RuntimeException::class );
+
+		$sut->bearer();
 	}
 }

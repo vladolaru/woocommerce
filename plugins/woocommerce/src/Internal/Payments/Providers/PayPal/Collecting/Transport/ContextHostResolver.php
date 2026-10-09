@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
  */
-class ContextHostResolver extends ApiHostResolver {
+final class ContextHostResolver extends ApiHostResolver {
 
 	/**
 	 * The order app context.
