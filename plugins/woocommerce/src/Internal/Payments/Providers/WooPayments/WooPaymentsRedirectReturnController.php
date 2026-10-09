@@ -39,11 +39,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Shared intent confirmation owner.
+	 * Intent confirmation service.
 	 *
-	 * @var WooPaymentsCheckoutAjaxController
+	 * @var WooPaymentsIntentConfirmationService
 	 */
-	private WooPaymentsCheckoutAjaxController $confirmation_owner;
+	private WooPaymentsIntentConfirmationService $intent_confirmation_service;
 
 	/**
 	 * Native WooPayments API client.
@@ -85,22 +85,22 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsCheckoutAjaxController $confirmation_owner Shared intent confirmation owner.
-	 * @param WooPaymentsApiClient              $api_client         Native WooPayments API client.
-	 * @param WooPaymentsTokenService           $token_service      Native WooPayments token service.
-	 * @param WooPaymentsCustomerService        $customer_service   Native WooPayments customer service.
-	 * @param OrderPaymentLifecycleService      $lifecycle_service  Payment lifecycle service.
-	 * @param WooPaymentsOrderNoteService       $note_service       Native WooPayments order note service.
+	 * @param WooPaymentsRuntimeArbiter            $arbiter                     Runtime owner arbiter.
+	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
+	 * @param WooPaymentsApiClient                 $api_client                  Native WooPayments API client.
+	 * @param WooPaymentsTokenService              $token_service               Native WooPayments token service.
+	 * @param WooPaymentsCustomerService           $customer_service            Native WooPayments customer service.
+	 * @param OrderPaymentLifecycleService         $lifecycle_service           Payment lifecycle service.
+	 * @param WooPaymentsOrderNoteService          $note_service                Native WooPayments order note service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAjaxController $confirmation_owner, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
-		$this->arbiter            = $arbiter;
-		$this->confirmation_owner = $confirmation_owner;
-		$this->api_client         = $api_client;
-		$this->token_service      = $token_service;
-		$this->customer_service   = $customer_service;
-		$this->lifecycle_service  = $lifecycle_service;
-		$this->note_service       = $note_service;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
+		$this->arbiter                     = $arbiter;
+		$this->intent_confirmation_service = $intent_confirmation_service;
+		$this->api_client                  = $api_client;
+		$this->token_service               = $token_service;
+		$this->customer_service            = $customer_service;
+		$this->lifecycle_service           = $lifecycle_service;
+		$this->note_service                = $note_service;
 	}
 
 	/**
@@ -245,7 +245,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		}
 
 		try {
-			$this->confirmation_owner->confirm_fetched_intent_for_order(
+			$this->intent_confirmation_service->confirm_fetched_intent_for_order(
 				$fresh_order,
 				$intent,
 				'yes' === $this->get_query_string( 'save_payment_method' ),

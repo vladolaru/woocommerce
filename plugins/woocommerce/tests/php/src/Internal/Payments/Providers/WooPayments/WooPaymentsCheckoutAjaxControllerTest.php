@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -111,7 +112,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service );
-		$sut = $this->create_controller( $api_client, null, null, $account_service );
+		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false );
 		$reloaded = wc_get_order( $order->get_id() );
@@ -155,7 +156,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service );
-		$sut = $this->create_controller( $api_client, null, null, $account_service );
+		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false, $is_payment_method_change );
 
@@ -3694,42 +3695,50 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
-		if ( null === $customer_service ) {
-			$customer_service = $this->createMock( WooPaymentsCustomerService::class );
-		}
-
-		if ( null === $token_service ) {
-			$token_service = $this->create_token_service();
-		}
-
-		if ( null === $account_service ) {
-			$account_service = $this->create_account_service( false );
-		}
-		$order_data_service = new WooPaymentsOrderDataService();
-		$registry           = new WooPaymentsPaymentMethodRegistry();
-		$effect_applier     = new WooPaymentsOrderEffectApplier();
-		$effect_applier->init(
-			$token_service,
-			$order_data_service,
-			$account_service,
-			new WooPaymentsOrderNoteService(),
-			$registry,
-			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
-		);
-
 		$sut = new WooPaymentsCheckoutAjaxController();
 		$sut->init(
 			$arbiter,
 			$api_client,
-			$customer_service,
-			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
-			$token_service,
-			$account_service,
-			$registry,
-			$effect_applier
+			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
+			$this->create_intent_confirmation_service( $api_client, $token_service, $account_service, $fee_details_note_controller ),
+			new WooPaymentsPaymentMethodRegistry()
 		);
 
 		return $sut;
+	}
+
+	/**
+	 * Create the intent confirmation service the order-status callback confirms through.
+	 *
+	 * @param WooPaymentsApiClient                     $api_client                  API client.
+	 * @param WooPaymentsTokenService|null             $token_service               Token service.
+	 * @param WooPaymentsAccountService|null           $account_service             Account service.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
+	 * @return WooPaymentsIntentConfirmationService
+	 */
+	private function create_intent_confirmation_service( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsIntentConfirmationService {
+		$token_service   = $token_service ?? $this->create_token_service();
+		$account_service = $account_service ?? $this->create_account_service( false );
+		$effect_applier  = new WooPaymentsOrderEffectApplier();
+		$effect_applier->init(
+			$token_service,
+			new WooPaymentsOrderDataService(),
+			$account_service,
+			new WooPaymentsOrderNoteService(),
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
+		);
+
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
+			$api_client,
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			$token_service,
+			$account_service,
+			$effect_applier
+		);
+
+		return $service;
 	}
 
 	/**

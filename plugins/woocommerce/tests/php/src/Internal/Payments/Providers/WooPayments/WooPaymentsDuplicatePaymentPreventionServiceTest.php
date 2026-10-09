@@ -7,11 +7,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -924,8 +927,26 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new WooPaymentsOrderDataService(),
 			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			$fee_details_note_controller
+			$this->create_intent_confirmation_service( $fee_details_note_controller )
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create the intent confirmation service that applies the attached intent, from the container's services.
+	 *
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, or the container's.
+	 * @return WooPaymentsIntentConfirmationService
+	 */
+	private function create_intent_confirmation_service( ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): WooPaymentsIntentConfirmationService {
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
+			wc_get_container()->get( WooPaymentsApiClient::class ),
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			wc_get_container()->get( WooPaymentsTokenService::class ),
+			wc_get_container()->get( WooPaymentsAccountService::class ),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $service;

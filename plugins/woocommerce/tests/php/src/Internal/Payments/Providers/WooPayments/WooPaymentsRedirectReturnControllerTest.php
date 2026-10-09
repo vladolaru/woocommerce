@@ -18,9 +18,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -191,7 +191,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_create_account', 'pm_create_account' );
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_create_account' );
@@ -237,7 +237,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_invalid_method', 'pm_invalid_method' );
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_invalid_method' );
@@ -267,7 +267,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_malformed_method', 'pm_malformed_method' );
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_malformed_method' );
@@ -333,7 +333,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$confirmation_owner         = $this->create_confirmation_owner( $api_client, $token_service );
+		$confirmation_owner         = $this->create_confirmation_service( $api_client, $token_service );
 		$this->sut                  = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_return', true );
 
@@ -380,7 +380,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$token_service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, $token_service ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, $token_service ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_token_fails', true );
 
 		$this->sut->handle_wp();
@@ -464,7 +464,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$token_service      = $use_recorded
 			? $this->create_token_service( array( (string) $recorded['payment_method'] => $recorded['charges']['data'][0]['payment_method_details'] ) )
 			: null;
-		$confirmation_owner = $this->create_confirmation_owner( $api_client, $token_service );
+		$confirmation_owner = $this->create_confirmation_service( $api_client, $token_service );
 		$this->sut          = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, $intent_id, $use_recorded );
 
@@ -532,7 +532,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	public function test_handle_wp_ignores_invalid_nonce_without_dying(): void {
 		$order              = $this->create_order();
 		$api_client         = new RedirectReturnApiClientStub();
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_invalid_nonce' );
@@ -550,7 +550,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	public function test_handle_wp_ignores_wrong_order_key(): void {
 		$order              = $this->create_order();
 		$api_client         = new RedirectReturnApiClientStub();
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_wrong_key' );
@@ -577,7 +577,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_mismatch', 'pm_mismatch' );
 		$api_client->payment_intent['metadata']['order_id'] = $order->get_id() + 1;
 
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -606,7 +606,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_malformed_order_id', 'pm_malformed' );
 		$api_client->payment_intent['metadata']['order_id'] = $order->get_id() . 'junk';
 
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function ( WC_Order $confirmed_order ): void {
@@ -639,7 +639,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_old', 'pm_old' );
 		$confirmation_calls         = 0;
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function ( WC_Order $confirmed_order ) use ( &$confirmation_calls ): void {
@@ -673,7 +673,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_other', 'pm_other' );
 		$confirmation_calls         = 0;
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function ( WC_Order $confirmed_order ) use ( &$confirmation_calls ): void {
@@ -712,7 +712,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_non_native', 'pm_non_native' );
 		$confirmation_calls         = 0;
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function () use ( &$confirmation_calls ): void {
@@ -753,7 +753,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$confirmation_calls = 0;
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function () use ( &$confirmation_calls ): void {
@@ -805,7 +805,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		};
 
 		$confirmation_calls = 0;
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->method( 'confirm_fetched_intent_for_order' )
 			->willReturnCallback(
 				static function () use ( &$confirmation_calls ): void {
@@ -837,7 +837,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order->set_status( $status );
 		$order->save();
 		$api_client         = new RedirectReturnApiClientStub();
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$this->sut = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_existing' );
@@ -875,7 +875,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		WC()->cart->add_to_cart( $product->get_id() );
 		$api_client            = new RedirectReturnApiClientStub();
 		$api_client->exception = new WooPaymentsApiException( 'Transport unavailable.', 'wcpay_http_request_failed', 503 );
-		$confirmation_owner    = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner    = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
@@ -1094,7 +1094,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'message'      => 'Your card was declined.',
 			),
 		);
-		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
 		self::enable_woopayments_debug_logging();
 		$logger = new RedirectReturnRecordingLogger();
@@ -1154,7 +1154,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'message'      => 'Your card was declined.',
 			),
 		);
-		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_return_failed' );
 		self::enable_woopayments_debug_logging();
 		$logger = new RedirectReturnRecordingLogger();
@@ -1208,7 +1208,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$lifecycle->method( 'apply_under_lock' )->willThrowException( new \RuntimeException( 'Database write failed.' ) );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, null, $lifecycle );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, null, $lifecycle );
 		$this->set_payment_intent_return_request( $order, 'pi_write_throws' );
 
 		$location = $this->handle_wp_expecting_redirect();
@@ -1259,7 +1259,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				++$cancellations;
 			}
 		);
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_canceled_with_error' );
 
 		$location = $this->handle_wp_expecting_redirect();
@@ -1286,7 +1286,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'customer'       => 'cus_setup',
 			'payment_method' => 'pm_setup',
 		);
-		$this->sut                = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_canceled_no_redirect' );
 
 		$this->sut->handle_wp();
@@ -1331,7 +1331,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$fee_details_note_controller->method( 'apply_and_schedule_fee_details_with_lock' )->willThrowException( $failure );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $fee_details_note_controller ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, null, $fee_details_note_controller ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_confirm_throws' );
 
 		$location = $this->handle_wp_expecting_redirect();
@@ -1375,7 +1375,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$fee_details_note_controller->method( 'apply_and_schedule_fee_details_with_lock' )->willThrowException( $failure );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $fee_details_note_controller ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client, null, $fee_details_note_controller ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_money_moved' );
 
 		try {
@@ -1448,7 +1448,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_order_status_processing', $throw_once );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_paid_then_error' );
 
 		try {
@@ -1496,7 +1496,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			++$failed_transitions;
 		};
 		add_action( 'woocommerce_order_status_failed', $count_failed );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_failed_once' );
 
 		try {
@@ -1547,7 +1547,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$vocabulary                 = new WooPaymentsPersistenceVocabulary();
 		$lock_token                 = $store->claim( $order, $vocabulary, 'pi_error_locked', 'payment status update' );
 		$this->assertNotNull( $lock_token );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_error_locked' );
 
 		try {
@@ -1582,7 +1582,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'metadata'       => array( 'order_id' => $order->get_id() ),
 			'next_action'    => array( 'type' => 'use_stripe_sdk' ),
 		);
-		$this->sut                  = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut                  = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_requires_action' );
 
 		$this->sut->handle_wp();
@@ -1659,7 +1659,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'customer'       => 'cus_setup',
 			'payment_method' => 'pm_setup',
 		);
-		$confirmation_owner       = $this->create_confirmation_owner( $api_client );
+		$confirmation_owner       = $this->create_confirmation_service( $api_client );
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_return' );
 
@@ -1698,7 +1698,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$logger                   = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_foreign', false );
 
 		$this->sut->handle_wp();
@@ -1736,7 +1736,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				$fresh_order->save();
 			}
 		};
-		$this->sut                              = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client );
+		$this->sut                              = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_old' );
 
 		$this->sut->handle_wp();
@@ -1788,7 +1788,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$logger                   = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
 		$this->set_setup_intent_return_request( $order, 'seti_bound' );
 
 		$location = $this->handle_wp_expecting_redirect();
@@ -1844,7 +1844,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'customer'       => 'cus_own',
 			'payment_method' => 'pm_own',
 		);
-		$this->sut                = $this->create_controller( true, $this->create_confirmation_owner( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
+		$this->sut                = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, $this->create_customer_service( $user_id, $user_customer ) );
 		$this->set_setup_intent_return_request( $order, 'seti_own' );
 
 		$this->sut->handle_wp();
@@ -1897,7 +1897,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				'message' => 'We are unable to authenticate your payment method.',
 			),
 		);
-		$confirmation_owner       = $this->create_confirmation_owner( $api_client );
+		$confirmation_owner       = $this->create_confirmation_service( $api_client );
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_return_error' );
 
@@ -1950,7 +1950,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'customer'       => 'cus_setup',
 			'payment_method' => 'pm_setup',
 		);
-		$confirmation_owner       = $this->create_confirmation_owner( $api_client );
+		$confirmation_owner       = $this->create_confirmation_service( $api_client );
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client );
 		$this->set_setup_intent_return_request( $order, 'seti_return_canceled' );
 
@@ -1998,7 +1998,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		);
 		$details_reads            = new \ArrayObject( array( 0 ) );
 		$token_service            = $this->create_token_service( array( 'pm_redirect_card' => $details ), $details_reads );
-		$confirmation_owner       = $this->create_confirmation_owner( $api_client, $token_service );
+		$confirmation_owner       = $this->create_confirmation_service( $api_client, $token_service );
 		$this->sut                = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
 		$observed                 = array();
 		WooCommerceSubscriptionsDoubles::load_order_detector();
@@ -2131,7 +2131,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	public function test_handle_wp_maps_successful_account_setup_intent_return(): void {
 		$user_id            = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$api_client         = new RedirectReturnApiClientStub();
-		$confirmation_owner = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$token_service = new RedirectReturnTokenServiceStub();
 		$this->sut     = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
@@ -2164,7 +2164,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order                      = $this->create_order();
 		$api_client                 = new RedirectReturnApiClientStub();
 		$api_client->payment_intent = $this->successful_payment_intent( $order, 'pi_account_fallthrough', 'pm_account' );
-		$confirmation_owner         = $this->createMock( WooPaymentsCheckoutAjaxController::class );
+		$confirmation_owner         = $this->createMock( WooPaymentsIntentConfirmationService::class );
 		$confirmation_owner->expects( $this->never() )->method( 'confirm_fetched_intent_for_order' );
 		$token_service = new RedirectReturnTokenServiceStub();
 		$this->sut     = $this->create_controller( true, $confirmation_owner, $api_client, $token_service );
@@ -2222,22 +2222,22 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the redirect-return controller.
 	 *
-	 * @param bool                                   $native_owner       Whether native owns runtime.
-	 * @param WooPaymentsCheckoutAjaxController|null $confirmation_owner Shared confirmation owner.
-	 * @param WooPaymentsApiClient|null              $api_client         API client.
-	 * @param WooPaymentsTokenService|null           $token_service      Token service.
-	 * @param WooPaymentsCustomerService|null        $customer_service   Customer service.
-	 * @param OrderPaymentLifecycleService|null      $lifecycle_service  Order payment lifecycle service, or the container's.
+	 * @param bool                                      $native_owner       Whether native owns runtime.
+	 * @param WooPaymentsIntentConfirmationService|null $confirmation_owner Intent confirmation service.
+	 * @param WooPaymentsApiClient|null                 $api_client         API client.
+	 * @param WooPaymentsTokenService|null              $token_service      Token service.
+	 * @param WooPaymentsCustomerService|null           $customer_service   Customer service.
+	 * @param OrderPaymentLifecycleService|null         $lifecycle_service  Order payment lifecycle service, or the container's.
 	 * @return WooPaymentsRedirectReturnController
 	 */
-	private function create_controller( bool $native_owner, ?WooPaymentsCheckoutAjaxController $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsRedirectReturnController {
+	private function create_controller( bool $native_owner, ?WooPaymentsIntentConfirmationService $confirmation_owner = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsCustomerService $customer_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsRedirectReturnController {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
 
 		$controller = new WooPaymentsRedirectReturnController();
 		$controller->init(
 			$arbiter,
-			$confirmation_owner ?? $this->createMock( WooPaymentsCheckoutAjaxController::class ),
+			$confirmation_owner ?? $this->createMock( WooPaymentsIntentConfirmationService::class ),
 			$api_client ?? new RedirectReturnApiClientStub(),
 			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
 			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
@@ -2283,48 +2283,41 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create the shared confirmation owner.
+	 * Create the intent confirmation service.
 	 *
-	 * @param WooPaymentsApiClient                     $api_client        API client.
-	 * @param WooPaymentsTokenService|null             $token_service     Token service.
+	 * @param WooPaymentsApiClient                     $api_client                  API client.
+	 * @param WooPaymentsTokenService|null             $token_service               Token service.
 	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller the confirmation applies events with.
-	 * @return WooPaymentsCheckoutAjaxController
+	 * @return WooPaymentsIntentConfirmationService
 	 */
-	private function create_confirmation_owner( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+	private function create_confirmation_service( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsIntentConfirmationService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_mode', 'get_account_country' ) )
 			->getMock();
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
-		$token_service      = $token_service ?? $this->create_token_service();
-		$order_data_service = new WooPaymentsOrderDataService();
-		$registry           = new WooPaymentsPaymentMethodRegistry();
-		$effect_applier     = new WooPaymentsOrderEffectApplier();
+		$token_service  = $token_service ?? $this->create_token_service();
+		$effect_applier = new WooPaymentsOrderEffectApplier();
 		$effect_applier->init(
 			$token_service,
-			$order_data_service,
+			new WooPaymentsOrderDataService(),
 			$account_service,
 			new WooPaymentsOrderNoteService(),
-			$registry,
+			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
 
-		$controller = new WooPaymentsCheckoutAjaxController();
-		$controller->init(
-			$arbiter,
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
 			$api_client,
-			$this->createMock( WooPaymentsCustomerService::class ),
 			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			$token_service,
 			$account_service,
-			$registry,
 			$effect_applier
 		);
 
-		return $controller;
+		return $service;
 	}
 
 	/**

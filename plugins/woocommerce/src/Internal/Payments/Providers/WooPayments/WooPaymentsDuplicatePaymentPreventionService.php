@@ -10,8 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
-use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -101,18 +99,11 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private ?WooPaymentsRuntimeArbiter $arbiter = null;
 
 	/**
-	 * WooPayments order effect applier.
+	 * Intent confirmation service, which applies the attached intent's payment lifecycle event.
 	 *
-	 * @var WooPaymentsOrderEffectApplier|null
+	 * @var WooPaymentsIntentConfirmationService|null
 	 */
-	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
-
-	/**
-	 * Fee details note controller, which applies the attached intent's payment lifecycle event.
-	 *
-	 * @var WooPaymentsFeeDetailsNoteController|null
-	 */
-	private ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null;
+	private ?WooPaymentsIntentConfirmationService $intent_confirmation_service = null;
 
 	/**
 	 * Constructor.
@@ -128,27 +119,24 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                     $api_client         Native WooPayments API client.
-	 * @param OrderPaymentLifecycleService             $lifecycle_service Native order payment lifecycle service.
-	 * @param WooPaymentsOrderDataService              $order_data_service WooPayments order data service.
-	 * @param WooPaymentsRuntimeArbiter|null           $arbiter            Optional runtime owner arbiter.
-	 * @param WooPaymentsOrderEffectApplier|null       $order_effect_applier Optional order effect applier.
-	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Optional Fee details note controller.
+	 * @param WooPaymentsApiClient                      $api_client                  Native WooPayments API client.
+	 * @param OrderPaymentLifecycleService              $lifecycle_service           Native order payment lifecycle service.
+	 * @param WooPaymentsOrderDataService               $order_data_service          WooPayments order data service.
+	 * @param WooPaymentsRuntimeArbiter|null            $arbiter                     Optional runtime owner arbiter.
+	 * @param WooPaymentsIntentConfirmationService|null $intent_confirmation_service Optional intent confirmation service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsRuntimeArbiter $arbiter = null,
-		?WooPaymentsOrderEffectApplier $order_effect_applier = null,
-		?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null
+		?WooPaymentsIntentConfirmationService $intent_confirmation_service = null
 	): void {
 		$this->api_client                  = $api_client;
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->order_data_service          = $order_data_service;
 		$this->arbiter                     = $arbiter;
-		$this->order_effect_applier        = $order_effect_applier;
-		$this->fee_details_note_controller = $fee_details_note_controller;
+		$this->intent_confirmation_service = $intent_confirmation_service;
 	}
 
 	/**
@@ -363,7 +351,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			return $amount_error;
 		}
 
-		$this->apply_attached_intent_lifecycle( $intent, $order );
+		$this->get_intent_confirmation_service()->apply_attached_payment_intent( $order, $intent );
 
 		return $this->success_redirect( $gateway, $order, self::FLAG_PREVIOUS_SUCCESSFUL_INTENT );
 	}
@@ -636,72 +624,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Apply the attached intent to the order lifecycle.
-	 *
-	 * @param array<string,mixed> $intent Intent response.
-	 * @param WC_Order            $order  Order.
-	 * @return void
-	 */
-	private function apply_attached_intent_lifecycle( array $intent, WC_Order $order ): void {
-		$provider_redirect_url = esc_url_raw( WooPaymentsIntentCodec::raw_next_action_redirect_url( $intent ) );
-		$outcome               = WooPaymentsIntentCodec::outcome_from_intention(
-			$intent,
-			WooPaymentsIntentMappingContext::for_native(
-				$order->get_id(),
-				$order->get_checkout_order_received_url(),
-				(string) $order->get_meta( '_payment_method_id', true ),
-				(string) $order->get_meta( '_stripe_customer_id', true ),
-				'',
-				'pi',
-				$provider_redirect_url
-			)
-		);
-		$outcome               = $this->get_order_effect_applier()->enrich_outcome_for_lifecycle(
-			PaymentOperationContext::for_checkout( $order, (string) $order->get_payment_method(), $outcome->get_payment_method_id() ),
-			$outcome,
-			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )->without_fee_meta()
-		);
-
-		$data             = $outcome->get_data();
-		$note             = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
-			? $data[ PaymentOutcome::DATA_NOTE ]
-			: null;
-		$note_type        = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
-			? $data[ PaymentOutcome::DATA_NOTE_TYPE ]
-			: null;
-		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
-			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
-			: array();
-		$vocabulary       = new WooPaymentsPersistenceVocabulary();
-
-		$this->get_fee_details_note_controller()->apply_and_schedule_fee_details_with_lock(
-			$order,
-			new PaymentLifecycleEvent(
-				PaymentLifecycleEvent::status_for_outcome( $outcome ),
-				'' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : null,
-				$vocabulary->get_outcome_meta( $outcome ),
-				array(),
-				$note,
-				$note_type,
-				$note_equivalents
-			)
-		);
-	}
-
-	/**
-	 * Get the WooPayments order effect applier.
-	 *
-	 * @return WooPaymentsOrderEffectApplier
-	 */
-	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
-		if ( null === $this->order_effect_applier ) {
-			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-		}
-
-		return $this->order_effect_applier;
-	}
-
-	/**
 	 * Build a successful checkout redirect result.
 	 *
 	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
@@ -772,16 +694,16 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the Fee details note controller.
+	 * Get the intent confirmation service.
 	 *
-	 * @return WooPaymentsFeeDetailsNoteController
+	 * @return WooPaymentsIntentConfirmationService
 	 */
-	private function get_fee_details_note_controller(): WooPaymentsFeeDetailsNoteController {
-		if ( null === $this->fee_details_note_controller ) {
-			$this->fee_details_note_controller = wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
+	private function get_intent_confirmation_service(): WooPaymentsIntentConfirmationService {
+		if ( null === $this->intent_confirmation_service ) {
+			$this->intent_confirmation_service = wc_get_container()->get( WooPaymentsIntentConfirmationService::class );
 		}
 
-		return $this->fee_details_note_controller;
+		return $this->intent_confirmation_service;
 	}
 
 	/**

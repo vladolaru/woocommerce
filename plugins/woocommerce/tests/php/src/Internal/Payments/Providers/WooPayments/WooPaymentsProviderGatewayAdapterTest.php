@@ -6195,9 +6195,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$guard->init(
 			$api_client,
 			$guard_lifecycle ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderDataService(),
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsOrderDataService()
 		);
 
 		$gateway = new NativeWooPaymentsGateway();
