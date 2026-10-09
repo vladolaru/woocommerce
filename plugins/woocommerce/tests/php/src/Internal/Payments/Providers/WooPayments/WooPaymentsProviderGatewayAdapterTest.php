@@ -6933,7 +6933,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * transport is compared to the recorded request. The recording settles F9:
 	 * the platform's refund `balance_transaction` is a bare string id, not the
 	 * expanded object some native sync fixtures use, and
-	 * {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects::balance_transaction_id()}
+	 * {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec::balance_transaction_id()}
 	 * already accepts either shape.
 	 *
 	 * @dataProvider recorded_refund_envelope_data

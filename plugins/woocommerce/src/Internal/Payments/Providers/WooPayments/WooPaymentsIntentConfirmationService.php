@@ -60,6 +60,13 @@ class WooPaymentsIntentConfirmationService {
 	private WooPaymentsOrderEffectApplier $order_effect_applier;
 
 	/**
+	 * Intent request builder, which owns the recurring payment rule.
+	 *
+	 * @var WooPaymentsIntentRequestBuilder
+	 */
+	private WooPaymentsIntentRequestBuilder $request_builder;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -69,19 +76,22 @@ class WooPaymentsIntentConfirmationService {
 	 * @param WooPaymentsTokenService             $token_service               WooPayments token service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
+	 * @param WooPaymentsIntentRequestBuilder     $request_builder             Intent request builder.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		WooPaymentsFeeDetailsNoteController $fee_details_note_controller,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsOrderEffectApplier $order_effect_applier
+		WooPaymentsOrderEffectApplier $order_effect_applier,
+		WooPaymentsIntentRequestBuilder $request_builder
 	): void {
 		$this->api_client                  = $api_client;
 		$this->fee_details_note_controller = $fee_details_note_controller;
 		$this->token_service               = $token_service;
 		$this->account_service             = $account_service;
 		$this->order_effect_applier        = $order_effect_applier;
+		$this->request_builder             = $request_builder;
 	}
 
 	/**
@@ -159,10 +169,10 @@ class WooPaymentsIntentConfirmationService {
 				$this->apply_payment_method_display_details( $order, $intent );
 			} elseif ( 0.0 >= (float) $order->get_total() && 'succeeded' === $status && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) && $token_save_result['token'] instanceof \WC_Payment_Token ) {
 				if ( empty( $payment_method_details ) ) {
-					$payment_method_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, $this->get_result_payment_method_id( $intent ), $previous_payment_method_id );
+					$payment_method_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, WooPaymentsIntentCodec::result_payment_method_id( $intent ), $previous_payment_method_id );
 					if ( empty( $payment_method_details ) ) {
 						$payment_method_details = $this->token_service->resolve_token_and_payment_method_details_for_user(
-							$this->get_result_payment_method_id( $intent ),
+							WooPaymentsIntentCodec::result_payment_method_id( $intent ),
 							$this->get_token_user_id( $order ),
 							true
 						)['payment_method_details'];
@@ -374,7 +384,7 @@ class WooPaymentsIntentConfirmationService {
 			return false;
 		}
 
-		$charge  = WooPaymentsOrderEffects::latest_charge( $intent );
+		$charge  = WooPaymentsIntentCodec::latest_charge( $intent );
 		$details = $charge['payment_method_details'] ?? null;
 		if ( ! is_array( $details ) || ! isset( $details['type'] ) || ! is_scalar( $details['type'] ) || 'card' !== (string) $details['type'] || ! isset( $details['card'] ) || ! is_array( $details['card'] ) ) {
 			return false;
@@ -413,7 +423,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>} Token result and any blocking error response.
 	 */
 	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): array {
-		$is_recurring               = $this->is_recurring_payment( $order );
+		$is_recurring               = $this->request_builder->is_recurring_payment( $order );
 		$should_save_payment_method = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
 		if ( ! $should_save_payment_method ) {
 			return array(
@@ -423,7 +433,7 @@ class WooPaymentsIntentConfirmationService {
 			);
 		}
 
-		$payment_method_id = $this->get_result_payment_method_id( $intent );
+		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
 		$user_id           = $this->get_token_user_id( $order );
 		if ( '' === $payment_method_id || 0 >= $user_id ) {
 			return array(
@@ -453,7 +463,7 @@ class WooPaymentsIntentConfirmationService {
 				);
 			}
 		} catch ( Throwable $exception ) {
-			$this->log_token_save_error( $order, $payment_method_id, $exception );
+			$this->token_service->log_token_save_error( $order, $payment_method_id, $exception );
 
 			return array(
 				'error'                  => $is_recurring ? $this->recurring_token_save_error_response() : null,
@@ -490,25 +500,6 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Tell whether this payment must be saved for a recurring order.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	private function is_recurring_payment( WC_Order $order ): bool {
-		$is_recurring = false;
-		if ( function_exists( 'wcs_order_contains_subscription' ) ) {
-			$is_recurring = (bool) wcs_order_contains_subscription( $order->get_id() );
-		}
-
-		if ( ! $is_recurring && function_exists( 'wcs_order_contains_renewal' ) ) {
-			$is_recurring = (bool) wcs_order_contains_renewal( $order->get_id() );
-		}
-
-		return $is_recurring;
-	}
-
-	/**
 	 * Get the user ID that should own a saved payment token.
 	 *
 	 * @param WC_Order $order Order object.
@@ -518,25 +509,6 @@ class WooPaymentsIntentConfirmationService {
 		$user_id = $order->get_user_id();
 
 		return 0 < $user_id ? $user_id : get_current_user_id();
-	}
-
-	/**
-	 * Log a token-save error at info level, as client 11.1.0 gw:4312 does, with the platform's status and code instead of its message.
-	 *
-	 * @param WC_Order  $order             Order being updated.
-	 * @param string    $payment_method_id Provider payment method ID.
-	 * @param Throwable $exception         Exception thrown while saving the token.
-	 */
-	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
-		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-			'Error when saving payment method.',
-			$exception,
-			array(
-				'order_id'          => $order->get_id(),
-				'payment_method_id' => $payment_method_id,
-			),
-			'info'
-		);
 	}
 
 	/**
@@ -551,24 +523,6 @@ class WooPaymentsIntentConfirmationService {
 			),
 			'status_code' => 409,
 		);
-	}
-
-	/**
-	 * Get the payment method ID from an intent response.
-	 *
-	 * @param array<string,mixed> $intent Native intent response.
-	 * @return string
-	 */
-	private function get_result_payment_method_id( array $intent ): string {
-		if ( isset( $intent['payment_method'] ) && is_string( $intent['payment_method'] ) ) {
-			return $intent['payment_method'];
-		}
-
-		if ( isset( $intent['payment_method'] ) && is_array( $intent['payment_method'] ) && isset( $intent['payment_method']['id'] ) ) {
-			return (string) $intent['payment_method']['id'];
-		}
-
-		return '';
 	}
 
 	/**

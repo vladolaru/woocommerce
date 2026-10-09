@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -946,7 +947,8 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			wc_get_container()->get( WooPaymentsTokenService::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsIntentRequestBuilder::class )
 		);
 
 		return $service;

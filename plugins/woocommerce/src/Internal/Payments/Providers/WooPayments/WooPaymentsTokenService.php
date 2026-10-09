@@ -893,6 +893,44 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether payment data identifies an existing saved token.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $payment_data Payment data.
+	 * @return bool
+	 */
+	public static function is_using_saved_payment_token( array $payment_data ): bool {
+		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
+
+		return '' !== $payment_token && 'new' !== $payment_token;
+	}
+
+	/**
+	 * Log a failed token save at info level, with the platform's status and code instead of its message.
+	 *
+	 * Client 11.1.0 logs it through its gated Logger::log() at info level, at checkout (gw:2066) and on the order-status
+	 * callback (gw:4312); a PHP Error is always written. The client's line carries the platform's message.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order  $order             Order being paid.
+	 * @param string    $payment_method_id Provider payment method ID.
+	 * @param Throwable $exception         Token-save exception.
+	 */
+	public function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+			'Error when saving payment method.',
+			$exception,
+			array(
+				'order_id'          => $order->get_id(),
+				'payment_method_id' => $payment_method_id,
+			),
+			'info'
+		);
+	}
+
+	/**
 	 * Clear preserved WooPayments cached payment methods for all users.
 	 *
 	 * @since 11.0.0

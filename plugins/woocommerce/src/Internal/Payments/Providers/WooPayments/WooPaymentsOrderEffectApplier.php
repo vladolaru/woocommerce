@@ -314,7 +314,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function compose_payment_intent_effect_data( WC_Order $order, array $result, bool $include_fee_meta ): array {
 		$status          = (string) ( $result['status'] ?? '' );
-		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
+		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$settlement_meta = ! empty( $charge ) && WooPaymentsIntentCodec::holds_money( $status )
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta( $order, $charge, $this->account_service->get_account_default_currency() )
 			: array();
@@ -340,7 +340,7 @@ class WooPaymentsOrderEffectApplier {
 				$order,
 				$intent_id,
 				$charge_id,
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null ),
+				WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null ),
 				$order_mode
 			);
 			$effect_data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
@@ -379,7 +379,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @return array<string,mixed>
 	 */
 	private function compose_capture_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result, bool $include_fee_meta ): array {
-		$charge    = WooPaymentsOrderEffects::latest_charge( $result );
+		$charge    = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
 
@@ -392,7 +392,7 @@ class WooPaymentsOrderEffectApplier {
 				$order,
 				$intent_id,
 				$charge_id,
-				WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+				WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
 			);
 
 			return array(
@@ -441,7 +441,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @return array<string,mixed>
 	 */
 	private function compose_capture_expired_effect_data( WC_Order $order, PaymentOutcome $outcome, array $result ): array {
-		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
+		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
 		$note_candidates = $this->note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
@@ -492,7 +492,7 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
-		$charge          = WooPaymentsOrderEffects::latest_charge( $result );
+		$charge          = WooPaymentsIntentCodec::latest_charge( $result );
 		$intent_id       = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) ( $result['id'] ?? '' );
 		$charge_id       = isset( $charge['id'] ) ? (string) $charge['id'] : (string) $order->get_meta( '_charge_id', true );
 		$note_candidates = $this->note_service->format_capture_cancelled_note_candidates( $intent_id, $charge_id );
@@ -915,7 +915,7 @@ class WooPaymentsOrderEffectApplier {
 		$order             = $context->get_order();
 
 		try {
-			if ( $this->is_using_saved_payment_token( $payment_data ) ) {
+			if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $order->get_user_id() );
 				if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ) {
@@ -1075,22 +1075,7 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Tell whether payment data identifies an existing saved token.
-	 *
-	 * @param array<string,mixed> $payment_data Payment data.
-	 * @return bool
-	 */
-	private function is_using_saved_payment_token( array $payment_data ): bool {
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-
-		return '' !== $payment_token && 'new' !== $payment_token;
-	}
-
-	/**
-	 * Log a token-save failure without losing the provider outcome.
-	 *
-	 * Client 11.1.0 logs it through its gated Logger::log() at info level (gw:2066); a PHP Error is always written. The
-	 * client's line carries the platform's message; native logs its status and code instead.
+	 * Log a token-save failure without losing the provider outcome: a logger that throws is ignored.
 	 *
 	 * @param WC_Order  $order             Order being paid.
 	 * @param string    $payment_method_id Provider payment method ID.
@@ -1098,15 +1083,7 @@ class WooPaymentsOrderEffectApplier {
 	 */
 	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
 		try {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Error when saving payment method.',
-				$exception,
-				array(
-					'order_id'          => $order->get_id(),
-					'payment_method_id' => $payment_method_id,
-				),
-				'info'
-			);
+			$this->token_service->log_token_save_error( $order, $payment_method_id, $exception );
 		} catch ( Throwable $logging_exception ) {
 			return;
 		}

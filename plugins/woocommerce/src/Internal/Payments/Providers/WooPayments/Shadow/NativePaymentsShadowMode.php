@@ -494,7 +494,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 */
 	private function get_projected_intent_meta( WC_Order $order, array $intent, string $order_mode ): array {
 		$status          = (string) ( $intent['status'] ?? '' );
-		$charge          = WooPaymentsOrderEffects::latest_charge( $intent );
+		$charge          = WooPaymentsIntentCodec::latest_charge( $intent );
 		$settlement_meta = ! empty( $charge ) && in_array( $status, array( 'processing', 'requires_capture', 'succeeded' ), true )
 			? $this->order_data_service->get_settlement_exchange_rate_order_meta(
 				$order,
@@ -575,7 +575,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function project_refund_surfaces( WC_Order $order, array $intent ): array {
-		$charge            = WooPaymentsOrderEffects::latest_charge( $intent );
+		$charge            = WooPaymentsIntentCodec::latest_charge( $intent );
 		$refund_collection = isset( $charge['refunds'] ) && is_array( $charge['refunds'] ) ? $charge['refunds'] : array();
 		$provider_refunds  = isset( $refund_collection['data'] ) && is_array( $refund_collection['data'] ) ? $refund_collection['data'] : array();
 		$refunds_by_id     = array();
@@ -599,7 +599,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 			$meta = array();
 			if ( is_array( $provider_refund ) && isset( $provider_refund['id'] ) ) {
 				$meta['_wcpay_refund_id'] = (string) $provider_refund['id'];
-				$balance_transaction_id   = WooPaymentsOrderEffects::balance_transaction_id( $provider_refund['balance_transaction'] ?? null );
+				$balance_transaction_id   = WooPaymentsIntentCodec::balance_transaction_id( $provider_refund['balance_transaction'] ?? null );
 				if ( '' !== $balance_transaction_id ) {
 					$meta['_wcpay_refund_transaction_id'] = $balance_transaction_id;
 				}

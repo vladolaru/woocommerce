@@ -678,7 +678,7 @@ class WooPaymentsPaymentIntentEventHandler {
 			$order,
 			$this->get_object_id( $event_object ),
 			$this->get_charge_id_from_intent( $event_object ),
-			WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null )
+			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
 		);
 
 		return array(

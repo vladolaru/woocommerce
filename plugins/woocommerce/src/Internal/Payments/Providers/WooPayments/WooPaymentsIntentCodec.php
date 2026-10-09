@@ -458,10 +458,12 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Get a balance transaction ID from a provider response field.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param mixed $balance_transaction Balance transaction response field.
 	 * @return string
 	 */
-	private static function balance_transaction_id( $balance_transaction ): string {
+	public static function balance_transaction_id( $balance_transaction ): string {
 		if ( is_string( $balance_transaction ) ) {
 			return $balance_transaction;
 		}
@@ -472,10 +474,12 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Get the latest charge from an intent.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param array<string,mixed> $intention Provider intent response.
 	 * @return array<string,mixed>
 	 */
-	private static function latest_charge( array $intention ): array {
+	public static function latest_charge( array $intention ): array {
 		$charges = isset( $intention['charges']['data'] ) && is_array( $intention['charges']['data'] ) ? $intention['charges']['data'] : array();
 		$charge  = empty( $charges ) ? array() : end( $charges );
 

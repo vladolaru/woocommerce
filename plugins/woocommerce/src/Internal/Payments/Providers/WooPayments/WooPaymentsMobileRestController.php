@@ -1163,7 +1163,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	private function apply_terminal_lifecycle_event( WC_Order $order, array $intent, string $intent_id, string $status, bool $already_captured = false ): void {
 		$charge                 = $this->get_latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
-		$balance_transaction_id = WooPaymentsOrderEffects::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 
 		$meta = array();
 		if ( PaymentLifecycleEvent::STATUS_AUTHORIZED === $status ) {

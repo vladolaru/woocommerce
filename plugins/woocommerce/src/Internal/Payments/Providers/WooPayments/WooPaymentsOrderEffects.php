@@ -25,7 +25,7 @@ class WooPaymentsOrderEffects {
 	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
 	 */
 	public static function compose_payment_method_display_details( array $result, string $express_checkout_type = '' ): array {
-		$charge                 = self::latest_charge( $result );
+		$charge                 = WooPaymentsIntentCodec::latest_charge( $result );
 		$payment_method_details = is_array( $charge['payment_method_details'] ?? null ) ? $charge['payment_method_details'] : array();
 		$payment_method_type    = isset( $payment_method_details['type'] ) && is_scalar( $payment_method_details['type'] )
 			? sanitize_key( (string) $payment_method_details['type'] )
@@ -203,9 +203,9 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
 		$status                 = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		$charge                 = self::latest_charge( $intent );
+		$charge                 = WooPaymentsIntentCodec::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
-		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		$intent_currency        = isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency;
 		$meta                   = array(
 			// Plugin 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
@@ -239,33 +239,6 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get the latest charge array from a PaymentIntent response.
-	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
-	 * @return array<string,mixed>
-	 */
-	public static function latest_charge( array $intent ): array {
-		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) ? $intent['charges']['data'] : array();
-		$charge  = empty( $charges ) ? array() : end( $charges );
-
-		return is_array( $charge ) ? $charge : array();
-	}
-
-	/**
-	 * Get a balance transaction ID from a provider response field.
-	 *
-	 * @param mixed $balance_transaction Balance transaction response field.
-	 * @return string
-	 */
-	public static function balance_transaction_id( $balance_transaction ): string {
-		if ( is_string( $balance_transaction ) ) {
-			return $balance_transaction;
-		}
-
-		return is_array( $balance_transaction ) && isset( $balance_transaction['id'] ) ? (string) $balance_transaction['id'] : '';
-	}
-
-	/**
 	 * Get legacy-compatible order metadata for a completed charge.
 	 *
 	 * @param array<string,mixed>  $intent                         Native PaymentIntent response.
@@ -277,7 +250,7 @@ class WooPaymentsOrderEffects {
 	 */
 	public static function completed_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $include_payment_transaction_id = true, bool $was_held_for_review = false ): array {
 		$meta                   = array();
-		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		if ( $include_payment_transaction_id && '' !== $balance_transaction_id ) {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
 		}
@@ -318,7 +291,7 @@ class WooPaymentsOrderEffects {
 		}
 
 		$meta                   = array();
-		$balance_transaction_id = self::balance_transaction_id( $charge['balance_transaction'] ?? null );
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		if ( '' === $existing_transaction_id && '' !== $balance_transaction_id ) {
 			$meta['_wcpay_payment_transaction_id'] = $balance_transaction_id;
 		}
@@ -365,7 +338,7 @@ class WooPaymentsOrderEffects {
 	 * @return array<string,string>
 	 */
 	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
-		$charge = self::latest_charge( $intent );
+		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 		if ( empty( $charge ) ) {
 			return array();
 		}
@@ -586,7 +559,7 @@ class WooPaymentsOrderEffects {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
-		$balance_transaction_id = self::balance_transaction_id( $result['balance_transaction'] ?? null );
+		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
 		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
 		$effect_data            = array(
 			PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => $refund_status ),
@@ -639,7 +612,7 @@ class WooPaymentsOrderEffects {
 	 * @return bool
 	 */
 	private static function is_card_intent( array $intent ): bool {
-		$charge = self::latest_charge( $intent );
+		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 		if ( ! empty( $charge ) && self::is_card_charge( $charge ) ) {
 			return true;
 		}

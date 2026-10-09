@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -3735,7 +3736,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			$token_service,
 			$account_service,
-			$effect_applier
+			$effect_applier,
+			wc_get_container()->get( WooPaymentsIntentRequestBuilder::class )
 		);
 
 		return $service;

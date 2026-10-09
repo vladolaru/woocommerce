@@ -201,7 +201,7 @@ class WooPaymentsIntentRequestBuilder {
 			$request_data['shipping'] = $this->get_afterpay_shipping_data( $order );
 		}
 
-		if ( self::is_using_saved_payment_token( $payment_data ) && ! preg_match( '/^(card_|src_)/', $payment_credential ) ) {
+		if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) && ! preg_match( '/^(card_|src_)/', $payment_credential ) ) {
 			$billing_details = $this->order_data_service->get_billing_data_from_order( $order );
 			if ( ! empty( $billing_details ) ) {
 				$request_data['payment_method_update_data'] = array( 'billing_details' => $billing_details );
@@ -213,7 +213,7 @@ class WooPaymentsIntentRequestBuilder {
 		// A saved-token payment must not re-save to the platform: the plugin derives the
 		// flag as ! is_using_saved_payment_method() && opt-in, so a stale session opt-in
 		// cannot ride a token confirmation.
-		if ( self::is_using_saved_payment_token( $payment_data ) ) {
+		if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 			unset( $request_data[ WooPaymentsPlatformPaymentMethodContext::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] );
 		}
 
@@ -478,11 +478,12 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return PaymentOperationContext
 	 */
 	public function with_saved_payment_token_method_type( PaymentOperationContext $context ): PaymentOperationContext {
-		$payment_data  = $context->get_payment_data();
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-		if ( '' === $payment_token || 'new' === $payment_token ) {
+		$payment_data = $context->get_payment_data();
+		if ( ! WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 			return $context;
 		}
+
+		$payment_token = (string) $payment_data['payment_token'];
 
 		$provider_data       = $context->get_provider_data();
 		$payment_method_type = ! empty( $provider_data['scheduled_subscription_payment'] )
@@ -512,10 +513,9 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return string
 	 */
 	public function payment_credential_from_context( PaymentOperationContext $context ): string {
-		$payment_data  = $context->get_payment_data();
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-
-		if ( '' !== $payment_token && 'new' !== $payment_token ) {
+		$payment_data = $context->get_payment_data();
+		if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
+			$payment_token = (string) $payment_data['payment_token'];
 			if ( ! empty( $context->get_provider_data()['scheduled_subscription_payment'] ) ) {
 				return $this->token_service->resolve_payment_method_id_from_order_token_id( $payment_token, $context->get_order() );
 			}
@@ -732,18 +732,6 @@ class WooPaymentsIntentRequestBuilder {
 				),
 			),
 		);
-	}
-
-	/**
-	 * Tell whether checkout selected a saved payment token.
-	 *
-	 * @param array<string,mixed> $payment_data Payment data.
-	 * @return bool
-	 */
-	private static function is_using_saved_payment_token( array $payment_data ): bool {
-		$payment_token = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-
-		return '' !== $payment_token && 'new' !== $payment_token;
 	}
 
 	/**
