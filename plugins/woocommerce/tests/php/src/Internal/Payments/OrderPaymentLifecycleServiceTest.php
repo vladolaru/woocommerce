@@ -32,14 +32,14 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
 	private $order_payment_lock;
 
 	/**
-	 * WooPayments persistence profile.
+	 * WooPayments persistence vocabulary.
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */
@@ -1299,7 +1299,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Apply a lifecycle event with the WooPayments profile unless a test supplies another profile.
+	 * Apply a lifecycle event with the WooPayments vocabulary unless a test supplies another one.
 	 *
 	 * @param WC_Order                                    $order               Order object.
 	 * @param PaymentLifecycleEvent                       $event               Lifecycle event.
@@ -1310,7 +1310,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Apply a lifecycle event under the caller's lock with the WooPayments profile.
+	 * Apply a lifecycle event under the caller's lock with the WooPayments vocabulary.
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.

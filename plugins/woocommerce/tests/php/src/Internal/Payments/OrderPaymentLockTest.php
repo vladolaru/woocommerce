@@ -22,7 +22,7 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
-	 * WooPayments persistence profile.
+	 * WooPayments persistence vocabulary.
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */

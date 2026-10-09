@@ -56,14 +56,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
-	private $store;
+	private $order_payment_lock;
 
 	/**
-	 * Persistence profile used by the recording WooPayments provider.
+	 * Persistence vocabulary used by the recording WooPayments provider.
 	 *
 	 * @var ProviderPersistenceVocabularyInterface
 	 */
@@ -75,7 +75,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut                    = wc_get_container()->get( PaymentProcessingService::class );
-		$this->store                  = wc_get_container()->get( OrderPaymentLock::class );
+		$this->order_payment_lock     = wc_get_container()->get( OrderPaymentLock::class );
 		$this->persistence_vocabulary = new WooPaymentsPersistenceVocabulary();
 	}
 
@@ -579,7 +579,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut = new PaymentProcessingService();
 		$sut->init(
-			$this->store,
+			$this->order_payment_lock,
 			wc_get_container()->get( OrderPaymentLifecycleService::class )
 		);
 
@@ -746,7 +746,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 
 			/**
-			 * Get the provider persistence profile.
+			 * Get the provider persistence vocabulary.
 			 *
 			 * @return ProviderPersistenceVocabularyInterface
 			 */
@@ -863,7 +863,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'remote_method_123', $order->get_meta( '_offline_method_id', true ) );
 		$this->assertSame( 'remote_customer_123', $order->get_meta( '_offline_customer_id', true ) );
 		$this->assertSame( 'offline-completed', $order->get_meta( '_offline_status', true ) );
-		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'WooPayments intent meta must not be written for providers with their own profile vocabulary.' );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ), 'WooPayments intent meta must not be written for providers with their own persistence vocabulary.' );
 	}
 
 	/**
@@ -993,9 +993,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( RuntimeException::class, $thrown, 'The application failure must reach the caller.' );
 		$this->assertFalse( get_transient( $this->persistence_vocabulary->get_order_lock_key( $order ) ), 'A throwing outcome application must release the order payment lock.' );
-		$lock_token = $this->store->claim( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'next_operation', 'payment operation' );
 		$this->assertNotNull( $lock_token, 'The next operation must be able to claim the lock.' );
-		$this->store->release( $order, $this->persistence_vocabulary, $lock_token );
+		$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 	}
 
 	/**
@@ -2979,7 +2979,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
 			}
 		};
-		$lifecycle->init( $this->store );
+		$lifecycle->init( $this->order_payment_lock );
 		$sut         = $this->build_sut_with_lifecycle( $lifecycle );
 		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_apply_failure', '', 'pm_apply_failure' ) );
 		$fake_logger = $this->create_fake_logger();
@@ -4569,7 +4569,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	private function build_sut_with_lifecycle( OrderPaymentLifecycleService $lifecycle_service ): PaymentProcessingService {
 		$sut = new PaymentProcessingService();
 		$sut->init(
-			$this->store,
+			$this->order_payment_lock,
 			$lifecycle_service
 		);
 
@@ -4616,7 +4616,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );
 			}
 		};
-		$lifecycle->init( $this->store );
+		$lifecycle->init( $this->order_payment_lock );
 
 		return $lifecycle;
 	}
