@@ -910,10 +910,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $config['isShopperTrackingEnabled'] );
 		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $config['tracksUrl'] );
 		$this->assertNotFalse( wp_verify_nonce( $config['tracksRestNonce'], 'wp_rest' ) );
-		$this->assertFalse( $config['usesLegacySetupIntentBridge'] );
-		$this->assertFalse( $config['usesLegacyOrderStatusBridge'] );
-		$this->assertTrue( $config['usesNativeSetupIntentBridge'] );
-		$this->assertTrue( $config['usesNativeOrderStatusBridge'] );
 	}
 
 	/**
@@ -2106,13 +2102,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	private const DROPPED_BLOCKS_DATA_KEYS = array(
 		'confirmationErrorMessage',
 		'customerData',
-		'isCoreNativeCheckoutBridge',
 		'paymentListWalletsConfig',
 		'updateOrderStatusNonce',
-		'usesLegacyOrderStatusBridge',
-		'usesLegacySetupIntentBridge',
-		'usesNativeOrderStatusBridge',
-		'usesNativeSetupIntentBridge',
 		'woopayButtonLabels',
 		'woopayAdditionalInfoText',
 		'woopayAgreementText',
@@ -2592,7 +2583,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose native bridge nonces independently from the removed legacy callback bridge.
+	 * @testdox Should expose the setup intent and order status nonces when the checkout surface is available.
 	 */
 	public function test_get_payment_fields_js_config_exposes_native_bridge_nonces_when_checkout_surface_is_available(): void {
 		$legacy_runtime  = $this->create_legacy_runtime_for_bridge();
@@ -2605,10 +2596,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
-		$this->assertFalse( $config['usesLegacySetupIntentBridge'] );
-		$this->assertFalse( $config['usesLegacyOrderStatusBridge'] );
-		$this->assertTrue( $config['usesNativeSetupIntentBridge'] );
-		$this->assertTrue( $config['usesNativeOrderStatusBridge'] );
 	}
 
 	/**
