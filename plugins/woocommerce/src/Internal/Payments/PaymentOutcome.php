@@ -186,7 +186,9 @@ class PaymentOutcome {
 	/**
 	 * Checkout outcomes: flags that another request paid the order while this one waited for the payment lock.
 	 *
-	 * Nothing was charged; the checkout sends the shopper to the order-received page.
+	 * Nothing was charged; the checkout sends the shopper to the order-received page. The status stays completed because
+	 * the order is paid, so a caller that does not read the flag still treats the checkout as paid; the flag tells one
+	 * that does that this request charged nothing.
 	 *
 	 * @since 11.2.0
 	 * @var string
@@ -312,6 +314,9 @@ class PaymentOutcome {
 
 	/**
 	 * Get the provider payment ID.
+	 *
+	 * It is the provider's ID for what the operation made: the payment for checkout, capture and cancel outcomes, and the
+	 * refund for refund outcomes.
 	 *
 	 * @return string
 	 */

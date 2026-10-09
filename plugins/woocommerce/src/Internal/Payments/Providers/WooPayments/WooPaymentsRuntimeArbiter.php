@@ -83,7 +83,8 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Option that turns the built-in WooPayments off in the enabled filter's default.
 	 *
-	 * The enabled filter keeps the final say and may override this option.
+	 * The enabled filter keeps the final say and may override this option. Payment gateway suggestions read it too, so a
+	 * store with the kill switch on is not suggested as having WooPayments active.
 	 *
 	 * @var string
 	 */
@@ -161,8 +162,8 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Tell whether the WooPayments extension owns payments on this site.
 	 *
-	 * Code that only runs while the extension owns payments checks it, such as the cutover notice and the
-	 * setup tier sync.
+	 * Code that only runs while the extension owns payments checks it, such as the notice that offers the switch to the
+	 * built-in WooPayments and the setup tier sync.
 	 *
 	 * @since 11.0.0
 	 *

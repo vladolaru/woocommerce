@@ -162,7 +162,7 @@ class PaymentLifecycleEvent {
 	private ?string $note;
 
 	/**
-	 * Stable order note type for structural dedupe.
+	 * Note type the note's identity is keyed on, whatever the note's text or language.
 	 *
 	 * @var string|null
 	 */
@@ -194,7 +194,7 @@ class PaymentLifecycleEvent {
 	 * @param array<int,string>   $meta_to_delete    Order meta keys to delete.
 	 * @param string|null         $note              Order note to add.
 	 * @param string|null         $note_type         Stable note type.
-	 * @param array<int,mixed>    $note_equivalents  Exact equivalent note renderings.
+	 * @param array<int,mixed>    $note_equivalents  Other texts of the same note.
 	 * @param bool                $preserve_order_status Whether the order status must stay untouched.
 	 * @throws InvalidArgumentException When an unknown status is supplied.
 	 */
@@ -280,7 +280,7 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
-	 * Get exact equivalent renderings of the order note.
+	 * Get the other texts of the same order note.
 	 *
 	 * @return string[]
 	 *
@@ -341,9 +341,9 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
-	 * Normalize exact equivalent note renderings.
+	 * Keep each other text of the note once.
 	 *
-	 * @param array<int,mixed> $note_equivalents Raw equivalent renderings.
+	 * @param array<int,mixed> $note_equivalents Raw other texts.
 	 * @return string[]
 	 */
 	private function normalize_note_equivalents( array $note_equivalents ): array {

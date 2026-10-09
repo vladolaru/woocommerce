@@ -20,14 +20,17 @@ use WC_Order;
 class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyInterface {
 
 	/**
-	 * Preserved WooPayments gateway ID.
+	 * WooPayments gateway ID.
+	 *
+	 * Every WooPayments order stores it as its payment method, so it lives with the stored names, and comparing an
+	 * order's payment method does not load the gateway class.
 	 *
 	 * @var string
 	 */
 	public const GATEWAY_ID = 'woocommerce_payments';
 
 	/**
-	 * Preserved WooPayments split-UPE gateway ID prefix.
+	 * WooPayments split-UPE gateway ID prefix.
 	 *
 	 * @var string
 	 */

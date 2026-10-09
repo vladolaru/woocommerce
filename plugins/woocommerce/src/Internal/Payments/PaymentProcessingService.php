@@ -112,8 +112,8 @@ class PaymentProcessingService {
 					throw $apply_exception;
 				}
 
-				// The provider already returned a durable result. Persist its reference first, so a retry
-				// finds it instead of paying again, then hand the failure back for the caller to settle.
+				// The provider already returned a durable result. Its effects may have replaced the outcome, but applying failed,
+				// so the provider's own outcome is saved and handed back, and a retry finds its reference instead of paying again.
 				$reconciliation_persisted = $this->persist_reconciliation_context( $order, $provider_outcome, $provider );
 				$this->log_post_provider_apply_failure( $order, $provider_outcome, self::OPERATION_CHARGE, $apply_exception, $reconciliation_persisted );
 
@@ -147,7 +147,8 @@ class PaymentProcessingService {
 	/**
 	 * Read the order again under the checkout lock, and stop the charge when another request touched its payment since this one loaded it.
 	 *
-	 * The gateway's duplicate-payment checks run before the lock, so two submissions of one order can both pass them.
+	 * A gateway runs its own duplicate-payment checks before it calls this service, outside the lock, so two submissions of
+	 * one order can both pass them.
 	 * The order is read again in place, so the charge and everything after it use what the read returns, including the
 	 * unresolved charge key of another attempt. Compared with what this request loaded: a new paid status answers as already
 	 * paid; any other status change, a new payment reference, or a new unresolved charge key (a charge whose outcome is unknown)
@@ -248,7 +249,7 @@ class PaymentProcessingService {
 	 * The order is reloaded to avoid clobbering concurrent writes. The provider's order meta is needed
 	 * by later confirmation and reconciliation paths, so persisting only the transaction ID is not enough.
 	 * Recovery is deliberately best-effort: no local persistence failure may replace a durable provider
-	 * outcome after transport has completed.
+	 * outcome after the provider call returned.
 	 *
 	 * @param WC_Order          $order   Order object.
 	 * @param PaymentOutcome    $outcome Provider outcome with a durable reference.
@@ -556,7 +557,7 @@ class PaymentProcessingService {
 	 * @param WC_Order $order             Parent order.
 	 * @param string   $note              Provider refund note.
 	 * @param string   $identity          Stable refund note identity.
-	 * @param string[] $equivalent_notes  Exact equivalent refund-note renderings.
+	 * @param string[] $equivalent_notes  Other texts of the same refund note.
 	 * @param string   $identity_meta_key Comment-meta key for the stable identity.
 	 */
 	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), string $identity_meta_key = '' ): void {
@@ -1053,7 +1054,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get equivalent order-note renderings from an outcome, as the outcome carries them; the lifecycle event keeps each
+	 * Get the other texts of the order note from an outcome, as the outcome carries them; the lifecycle event keeps each
 	 * non-empty string once.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.

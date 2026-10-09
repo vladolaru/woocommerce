@@ -91,6 +91,8 @@ final class PaymentsBootstrap {
 	/**
 	 * Register the integrations needed for the current request.
 	 *
+	 * WooCommerce passes its Container; the RuntimeContainer type is for tests, which extend it because Container is final.
+	 *
 	 * @since 11.2.0
 	 *
 	 * @param Container|RuntimeContainer $container           Runtime dependency container.
@@ -124,6 +126,7 @@ final class PaymentsBootstrap {
 	 * it lacks just before the action runs.
 	 *
 	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions inside a front or admin request.
+	 * WP-CLI requests list the cron classes themselves, so they need no listener.
 	 * The client attaches its scheduled-action handlers on every request (client 11.1.0 `includes/class-wc-payments.php:603,657`).
 	 *
 	 * @param Container|RuntimeContainer $container    Runtime dependency container.
