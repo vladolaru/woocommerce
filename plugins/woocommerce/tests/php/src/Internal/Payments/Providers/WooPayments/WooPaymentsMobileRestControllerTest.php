@@ -1376,15 +1376,26 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An amount-too-small capture failure notes the provider minimum like the reference client.
+	 * @testdox An amount-too-small capture failure in $currency notes the provider minimum like the reference client.
+	 *
+	 * Client 11.1.0 appends the minimum with WC_Payments_Utils::format_explicit_currency( interpret_stripe_amount( ... ) )
+	 * (includes/class-wc-payment-gateway-wcpay.php:4003-4009): wc_price() in the currency's locale-info format, then the code
+	 * when the result lacks it. For EUR that is a comma decimal and the symbol on the right after a space
+	 * (WC_Payments_Utils::get_woocommerce_price_format() 'right_space', includes/class-wc-payments-utils.php:1147-1148).
+	 *
+	 * @dataProvider provide_amount_too_small_minimums
+	 *
+	 * @param string $currency          Order and intent currency.
+	 * @param string $provider_message  Platform error message.
+	 * @param string $expected_sentence The minimum sentence the note carries.
 	 */
-	public function test_capture_failure_note_carries_the_amount_too_small_minimum(): void {
-		$order = $this->create_order( 0.30, 'USD' );
+	public function test_capture_failure_note_carries_the_amount_too_small_minimum( string $currency, string $provider_message, string $expected_sentence ): void {
+		$order = $this->create_order( 0.30, $currency );
 		$this->api_client->payment_intention_response_queue = array(
 			array(
 				'id'       => 'pi_terminal',
 				'status'   => 'requires_capture',
-				'currency' => 'usd',
+				'currency' => strtolower( $currency ),
 				'metadata' => array(
 					'order_id' => (string) $order->get_id(),
 				),
@@ -1395,14 +1406,14 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 		);
 		$this->api_client->captured_intention_exception     = new WooPaymentsApiException(
-			'Amount must be at least $0.50 usd',
+			$provider_message,
 			'amount_too_small',
 			400,
 			'',
 			'',
 			array(
 				'minimum_amount' => 50,
-				'currency'       => 'usd',
+				'currency'       => strtolower( $currency ),
 			)
 		);
 
@@ -1416,8 +1427,19 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$note = $this->get_order_note_containing( $order, 'The minimum amount to capture is' );
 		$this->assertNotEmpty( $note, 'The failure note must carry the appended minimum-amount sentence.' );
-		$this->assertStringContainsString( '0.50', wp_strip_all_tags( $note ) );
-		$this->assertStringContainsString( 'USD', wp_strip_all_tags( $note ) );
+		$this->assertStringContainsString( $provider_message . ' ' . $expected_sentence, wp_strip_all_tags( $note ) );
+	}
+
+	/**
+	 * Minimum-amount refusals and the sentence the client writes for each.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provide_amount_too_small_minimums(): array {
+		return array(
+			'USD' => array( 'USD', 'Amount must be at least $0.50 usd', 'The minimum amount to capture is $0.50 USD.' ),
+			'EUR' => array( 'EUR', 'Amount must be at least €0.50 eur', 'The minimum amount to capture is 0,50 € EUR.' ),
+		);
 	}
 
 	/**

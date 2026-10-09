@@ -174,7 +174,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * The intent is REC-3DS-1's recorded new-card requires_action response (`Fixtures/rec-t3-3ds-requires-action.json`, pair
 	 * `new_card_requires_action`), whose `charges.data` is empty. Client 11.1.0 titles the order from the charge's card
 	 * details when it has them (gw:2162-2195), and with none falls back to the card definition's title
-	 * (class-upe-payment-method.php:176-182, CardDefinition.php:62-64): "Card".
+	 * (includes/payment-methods/class-upe-payment-method.php:176-182,
+	 * includes/payment-methods/Configs/Definitions/CardDefinition.php:63-64): "Card".
 	 */
 	public function test_post_lifecycle_effects_title_a_card_payment_without_a_charge_card(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.

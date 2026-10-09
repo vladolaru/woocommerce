@@ -1322,6 +1322,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function get_setup_intention( string $setup_intent_id ): array {
+				// The SetupIntent fields client 11.1.0 serializes (includes/wc-payment-api/models/class-wc-payments-api-setup-intention.php:78-89, jsonSerialize()).
 				return array(
 					'id'             => $setup_intent_id,
 					'status'         => 'succeeded',
