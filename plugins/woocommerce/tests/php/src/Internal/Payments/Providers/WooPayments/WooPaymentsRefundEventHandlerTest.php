@@ -20,6 +20,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use WC_Order;
 use WC_Order_Refund;
@@ -29,6 +31,9 @@ use WC_Unit_Test_Case;
  * Tests for the WooPaymentsRefundEventHandler class.
  */
 class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
+
+	use OrderPaymentLockTestTrait;
+
 	/**
 	 * Original multi-currency options restored after each test.
 	 *
@@ -681,6 +686,67 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $refunds );
 		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertCount( 0, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
+	 * @testdox A recorded refund whose note is not saved fails without a log line and releases the lock, and its redelivery records it once.
+	 */
+	public function test_recorded_refund_whose_note_is_not_saved_fails_and_records_on_redelivery(): void {
+		$order      = $this->create_order_paid_by_another_gateway( 'cod', 'ch_cod' );
+		$notes      = new class() extends WooPaymentsOrderNoteService {
+			/**
+			 * Insertions left to fail.
+			 *
+			 * @var int
+			 */
+			public int $failures = 1;
+
+			/**
+			 * Fail the first insertion without throwing, as a comment insert that returns no ID does.
+			 *
+			 * @param WC_Order      $order            Order object.
+			 * @param string        $note             Note content.
+			 * @param string        $identity         Stable private note identity.
+			 * @param string[]      $equivalent_notes Equivalent note renderings.
+			 * @param callable|null $before_add       Callback invoked before insertion.
+			 * @return bool
+			 */
+			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
+				if ( 0 < $this->failures ) {
+					--$this->failures;
+					return false;
+				}
+
+				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $before_add );
+			}
+		};
+		$recorder   = new WooPaymentsOtherChargeRecorder();
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$handler    = new WooPaymentsRefundEventHandler();
+		$recorder->init( $notes );
+		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, null, $recorder );
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_cod';
+		$charge['payment_intent'] = 'pi_cod';
+		$logger                   = RecordingWcLogger::install();
+
+		$failure = null;
+		try {
+			$handler->process( 'charge.refunded', $charge );
+		} catch ( \RuntimeException $exception ) {
+			$failure = $exception;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $failure );
+		$this->assertStringContainsString( 'Could not save the other-charge note for charge.refunded re_123', $failure->getMessage() );
+		$this->assertFalse( $this->is_order_payment_lock_held_for( $order, $vocabulary, 'refund_webhook_re_123' ) );
+		$this->assertCount( 0, $this->get_notes_containing( wc_get_order( $order->get_id() ), 'No refund was added to the order.' ) );
+		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ) );
+
+		$handler->process( 'charge.refunded', $charge );
+
+		$this->assertCount( 1, $this->get_notes_containing( wc_get_order( $order->get_id() ), 'No refund was added to the order.' ) );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ) );
 	}
 
 	/**
