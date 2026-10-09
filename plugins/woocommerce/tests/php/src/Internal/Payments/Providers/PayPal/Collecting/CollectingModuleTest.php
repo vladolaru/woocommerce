@@ -38,7 +38,18 @@ class CollectingModuleTest extends WalletTestCase {
 		$sut      = new CollectingModule();
 		$services = $sut->services();
 
-		$this->assertSame( array( 'collecting.options', 'collecting.state', 'collecting.connection-state' ), array_keys( $services ) );
+		$this->assertSame(
+			array(
+				'collecting.options',
+				'collecting.state',
+				'collecting.connection-state',
+				'collecting.transport',
+				'collecting.order-app-context',
+				'collecting.context-bearer',
+				'collecting.context-host-resolver',
+			),
+			array_keys( $services )
+		);
 		$this->assertSame(
 			array(
 				'settings.flag.is-connected',
@@ -47,6 +58,16 @@ class CollectingModuleTest extends WalletTestCase {
 				'sdk-v6.buttons-available',
 				'wcgateway.settings.wc-tasks.task-config-services',
 				'settings.settings-provider',
+				'api.bearer',
+				'api.host-resolver',
+				'api.host',
+				'api.merchant_email',
+				'api.merchant_id',
+				'api.partner_merchant_id',
+				'button.client_id',
+				'api.endpoint.partner-referrals',
+				'api.endpoint.partner-referrals-sandbox',
+				'api.endpoint.partner-referrals-production',
 			),
 			array_keys( $sut->extensions() )
 		);

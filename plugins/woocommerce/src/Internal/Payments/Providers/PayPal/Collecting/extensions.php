@@ -13,9 +13,38 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
+
+// The transport, when it serves the store and is ready. Values the wallet reads once, when it builds a service, keep
+// the wallet's own until then: a transport that is not ready would throw while the container builds the service.
+$ready_transport = static function ( ContainerInterface $c ): ?PlatformTransport {
+	if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+		return null;
+	}
+	$transport = $c->get( 'collecting.transport' );
+
+	return $transport->is_ready() ? $transport : null;
+};
+
+// Onboarding goes through the platform app, whatever the order context.
+$platform_referrals = static function ( PartnerReferrals $previous, ContainerInterface $c ) use ( $ready_transport ): PartnerReferrals {
+	$transport = $ready_transport( $c );
+	if ( null === $transport ) {
+		return $previous;
+	}
+
+	return new PartnerReferrals(
+		$transport->host( PlatformTransport::APP_PLATFORM ),
+		$transport->bearer( PlatformTransport::APP_PLATFORM ),
+		$c->get( 'woocommerce.logger.woocommerce' )
+	);
+};
 
 return array(
 	// Connected: SmartButton builds real buttons, EarlyOrderHandler accepts early orders and the gateway reports onboarded.
@@ -58,4 +87,41 @@ return array(
 			$c->get( 'settings.data.paylater-messaging-settings' )
 		);
 	},
+	// The bearer resolves the app on every token, so a not-ready transport fails the call, as a failed token does.
+	'api.bearer'                                       => static function ( Bearer $previous, ContainerInterface $c ): Bearer {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? $c->get( 'collecting.context-bearer' ) : $previous;
+	},
+	'api.host-resolver'                                => static function ( ApiHostResolver $previous, ContainerInterface $c ): ApiHostResolver {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? $c->get( 'collecting.context-host-resolver' ) : $previous;
+	},
+	// Endpoints keep the host they were built with for the request; both apps of an environment share one host.
+	'api.host'                                         => static function ( string $previous, ContainerInterface $c ) use ( $ready_transport ): string {
+		$transport = $ready_transport( $c );
+		if ( null === $transport ) {
+			return $previous;
+		}
+
+		return $transport->host( $c->get( 'collecting.order-app-context' )->for_call( $transport, $c->get( 'collecting.state' )->payee_email() ) );
+	},
+	// The store payee and, once platform connected, its merchant ID, which the onboarded check and the seller status read.
+	'api.merchant_email'                               => static function ( string $previous, ContainerInterface $c ): string {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? $c->get( 'collecting.state' )->payee_email() : $previous;
+	},
+	'api.merchant_id'                                  => static function ( string $previous, ContainerInterface $c ): string {
+		return $c->get( 'collecting.connection-state' )->is_served_by_platform() ? $c->get( 'collecting.state' )->merchant_id() : $previous;
+	},
+	'api.partner_merchant_id'                          => static function ( string $previous, ContainerInterface $c ) use ( $ready_transport ): string {
+		$transport = $ready_transport( $c );
+
+		return null === $transport ? $previous : $transport->partner_merchant_id();
+	},
+	// The SDK loads with the platform's client ID; the order's app only signs the server-side calls.
+	'button.client_id'                                 => static function ( string $previous, ContainerInterface $c ) use ( $ready_transport ): string {
+		$transport = $ready_transport( $c );
+
+		return null === $transport ? $previous : $transport->sdk_client_id( PlatformTransport::APP_PLATFORM );
+	},
+	'api.endpoint.partner-referrals'                   => $platform_referrals,
+	'api.endpoint.partner-referrals-sandbox'           => $platform_referrals,
+	'api.endpoint.partner-referrals-production'        => $platform_referrals,
 );

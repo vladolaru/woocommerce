@@ -3,20 +3,16 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\ConnectBearer;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ReferenceTransactionStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WalletProperties;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\WebhookModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
-use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Package;
-use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Closure;
 use ReflectionFunction;
-use RuntimeException;
 
 /**
  * Tests for the collecting module's extensions of the wallet's services, over a real container: the wallet's modules
@@ -25,41 +21,12 @@ use RuntimeException;
  * @group paypal-wallet
  */
 class ExtensionsTest extends WalletTestCase {
+	use BootsCollectingContainer;
 
 	/**
 	 * The Pay Later task's config service.
 	 */
 	private const PAY_LATER_TASK_CONFIG = 'wcgateway.settings.wc-tasks.pay-later-task-config';
-
-	/**
-	 * Boot the wallet's modules plus the collecting module and return the container.
-	 *
-	 * The collecting module is added whatever the store's state, so a store the platform does not serve shows that the
-	 * extensions hand the wallet's own values through.
-	 *
-	 * @return ContainerInterface
-	 */
-	private function boot_container(): ContainerInterface {
-		foreach ( PayPalWalletBootstrap::get_extension_constants() as $name => $value ) {
-			if ( ! defined( $name ) ) {
-				define( $name, $value ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- The constants the shell defines before a boot.
-			}
-		}
-		require_once WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/SerializedClasses/load.php';
-		// The SDK v6 module loads unless the store is flagged ineligible; load it for certain.
-		add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.sdk_v6_enabled', '__return_true' );
-
-		$modules   = ( require WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/modules.php' )();
-		$modules[] = new CollectingModule();
-
-		$package = Package::new( WalletProperties::new() );
-		foreach ( $modules as $module ) {
-			$package->addModule( $module );
-		}
-		$package->boot();
-
-		return $package->container();
-	}
 
 	/**
 	 * Put the store in the collecting state.
@@ -159,22 +126,27 @@ class ExtensionsTest extends WalletTestCase {
 	}
 
 	/**
-	 * Task 4 replaces this with "api.bearer is the ContextBearer".
-	 *
-	 * @testdox Should build a bearer that is not the connect placeholder, and that asks PayPal for nothing without credentials.
+	 * @testdox Should sign the wallet's calls with the context bearer on a collecting store.
 	 */
-	public function test_collecting_store_bearer_is_not_the_connect_placeholder(): void {
+	public function test_collecting_store_bearer_is_the_context_bearer(): void {
 		$this->set_collecting();
 
-		$bearer = $this->boot_container()->get( 'api.bearer' );
+		$this->assertInstanceOf( ContextBearer::class, $this->boot_container()->get( 'api.bearer' ) );
+	}
 
-		$this->assertNotInstanceOf( ConnectBearer::class, $bearer, 'The connected flag picks the real bearer' );
-		try {
-			$bearer->bearer();
-			$this->fail( 'A bearer with no merchant credentials must not produce a token' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertSame( array(), $this->http_requests, 'No token request may leave without credentials' );
-		}
+	/**
+	 * @testdox Should report reference transactions off, without throwing, sending anything or entering an order context, on a collecting store.
+	 */
+	public function test_collecting_store_reference_transaction_check_fails_closed(): void {
+		$this->set_collecting();
+		$container = $this->boot_container();
+
+		$status = $container->get( 'api.reference-transaction-status' );
+
+		$this->assertInstanceOf( ReferenceTransactionStatus::class, $status );
+		$this->assertFalse( $status->reference_transaction_enabled() );
+		$this->assertSame( array(), $this->http_requests, 'The not-ready transport signs nothing, so nothing is sent' );
+		$this->assertFalse( $container->get( 'collecting.order-app-context' )->is_entered(), 'A status check enters no order context' );
 	}
 
 	/**
