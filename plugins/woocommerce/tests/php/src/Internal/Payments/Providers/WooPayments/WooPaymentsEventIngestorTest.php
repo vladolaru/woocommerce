@@ -26,7 +26,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
 use Exception;
 use InvalidArgumentException;
 use RuntimeException;
@@ -4640,53 +4642,30 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.expired found by charge metadata fails the authorization when the order saved the charge as its payment before the event claimed the lock.
+	 *
+	 * The Charge object carries `payment_intent` and the store's `metadata`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent). The checkout writes straight to the
+	 * database, leaving this request's caches as they were, so the decision must read the order from the data store.
 	 */
 	public function test_expired_charge_found_by_metadata_applies_when_the_order_saved_the_charge_before_the_claim(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
 		$order = $this->create_woopayments_order();
-		$store = new class() extends OrderPaymentLock {
-			/**
-			 * Whether the authorization was saved.
-			 *
-			 * @var bool
-			 */
-			public bool $saved = false;
-
-			/**
-			 * Save the authorization from a separate request, as a checkout finishing just before the claim would, then grant it.
-			 *
-			 * @param WC_Order                                                                         $order      Order being locked.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string|null                                                                      $reference  Payment reference.
-			 * @param string                                                                           $operation  Operation claiming the lock.
-			 * @return string|null
-			 */
-			public function claim( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
-				unset( $vocabulary, $reference, $operation );
-				if ( ! $this->saved ) {
-					$this->saved = true;
-					$writer      = new WC_Order( $order->get_id() );
-					$writer->set_status( 'on-hold' );
-					$writer->set_transaction_id( 'pi_late' );
-					$writer->update_meta_data( '_intent_id', 'pi_late' );
-					$writer->update_meta_data( '_charge_id', 'ch_late' );
-					$writer->update_meta_data( '_intention_status', 'requires_capture' );
-					$writer->save();
-				}
-
-				return 'test_lock_token';
+		$store = new OrderPaymentLockWithClaimHook(
+			static function ( WC_Order $order ): void {
+				UncachedOrderWriter::write(
+					$order->get_id(),
+					array(
+						'status'         => 'on-hold',
+						'transaction_id' => 'pi_late',
+					),
+					array(
+						'_intent_id'        => 'pi_late',
+						'_charge_id'        => 'ch_late',
+						'_intention_status' => 'requires_capture',
+					)
+				);
 			}
-
-			/**
-			 * Release nothing: the claim above holds no lock.
-			 *
-			 * @param WC_Order                                                                         $order      Order being unlocked.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string                                                                           $lock_token Claim token.
-			 */
-			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
-				unset( $order, $vocabulary, $lock_token );
-			}
-		};
+		);
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
 		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
 
@@ -4707,9 +4686,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertTrue( $store->saved, 'The authorization must be saved inside the claim.' );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $store->hook_ran, 'The authorization must be saved inside the claim.' );
+		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( array( 'pi_late' ), $requested_intents );
@@ -4718,6 +4696,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.expired recorded on an order found by charge metadata leaves the order without that charge ID, so a later event on the charge does not resolve to it.
+	 *
+	 * The Charge object carries `payment_intent` and the store's `metadata`
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
 	 */
 	public function test_expired_charge_found_by_metadata_does_not_link_the_charge(): void {
 		$order = $this->create_woopayments_order();
@@ -4748,58 +4729,31 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox payment_intent.succeeded is decided on the order read under the lock, so an order another gateway paid just before the claim records the intent instead of being paid again.
+	 *
+	 * The other gateway writes straight to the database, leaving this request's caches as they were, so the decision must
+	 * read the order from the data store.
 	 */
 	public function test_succeeded_intent_is_decided_on_the_order_read_under_the_lock(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
 		$order = $this->create_woopayments_order();
-		$store = new class() extends OrderPaymentLock {
-			/**
-			 * Whether the other gateway paid the order.
-			 *
-			 * @var bool
-			 */
-			public bool $paid = false;
-
-			/**
-			 * Pay the order with another gateway from a separate request, then grant the claim.
-			 *
-			 * @param WC_Order                                                                         $order      Order being locked.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string|null                                                                      $reference  Payment reference.
-			 * @param string                                                                           $operation  Operation claiming the lock.
-			 * @return string|null
-			 */
-			public function claim( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
-				unset( $vocabulary, $reference, $operation );
-				if ( ! $this->paid ) {
-					$this->paid = true;
-					$writer     = new WC_Order( $order->get_id() );
-					$writer->set_payment_method( 'bacs' );
-					$writer->set_status( 'processing' );
-					$writer->set_date_paid( time() );
-					$writer->save();
-				}
-
-				return 'test_lock_token';
+		$store = new OrderPaymentLockWithClaimHook(
+			static function ( WC_Order $order ): void {
+				UncachedOrderWriter::write(
+					$order->get_id(),
+					array(
+						'status'         => 'processing',
+						'payment_method' => 'bacs',
+						'date_paid'      => time(),
+					)
+				);
 			}
-
-			/**
-			 * Release nothing: the claim above holds no lock.
-			 *
-			 * @param WC_Order                                                                         $order      Order being unlocked.
-			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string                                                                           $lock_token Claim token.
-			 */
-			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
-				unset( $order, $vocabulary, $lock_token );
-			}
-		};
+		);
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
 
 		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 
-		$this->assertTrue( $store->paid, 'The other gateway must pay the order inside the claim.' );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $store->hook_ran, 'The other gateway must pay the order inside the claim.' );
+		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertSame( '', $order->get_transaction_id() );
 		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );

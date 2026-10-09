@@ -60,8 +60,9 @@ class WooPaymentsEventOrderResolver {
 	/**
 	 * Find the order a charge's metadata names, for a charge no order holds as its `_charge_id`.
 	 *
-	 * Such a charge is not an order's own payment, such as a second charge on an order already paid: the caller records
-	 * its event on the order and never applies it. The metadata's order key must match the order's.
+	 * Such a charge is not yet an order's own payment, such as a second charge on an order already paid. The caller records
+	 * its event while the order read under the lock still does not hold the charge; once it does, the ownership rule
+	 * decides. The metadata's order key must match the order's.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @return WC_Order|null

@@ -1190,6 +1190,10 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a valid early fraud warning object.
 	 *
+	 * The fields are the Stripe Early Fraud Warning's (https://docs.stripe.com/api/radar/early_fraud_warnings/object),
+	 * as client 11.1.0 reads them (class-wc-payments-webhook-processing-service.php:867-874). Tests that decide ownership
+	 * add the warning's `payment_intent` field.
+	 *
 	 * @param string $charge_id Provider charge ID.
 	 * @return array{charge:string,id:string,actionable:bool,created:int,fraud_type:string}
 	 */

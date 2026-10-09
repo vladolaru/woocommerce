@@ -21,7 +21,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
+use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use WC_Order;
 use WC_Order_Refund;
@@ -660,6 +662,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A charge.refunded event found by charge metadata adds the refund row when the order saved the charge as its payment before the event claimed the lock.
 	 */
 	public function test_charge_refunded_found_by_metadata_applies_when_the_order_saved_the_charge_before_the_claim(): void {
+		UncachedOrderWriter::enable_hpos_data_caching();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -679,7 +682,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 
 		$handler->process( 'charge.refunded', $charge );
 
-		$this->assertTrue( $store->saved, 'The payment must be saved inside the claim.' );
+		$this->assertTrue( $store->hook_ran, 'The payment must be saved inside the claim.' );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$refunds = $order->get_refunds();
@@ -750,75 +753,31 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build an order payment lock whose claim saves the order's payment, as a checkout finishing just before it would.
+	 * Build an order payment lock whose first claim saves the order's payment, as a checkout finishing just before it would.
+	 *
+	 * The checkout writes straight to the database, leaving this request's caches as they were.
 	 *
 	 * @param string $intent_id Payment intent the checkout saves.
 	 * @param string $charge_id Charge the checkout saves.
 	 * @param string $status    Order status the checkout leaves.
-	 * @return OrderPaymentLock
+	 * @return OrderPaymentLockWithClaimHook
 	 */
-	private function create_lock_that_saves_the_payment_on_claim( string $intent_id, string $charge_id, string $status ): OrderPaymentLock {
-		return new class( $intent_id, $charge_id, $status ) extends OrderPaymentLock {
-			/**
-			 * Whether the payment was saved.
-			 *
-			 * @var bool
-			 */
-			public bool $saved = false;
-
-			/**
-			 * Payment intent, charge and status the checkout saves.
-			 *
-			 * @var array{string,string,string}
-			 */
-			private array $payment;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param string $intent_id Payment intent.
-			 * @param string $charge_id Charge.
-			 * @param string $status    Order status.
-			 */
-			public function __construct( string $intent_id, string $charge_id, string $status ) {
-				$this->payment = array( $intent_id, $charge_id, $status );
+	private function create_lock_that_saves_the_payment_on_claim( string $intent_id, string $charge_id, string $status ): OrderPaymentLockWithClaimHook {
+		return new OrderPaymentLockWithClaimHook(
+			static function ( WC_Order $order ) use ( $intent_id, $charge_id, $status ): void {
+				UncachedOrderWriter::write(
+					$order->get_id(),
+					array(
+						'status'         => $status,
+						'transaction_id' => $intent_id,
+					),
+					array(
+						'_intent_id' => $intent_id,
+						'_charge_id' => $charge_id,
+					)
+				);
 			}
-
-			/**
-			 * Save the payment from a separate request, then grant the claim.
-			 *
-			 * @param WC_Order                               $order      Order being locked.
-			 * @param ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string|null                            $reference  Payment reference.
-			 * @param string                                 $operation  Operation claiming the lock.
-			 * @return string|null
-			 */
-			public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
-				unset( $vocabulary, $reference, $operation );
-				if ( ! $this->saved ) {
-					$this->saved = true;
-					$writer      = new WC_Order( $order->get_id() );
-					$writer->set_status( $this->payment[2] );
-					$writer->set_transaction_id( $this->payment[0] );
-					$writer->update_meta_data( '_intent_id', $this->payment[0] );
-					$writer->update_meta_data( '_charge_id', $this->payment[1] );
-					$writer->save();
-				}
-
-				return 'test_lock_token';
-			}
-
-			/**
-			 * Release nothing: the claim above holds no lock.
-			 *
-			 * @param WC_Order                               $order      Order being unlocked.
-			 * @param ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
-			 * @param string                                 $lock_token Claim token.
-			 */
-			public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
-				unset( $order, $vocabulary, $lock_token );
-			}
-		};
+		);
 	}
 
 	/**
@@ -1145,7 +1104,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	private function get_successful_refund_charge(): array {
 		// A Stripe Charge with its refunds list, as charge.refunded carries it. Client 11.1.0 reads status, captured, amount,
 		// currency and refunds.data[0] (id, amount, reason, status, balance_transaction as an ID) at
-		// class-wc-payments-webhook-processing-service.php:1079-1143.
+		// class-wc-payments-webhook-processing-service.php:1079-1143. Tests add the Charge's `payment_intent` and the
+		// store's `metadata` (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
 		return array(
 			'id'       => 'ch_123',
 			'status'   => 'succeeded',
