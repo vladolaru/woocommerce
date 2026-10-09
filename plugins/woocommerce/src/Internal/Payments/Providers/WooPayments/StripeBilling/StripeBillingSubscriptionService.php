@@ -1293,12 +1293,8 @@ class StripeBillingSubscriptionService {
 		$data = array(
 			'currency'            => $currency,
 			'product'             => $wcpay_product_id,
-			'unit_amount_decimal' => round( $unit_amount, wc_get_rounding_precision() ),
+			'unit_amount_decimal' => WooPaymentsCurrencyUtils::amount_to_minor_units_decimal( $unit_amount, $currency ),
 		);
-
-		if ( ! WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency ) ) {
-			$data['unit_amount_decimal'] *= 100;
-		}
 
 		if ( $interval && $interval_count ) {
 			$data['recurring'] = array(

@@ -255,6 +255,49 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $currency subscription item of $subtotal goes to Stripe as a unit amount of $expected.
+	 *
+	 * Expected values come from client 11.1.0 WC_Payments_Subscription_Service::format_item_price_data()
+	 * (includes/subscriptions/class-wc-payments-subscription-service.php:337-358): the amount rounded to WooCommerce's
+	 * rounding precision (6 here), multiplied by 100 unless the currency is in WC_Payments_Utils::zero_decimal_currencies()
+	 * (includes/class-wc-payments-utils.php:222-240). Three-decimal currencies and UGX are not in that list, so they are
+	 * multiplied by 100 too.
+	 *
+	 * @dataProvider provide_unit_amounts_per_currency
+	 *
+	 * @param string $currency Currency.
+	 * @param string $subtotal Item subtotal for a quantity of one.
+	 * @param float  $expected Stripe unit_amount_decimal.
+	 */
+	public function test_item_unit_amount_follows_the_currency_minor_unit( string $currency, string $subtotal, float $expected ): void {
+		$items = $this->sut->get_recurring_item_data_for_subscription( $this->create_subscription( array(), 1, $subtotal, $currency ) );
+
+		$this->assertSame( $expected, $items[0]['price_data']['unit_amount_decimal'] );
+	}
+
+	/**
+	 * Item subtotals and the unit amounts client 11.1.0 sends for them.
+	 *
+	 * @return array<string,array{string,string,float}>
+	 */
+	public function provide_unit_amounts_per_currency(): array {
+		$cases = array();
+		foreach ( array( 'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'VND', 'VUV', 'XAF', 'XOF', 'XPF' ) as $currency ) {
+			$cases[ $currency . ', zero-decimal' ] = array( $currency, '1500', 1500.0 );
+		}
+
+		return $cases + array(
+			'JPY, a fraction kept'              => array( 'JPY', '1500.5', 1500.5 ),
+			'USD, recorded amount'              => array( 'USD', '24.90', 2490.0 ),
+			'EUR, rounded to six decimals'      => array( 'EUR', '12.3456789', 1234.5679 ),
+			'GBP, a fraction of a cent kept'    => array( 'GBP', '0.333333333', 33.3333 ),
+			'KWD, three-decimal'                => array( 'KWD', '1.234', 123.4 ),
+			'BHD, three-decimal'                => array( 'BHD', '10.5', 1050.0 ),
+			'UGX, not in the zero-decimal list' => array( 'UGX', '1500', 150000.0 ),
+		);
+	}
+
+	/**
 	 * @testdox An amount below the platform minimum stops checkout with the client's message (client `class-wc-payments-subscription-service.php:461-470`).
 	 */
 	public function test_an_amount_below_the_minimum_stops_checkout(): void {

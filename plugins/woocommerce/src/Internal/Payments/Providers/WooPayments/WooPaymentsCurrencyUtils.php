@@ -108,6 +108,24 @@ final class WooPaymentsCurrencyUtils {
 	}
 
 	/**
+	 * Convert a decimal amount to provider minor units, keeping fractions of a minor unit, for Stripe's decimal amount fields.
+	 *
+	 * The amount is rounded to WooCommerce's rounding precision, then multiplied by 100 unless the currency has no decimals,
+	 * as client 11.1.0 `WC_Payments_Subscription_Service::format_item_price_data()` does for `unit_amount_decimal`.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code.
+	 * @return float
+	 */
+	public static function amount_to_minor_units_decimal( float $amount, string $currency ): float {
+		$amount = round( $amount, wc_get_rounding_precision() );
+
+		return self::is_zero_decimal_currency( $currency ) ? $amount : $amount * 100;
+	}
+
+	/**
 	 * Format an amount with `wc_price()` in its currency's own format, whatever currency the acting user selected.
 	 *
 	 * Order notes written in webhook requests run as the platform's connection user, whose selection would otherwise apply.
