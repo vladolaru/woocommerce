@@ -159,7 +159,7 @@ class WooPaymentsOrderDataService {
 
 		return array(
 			self::META_KEY_STRIPE_EXCHANGE_RATE => $this->format_exchange_rate(
-				$this->interpret_string_exchange_rate( (float) $exchange_rate, $order_currency, $account_currency )
+				WooPaymentsCurrencyUtils::interpret_string_exchange_rate( (float) $exchange_rate, $order_currency, $account_currency )
 			),
 		);
 	}
@@ -206,29 +206,6 @@ class WooPaymentsOrderDataService {
 		}
 
 		return rtrim( rtrim( $formatted, '0' ), '.' );
-	}
-
-	/**
-	 * Interpret a Stripe exchange rate for presentment/base currency decimal semantics.
-	 *
-	 * @param float  $exchange_rate        Provider exchange rate.
-	 * @param string $presentment_currency Currency the shopper paid in.
-	 * @param string $base_currency        WooPayments account default currency.
-	 * @return float
-	 */
-	private function interpret_string_exchange_rate( float $exchange_rate, string $presentment_currency, string $base_currency ): float {
-		$is_presentment_currency_zero_decimal = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $presentment_currency );
-		$is_base_currency_zero_decimal        = WooPaymentsCurrencyUtils::is_zero_decimal_currency( $base_currency );
-
-		if ( $is_presentment_currency_zero_decimal && ! $is_base_currency_zero_decimal ) {
-			return $exchange_rate / 100;
-		}
-
-		if ( ! $is_presentment_currency_zero_decimal && $is_base_currency_zero_decimal ) {
-			return $exchange_rate * 100;
-		}
-
-		return $exchange_rate;
 	}
 
 	/**

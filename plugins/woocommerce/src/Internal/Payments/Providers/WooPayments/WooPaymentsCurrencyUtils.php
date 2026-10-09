@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+use WC_Order;
 
 /**
  * WooPayments currency helpers for provider-boundary amount handling.
@@ -127,6 +129,63 @@ final class WooPaymentsCurrencyUtils {
 		}
 
 		return $container->get( MultiCurrencyFrontendCurrenciesController::class )->format_in_order_currency( $currency, $format );
+	}
+
+	/**
+	 * Format an amount for an order note: in its own currency, with the order's currency code added where prices show it.
+	 *
+	 * The code follows WooCommerce's explicit admin price setting; while the WooPayments extension is loaded, its
+	 * explicit price formatter decides instead. An empty currency means the order's.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float    $amount   Decimal amount.
+	 * @param string   $currency Currency code.
+	 * @param WC_Order $order    Order the note belongs to.
+	 * @return string
+	 */
+	public static function format_explicit_order_price( float $amount, string $currency, WC_Order $order ): string {
+		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
+		$formatted_price = self::format_price_in_currency( $amount, $currency );
+		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
+
+		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {
+			return (string) call_user_func( $formatter, $formatted_price, $order );
+		}
+
+		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
+			$formatted_price,
+			strtoupper( $order->get_currency() ),
+			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
+		);
+	}
+
+	/**
+	 * Interpret a Stripe exchange rate between a presentment and a base currency when one of them has no decimals.
+	 *
+	 * Stripe expresses the rate in minor units, so a zero-decimal presentment currency against a decimal base divides it
+	 * by 100 and the reverse multiplies it by 100, as client 11.1.0 `WC_Payments_Utils::interpret_string_exchange_rate()` does.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param float  $exchange_rate        Provider exchange rate.
+	 * @param string $presentment_currency Currency the shopper paid in.
+	 * @param string $base_currency        WooPayments account default currency.
+	 * @return float
+	 */
+	public static function interpret_string_exchange_rate( float $exchange_rate, string $presentment_currency, string $base_currency ): float {
+		$is_presentment_currency_zero_decimal = self::is_zero_decimal_currency( $presentment_currency );
+		$is_base_currency_zero_decimal        = self::is_zero_decimal_currency( $base_currency );
+
+		if ( $is_presentment_currency_zero_decimal && ! $is_base_currency_zero_decimal ) {
+			return $exchange_rate / 100;
+		}
+
+		if ( ! $is_presentment_currency_zero_decimal && $is_base_currency_zero_decimal ) {
+			return $exchange_rate * 100;
+		}
+
+		return $exchange_rate;
 	}
 
 	/**

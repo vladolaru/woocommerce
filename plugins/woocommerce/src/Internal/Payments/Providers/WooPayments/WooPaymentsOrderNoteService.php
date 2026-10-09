@@ -1344,7 +1344,7 @@ class WooPaymentsOrderNoteService {
 				__( 'A payment of %1$s <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.', 'woocommerce' ),
 				array( 'strong' => '<strong>' )
 			),
-			$this->format_refund_amount( $order, (float) $order->get_total(), $order->get_currency() )
+			WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order )
 		);
 	}
 
@@ -1361,7 +1361,7 @@ class WooPaymentsOrderNoteService {
 		return sprintf(
 			/* translators: %1$s: the refund amount, %2$s: error message. */
 			__( 'A refund of %1$s failed to complete: %2$s', 'woocommerce' ),
-			$this->format_refund_amount( $order, $amount, $currency ),
+			WooPaymentsCurrencyUtils::format_explicit_order_price( $amount, $currency, $order ),
 			$error_message
 		);
 	}
@@ -1515,7 +1515,7 @@ class WooPaymentsOrderNoteService {
 	 * @return string
 	 */
 	private function format_created_refund_note_for_domain( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending, string $text_domain, ?string $formatted_amount = null ): string {
-		$formatted_price = $formatted_amount ?? $this->format_refund_amount( $order, $amount, $currency );
+		$formatted_price = $formatted_amount ?? WooPaymentsCurrencyUtils::format_explicit_order_price( $amount, $currency, $order );
 		if ( 'woocommerce-payments' === $text_domain ) {
 			// phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Intentionally render the legacy plugin catalog for cross-cutover deduplication.
 			$status_text = $is_pending ? __( 'is pending', 'woocommerce-payments' ) : __( 'was successfully processed', 'woocommerce-payments' );
@@ -1660,30 +1660,6 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Format a refund amount with WooPayments explicit-currency behavior.
-	 *
-	 * @param WC_Order $order    Order object.
-	 * @param float    $amount   Refund amount.
-	 * @param string   $currency Refund currency.
-	 * @return string
-	 */
-	private function format_refund_amount( WC_Order $order, float $amount, string $currency ): string {
-		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
-		$formatted_price = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, $currency );
-		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
-
-		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {
-			return (string) call_user_func( $formatter, $formatted_price, $order );
-		}
-
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
-			$formatted_price,
-			strtoupper( $order->get_currency() ),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
-		);
-	}
-
-	/**
 	 * Format the finite set of historical WooPayments amount variants.
 	 *
 	 * Loaded WooPayments code remains the canonical source. Without it, configured
@@ -1727,7 +1703,7 @@ class WooPaymentsOrderNoteService {
 	 * @return string
 	 */
 	private function format_order_amount( WC_Order $order ): string {
-		return $this->format_refund_amount( $order, (float) $order->get_total(), $order->get_currency() );
+		return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
 	}
 
 	/**
@@ -1739,7 +1715,7 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function format_order_amount_for_domain( WC_Order $order, string $text_domain ): string {
 		if ( 'woocommerce-payments' === $text_domain ) {
-			return $this->format_refund_amount( $order, (float) $order->get_total(), $order->get_currency() );
+			return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
 		}
 
 		return $this->format_order_amount( $order );

@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -393,7 +392,7 @@ class WooPaymentsRefundEventHandler {
 	 * @return string
 	 */
 	private function get_failed_refund_note( WC_Order $order, string $refund_id, int $amount, string $currency, bool $is_cancelled, string $failure_reason ): string {
-		$formatted_amount = $this->format_refund_amount( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency, $order );
+		$formatted_amount = WooPaymentsCurrencyUtils::format_explicit_order_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency, $order );
 		$status           = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
 		$suffix           = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
 		$note             = sprintf(
@@ -407,29 +406,6 @@ class WooPaymentsRefundEventHandler {
 		);
 
 		return wp_kses_post( $note );
-	}
-
-	/**
-	 * Format a refund amount with WooPayments explicit-currency behavior.
-	 *
-	 * @param float    $amount   Refund amount.
-	 * @param string   $currency Refund currency.
-	 * @param WC_Order $order    Order object.
-	 * @return string
-	 */
-	private function format_refund_amount( float $amount, string $currency, WC_Order $order ): string {
-		$formatted_amount = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, strtoupper( $currency ) );
-
-		$extension_formatter = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
-		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $extension_formatter ) ) {
-			return (string) call_user_func( $extension_formatter, $formatted_amount, $order );
-		}
-
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
-			$formatted_amount,
-			$order->get_currency(),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
-		);
 	}
 
 	/**

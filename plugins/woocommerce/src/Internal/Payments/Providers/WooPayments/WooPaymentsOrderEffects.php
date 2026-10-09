@@ -584,16 +584,6 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Tell whether the currency uses zero decimal places at the provider boundary.
-	 *
-	 * @param string $currency Currency code.
-	 * @return bool
-	 */
-	public static function is_zero_decimal_currency( string $currency ): bool {
-		return WooPaymentsCurrencyUtils::is_zero_decimal_currency( $currency );
-	}
-
-	/**
 	 * Tell whether a native charge used a card payment method.
 	 *
 	 * @param array<string,mixed> $charge Native Charge response.
