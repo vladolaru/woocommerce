@@ -69,7 +69,7 @@ class PaymentProcessingService {
 	 * Process checkout payment through a provider and return the outcome.
 	 *
 	 * Under the order payment lock the context's order is read again in place, so every holder of that object sees the
-	 * order as the charge saw it (get_outcome_for_order_changed_before_claim()).
+	 * order as the charge saw it (refresh_order_before_charge()).
 	 *
 	 * @since 11.0.0
 	 *
@@ -93,7 +93,7 @@ class PaymentProcessingService {
 		}
 
 		try {
-			$changed_order_outcome = $this->get_outcome_for_order_changed_before_claim( $order, $vocabulary );
+			$changed_order_outcome = $this->refresh_order_before_charge( $order, $vocabulary );
 			if ( null !== $changed_order_outcome ) {
 				return $changed_order_outcome;
 			}
@@ -158,7 +158,7 @@ class PaymentProcessingService {
 	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return PaymentOutcome|null The outcome to return instead of charging, or null to charge.
 	 */
-	private function get_outcome_for_order_changed_before_claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): ?PaymentOutcome {
+	private function refresh_order_before_charge( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary ): ?PaymentOutcome {
 		$paid_statuses     = wc_get_is_paid_statuses();
 		$loaded_status     = $order->get_status();
 		$loaded_was_paid   = $order->has_status( $paid_statuses );
