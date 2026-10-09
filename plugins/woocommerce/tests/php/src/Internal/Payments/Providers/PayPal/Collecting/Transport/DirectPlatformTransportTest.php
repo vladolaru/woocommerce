@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transpo
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PerAppBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\PayPalApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Log\AbstractLogger;
@@ -432,7 +433,11 @@ class DirectPlatformTransportTest extends WalletTestCase {
 		$platform_body = json_decode( $requests[0]['request']['body'], true );
 		$this->assertSame( 'https://shop.example.com/wp-json/paypal/v1/incoming', $platform_body['url'] );
 		$this->assertSame( 'Bearer token-platform-1', $requests[0]['request']['headers']['Authorization'] );
-		$this->assertSame( array( 'MERCHANT.ONBOARDING.COMPLETED', 'MERCHANT.PARTNER-CONSENT.REVOKED', 'PAYMENT.CAPTURE.*' ), array_column( $platform_body['event_types'], 'name' ) );
+		$this->assertSame(
+			array( 'MERCHANT.ONBOARDING.COMPLETED', 'MERCHANT.PARTNER-CONSENT.REVOKED', 'PAYMENT.CAPTURE.COMPLETED', 'PAYMENT.CAPTURE.PENDING', 'PAYMENT.CAPTURE.REVERSED', 'PAYMENT.CAPTURE.REFUNDED', 'PAYMENT.CAPTURE.DENIED' ),
+			array_column( $platform_body['event_types'], 'name' ),
+			'PayPal accepts exact event names only, not a prefix wildcard'
+		);
 		$merchant_body = json_decode( $requests[1]['request']['body'], true );
 		$this->assertSame( 'Bearer token-merchant_app-1', $requests[1]['request']['headers']['Authorization'] );
 		$this->assertSame(
@@ -476,6 +481,50 @@ class DirectPlatformTransportTest extends WalletTestCase {
 		} catch ( RuntimeException $exception ) {
 			$this->assertSame( array( PlatformTransport::APP_PLATFORM => 'WH-A' ), get_option( Options::WEBHOOKS ) );
 		}
+	}
+
+	/**
+	 * @testdox Should still try the merchant app when the platform app fails, keep what succeeded, and rethrow the first failure.
+	 */
+	public function test_subscribe_webhooks_tries_every_app_when_an_earlier_one_fails(): void {
+		$refusal = $this->http_response( 400, '{"name":"VALIDATION_ERROR","message":"Invalid data provided"}' );
+		$this->stub_api( array( 'POST /v1/notifications/webhooks' => array( $refusal, $this->webhook_created( 'WH-B' ) ) ) );
+
+		try {
+			$this->sut->subscribe_webhooks( 'https://shop.example.com/hook' );
+			$this->fail( 'The failed subscription throws once every app was tried' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertSame( 'VALIDATION_ERROR', $exception instanceof PayPalApiException ? $exception->name() : '', 'The platform app\'s failure is the one rethrown' );
+		}
+
+		$requests = $this->api_requests();
+		$this->assertCount( 2, $requests, 'Both apps were tried' );
+		$this->assertSame( 'Bearer token-merchant_app-1', $requests[1]['request']['headers']['Authorization'] );
+		$this->assertSame( array( PlatformTransport::APP_MERCHANT_APP => 'WH-B' ), get_option( Options::WEBHOOKS ), 'Only the app that succeeded is stored' );
+	}
+
+	/**
+	 * @testdox Should rethrow the first failure, store nothing, and try every app when all of them fail.
+	 */
+	public function test_subscribe_webhooks_rethrows_the_first_failure_when_every_app_fails(): void {
+		$this->stub_api(
+			array(
+				'POST /v1/notifications/webhooks' => array(
+					$this->http_response( 400, '{"name":"VALIDATION_ERROR","message":"first"}' ),
+					$this->http_response( 400, '{"name":"INVALID_REQUEST","message":"second"}' ),
+				),
+			)
+		);
+
+		try {
+			$this->sut->subscribe_webhooks( 'https://shop.example.com/hook' );
+			$this->fail( 'The failed subscriptions throw' );
+		} catch ( PayPalApiException $exception ) {
+			$this->assertSame( 'VALIDATION_ERROR', $exception->name() );
+		}
+
+		$this->assertCount( 2, $this->api_requests(), 'Both apps were tried' );
+		$this->assertFalse( get_option( Options::WEBHOOKS ), 'Nothing is stored when nothing succeeded' );
 	}
 
 	/**
@@ -845,7 +894,7 @@ class DirectPlatformTransportTest extends WalletTestCase {
 			$this->sut->subscribe_webhooks( 'https://shop.example.com/hook' );
 			$this->fail( 'The refusal throws' );
 		} catch ( RuntimeException $exception ) {
-			$this->assertCount( 1, $this->api_requests(), 'Only the create was sent' );
+			$this->assertSame( array( 'POST', 'POST' ), array_column( array_column( $this->api_requests(), 'request' ), 'method' ), 'Only the creates were sent, one per app' );
 		}
 	}
 

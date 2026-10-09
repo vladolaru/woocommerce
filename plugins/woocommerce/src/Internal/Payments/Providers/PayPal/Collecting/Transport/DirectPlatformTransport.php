@@ -40,12 +40,17 @@ final class DirectPlatformTransport implements PlatformTransport {
 	private const HOST_PRODUCTION = 'https://api-m.paypal.com';
 
 	/**
-	 * The events the platform app's subscription listens to: onboarding, and captures to reconcile held orders.
+	 * The events the platform app's subscription listens to: onboarding, and captures to reconcile held orders. PayPal
+	 * takes exact event names only; a prefix wildcard such as `PAYMENT.CAPTURE.*` is refused as not a valid event name.
 	 */
 	private const PLATFORM_EVENTS = array(
 		'MERCHANT.ONBOARDING.COMPLETED',
 		'MERCHANT.PARTNER-CONSENT.REVOKED',
-		'PAYMENT.CAPTURE.*',
+		'PAYMENT.CAPTURE.COMPLETED',
+		'PAYMENT.CAPTURE.PENDING',
+		'PAYMENT.CAPTURE.REVERSED',
+		'PAYMENT.CAPTURE.REFUNDED',
+		'PAYMENT.CAPTURE.DENIED',
 	);
 
 	/**
@@ -389,7 +394,8 @@ final class DirectPlatformTransport implements PlatformTransport {
 	/**
 	 * {@inheritDoc}
 	 *
-	 * A subscription that was created stays stored when a later one fails. One PayPal already holds for the URL is adopted.
+	 * Every app is tried, whatever happened to the others: each subscription that was created is stored, and the first
+	 * failure is thrown once all were tried. One PayPal already holds for the URL is adopted.
 	 *
 	 * @param string $url The listener URL.
 	 * @return array<string, string>
@@ -402,16 +408,26 @@ final class DirectPlatformTransport implements PlatformTransport {
 			self::APP_MERCHANT_APP => self::MERCHANT_APP_EVENTS,
 		);
 
-		$stored = $this->webhook_subscriptions();
+		$stored  = $this->webhook_subscriptions();
+		$failure = null;
 		foreach ( $events as $app => $names ) {
 			if ( isset( $stored[ $app ] ) ) {
 				continue;
 			}
 
-			$id = $this->create_webhook( $app, $url, $names );
+			try {
+				$id = $this->create_webhook( $app, $url, $names );
+			} catch ( RuntimeException $exception ) {
+				$failure = $failure ?? $exception;
+				continue;
+			}
 
 			$stored[ $app ] = $id;
 			update_option( Options::WEBHOOKS, $stored );
+		}
+
+		if ( null !== $failure ) {
+			throw $failure;
 		}
 
 		return $stored;
