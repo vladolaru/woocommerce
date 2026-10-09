@@ -830,6 +830,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 						return '';
 					}
 
+					/**
+					 * Get the note identity meta key: this provider gives its notes no identities.
+					 *
+					 * @return string
+					 */
+					public function get_note_identity_meta_key(): string {
+						return '';
+					}
+
 				};
 			}
 
@@ -2683,7 +2692,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			PaymentOutcome::DATA_REFUND_NOTE             => $runtime_note,
 			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY    => $identity,
 			PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $runtime_note, $locale_note ),
-			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY => '_test_provider_note_identity',
 		);
 		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_structural', '', '', '', $effect_data ) );
 
@@ -2702,7 +2710,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $refund_notes );
 		$this->assertSame( $locale_note, $refund_notes[0]->content );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
 	}
 
 	/**
@@ -2731,10 +2739,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'',
 				'',
 				array(
-					'refund_note'                   => $runtime_note,
-					'refund_note_identity'          => $identity,
-					'refund_note_equivalents'       => array( $runtime_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
-					'refund_note_identity_meta_key' => '_test_provider_note_identity',
+					'refund_note'             => $runtime_note,
+					'refund_note_identity'    => $identity,
+					'refund_note_equivalents' => array( $runtime_note, 42, array( '_arbitrary_comment_meta' => 'injected' ), $locale_note ),
 				)
 			)
 		);
@@ -2752,7 +2759,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $refund_notes );
 		$this->assertSame( $locale_note, $refund_notes[0]->content );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $refund_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
 		$this->assertSame( '', get_comment_meta( $refund_notes[0]->id, '_arbitrary_comment_meta', true ) );
 	}
 
@@ -2781,10 +2788,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'',
 				'',
 				array(
-					'refund_note'                   => $runtime_note,
-					'refund_note_identity'          => $identity,
-					'refund_note_equivalents'       => array( 42 ),
-					'refund_note_identity_meta_key' => '_test_provider_note_identity',
+					'refund_note'             => $runtime_note,
+					'refund_note_identity'    => $identity,
+					'refund_note_equivalents' => array( 42 ),
 				)
 			)
 		);
@@ -2799,7 +2805,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertCount( 1, $runtime_notes );
-		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $runtime_notes[0]->id, '_test_provider_note_identity', true ) );
+		$this->assertSame( hash( 'sha256', $identity ), get_comment_meta( $runtime_notes[0]->id, $provider->get_persistence_vocabulary()->get_note_identity_meta_key(), true ) );
 		$this->assertSame( array(), get_comment_meta( $coercion_trap_note_id ) );
 	}
 
@@ -2807,10 +2813,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Malformed structural refund-note values fall back without creating comment metadata.
 	 * @dataProvider malformed_refund_note_identity_data
 	 *
-	 * @param mixed $identity          Structural note identity.
-	 * @param mixed $identity_meta_key Structural note identity meta key.
+	 * @param mixed $identity Structural note identity.
 	 */
-	public function test_process_refund_does_not_coerce_malformed_structural_note_values( $identity, $identity_meta_key ): void {
+	public function test_process_refund_does_not_coerce_malformed_structural_note_values( $identity ): void {
 		$note   = 'Existing exact refund note. (<code>re_malformed_structure</code>)';
 		$order  = $this->create_woopayments_order( '2.75' );
 		$refund = wc_create_refund(
@@ -2831,10 +2836,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'',
 				'',
 				array(
-					'refund_note'                   => $note,
-					'refund_note_identity'          => $identity,
-					'refund_note_equivalents'       => array( $note ),
-					'refund_note_identity_meta_key' => $identity_meta_key,
+					'refund_note'             => $note,
+					'refund_note_identity'    => $identity,
+					'refund_note_equivalents' => array( $note ),
 				)
 			)
 		);
@@ -2847,19 +2851,71 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide malformed structural refund-note values.
+	 * Provide malformed structural refund-note identities.
 	 *
-	 * @return array<string,array{mixed,mixed}>
+	 * @return array<string,array{mixed}>
 	 */
 	public function malformed_refund_note_identity_data(): array {
 		return array(
-			'empty identity'             => array( '', '_test_provider_note_identity' ),
-			'array identity'             => array( array( 'refund:re_malformed_structure:created_successful' ), '_test_provider_note_identity' ),
-			'scalar non-string identity' => array( 42, '_test_provider_note_identity' ),
-			'empty meta key'             => array( 'refund:re_malformed_structure:created_successful', '' ),
-			'array meta key'             => array( 'refund:re_malformed_structure:created_successful', array( '_arbitrary_comment_meta' ) ),
-			'scalar non-string meta key' => array( 'refund:re_malformed_structure:created_successful', true ),
+			'empty identity'             => array( '' ),
+			'array identity'             => array( array( 'refund:re_malformed_structure:created_successful' ) ),
+			'scalar non-string identity' => array( 42 ),
 		);
+	}
+
+	/**
+	 * @testdox A provider whose vocabulary names no note identity key gets its refund note found by text alone, with no identity written.
+	 */
+	public function test_process_refund_without_a_note_identity_key_finds_the_note_by_text(): void {
+		$note   = 'Existing exact refund note. (<code>re_no_identity_key</code>)';
+		$order  = $this->create_woopayments_order( '2.75' );
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.75,
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note_id  = $order->add_order_note( $note );
+		$provider = new class(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_no_identity_key',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_REFUND_NOTE => $note,
+					PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_no_identity_key:created_successful',
+					PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $note ),
+				)
+			)
+		) extends RecordingProvider {
+			/**
+			 * Get a vocabulary that names no note identity key.
+			 *
+			 * @return ProviderPersistenceVocabularyInterface
+			 */
+			public function get_persistence_vocabulary(): ProviderPersistenceVocabularyInterface {
+				return new class() extends WooPaymentsPersistenceVocabulary {
+					/**
+					 * Name no note identity key.
+					 *
+					 * @return string
+					 */
+					public function get_note_identity_meta_key(): string {
+						return '';
+					}
+				};
+			}
+		};
+
+		$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.75 ), $provider );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $order_note ): bool => $note === $order_note->content ) );
+		$this->assertSame( array(), get_comment_meta( $note_id ) );
 	}
 
 	/**
@@ -2882,7 +2938,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$effect_data = array(
 			PaymentOutcome::DATA_REFUND_NOTE          => $note,
 			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_partial_structure:created_successful',
-			PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY => '_test_provider_note_identity',
 		);
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 		$note_id = $order->add_order_note( $note );

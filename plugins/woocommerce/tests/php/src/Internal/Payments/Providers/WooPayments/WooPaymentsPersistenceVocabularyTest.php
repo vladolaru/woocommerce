@@ -41,6 +41,7 @@ class WooPaymentsPersistenceVocabularyTest extends WC_Unit_Test_Case {
 		$this->assertSame( 300, $this->sut->get_lock_ttl_seconds() );
 		$this->assertSame( '_wcpay_refund_id', $this->sut->get_processed_refund_link_meta_key() );
 		$this->assertSame( '_wcpay_early_fraud_warning', WooPaymentsPersistenceVocabulary::EARLY_FRAUD_WARNING_META_KEY );
+		$this->assertSame( '_wc_woopayments_note_identity', $this->sut->get_note_identity_meta_key() );
 		$this->assertSame(
 			array(
 				'_intent_id',

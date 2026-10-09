@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -25,6 +26,13 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	private OrderPaymentNotes $sut;
 
 	/**
+	 * Vocabulary of a provider that keeps note identities under IDENTITY_META_KEY.
+	 *
+	 * @var ProviderPersistenceVocabularyInterface
+	 */
+	private ProviderPersistenceVocabularyInterface $vocabulary;
+
+	/**
 	 * Order the notes are on.
 	 *
 	 * @var WC_Order
@@ -36,8 +44,9 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		$this->sut   = new OrderPaymentNotes();
-		$this->order = wc_create_order();
+		$this->sut        = new OrderPaymentNotes();
+		$this->vocabulary = $this->vocabulary_with_key( self::IDENTITY_META_KEY );
+		$this->order      = wc_create_order();
 		$this->order->save();
 	}
 
@@ -48,9 +57,9 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 		$this->order->add_order_note( 'Another note.' );
 		$note_id = (int) $this->order->add_order_note( 'Payment note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', 'payment:1' ) ) );
 
-		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:1', self::IDENTITY_META_KEY ) );
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:2', self::IDENTITY_META_KEY ) );
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:1', '_other_provider_note_identity' ) );
+		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary ) );
+		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:2', $this->vocabulary ) );
+		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary_with_key( '_other_provider_note_identity' ) ) );
 	}
 
 	/**
@@ -59,8 +68,8 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	public function test_find_by_identity_without_identity_or_key_finds_nothing(): void {
 		$this->order->add_order_note( 'Payment note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', '' ) ) );
 
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, '', self::IDENTITY_META_KEY ) );
-		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:1', '' ) );
+		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, '', $this->vocabulary ) );
+		$this->assertSame( 0, $this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary_with_key( '' ) ) );
 	}
 
 	/**
@@ -81,7 +90,7 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 		$note_id = (int) $this->order->add_order_note( 'Payment note.', 0, false, array( self::IDENTITY_META_KEY => hash( 'sha256', 'payment:1' ) ) );
 		$before  = get_comment_meta( $note_id );
 
-		$this->sut->find_by_identity( $this->order, 'payment:1', self::IDENTITY_META_KEY );
+		$this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary );
 		$this->sut->find_by_content( $this->order, 'Payment note.' );
 
 		$this->assertSame( $before, get_comment_meta( $note_id ) );
@@ -93,12 +102,12 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	public function test_record_identity_tags_the_note_once(): void {
 		$note_id = (int) $this->order->add_order_note( 'Payment note.' );
 
-		$this->sut->record_identity( $note_id, 'payment:1', self::IDENTITY_META_KEY );
-		$this->sut->record_identity( $note_id, 'payment:1', self::IDENTITY_META_KEY );
-		$this->sut->record_identity( $note_id, 'payment:2', self::IDENTITY_META_KEY );
+		$this->sut->record_identity( $note_id, 'payment:1', $this->vocabulary );
+		$this->sut->record_identity( $note_id, 'payment:1', $this->vocabulary );
+		$this->sut->record_identity( $note_id, 'payment:2', $this->vocabulary );
 
 		$this->assertSame( array( hash( 'sha256', 'payment:1' ), hash( 'sha256', 'payment:2' ) ), get_comment_meta( $note_id, self::IDENTITY_META_KEY, false ) );
-		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:2', self::IDENTITY_META_KEY ) );
+		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:2', $this->vocabulary ) );
 	}
 
 	/**
@@ -107,9 +116,9 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	public function test_record_identity_without_identity_key_or_note_writes_nothing(): void {
 		$note_id = (int) $this->order->add_order_note( 'Payment note.' );
 
-		$this->sut->record_identity( $note_id, '', self::IDENTITY_META_KEY );
-		$this->sut->record_identity( $note_id, 'payment:1', '' );
-		$this->sut->record_identity( 0, 'payment:1', self::IDENTITY_META_KEY );
+		$this->sut->record_identity( $note_id, '', $this->vocabulary );
+		$this->sut->record_identity( $note_id, 'payment:1', $this->vocabulary_with_key( '' ) );
+		$this->sut->record_identity( 0, 'payment:1', $this->vocabulary );
 
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
 	}
@@ -118,12 +127,12 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	 * @testdox A note added with an identity carries its hash and is then found by it.
 	 */
 	public function test_add_writes_the_note_with_its_identity(): void {
-		$note_id = $this->sut->add( $this->order, 'Payment note.', 'payment:1', self::IDENTITY_META_KEY );
+		$note_id = $this->sut->add( $this->order, 'Payment note.', 'payment:1', $this->vocabulary );
 
 		$this->assertGreaterThan( 0, $note_id );
 		$this->assertSame( 'Payment note.', wc_get_order_note( $note_id )->content );
 		$this->assertSame( array( hash( 'sha256', 'payment:1' ) ), get_comment_meta( $note_id, self::IDENTITY_META_KEY, false ) );
-		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:1', self::IDENTITY_META_KEY ) );
+		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:1', $this->vocabulary ) );
 	}
 
 	/**
@@ -135,7 +144,7 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 	 * @param string $identity_meta_key Identity meta key.
 	 */
 	public function test_add_without_identity_or_key_writes_a_plain_note( string $identity, string $identity_meta_key ): void {
-		$note_id = $this->sut->add( $this->order, 'Payment note.', $identity, $identity_meta_key );
+		$note_id = $this->sut->add( $this->order, 'Payment note.', $identity, $this->vocabulary_with_key( $identity_meta_key ) );
 
 		$this->assertGreaterThan( 0, $note_id );
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
@@ -151,5 +160,18 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 			'no identity' => array( '', self::IDENTITY_META_KEY ),
 			'no key'      => array( 'payment:1', '' ),
 		);
+	}
+
+	/**
+	 * Build a provider vocabulary that keeps note identities under a key.
+	 *
+	 * @param string $identity_meta_key Note identity meta key, or '' for none.
+	 * @return ProviderPersistenceVocabularyInterface
+	 */
+	private function vocabulary_with_key( string $identity_meta_key ): ProviderPersistenceVocabularyInterface {
+		$vocabulary = $this->createMock( ProviderPersistenceVocabularyInterface::class );
+		$vocabulary->method( 'get_note_identity_meta_key' )->willReturn( $identity_meta_key );
+
+		return $vocabulary;
 	}
 }

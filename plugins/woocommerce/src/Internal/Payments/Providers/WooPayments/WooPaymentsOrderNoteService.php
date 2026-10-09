@@ -24,14 +24,6 @@ class WooPaymentsOrderNoteService {
 	 * FROD (Future Refunds or Disputes) balances are unavailable in these account countries.
 	 */
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
-	/**
-	 * Identity metadata stored on WooPayments order-note comments.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @var string
-	 */
-	public const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
 
 	/**
 	 * Build exact Core- and plugin-catalog renderings of a payment-success note.
@@ -1597,7 +1589,7 @@ class WooPaymentsOrderNoteService {
 		}
 
 		$order_payment_notes = $this->get_order_payment_notes();
-		$note_id             = $order_payment_notes->find_by_identity( $order, $identity, self::NOTE_IDENTITY_META_KEY );
+		$note_id             = $order_payment_notes->find_by_identity( $order, $identity, $this->get_persistence_vocabulary() );
 
 		return 0 < $note_id
 			? $note_id
@@ -1615,7 +1607,7 @@ class WooPaymentsOrderNoteService {
 	 * @since 11.2.0
 	 */
 	public function record_note_identity( int $note_id, string $identity ): void {
-		$this->get_order_payment_notes()->record_identity( $note_id, $identity, self::NOTE_IDENTITY_META_KEY );
+		$this->get_order_payment_notes()->record_identity( $note_id, $identity, $this->get_persistence_vocabulary() );
 	}
 
 	/**
@@ -1646,7 +1638,7 @@ class WooPaymentsOrderNoteService {
 			$before_add();
 		}
 
-		if ( 0 >= $this->get_order_payment_notes()->add( $order, $note, $identity, self::NOTE_IDENTITY_META_KEY ) ) {
+		if ( 0 >= $this->get_order_payment_notes()->add( $order, $note, $identity, $this->get_persistence_vocabulary() ) ) {
 			return false;
 		}
 
@@ -1662,6 +1654,15 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function get_order_payment_notes(): OrderPaymentNotes {
 		return wc_get_container()->get( OrderPaymentNotes::class );
+	}
+
+	/**
+	 * Get the WooPayments persistence vocabulary, which names the note identity key.
+	 *
+	 * @return WooPaymentsPersistenceVocabulary
+	 */
+	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
+		return wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
 	}
 
 	/**

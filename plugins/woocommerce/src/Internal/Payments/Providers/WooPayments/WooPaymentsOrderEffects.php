@@ -576,14 +576,13 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Compose local effects for a successful provider refund.
 	 *
-	 * @param array<string,mixed> $result                        Provider refund response.
-	 * @param string              $rendered_note                 Rendered compatibility note.
-	 * @param string              $refund_note_identity          Stable refund note identity.
-	 * @param array<mixed>        $refund_note_equivalents       Exact equivalent refund-note renderings.
-	 * @param string              $refund_note_identity_meta_key Comment-meta key for the stable identity.
+	 * @param array<string,mixed> $result                  Provider refund response.
+	 * @param string              $rendered_note           Rendered compatibility note.
+	 * @param string              $refund_note_identity    Stable refund note identity.
+	 * @param array<mixed>        $refund_note_equivalents Exact equivalent refund-note renderings.
 	 * @return array<string,mixed>
 	 */
-	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents, string $refund_note_identity_meta_key ): array {
+	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents ): array {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
@@ -606,10 +605,6 @@ class WooPaymentsOrderEffects {
 		$refund_note_equivalents = array_values( array_filter( $refund_note_equivalents, 'is_string' ) );
 		if ( ! empty( $refund_note_equivalents ) ) {
 			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] = $refund_note_equivalents;
-		}
-
-		if ( '' !== $refund_note_identity_meta_key ) {
-			$effect_data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] = $refund_note_identity_meta_key;
 		}
 
 		return $effect_data;

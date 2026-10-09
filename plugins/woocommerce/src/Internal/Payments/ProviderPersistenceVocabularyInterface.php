@@ -102,4 +102,17 @@ interface ProviderPersistenceVocabularyInterface {
 	 * @since 11.2.0
 	 */
 	public function get_open_dispute_ids_meta_key(): string;
+
+	/**
+	 * Get the comment-meta key holding the identities of the provider's payment notes.
+	 *
+	 * The runtime stores each payment note's identity as its SHA-256 hash under this key, so the same note is found again
+	 * whatever its text reads by then. Return '' when the provider gives its notes no identities; its notes are then found
+	 * by their text only.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_note_identity_meta_key(): string;
 }

@@ -1719,7 +1719,6 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 're_effects', $data[ PaymentOutcome::DATA_REFUND_NOTE ] );
 		$this->assertSame( 'refund:re_effects:created_pending', $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
 		$this->assertContains( $data[ PaymentOutcome::DATA_REFUND_NOTE ], $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
-		$this->assertSame( WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY, $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] );
 		$this->assertSame( $plan, $applied_outcome->get_effect_plan() );
 
 		$successful_result  = array(

@@ -143,15 +143,6 @@ class PaymentOutcome {
 	public const DATA_REFUND_NOTE_EQUIVALENTS = 'refund_note_equivalents';
 
 	/**
-	 * Refund outcomes: refund-note identity comment-meta key.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @var string
-	 */
-	public const DATA_REFUND_NOTE_IDENTITY_META_KEY = 'refund_note_identity_meta_key';
-
-	/**
 	 * Failed outcomes: provider error code.
 	 *
 	 * @var string

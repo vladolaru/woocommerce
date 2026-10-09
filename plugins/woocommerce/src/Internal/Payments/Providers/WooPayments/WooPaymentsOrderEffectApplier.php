@@ -208,8 +208,7 @@ class WooPaymentsOrderEffectApplier {
 						$result,
 						$note_candidates[0],
 						$note_identity,
-						$note_candidates,
-						WooPaymentsOrderNoteService::NOTE_IDENTITY_META_KEY
+						$note_candidates
 					),
 					$plan
 				);

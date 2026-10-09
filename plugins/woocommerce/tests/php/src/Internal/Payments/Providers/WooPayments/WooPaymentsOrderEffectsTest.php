@@ -756,8 +756,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			),
 			'Already rendered refund note.',
 			'refund:re_native:created_pending',
-			$equivalent_notes,
-			'_test_refund_note_identity'
+			$equivalent_notes
 		);
 
 		$this->assertSame( 'pending', $effects[ PaymentOutcome::DATA_ORDER_META ]['_wcpay_refund_status'] );
@@ -766,6 +765,5 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Already rendered refund note.', $effects[ PaymentOutcome::DATA_REFUND_NOTE ] );
 		$this->assertSame( 'refund:re_native:created_pending', $effects[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
 		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
-		$this->assertSame( '_test_refund_note_identity', $effects[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] );
 	}
 }

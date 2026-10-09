@@ -38,6 +38,15 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	public const GATEWAY_ID_PREFIX = 'woocommerce_payments_';
 
 	/**
+	 * Comment-meta key holding the identities of WooPayments payment notes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const NOTE_IDENTITY_META_KEY = '_wc_woopayments_note_identity';
+
+	/**
 	 * WooPayments-compatible order processing lock transient prefix.
 	 *
 	 * The built-in WooPayments and the WooPayments extension share this order lock on stores that switch, so the key,
@@ -217,6 +226,17 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 */
 	public function get_open_dispute_ids_meta_key(): string {
 		return WooPaymentsDisputeEventHandler::OPEN_DISPUTE_IDS_META_KEY;
+	}
+
+	/**
+	 * Get the comment-meta key holding the identities of WooPayments payment notes.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_note_identity_meta_key(): string {
+		return self::NOTE_IDENTITY_META_KEY;
 	}
 
 	/**

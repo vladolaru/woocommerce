@@ -419,7 +419,7 @@ class PaymentProcessingService {
 			try {
 				$outcome = $this->apply_provider_operation_effects( $context, $outcome, $provider, self::OPERATION_REFUND );
 				if ( $outcome->is_successful() ) {
-					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id );
+					$this->apply_refund_outcome( $order, $outcome, $wc_refund_id, $persistence_vocabulary );
 				}
 			} catch ( Throwable $apply_exception ) {
 				if ( ! $this->is_reconcilable_provider_outcome( $provider_outcome ) ) {
@@ -520,12 +520,13 @@ class PaymentProcessingService {
 	/**
 	 * Apply provider refund metadata to the WooCommerce refund this call links.
 	 *
-	 * @param WC_Order       $order        Parent order.
-	 * @param PaymentOutcome $outcome      Provider refund outcome.
-	 * @param int|null       $wc_refund_id Local refund this call links.
+	 * @param WC_Order                               $order                  Parent order.
+	 * @param PaymentOutcome                         $outcome                Provider refund outcome.
+	 * @param int|null                               $wc_refund_id           Local refund this call links.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @throws \RuntimeException When the refund or parent order cannot be reloaded.
 	 */
-	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?int $wc_refund_id ): void {
+	private function apply_refund_outcome( WC_Order $order, PaymentOutcome $outcome, ?int $wc_refund_id, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
 		$data                          = $outcome->get_data();
 		$refund_meta                   = isset( $data[ PaymentOutcome::DATA_REFUND_META ] ) && is_array( $data[ PaymentOutcome::DATA_REFUND_META ] )
 			? $data[ PaymentOutcome::DATA_REFUND_META ]
@@ -543,9 +544,6 @@ class PaymentProcessingService {
 		$refund_note_equivalents       = $refund_note_equivalents_valid
 			? array_values( array_filter( $data[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ], 'is_string' ) )
 			: array();
-		$refund_note_identity_meta_key = isset( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] ) && is_string( $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ] )
-			? $data[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY_META_KEY ]
-			: '';
 
 		if ( empty( $refund_meta ) && empty( $order_meta ) && '' === $refund_note ) {
 			return;
@@ -570,7 +568,7 @@ class PaymentProcessingService {
 		}
 
 		if ( '' !== $refund_note ) {
-			$this->maybe_add_refund_note( $reloaded_order, $refund_note, $refund_note_identity, $refund_note_equivalents, $refund_note_identity_meta_key );
+			$this->maybe_add_refund_note( $reloaded_order, $refund_note, $refund_note_identity, $refund_note_equivalents, $persistence_vocabulary );
 		}
 		$reloaded_order->save_meta_data();
 	}
@@ -578,32 +576,34 @@ class PaymentProcessingService {
 	/**
 	 * Add the provider's refund note unless the order already has it.
 	 *
-	 * @param WC_Order $order             Parent order.
-	 * @param string   $note              Provider refund note.
-	 * @param string   $identity          Stable refund note identity.
-	 * @param string[] $equivalent_notes  Other texts of the same refund note.
-	 * @param string   $identity_meta_key Comment-meta key for the stable identity.
+	 * A note without an identity, or from a provider that names no identity key, is found by its text alone.
+	 *
+	 * @param WC_Order                               $order                  Parent order.
+	 * @param string                                 $note                   Provider refund note.
+	 * @param string                                 $identity               Stable refund note identity.
+	 * @param string[]                               $equivalent_notes       Other texts of the same refund note.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 */
-	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), string $identity_meta_key = '' ): void {
-		if ( '' === $identity || '' === $identity_meta_key ) {
+	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity, array $equivalent_notes, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+		if ( '' === $identity || '' === $persistence_vocabulary->get_note_identity_meta_key() ) {
 			if ( 0 === $this->order_payment_notes->find_by_content( $order, $note ) ) {
-				$this->order_payment_notes->add( $order, $note, '', '' );
+				$this->order_payment_notes->add( $order, $note, '', $persistence_vocabulary );
 			}
 			return;
 		}
 
-		if ( 0 < $this->order_payment_notes->find_by_identity( $order, $identity, $identity_meta_key ) ) {
+		if ( 0 < $this->order_payment_notes->find_by_identity( $order, $identity, $persistence_vocabulary ) ) {
 			return;
 		}
 
 		$content_match_note_id = $this->order_payment_notes->find_by_content( $order, $note, $equivalent_notes );
 		if ( 0 < $content_match_note_id ) {
 			// A note found by its text gets the identity, so the next write finds it whatever its text reads by then.
-			$this->order_payment_notes->record_identity( $content_match_note_id, $identity, $identity_meta_key );
+			$this->order_payment_notes->record_identity( $content_match_note_id, $identity, $persistence_vocabulary );
 			return;
 		}
 
-		$this->order_payment_notes->add( $order, $note, $identity, $identity_meta_key );
+		$this->order_payment_notes->add( $order, $note, $identity, $persistence_vocabulary );
 	}
 
 	/**

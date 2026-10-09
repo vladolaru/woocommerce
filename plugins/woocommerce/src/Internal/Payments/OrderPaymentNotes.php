@@ -12,9 +12,10 @@ use WC_Order;
 /**
  * Finds a payment note already on an order, and records a note's private identity.
  *
- * A provider tags each payment note with a private identity, stored as its SHA-256 hash in comment meta under the
- * provider's key, so the same note is found again whatever its text reads by then. Finding a note writes nothing; a
- * caller that wants a note found by its text to carry the identity records it, and adds a note found neither way.
+ * A provider tags each payment note with a private identity, stored as its SHA-256 hash in comment meta under the key
+ * its persistence vocabulary names, so the same note is found again whatever its text reads by then. Finding a note
+ * writes nothing; a caller that wants a note found by its text to carry the identity records it, and adds a note found
+ * neither way.
  *
  * @since 11.2.0
  * @internal
@@ -26,12 +27,13 @@ class OrderPaymentNotes {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param WC_Order $order             Order object.
-	 * @param string   $identity          Note identity, before hashing.
-	 * @param string   $identity_meta_key Comment-meta key the provider stores note identities under.
+	 * @param WC_Order                               $order      Order object.
+	 * @param string                                 $identity   Note identity, before hashing.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return int The note's comment ID, or 0 when no note carries the identity.
 	 */
-	public function find_by_identity( WC_Order $order, string $identity, string $identity_meta_key ): int {
+	public function find_by_identity( WC_Order $order, string $identity, ProviderPersistenceVocabularyInterface $vocabulary ): int {
+		$identity_meta_key = $vocabulary->get_note_identity_meta_key();
 		if ( '' === $identity || '' === $identity_meta_key ) {
 			return 0;
 		}
@@ -75,11 +77,12 @@ class OrderPaymentNotes {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param int    $note_id           Note comment ID.
-	 * @param string $identity          Note identity, before hashing.
-	 * @param string $identity_meta_key Comment-meta key the provider stores note identities under.
+	 * @param int                                    $note_id    Note comment ID.
+	 * @param string                                 $identity   Note identity, before hashing.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 */
-	public function record_identity( int $note_id, string $identity, string $identity_meta_key ): void {
+	public function record_identity( int $note_id, string $identity, ProviderPersistenceVocabularyInterface $vocabulary ): void {
+		$identity_meta_key = $vocabulary->get_note_identity_meta_key();
 		if ( 0 >= $note_id || '' === $identity || '' === $identity_meta_key ) {
 			return;
 		}
@@ -99,14 +102,15 @@ class OrderPaymentNotes {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param WC_Order $order             Order object.
-	 * @param string   $note              Note text.
-	 * @param string   $identity          Note identity, before hashing, or '' for a note without one.
-	 * @param string   $identity_meta_key Comment-meta key the provider stores note identities under, or '' for none.
+	 * @param WC_Order                               $order      Order object.
+	 * @param string                                 $note       Note text.
+	 * @param string                                 $identity   Note identity, before hashing, or '' for a note without one.
+	 * @param ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
 	 * @return int The new note's comment ID, or 0 when it was not added.
 	 */
-	public function add( WC_Order $order, string $note, string $identity, string $identity_meta_key ): int {
-		$meta_data = '' === $identity || '' === $identity_meta_key
+	public function add( WC_Order $order, string $note, string $identity, ProviderPersistenceVocabularyInterface $vocabulary ): int {
+		$identity_meta_key = $vocabulary->get_note_identity_meta_key();
+		$meta_data         = '' === $identity || '' === $identity_meta_key
 			? array()
 			: array( $identity_meta_key => hash( 'sha256', $identity ) );
 
