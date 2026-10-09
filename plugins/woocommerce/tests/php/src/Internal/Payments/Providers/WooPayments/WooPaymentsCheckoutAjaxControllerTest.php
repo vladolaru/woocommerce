@@ -1944,6 +1944,94 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback for a $status intent saves the requested card, titles the order from the charge and puts it on hold.
+	 *
+	 * Client 11.1.0 update_order_status() treats every authorized status (succeeded, requires_capture, processing;
+	 * class-intent-status.php:35-39) alike: it saves the requested card when `$intent->is_authorized()` (gw:4308-4310),
+	 * titles the order from the charge's card details once a token exists (gw:4331-4335), marks a requires_capture or
+	 * processing intent authorized, which puts the order on hold (os:410-416, os:1612-1624), and answers the return URL
+	 * (gw:4347-4361).
+	 *
+	 * @dataProvider authorized_intent_statuses
+	 *
+	 * @param string $status Intent status.
+	 */
+	public function test_update_order_status_saves_the_card_for_an_authorized_intent( string $status ): void {
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method_title( 'WooPayments' );
+
+		// REC-CAP's manual-capture authorization (Fixtures/rec-t3-manual-capture.json); the processing case changes only the intent status.
+		$intent           = $this->load_recorded_intent_entry( 'rec-t3-manual-capture.json', 'authorize_manual_capture' )['body'];
+		$intent['status'] = $status;
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( $intent ),
+		);
+		$account_service       = $this->create_account_service( false );
+		$api_client            = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service );
+		$payment_method_id = (string) $intent['payment_method'];
+		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
+		$token_service     = $this->create_token_service(
+			array(
+				$payment_method_id => array(
+					'id'   => $payment_method_id,
+					'type' => 'card',
+					'card' => array(
+						'brand'     => $card['brand'],
+						'last4'     => $card['last4'],
+						'exp_month' => $card['exp_month'],
+						'exp_year'  => $card['exp_year'],
+					),
+				),
+			)
+		);
+		$sut               = $this->create_controller( $api_client, null, $token_service, $account_service );
+
+		$response = $sut->get_update_order_status_response(
+			array(
+				'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'                   => $order->get_id(),
+				'intent_id'                  => $intent['id'],
+				'should_save_payment_method' => 'true',
+			)
+		);
+
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( $payment_method_id, $tokens[0]->get_token() );
+		$this->assertSame( array( $tokens[0]->get_id() ), array_values( $order->get_payment_tokens() ) );
+		$this->assertSame( 'Visa credit card', $order->get_payment_method_title() );
+		$this->assertSame( '4242', $order->get_meta( 'last4', true ) );
+	}
+
+	/**
+	 * Intent statuses, other than succeeded, in which the intent holds the shopper's money.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function authorized_intent_statuses(): array {
+		return array(
+			'requires_capture' => array( 'requires_capture' ),
+			'processing'       => array( 'processing' ),
+		);
+	}
+
+	/**
 	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
 	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; HTTP 200 for a malformed display brand is the N-104 correctness decision.
 	 *

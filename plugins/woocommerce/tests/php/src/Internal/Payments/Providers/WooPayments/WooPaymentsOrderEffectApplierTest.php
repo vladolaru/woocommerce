@@ -621,6 +621,73 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout payment intent in $status saves the requested card and attaches it to the order.
+	 *
+	 * Client 11.1.0 process_payment_for_order() saves the requested card unless the intent is not authorized
+	 * (gw:2023-2024, gw:2036-2061), and an authorized intent is succeeded, requires_capture or processing
+	 * (class-intent-status.php:35-39).
+	 *
+	 * @dataProvider authorized_intent_statuses
+	 *
+	 * @param string $status Intent status.
+	 */
+	public function test_requested_token_effects_save_the_card_for_an_authorized_intent( string $status ): void {
+		$user_id = $this->factory()->user->create();
+		$order   = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+
+		// REC-CAP's manual-capture authorization (Fixtures/rec-t3-manual-capture.json); the processing case changes only the intent status.
+		$intent            = $this->load_recorded_fixture_body( 'rec-t3-manual-capture.json', 'authorize_manual_capture' );
+		$intent['status']  = $status;
+		$payment_method_id = (string) $intent['payment_method'];
+		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
+		$token_service     = $this->create_token_service(
+			array(
+				$payment_method_id => array(
+					'id'   => $payment_method_id,
+					'type' => 'card',
+					'card' => array(
+						'brand'     => $card['brand'],
+						'last4'     => $card['last4'],
+						'exp_month' => $card['exp_month'],
+						'exp_year'  => $card['exp_year'],
+					),
+				),
+			)
+		);
+		$context           = PaymentOperationContext::for_checkout(
+			$order,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			$payment_method_id,
+			array( 'save_payment_method' => true )
+		);
+		$outcome           = new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, (string) $intent['id'], '', $payment_method_id, (string) $intent['customer'] );
+
+		$result = $this->create_applier( $token_service )->apply( $context, $outcome, WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( \WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+
+		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $result->get_status() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 1, $tokens );
+		$this->assertSame( $payment_method_id, $tokens[0]->get_token() );
+		$this->assertSame( array( $tokens[0]->get_id() ), array_values( $order->get_payment_tokens() ) );
+	}
+
+	/**
+	 * Intent statuses, other than succeeded, in which the intent holds the shopper's money.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function authorized_intent_statuses(): array {
+		return array(
+			'requires_capture' => array( 'requires_capture' ),
+			'processing'       => array( 'processing' ),
+		);
+	}
+
+	/**
 	 * @testdox Existing saved-token effects attach the selected token to the order without creating a new one.
 	 *
 	 * The client only saves a new token when the shopper submitted one (`class-wc-payment-gateway-wcpay.php:1454-1457`,
@@ -1339,6 +1406,60 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'txn_3UJWs2BzWlxcwgpP1MLoqLbF', $meta['_wcpay_payment_transaction_id'], 'The balance_transaction id must resolve even though it arrives as an expanded object, not a bare id.' );
 		$this->assertSame( '0.75', $meta['_wcpay_transaction_fee'], 'Falls back to application_fee_amount (75) in the charge currency (EUR) because REC-3 carries no fee_breakdown_v1.' );
 		$this->assertArrayNotHasKey( '_wcpay_net', $meta, 'The client writes no net without an envelope (os:1775-1781).' );
+	}
+
+	/**
+	 * @testdox A processing payment intent whose charge carries a settlement rate writes the settlement exchange-rate meta.
+	 *
+	 * Client 11.1.0 attaches the exchange rate after checkout whatever the intent status (gw:2146), reading the charge's
+	 * `balance_transaction.exchange_rate` (gw:2776-2810). The intent is REC-3's recorded EUR charge
+	 * (`Fixtures/rec-3-eur-charge.json`) with only its status changed to processing.
+	 */
+	public function test_processing_payment_intent_effects_persist_settlement_meta_for_converted_order(): void {
+		$original_currency = get_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = $this->create_woopayments_order( '12.34' );
+		$order->set_currency( 'EUR' );
+		$order->save();
+
+		$intent           = $this->load_recorded_eur_charge_entry( 'eur_charge_create_and_confirm' );
+		$intent['status'] = 'processing';
+
+		try {
+			$enriched = $this->create_applier( null, wc_get_container()->get( WooPaymentsOrderDataService::class ) )->enrich_outcome_for_lifecycle(
+				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rec3' ),
+				new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, (string) $intent['id'] ),
+				WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
+			);
+		} finally {
+			update_option( 'woocommerce_currency', $original_currency );
+		}
+
+		$meta = $enriched->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ];
+		$this->assertSame( '1.13905', $meta['_wcpay_multi_currency_stripe_exchange_rate'] ?? null );
+	}
+
+	/**
+	 * Load one recorded entry's response body by fixture file and pair key.
+	 *
+	 * @param string $fixture Fixture file name under `Fixtures/`.
+	 * @param string $pair    Fixture pair key.
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_fixture_body( string $fixture, string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$contents = file_get_contents( __DIR__ . '/Fixtures/' . $fixture );
+		$this->assertIsString( $contents );
+		$decoded = json_decode( $contents, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry['response']['body'];
+			}
+		}
+
+		$this->fail( "Fixture '$fixture' has no entry for pair '$pair'." );
 	}
 
 	/**
