@@ -50,19 +50,29 @@ class PaymentProcessingService {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
+	 * Order payment notes.
+	 *
+	 * @var OrderPaymentNotes
+	 */
+	private OrderPaymentNotes $order_payment_notes;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock             $order_payment_lock Order payment lock.
-	 * @param OrderPaymentLifecycleService $lifecycle_service  Order payment lifecycle service.
+	 * @param OrderPaymentLock             $order_payment_lock  Order payment lock.
+	 * @param OrderPaymentLifecycleService $lifecycle_service   Order payment lifecycle service.
+	 * @param OrderPaymentNotes            $order_payment_notes Order payment notes.
 	 */
 	final public function init(
 		OrderPaymentLock $order_payment_lock,
-		OrderPaymentLifecycleService $lifecycle_service
+		OrderPaymentLifecycleService $lifecycle_service,
+		OrderPaymentNotes $order_payment_notes
 	): void {
-		$this->order_payment_lock = $order_payment_lock;
-		$this->lifecycle_service  = $lifecycle_service;
+		$this->order_payment_lock  = $order_payment_lock;
+		$this->lifecycle_service   = $lifecycle_service;
+		$this->order_payment_notes = $order_payment_notes;
 	}
 
 	/**
@@ -576,63 +586,24 @@ class PaymentProcessingService {
 	 */
 	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), string $identity_meta_key = '' ): void {
 		if ( '' === $identity || '' === $identity_meta_key ) {
-			if ( ! $this->order_note_exists( $order, $note ) ) {
+			if ( 0 === $this->order_payment_notes->find_by_content( $order, $note ) ) {
 				$order->add_order_note( $note );
 			}
 			return;
 		}
 
-		$identity_hash         = hash( 'sha256', $identity );
-		$equivalent_notes      = array_values( array_unique( array_merge( array( $note ), $equivalent_notes ) ) );
-		$content_match_note_id = 0;
-		$notes                 = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $order_note ) {
-			$note_identities = get_comment_meta( $order_note->id, $identity_meta_key, false );
-			if ( in_array( $identity_hash, $note_identities, true ) ) {
-				return;
-			}
-
-			if ( in_array( (string) $order_note->content, $equivalent_notes, true ) ) {
-				$content_match_note_id = $order_note->id;
-			}
-		}
-
-		if ( 0 < $content_match_note_id ) {
-			add_comment_meta( $content_match_note_id, $identity_meta_key, $identity_hash );
+		if ( 0 < $this->order_payment_notes->find_by_identity( $order, $identity, $identity_meta_key ) ) {
 			return;
 		}
 
-		$order->add_order_note( $note, 0, false, array( $identity_meta_key => $identity_hash ) );
-	}
-
-	/**
-	 * Tell whether an order already has a note.
-	 *
-	 * @param WC_Order $order        Order object.
-	 * @param string   $note_content Note content.
-	 * @return bool
-	 */
-	private function order_note_exists( WC_Order $order, string $note_content ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $note ) {
-			if ( $note_content === $note->content ) {
-				return true;
-			}
+		$content_match_note_id = $this->order_payment_notes->find_by_content( $order, $note, $equivalent_notes );
+		if ( 0 < $content_match_note_id ) {
+			// A note found by its text gets the identity, so the next write finds it whatever its text reads by then.
+			$this->order_payment_notes->record_identity( $content_match_note_id, $identity, $identity_meta_key );
+			return;
 		}
 
-		return false;
+		$order->add_order_note( $note, 0, false, array( $identity_meta_key => hash( 'sha256', $identity ) ) );
 	}
 
 	/**

@@ -70,7 +70,7 @@ class WooPaymentsOtherChargeRecorder {
 
 		$note     = $this->note_service->format_other_charge_note( $event_type, $facts );
 		$identity = implode( '|', array( 'other_charge', $event_type, (string) $facts['object_id'], (string) ( $facts['status'] ?? '' ) ) );
-		if ( ! $this->note_service->add_note_once( $order, $note, $identity ) && ! $this->note_service->has_persisted_note( $order, $note, $identity ) ) {
+		if ( ! $this->note_service->add_note_once( $order, $note, $identity ) && 0 === $this->note_service->find_note( $order, $note, $identity ) ) {
 			// The note is the record: an event whose note was not saved fails, so it is not marked processed.
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built from an event type, an object ID and an order ID, not HTML output.
 			throw new RuntimeException( sprintf( 'Could not save the other-charge note for %1$s %2$s on order %3$d.', $event_type, (string) $facts['object_id'], $order->get_id() ) );

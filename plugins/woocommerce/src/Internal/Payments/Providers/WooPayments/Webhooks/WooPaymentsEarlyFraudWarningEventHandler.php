@@ -180,7 +180,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 				$note_identity,
 				$note_candidates
 			);
-			if ( ! $note_added && ! $this->note_service->has_persisted_note( $persisted_order, $note_candidates[0], $note_identity, $note_candidates ) ) {
+			if ( ! $note_added && 0 === $this->note_service->find_note( $persisted_order, $note_candidates[0], $note_identity, $note_candidates ) ) {
 				throw new RuntimeException( esc_html( sprintf( 'Could not persist early fraud warning note for ID: %s', $warning['id'] ) ) );
 			}
 		} finally {

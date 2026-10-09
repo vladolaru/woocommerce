@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -582,7 +583,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut = new PaymentProcessingService();
 		$sut->init(
 			$this->order_payment_lock,
-			wc_get_container()->get( OrderPaymentLifecycleService::class )
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			wc_get_container()->get( OrderPaymentNotes::class )
 		);
 
 		switch ( $operation ) {
@@ -4719,7 +4721,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$sut = new PaymentProcessingService();
 		$sut->init(
 			$this->order_payment_lock,
-			$lifecycle_service
+			$lifecycle_service,
+			wc_get_container()->get( OrderPaymentNotes::class )
 		);
 
 		return $sut;

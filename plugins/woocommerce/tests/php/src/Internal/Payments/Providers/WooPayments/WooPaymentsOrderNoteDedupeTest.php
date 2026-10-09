@@ -129,6 +129,26 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A payment note found by its text when the same payment is reported again is not added again, and gets its identity.
+	 */
+	public function test_payment_note_found_by_text_gets_its_identity(): void {
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'pi_pin' );
+		$order->save();
+		$this->deliver_succeeded_webhook( $order );
+		$before = $this->get_notes_with_meta( $order );
+		$tagged = array_keys( array_filter( $before, static fn( array $note ): bool => isset( $note['meta'][ self::NOTE_IDENTITY_META_KEY ] ) ) );
+		$this->assertCount( 1, $tagged );
+		$identities = $before[ $tagged[0] ]['meta'][ self::NOTE_IDENTITY_META_KEY ];
+		delete_comment_meta( $tagged[0], self::NOTE_IDENTITY_META_KEY );
+
+		$this->deliver_succeeded_webhook( $order );
+
+		$this->assertSame( $before, $this->get_notes_with_meta( $order ) );
+		$this->assertSame( $identities, get_comment_meta( $tagged[0], self::NOTE_IDENTITY_META_KEY, false ) );
+	}
+
+	/**
 	 * Replace the platform with one that reports $this->refund, and let the built-in WooPayments own the store.
 	 */
 	private function replace_platform(): void {

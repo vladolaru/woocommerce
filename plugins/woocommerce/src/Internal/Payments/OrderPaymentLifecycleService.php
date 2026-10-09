@@ -324,18 +324,19 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note = $event->get_note();
-		if (
-			null === $note
-			|| '' === $note
-			|| ! $this->get_order_note_service()->has_persisted_note(
-				$order,
-				$note,
-				$this->get_note_identity( $event, $note ),
-				$event->get_note_equivalents()
-			)
-		) {
+		if ( null === $note || '' === $note ) {
 			return null;
 		}
+
+		$note_service = $this->get_order_note_service();
+		$identity     = $this->get_note_identity( $event, $note );
+		$note_id      = $note_service->find_note( $order, $note, $identity, $event->get_note_equivalents() );
+		if ( 0 === $note_id ) {
+			return null;
+		}
+
+		// A note found by its text gets the identity, so the next delivery finds it whatever its text reads by then.
+		$note_service->record_note_identity( $note_id, $identity );
 
 		return 'success_note_exists';
 	}

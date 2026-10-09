@@ -940,28 +940,25 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Persisted-note detection recognizes equivalent content and backfills its stable identity.
+	 * @testdox Finding a note by equivalent content writes nothing, and recording its identity tags it once.
 	 */
-	public function test_persisted_note_detection_backfills_identity_for_equivalent_content(): void {
+	public function test_find_note_by_equivalent_content_writes_nothing_until_its_identity_is_recorded(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->save();
-		$order->add_order_note( 'Plugin payment success note.' );
-		$sut = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$note_id  = (int) $order->add_order_note( 'Plugin payment success note.' );
+		$identity = 'payment_lifecycle:pi_equivalent|completed|payment_success';
+		$sut      = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 
-		$this->assertTrue(
-			$sut->has_persisted_note(
-				$order,
-				'Core payment success note.',
-				'payment_lifecycle:pi_equivalent|completed|payment_success',
-				array( 'Plugin payment success note.' )
-			)
-		);
+		$this->assertSame( $note_id, $sut->find_note( $order, 'Core payment success note.', $identity, array( 'Plugin payment success note.' ) ) );
+		$this->assertSame( array(), get_comment_meta( $note_id, '_wc_woopayments_note_identity', false ) );
 
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertCount( 1, $notes );
-		$this->assertSame( 'Plugin payment success note.', $notes[0]->content );
-		$this->assertSame( hash( 'sha256', 'payment_lifecycle:pi_equivalent|completed|payment_success' ), get_comment_meta( $notes[0]->id, '_wc_woopayments_note_identity', true ) );
+		$sut->record_note_identity( $note_id, $identity );
+		$sut->record_note_identity( $note_id, $identity );
+
+		$this->assertSame( array( hash( 'sha256', $identity ) ), get_comment_meta( $note_id, '_wc_woopayments_note_identity', false ) );
+		$this->assertSame( $note_id, $sut->find_note( $order, 'A later wording.', $identity ) );
+		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**

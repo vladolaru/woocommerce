@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use WC_Order;
 
 /**
@@ -1580,50 +1581,41 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Tell whether an order already has a note with the supplied identity or equivalent content.
-	 *
-	 * When matching current or legacy content, the unified private identity is
-	 * backfilled onto that comment so later replays can use the stable identity.
+	 * Find a note already on the order, by its private identity or else by its text. Writes nothing.
 	 *
 	 * @param WC_Order $order            Order object.
 	 * @param string   $note             Note content.
 	 * @param string   $identity         Stable private note identity.
 	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
-	 * @return bool True when the order already has the note.
+	 * @return int The note's comment ID, or 0 when the order does not have the note.
 	 *
-	 * @since 11.0.0
+	 * @since 11.2.0
 	 */
-	public function has_persisted_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array() ): bool {
+	public function find_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array() ): int {
 		if ( '' === $note ) {
-			return false;
+			return 0;
 		}
 
-		$equivalent_notes      = $this->get_equivalent_notes( $note, $equivalent_notes );
-		$identity_hash         = '' === $identity ? '' : hash( 'sha256', $identity );
-		$content_match_note_id = 0;
+		$order_payment_notes = $this->get_order_payment_notes();
+		$note_id             = $order_payment_notes->find_by_identity( $order, $identity, self::NOTE_IDENTITY_META_KEY );
 
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		return 0 < $note_id
+			? $note_id
+			: $order_payment_notes->find_by_content( $order, $note, array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate ) );
+	}
 
-		foreach ( $notes as $order_note ) {
-			$note_identities = get_comment_meta( $order_note->id, self::NOTE_IDENTITY_META_KEY, false );
-			if ( '' !== $identity_hash && in_array( $identity_hash, $note_identities, true ) ) {
-				return true;
-			}
-
-			if ( in_array( (string) $order_note->content, $equivalent_notes, true ) ) {
-				$content_match_note_id = $order_note->id;
-			}
-		}
-
-		if ( 0 < $content_match_note_id ) {
-			if ( '' !== $identity_hash ) {
-				add_comment_meta( $content_match_note_id, self::NOTE_IDENTITY_META_KEY, $identity_hash );
-			}
-
-			return true;
-		}
-
-		return false;
+	/**
+	 * Record a private identity on a note, so the next write of the same note finds it whatever its text reads by then.
+	 *
+	 * Nothing is written when the note already carries the identity or the identity is empty.
+	 *
+	 * @param int    $note_id  Note comment ID.
+	 * @param string $identity Stable private note identity.
+	 *
+	 * @since 11.2.0
+	 */
+	public function record_note_identity( int $note_id, string $identity ): void {
+		$this->get_order_payment_notes()->record_identity( $note_id, $identity, self::NOTE_IDENTITY_META_KEY );
 	}
 
 	/**
@@ -1643,7 +1635,10 @@ class WooPaymentsOrderNoteService {
 			return false;
 		}
 
-		if ( $this->has_persisted_note( $order, $note, $identity, $equivalent_notes ) ) {
+		$note_id = $this->find_note( $order, $note, $identity, $equivalent_notes );
+		if ( 0 < $note_id ) {
+			// A note found by its text gets the identity, so the next write finds it whatever its text reads by then.
+			$this->record_note_identity( $note_id, $identity );
 			return false;
 		}
 
@@ -1666,21 +1661,12 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Normalize a note and its exact equivalent renderings for persisted-note matching.
+	 * Get the payments runtime's order note finder.
 	 *
-	 * @param string   $note             Note content.
-	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
-	 * @return string[]
+	 * @return OrderPaymentNotes
 	 */
-	private function get_equivalent_notes( string $note, array $equivalent_notes ): array {
-		return array_values(
-			array_unique(
-				array_merge(
-					array( $note ),
-					array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate )
-				)
-			)
-		);
+	private function get_order_payment_notes(): OrderPaymentNotes {
+		return wc_get_container()->get( OrderPaymentNotes::class );
 	}
 
 	/**
