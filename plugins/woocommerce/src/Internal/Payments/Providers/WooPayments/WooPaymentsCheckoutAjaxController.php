@@ -376,15 +376,15 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the return URL for an order.
+	 * Get the return URL for an order from the card gateway WooCommerce registers, as client 11.1.0 does (gw:4353).
+	 *
+	 * The gateway is read from the container when a response needs it, so a request that never confirms an intent does not build it.
 	 *
 	 * @param WC_Order $order Order object.
 	 * @return string
 	 */
 	private function get_return_url( WC_Order $order ): string {
-		$gateway = new NativeWooPaymentsGateway();
-
-		return $gateway->get_return_url( $order );
+		return wc_get_container()->get( NativeWooPaymentsGateway::class )->get_return_url( $order );
 	}
 
 	/**

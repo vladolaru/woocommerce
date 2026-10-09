@@ -1295,6 +1295,61 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback answers the order-received URL through the woocommerce_get_return_url filter.
+	 *
+	 * Client 11.1.0 update_order_status() answers `$this->get_return_url( $order )` (gw:4353, 4363), which no WooPayments
+	 * gateway overrides, so it is WC_Payment_Gateway::get_return_url(): the order-received URL passed through the filter.
+	 */
+	public function test_update_order_status_answers_the_filtered_order_received_url(): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->update_meta_data( '_intent_id', 'seti_native' );
+		$order->save();
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				);
+			}
+		};
+		$filter     = static fn( string $url ): string => add_query_arg( 'filtered', '1', $url );
+		add_filter( 'woocommerce_get_return_url', $filter );
+
+		try {
+			$response = $this->create_controller( $api_client )->get_update_order_status_response(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => 'seti_native',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_get_return_url', $filter );
+		}
+
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertSame( add_query_arg( 'filtered', '1', wc_get_order( $order->get_id() )->get_checkout_order_received_url() ), $response['return_url'] );
+	}
+
+	/**
 	 * @testdox Order-status callback should allow a guest to complete an unowned order via the nopriv flow.
 	 */
 	public function test_update_order_status_allows_guest_to_complete_unowned_order(): void {
