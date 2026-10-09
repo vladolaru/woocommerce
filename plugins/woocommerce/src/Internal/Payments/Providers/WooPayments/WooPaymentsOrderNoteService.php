@@ -1646,12 +1646,7 @@ class WooPaymentsOrderNoteService {
 			$before_add();
 		}
 
-		$identity_hash = '' === $identity ? '' : hash( 'sha256', $identity );
-		$meta_data     = '' === $identity_hash
-			? array()
-			: array( self::NOTE_IDENTITY_META_KEY => $identity_hash );
-
-		if ( 0 >= (int) $order->add_order_note( $note, 0, false, $meta_data ) ) {
+		if ( 0 >= $this->get_order_payment_notes()->add( $order, $note, $identity, self::NOTE_IDENTITY_META_KEY ) ) {
 			return false;
 		}
 

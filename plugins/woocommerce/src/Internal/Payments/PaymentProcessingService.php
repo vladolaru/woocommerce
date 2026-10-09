@@ -587,7 +587,7 @@ class PaymentProcessingService {
 	private function maybe_add_refund_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), string $identity_meta_key = '' ): void {
 		if ( '' === $identity || '' === $identity_meta_key ) {
 			if ( 0 === $this->order_payment_notes->find_by_content( $order, $note ) ) {
-				$order->add_order_note( $note );
+				$this->order_payment_notes->add( $order, $note, '', '' );
 			}
 			return;
 		}
@@ -603,7 +603,7 @@ class PaymentProcessingService {
 			return;
 		}
 
-		$order->add_order_note( $note, 0, false, array( $identity_meta_key => hash( 'sha256', $identity ) ) );
+		$this->order_payment_notes->add( $order, $note, $identity, $identity_meta_key );
 	}
 
 	/**

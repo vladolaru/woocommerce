@@ -14,7 +14,7 @@ use WC_Order;
  *
  * A provider tags each payment note with a private identity, stored as its SHA-256 hash in comment meta under the
  * provider's key, so the same note is found again whatever its text reads by then. Finding a note writes nothing; a
- * caller that wants a note found by its text to carry the identity records it.
+ * caller that wants a note found by its text to carry the identity records it, and adds a note found neither way.
  *
  * @since 11.2.0
  * @internal
@@ -90,6 +90,27 @@ class OrderPaymentNotes {
 		}
 
 		add_comment_meta( $note_id, $identity_meta_key, $identity_hash );
+	}
+
+	/**
+	 * Add a private note to the order, carrying its identity when there is one.
+	 *
+	 * The caller has checked the order does not have the note yet.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order             Order object.
+	 * @param string   $note              Note text.
+	 * @param string   $identity          Note identity, before hashing, or '' for a note without one.
+	 * @param string   $identity_meta_key Comment-meta key the provider stores note identities under, or '' for none.
+	 * @return int The new note's comment ID, or 0 when it was not added.
+	 */
+	public function add( WC_Order $order, string $note, string $identity, string $identity_meta_key ): int {
+		$meta_data = '' === $identity || '' === $identity_meta_key
+			? array()
+			: array( $identity_meta_key => hash( 'sha256', $identity ) );
+
+		return (int) $order->add_order_note( $note, 0, false, $meta_data );
 	}
 
 	/**

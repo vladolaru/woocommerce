@@ -113,4 +113,43 @@ class OrderPaymentNotesTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), get_comment_meta( $note_id ) );
 	}
+
+	/**
+	 * @testdox A note added with an identity carries its hash and is then found by it.
+	 */
+	public function test_add_writes_the_note_with_its_identity(): void {
+		$note_id = $this->sut->add( $this->order, 'Payment note.', 'payment:1', self::IDENTITY_META_KEY );
+
+		$this->assertGreaterThan( 0, $note_id );
+		$this->assertSame( 'Payment note.', wc_get_order_note( $note_id )->content );
+		$this->assertSame( array( hash( 'sha256', 'payment:1' ) ), get_comment_meta( $note_id, self::IDENTITY_META_KEY, false ) );
+		$this->assertSame( $note_id, $this->sut->find_by_identity( $this->order, 'payment:1', self::IDENTITY_META_KEY ) );
+	}
+
+	/**
+	 * @testdox A note added without an identity or meta key carries no meta.
+	 *
+	 * @dataProvider no_identity_cases
+	 *
+	 * @param string $identity          Note identity.
+	 * @param string $identity_meta_key Identity meta key.
+	 */
+	public function test_add_without_identity_or_key_writes_a_plain_note( string $identity, string $identity_meta_key ): void {
+		$note_id = $this->sut->add( $this->order, 'Payment note.', $identity, $identity_meta_key );
+
+		$this->assertGreaterThan( 0, $note_id );
+		$this->assertSame( array(), get_comment_meta( $note_id ) );
+	}
+
+	/**
+	 * Identity and key pairs that leave a note without an identity.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function no_identity_cases(): array {
+		return array(
+			'no identity' => array( '', self::IDENTITY_META_KEY ),
+			'no key'      => array( 'payment:1', '' ),
+		);
+	}
 }
