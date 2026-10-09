@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Collect
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
@@ -41,6 +42,7 @@ class CollectingModuleTest extends WalletTestCase {
 		$this->assertSame(
 			array(
 				'collecting.options',
+				'collecting.held-orders',
 				'collecting.state',
 				'collecting.connection-state',
 				'collecting.transport',
@@ -78,7 +80,10 @@ class CollectingModuleTest extends WalletTestCase {
 		$this->assertSame( CollectingModule::class, $sut->id() );
 
 		$container = new ContainerDouble(
-			array( 'collecting.options' => new Options() )
+			array(
+				'collecting.options'     => new Options(),
+				'collecting.held-orders' => new HeldOrders(),
+			)
 		);
 		$this->assertInstanceOf( Options::class, $services['collecting.options']() );
 		$this->assertInstanceOf( CollectingState::class, $services['collecting.state']( $container ) );

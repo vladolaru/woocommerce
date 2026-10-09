@@ -69,4 +69,32 @@ class OrderPinTest extends WalletTestCase {
 			$this->assertFalse( OrderPin::is_pinned( wc_get_order( $order->get_id() ) ) );
 		}
 	}
+
+	/**
+	 * @testdox Should tell a wallet order (the PayPal gateway, and a pin or a PayPal order ID) from any other, a pinned order of another gateway included.
+	 * @testWith ["ppcp-gateway", "", "merchant_app", true]
+	 *           ["bacs", "", "merchant_app", false]
+	 *           ["bacs", "PP-1", "merchant_app", false]
+	 *           ["ppcp-gateway", "PP-1", "", true]
+	 *           ["ppcp-gateway", "", "", false]
+	 *           ["bacs", "PP-1", "", false]
+	 *
+	 * @param string $payment_method The payment method.
+	 * @param string $paypal_id      The PayPal order ID meta, empty for none.
+	 * @param string $pin            The pinned app, empty for none.
+	 * @param bool   $expected       Whether the order is a wallet order.
+	 */
+	public function test_is_wallet_order( string $payment_method, string $paypal_id, string $pin, bool $expected ): void {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		if ( '' !== $paypal_id ) {
+			$order->update_meta_data( '_ppcp_paypal_order_id', $paypal_id );
+		}
+		if ( '' !== $pin ) {
+			OrderPin::record( $order, $pin );
+		}
+		$order->save();
+
+		$this->assertSame( $expected, OrderPin::is_wallet_order( $order ) );
+	}
 }

@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\NoHeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextHostResolver;
@@ -25,8 +25,12 @@ return array(
 	'collecting.options'               => static function (): Options {
 		return new Options();
 	},
+	// Held orders are an order query, not stored state.
+	'collecting.held-orders'           => static function (): HeldOrders {
+		return new HeldOrders();
+	},
 	'collecting.state'                 => static function ( ContainerInterface $container ): CollectingState {
-		return new CollectingState( $container->get( 'collecting.options' ), new NoHeldOrders() );
+		return new CollectingState( $container->get( 'collecting.options' ), $container->get( 'collecting.held-orders' ) );
 	},
 	'collecting.connection-state'      => static function ( ContainerInterface $container ): ConnectionState {
 		return new ConnectionState( $container->get( 'collecting.options' ) );

@@ -107,6 +107,16 @@ trait PaymentsStatusHandlingTrait {
 					: __( 'Payment provider declined the payment, please use a different payment method.', 'woocommerce' );
 				throw new RuntimeException( $decline_message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is the customer decline message, which a store can filter to include markup (such as a support link); it is shown as a checkout notice or an order note, so escaping would print that markup as text.
 			case CaptureStatus::PENDING:
+				/**
+				 * Fired when a PayPal capture is pending, before the order is put on hold.
+				 *
+				 * @since 11.3.0
+				 *
+				 * @param \WC_Order $wc_order The WooCommerce order.
+				 * @param Capture   $capture  The pending PayPal capture.
+				 */
+				do_action( 'woocommerce_paypal_wallet_capture_pending', $wc_order, $capture );
+				// Fall through: a pending capture is put on hold like a failed one.
 			case CaptureStatus::FAILED:
 				$wc_order->update_status(
 					OrderStatus::ON_HOLD,

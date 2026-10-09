@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Blocks\AssetsController;
 use Automattic\WooCommerce\Blocks\Package as BlocksPackage;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
@@ -1438,14 +1439,31 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build the default collecting state with no held orders.
+	 * @testdox Should build the default collecting state over the held-orders query: abandoned on takeover when none is held.
 	 */
-	public function test_default_collecting_state_has_no_held_orders(): void {
+	public function test_default_collecting_state_is_abandoned_with_no_held_order(): void {
 		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
 		$this->build_sut( false );
 
 		$this->sut->on_plugin_activated( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
 
-		$this->assertFalse( get_option( Options::COLLECTING ), 'The default factory must delete the state: NoHeldOrders counts zero' );
+		$this->assertFalse( get_option( Options::COLLECTING ), 'With no held order the default factory deletes the state' );
+	}
+
+	/**
+	 * @testdox Should build the default collecting state over the held-orders query: kept on takeover when an order is held.
+	 */
+	public function test_default_collecting_state_is_kept_with_a_held_order(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( 'ppcp-gateway' );
+		$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut( false );
+
+		$this->sut->on_plugin_activated( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE );
+
+		$this->assertTrue( (bool) get_option( Options::COLLECTING ), 'A held order keeps the state' );
 	}
 }

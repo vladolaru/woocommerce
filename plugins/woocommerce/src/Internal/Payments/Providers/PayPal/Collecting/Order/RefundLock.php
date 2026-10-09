@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use WC_Order;
 
 /**
@@ -47,9 +46,7 @@ final class RefundLock {
 
 	/**
 	 * Whether refunds of an order are locked: PayPal holds its capture, or it is a wallet order and the store still collects.
-	 *
-	 * A wallet order is one pinned to an app, or one paid through the PayPal gateway with a PayPal order ID: some paths
-	 * leave an order unpinned, such as a capture already completed before processing, or a pin that failed.
+	 * A wallet order is decided by OrderPin::is_wallet_order().
 	 *
 	 * @since 11.3.0
 	 *
@@ -58,7 +55,7 @@ final class RefundLock {
 	 */
 	public function is_locked( WC_Order $order ): bool {
 		$held   = ! empty( $order->get_meta( self::HELD_CAPTURE_META_KEY, true ) );
-		$locked = $held || ( $this->is_wallet_order( $order ) && ConnectionState::COLLECTING === $this->connection_state->resolve() );
+		$locked = $held || ( OrderPin::is_wallet_order( $order ) && ConnectionState::COLLECTING === $this->connection_state->resolve() );
 
 		/**
 		 * Filters whether refunds of a PayPal wallet order are locked until PayPal Wallet setup is complete.
@@ -71,20 +68,6 @@ final class RefundLock {
 		$filtered = apply_filters( 'woocommerce_paypal_wallet_refund_locked', $locked, $order );
 
 		return is_bool( $filtered ) ? $filtered : $locked;
-	}
-
-	/**
-	 * Whether an order was paid with the PayPal wallet: pinned to an app, or paid through its gateway with a PayPal order ID.
-	 *
-	 * @param WC_Order $order The order.
-	 * @return bool
-	 */
-	private function is_wallet_order( WC_Order $order ): bool {
-		if ( OrderPin::is_pinned( $order ) ) {
-			return true;
-		}
-
-		return PayPalGateway::ID === $order->get_payment_method() && ! empty( $order->get_meta( PayPalGateway::ORDER_ID_META_KEY, true ) );
 	}
 
 	/**

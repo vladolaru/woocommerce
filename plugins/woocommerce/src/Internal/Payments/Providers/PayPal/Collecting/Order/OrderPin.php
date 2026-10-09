@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\O
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use InvalidArgumentException;
 use WC_Order;
 
@@ -66,5 +67,24 @@ final class OrderPin {
 		$pinned = $order->get_meta( OrderAppContext::ORDER_APP_META_KEY, true );
 
 		return is_string( $pinned ) && OrderAppContext::is_app( $pinned );
+	}
+
+	/**
+	 * Whether an order was paid with the PayPal wallet: through its gateway, and pinned to an app or carrying a PayPal order ID.
+	 *
+	 * A pin or a PayPal order ID alone is not enough: an order paid by another gateway is not a wallet order. Some wallet
+	 * paths leave an order unpinned, such as a capture already completed before processing, or a pin that failed.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param WC_Order $order The order.
+	 * @return bool
+	 */
+	public static function is_wallet_order( WC_Order $order ): bool {
+		if ( PayPalGateway::ID !== $order->get_payment_method() ) {
+			return false;
+		}
+
+		return self::is_pinned( $order ) || ! empty( $order->get_meta( PayPalGateway::ORDER_ID_META_KEY, true ) );
 	}
 }

@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\PayeeFilters;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
@@ -62,7 +63,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	/**
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
 	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the listeners
-	 * that pin each order to its app and enter it for the order's calls, and the filters that name the payee.
+	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
+	 * order, and the filters that name the payee.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -86,6 +88,10 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			add_action( 'woocommerce_paypal_wallet_order_context', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );
 			add_action( 'woocommerce_paypal_wallet_paypal_order_created', array( $listeners, 'handle_woocommerce_paypal_wallet_paypal_order_created' ) );
 			add_action( 'woocommerce_paypal_payments_after_order_processor', array( $listeners, 'handle_woocommerce_paypal_payments_after_order_processor' ), self::LEAVE_CONTEXT_PRIORITY, 0 );
+
+			$held = new HeldCapture( $state, $logger );
+			add_action( 'woocommerce_paypal_wallet_capture_pending', array( $held, 'handle_woocommerce_paypal_wallet_capture_pending' ), 10, 2 );
+			add_action( 'woocommerce_payment_complete', array( $held, 'handle_woocommerce_payment_complete' ) );
 
 			$payee = new PayeeFilters( $connection_state, $state );
 			add_filter( 'ppcp_create_order_request_body_data', array( $payee, 'handle_ppcp_create_order_request_body_data' ), self::GATE_PRIORITY );

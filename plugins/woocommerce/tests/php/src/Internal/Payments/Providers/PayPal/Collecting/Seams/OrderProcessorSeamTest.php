@@ -4,7 +4,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Seams;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\DirectPlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
@@ -59,6 +62,13 @@ class OrderProcessorSeamTest extends WalletTestCase {
 	private array $approved = array();
 
 	/**
+	 * The status details the stub's capture answers with: empty for a completed capture, else a pending one for the reason.
+	 *
+	 * @var string
+	 */
+	private string $pending_reason = '';
+
+	/**
 	 * Claim the per-app token transients and answer the token endpoint by app, every order GET with a completed order
 	 * (or an approved one for the IDs in $approved), a patch with 204 and a capture with a completed capture.
 	 */
@@ -82,7 +92,8 @@ class OrderProcessorSeamTest extends WalletTestCase {
 					return $this->http_response( 204, '' );
 				}
 				if ( '/capture' === substr( $path, -8 ) ) {
-					return $this->http_response( 201, '{"id":"' . basename( dirname( $path ) ) . '","status":"COMPLETED","intent":"CAPTURE","purchase_units":[{"reference_id":"default","amount":{"currency_code":"USD","value":"10.00"},"payments":{"captures":[{"id":"CAPTURE-1","status":"COMPLETED","amount":{"currency_code":"USD","value":"10.00"},"final_capture":true,"seller_protection":{"status":"NOT_ELIGIBLE"}}]}}]}' );
+					$capture_state = '' === $this->pending_reason ? '"status":"COMPLETED"' : '"status":"PENDING","status_details":{"reason":"' . $this->pending_reason . '"}';
+					return $this->http_response( 201, '{"id":"' . basename( dirname( $path ) ) . '","status":"COMPLETED","intent":"CAPTURE","purchase_units":[{"reference_id":"default","amount":{"currency_code":"USD","value":"10.00"},"payments":{"captures":[{"id":"CAPTURE-1",' . $capture_state . ',"amount":{"currency_code":"USD","value":"10.00"},"final_capture":true,"seller_protection":{"status":"NOT_ELIGIBLE"}}]}}]}' );
 				}
 				$id     = basename( $path );
 				$status = in_array( $id, $this->approved, true ) ? 'APPROVED' : 'COMPLETED';
@@ -319,6 +330,36 @@ class OrderProcessorSeamTest extends WalletTestCase {
 		$this->assertSame( $pick, OrderPin::app( wc_get_order( $wc_order->get_id() ) ) );
 		$this->assertTrue( OrderPin::is_pinned( wc_get_order( $wc_order->get_id() ) ) );
 		$this->assertFalse( $container->get( 'collecting.order-app-context' )->is_entered(), 'The after-hook leaves the order context' );
+	}
+
+	/**
+	 * @testdox Should record a capture PayPal answers pending for an unclaimed payee as held, put the order on hold and claim the first order.
+	 */
+	public function test_process_of_a_held_capture_records_it_and_claims_the_first_order(): void {
+		$this->set_state( ConnectionState::COLLECTING );
+		$this->approved       = array( 'PP-HELD' );
+		$this->pending_reason = 'UNILATERAL';
+		$first_orders         = 0;
+		add_action(
+			'woocommerce_paypal_wallet_first_order',
+			static function () use ( &$first_orders ) {
+				++$first_orders;
+			}
+		);
+		$container = $this->boot();
+		$wc_order  = $this->wallet_order( 'PP-HELD', null );
+		$wc_order->set_total( '10.00' );
+		$wc_order->save();
+
+		$container->get( 'wcgateway.order-processor' )->process( $wc_order );
+
+		$saved = wc_get_order( $wc_order->get_id() );
+		$this->assertSame( 'on-hold', $saved->get_status(), 'The wallet still puts the order on hold' );
+		$this->assertSame( 'UNILATERAL', $saved->get_meta( RefundLock::HELD_CAPTURE_META_KEY, true ) );
+		$this->assertSame( 'CAPTURE-1', $saved->get_meta( HeldCapture::CAPTURE_ID_META_KEY, true ) );
+		$this->assertSame( 1, $first_orders );
+		$this->assertTrue( (bool) get_option( Options::COLLECTING )['payee_bound'] );
+		$this->assertSame( 1, ( new HeldOrders() )->count() );
 	}
 
 	/**

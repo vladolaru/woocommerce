@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\Col
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\NoHeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
@@ -184,7 +184,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
-	 * The collecting state, with no container and no held-orders query of its own.
+	 * The collecting state, built with no container, over the held-orders query.
 	 *
 	 * The container is not booted when the listeners run, so the state is built directly. A test overrides this to
 	 * substitute a held-orders count.
@@ -192,7 +192,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * @return CollectingState
 	 */
 	protected function collecting_state(): CollectingState {
-		return new CollectingState( new Options(), new NoHeldOrders() );
+		return new CollectingState( new Options(), new HeldOrders() );
 	}
 
 	/**

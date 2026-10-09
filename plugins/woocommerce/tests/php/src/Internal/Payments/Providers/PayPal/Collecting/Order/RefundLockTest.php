@@ -172,6 +172,18 @@ class RefundLockTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should not lock a pinned order another gateway paid, even while the store collects.
+	 */
+	public function test_collecting_store_does_not_lock_a_pinned_order_of_another_gateway(): void {
+		$this->set_collecting();
+		$order = $this->wallet_order( true, false );
+		$order->set_payment_method( 'bacs' );
+		$order->save();
+
+		$this->assertFalse( ( new RefundLock( new ConnectionState() ) )->is_locked( $order ) );
+	}
+
+	/**
 	 * @testdox Should let the refund-locked filter override the decision both ways, and pass it the order.
 	 * @testWith [true, false]
 	 *           [false, true]
