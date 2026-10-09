@@ -191,6 +191,7 @@ class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 			'paid, another transaction ID'         => array( 'processing', true, 'woocommerce_payments', 'pi_b', 'pi_a', 'pi_a', 'ch_a', false ),
 			'paid, no transaction ID'              => array( 'processing', true, 'woocommerce_payments', '', 'pi_a', 'pi_a', 'ch_a', false ),
 			'paid, no IDs at all'                  => array( 'processing', true, 'woocommerce_payments', '', '', '', '', false ),
+			'paid status without a paid date'      => array( 'processing', false, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),
 			'refunded, its own intent'             => array( 'refunded', true, 'woocommerce_payments', 'pi_a', 'pi_a', 'pi_a', 'ch_a', true ),
 			'refunded, another intent'             => array( 'refunded', true, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),
 			'dispute hold, another intent'         => array( 'on-hold', true, 'woocommerce_payments', 'pi_a', 'pi_b', 'pi_b', 'ch_b', false ),

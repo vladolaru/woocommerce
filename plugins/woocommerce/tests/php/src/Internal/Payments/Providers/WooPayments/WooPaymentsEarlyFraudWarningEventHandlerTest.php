@@ -499,6 +499,31 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep a warning out of the order's warning meta when the warning's intent is not the one that paid the order, even though the order holds the charge.
+	 *
+	 * The event's `payment_intent` is the Stripe Early Fraud Warning field
+	 * (https://docs.stripe.com/api/radar/early_fraud_warnings/object#early_fraud_warning_object-payment_intent); the order's
+	 * stored `_intent_id` names the first payment.
+	 */
+	public function test_a_warning_on_another_intent_stays_out_of_the_warning_meta(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_first' );
+		$order->update_meta_data( '_intent_id', 'pi_first' );
+		$order->save();
+		$event                   = $this->valid_event_object();
+		$event['payment_intent'] = 'pi_second';
+		$handler                 = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler->init();
+
+		$handler->process( 'radar.early_fraud_warning.created', $event );
+
+		$fresh_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning', true ) );
+	}
+
+	/**
 	 * @testdox Should decide on the order as stored when another request paid it with another gateway after this request cached it.
 	 *
 	 * The other request writes straight to the database, leaving this request's post, meta and HPOS order caches as they were.

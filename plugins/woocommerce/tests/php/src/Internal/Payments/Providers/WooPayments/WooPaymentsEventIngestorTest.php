@@ -4747,6 +4747,66 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox payment_intent.succeeded is decided on the order read under the lock, so an order another gateway paid just before the claim records the intent instead of being paid again.
+	 */
+	public function test_succeeded_intent_is_decided_on_the_order_read_under_the_lock(): void {
+		$order = $this->create_woopayments_order();
+		$store = new class() extends OrderPaymentLock {
+			/**
+			 * Whether the other gateway paid the order.
+			 *
+			 * @var bool
+			 */
+			public bool $paid = false;
+
+			/**
+			 * Pay the order with another gateway from a separate request, then grant the claim.
+			 *
+			 * @param WC_Order                                                                         $order      Order being locked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string|null                                                                      $reference  Payment reference.
+			 * @param string                                                                           $operation  Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				unset( $vocabulary, $reference, $operation );
+				if ( ! $this->paid ) {
+					$this->paid = true;
+					$writer     = new WC_Order( $order->get_id() );
+					$writer->set_payment_method( 'bacs' );
+					$writer->set_status( 'processing' );
+					$writer->set_date_paid( time() );
+					$writer->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                                                                         $order      Order being unlocked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string                                                                           $lock_token Claim token.
+			 */
+			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
+			}
+		};
+		wc_get_container()->replace( OrderPaymentLock::class, $store );
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+
+		$this->assertTrue( $store->paid, 'The other gateway must pay the order inside the claim.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'does not pay this order' ) );
+	}
+
+	/**
 	 * @testdox A $event_type delivery refused by a held order payment lock logs one refusal line.
 	 * @dataProvider refusal_line_events
 	 *
