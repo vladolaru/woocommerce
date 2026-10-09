@@ -13,12 +13,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\LockingRefundProcessor;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnerReferrals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\RefundProcessor;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 // The transport, when it serves the store and is ready. Values the wallet reads once, when it builds a service, keep
@@ -124,4 +126,9 @@ return array(
 	'api.endpoint.partner-referrals'                   => $platform_referrals,
 	'api.endpoint.partner-referrals-sandbox'           => $platform_referrals,
 	'api.endpoint.partner-referrals-production'        => $platform_referrals,
+	// Refunds the lock refuses never reach PayPal. The lock reads the order, so a held order stays locked in either served
+	// state; after a takeover this module is not booted, the decorator is absent and the extension's own refund runs.
+	'wcgateway.processor.refunds'                      => static function ( RefundProcessor $previous, ContainerInterface $c ): RefundProcessor {
+		return new LockingRefundProcessor( $previous, $c->get( 'collecting.refund-lock' ) );
+	},
 );

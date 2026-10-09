@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use InvalidArgumentException;
 use WC_Order;
 
@@ -60,9 +61,7 @@ final class OrderAppContext {
 	 * @param WC_Order $order The order.
 	 */
 	public function enter_for_order( WC_Order $order ): void {
-		$pinned = $order->get_meta( self::ORDER_APP_META_KEY, true );
-
-		$this->enter( is_string( $pinned ) && self::is_app( $pinned ) ? $pinned : PlatformTransport::APP_PLATFORM );
+		$this->enter( OrderPin::app( $order ) );
 	}
 
 	/**
@@ -125,10 +124,12 @@ final class OrderAppContext {
 	/**
 	 * Whether a value names one of the transport's apps.
 	 *
+	 * @since 11.3.0
+	 *
 	 * @param string $app The value.
 	 * @return bool
 	 */
-	private static function is_app( string $app ): bool {
+	public static function is_app( string $app ): bool {
 		return in_array( $app, array( PlatformTransport::APP_PLATFORM, PlatformTransport::APP_MERCHANT_APP ), true );
 	}
 }

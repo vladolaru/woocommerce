@@ -47,6 +47,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'collecting.order-app-context',
 				'collecting.context-bearer',
 				'collecting.context-host-resolver',
+				'collecting.refund-lock',
 			),
 			array_keys( $services )
 		);
@@ -68,6 +69,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'api.endpoint.partner-referrals',
 				'api.endpoint.partner-referrals-sandbox',
 				'api.endpoint.partner-referrals-production',
+				'wcgateway.processor.refunds',
 			),
 			array_keys( $sut->extensions() )
 		);

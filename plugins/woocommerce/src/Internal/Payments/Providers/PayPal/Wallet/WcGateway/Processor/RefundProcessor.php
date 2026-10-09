@@ -106,6 +106,14 @@ class RefundProcessor {
 	 * @phpcs:ignore Squiz.Commenting.FunctionCommentThrowTag.Missing
 	 */
 	public function process( WC_Order $wc_order, ?float $amount = null, string $reason = '' ): bool {
+		/**
+		 * Fires before a processor makes its first PayPal call for a WooCommerce order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 */
+		do_action( 'woocommerce_paypal_wallet_order_context', $wc_order );
 		try {
 			$payment_gateways = WC()->payment_gateways()->payment_gateways();
 			if ( ! isset( $payment_gateways[ $wc_order->get_payment_method() ] ) || ! $payment_gateways[ $wc_order->get_payment_method() ]->supports( 'refunds' ) ) {

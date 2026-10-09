@@ -186,6 +186,14 @@ class OrderProcessor {
 	 * @throws Exception If processing fails.
 	 */
 	public function process( WC_Order $wc_order ): void {
+		/**
+		 * Fires before a processor makes its first PayPal call for a WooCommerce order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 */
+		do_action( 'woocommerce_paypal_wallet_order_context', $wc_order );
 		if ( ! $this->verify_order_can_be_processed( $wc_order ) ) {
 			return;
 		}

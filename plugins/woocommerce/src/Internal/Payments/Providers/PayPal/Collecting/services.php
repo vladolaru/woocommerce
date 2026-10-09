@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\NoHeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
@@ -54,5 +55,8 @@ return array(
 			$container->get( 'collecting.transport' ),
 			$container->get( 'collecting.state' )
 		);
+	},
+	'collecting.refund-lock'           => static function ( ContainerInterface $container ): RefundLock {
+		return new RefundLock( $container->get( 'collecting.connection-state' ) );
 	},
 );

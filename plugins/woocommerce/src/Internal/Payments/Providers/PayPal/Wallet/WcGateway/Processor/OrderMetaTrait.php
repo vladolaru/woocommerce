@@ -36,6 +36,15 @@ trait OrderMetaTrait {
 		?OrderTransient $order_transient = null
 	): void {
 		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, $order->id() );
+		/**
+		 * Fires after the PayPal order ID is written to the WooCommerce order, before the order is saved.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 * @param Order     $order    The PayPal order.
+		 */
+		do_action( 'woocommerce_paypal_wallet_paypal_order_created', $wc_order, $order );
 		$wc_order->update_meta_data( PayPalGateway::INTENT_META_KEY, $order->intent() );
 		$wc_order->update_meta_data(
 			PayPalGateway::ORDER_PAYMENT_MODE_META_KEY,

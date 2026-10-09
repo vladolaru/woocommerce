@@ -53,6 +53,14 @@ class RefundFeesUpdater {
 	 * @return void
 	 */
 	public function update( WC_Order $wc_order ): void {
+		/**
+		 * Fires before a processor makes its first PayPal call for a WooCommerce order.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param \WC_Order $wc_order The WooCommerce order.
+		 */
+		do_action( 'woocommerce_paypal_wallet_order_context', $wc_order );
 		$paypal_order_id = $wc_order->get_meta( PayPalGateway::ORDER_ID_META_KEY );
 
 		if ( ! $paypal_order_id ) {
