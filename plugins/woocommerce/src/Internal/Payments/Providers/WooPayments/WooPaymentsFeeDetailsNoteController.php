@@ -60,6 +60,13 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Order payment lifecycle service.
 	 *
 	 * @var OrderPaymentLifecycleService
@@ -107,11 +114,13 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter         $arbiter             Runtime owner arbiter.
 	 * @param WooPaymentsApiClient              $api_client          WooPayments API client.
 	 * @param WooPaymentsOrderDataService       $order_data_service  WooPayments order data service.
+	 * @param WooPaymentsLogger                 $logger              WooPayments logger.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsLogger $logger ): void {
 		$this->arbiter             = $arbiter;
 		$this->api_client          = $api_client;
 		$this->order_data_service  = $order_data_service;
+		$this->logger              = $logger;
 		$this->lifecycle_service   = $lifecycle_service;
 		$this->order_payment_notes = $order_payment_notes;
 		$this->vocabulary          = $vocabulary;
@@ -133,7 +142,8 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	/**
 	 * Add fee-breakdown details to an order note from the intent timeline.
 	 *
-	 * The job runs in the test mode it was scheduled in. Like the client's, it adds its note every time it runs.
+	 * The job runs in the test mode it was scheduled in. Like the client's, it adds its note every time it runs, and logs a
+	 * timeline it cannot use (client 11.1.0 class-wc-payments-order-service.php:845-861).
 	 *
 	 * @internal
 	 *
@@ -169,6 +179,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 				}
 
 				if ( ! isset( $events['data'] ) || ! is_array( $events['data'] ) ) {
+					$this->logger->log( sprintf( 'Timeline data missing or malformed for intent_id %s.', $intent_id ) );
 					return;
 				}
 
@@ -183,6 +194,8 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 						return;
 					}
 				}
+
+				$this->logger->log( sprintf( 'No captured event found in timeline for intent_id %s.', $intent_id ) );
 			}
 		);
 	}

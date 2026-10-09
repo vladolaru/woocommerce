@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -308,6 +309,64 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A timeline the job cannot use ($_dataName) is logged as the client logs it, and adds no note.
+	 *
+	 * Client 11.1.0 add_fee_breakdown_to_order_notes() logs both cases through its gated Logger::log() at info level
+	 * (class-wc-payments-order-service.php:845-861).
+	 *
+	 * @dataProvider unusable_timelines
+	 *
+	 * @param array<string,mixed> $timeline Timeline the platform returns.
+	 * @param string              $message  Line the client logs.
+	 */
+	public function test_unusable_timeline_is_logged_as_the_client_logs_it( array $timeline, string $message ): void {
+		self::enable_woopayments_debug_logging();
+		$order = wc_create_order();
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willReturn( $timeline );
+		$logger = RecordingWcLogger::install();
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
+
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] ) );
+		$this->assertSame( array( array( 'info', $message, 'woopayments' ) ), $lines );
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox With WooPayments logging off, a timeline the job cannot use ($_dataName) writes no line, as the client's gated logger writes none.
+	 *
+	 * @dataProvider unusable_timelines
+	 *
+	 * @param array<string,mixed> $timeline Timeline the platform returns.
+	 */
+	public function test_unusable_timeline_writes_no_line_with_logging_off( array $timeline ): void {
+		$order = wc_create_order();
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willReturn( $timeline );
+		$logger = RecordingWcLogger::install();
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
+
+		$this->assertSame( array(), $logger->lines );
+	}
+
+	/**
+	 * Timelines the job cannot use, and the line the client logs for each.
+	 *
+	 * @return array<string,array{array<string,mixed>,string}>
+	 */
+	public function unusable_timelines(): array {
+		return array(
+			'no data'           => array( array(), 'Timeline data missing or malformed for intent_id pi_123.' ),
+			'data not a list'   => array( array( 'data' => 'unexpected' ), 'Timeline data missing or malformed for intent_id pi_123.' ),
+			'no captured event' => array( array( 'data' => array( array( 'type' => 'authorized' ) ) ), 'No captured event found in timeline for intent_id pi_123.' ),
+		);
+	}
+
+	/**
 	 * @testdox Fee-breakdown job failures log order and intent correlation context.
 	 */
 	public function test_add_fee_breakdown_failure_logs_order_and_intent_context(): void {
@@ -352,7 +411,8 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsAccountService::class ),
 			new StaticWooPaymentsRuntimeArbiter( $builtin_owner ),
 			$api_client,
-			$container->get( WooPaymentsOrderDataService::class )
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsLogger::class )
 		);
 
 		return $controller;
