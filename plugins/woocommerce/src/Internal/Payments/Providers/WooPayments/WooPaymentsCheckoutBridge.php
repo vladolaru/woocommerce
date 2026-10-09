@@ -204,13 +204,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	);
 
 	/**
-	 * WooPayments legacy runtime.
-	 *
-	 * @var WooPaymentsLegacyRuntime
-	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
-
-	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -304,7 +297,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime               $legacy_runtime               WooPayments legacy runtime.
 	 * @param WooPaymentsAccountService              $account_service              WooPayments account service.
 	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
@@ -315,7 +307,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter|null         $arbiter                   Optional runtime owner arbiter.
 	 */
 	final public function init(
-		WooPaymentsLegacyRuntime $legacy_runtime,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsWooPaySessionService $woopay_session_service,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
@@ -325,7 +316,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		?WooPaymentsCustomerService $customer_service = null,
 		?WooPaymentsRuntimeArbiter $arbiter = null
 	): void {
-		$this->legacy_runtime               = $legacy_runtime;
 		$this->account_service              = $account_service;
 		$this->woopay_session_service       = $woopay_session_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
@@ -1062,19 +1052,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
-	 *
-	 * @return WooPaymentsLegacyRuntime
-	 */
-	private function get_legacy_runtime(): WooPaymentsLegacyRuntime {
-		if ( ! isset( $this->legacy_runtime ) ) {
-			$this->legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
-		}
-
-		return $this->legacy_runtime;
-	}
-
-	/**
 	 * Get the WooPayments account service.
 	 *
 	 * @return WooPaymentsAccountService
@@ -1304,12 +1281,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_enabled_payment_method_ids(): array {
 		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', null );
-		if ( ! is_array( $method_ids ) ) {
-			$method_ids = $this->get_legacy_runtime()->get_gateway_upe_enabled_payment_method_ids();
-		}
 
 		$normalized = array();
-		foreach ( $method_ids as $method_id ) {
+		foreach ( is_array( $method_ids ) ? $method_ids : array() as $method_id ) {
 			if ( ! is_scalar( $method_id ) ) {
 				continue;
 			}
@@ -1333,8 +1307,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		return WooPaymentsFeaturePolicy::is_link_folded_into_card(
 			$this->get_account_service(),
 			$this->get_payment_method_registry(),
-			$currency,
-			$this->get_legacy_runtime()
+			$currency
 		);
 	}
 
