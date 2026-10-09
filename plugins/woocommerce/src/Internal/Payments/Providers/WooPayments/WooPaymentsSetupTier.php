@@ -143,8 +143,9 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Persist a setup tier and update the current-blog memo only after exact readback.
 	 *
-	 * The write is read back from the database because the tier decides which classes the next request loads, and an
-	 * option filter or a failed write would otherwise go unnoticed.
+	 * An unchanged autoloaded value is not written again. After a changed write, the option value and its autoload flag are
+	 * verified before the current-blog memo is updated, because the tier decides which classes the next request loads and
+	 * an option filter or a failed write would otherwise go unnoticed.
 	 *
 	 * @since 11.2.0
 	 *

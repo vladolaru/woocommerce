@@ -2593,7 +2593,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should show the client's filtered message when the setup intent lookup fails with an API error: $_dataName.
 	 *
-	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4467-4468` passes every exception through
+	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4469-4470` passes every exception through
 	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`) and logs it at info
 	 * level (`:4471`).
 	 *

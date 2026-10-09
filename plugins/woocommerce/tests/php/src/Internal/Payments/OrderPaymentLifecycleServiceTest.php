@@ -299,6 +299,36 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed event skipped because its note is already on the order keeps a matching caller's unsaved changes for its save.
+	 */
+	public function test_under_lock_success_note_skip_keeps_a_matching_caller_unsaved_changes(): void {
+		$order = $this->create_woopayments_order();
+		$this->sut->apply( $order, $this->completed_event( 'pi_matching_caller' ), $this->persistence_vocabulary );
+		$order_id = $order->get_id();
+
+		$caller = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $caller );
+		$this->assertTrue( $caller->is_paid() );
+		$this->assertSame( $this->get_persisted_order_status( $order_id ), 'wc-' . $caller->get_status(), 'The caller must match the persisted status.' );
+		$caller->set_customer_note( 'Leave the parcel at the door.' );
+		$caller->update_meta_data( '_caller_unsaved_meta', 'kept' );
+
+		$this->assertNotNull( $this->order_payment_lock->claim( $caller, $this->persistence_vocabulary, 'pi_matching_caller', 'payment operation' ) );
+		try {
+			$this->sut->apply_under_lock( $caller, $this->completed_event( 'pi_matching_caller' ), $this->persistence_vocabulary );
+			$caller->save();
+		} finally {
+			$this->clear_order_payment_lock( $caller, $this->persistence_vocabulary );
+		}
+
+		$persisted = wc_get_order( $order_id );
+		$this->assertInstanceOf( WC_Order::class, $persisted );
+		$this->assertSame( 'Leave the parcel at the door.', $persisted->get_customer_note(), 'The caller save must persist its customer note.' );
+		$this->assertSame( 'kept', $persisted->get_meta( '_caller_unsaved_meta', true ), 'The caller save must persist its meta value.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $persisted, 'Payment complete.' ), 'The skipped event must not add a second success note.' );
+	}
+
+	/**
 	 * @testdox A completed event skipped because of a persisted dispute does not record a status change when its stale caller saves.
 	 */
 	public function test_under_lock_dispute_skip_does_not_record_a_status_change_when_a_stale_caller_saves(): void {

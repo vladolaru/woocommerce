@@ -99,8 +99,8 @@ final class PaymentsBootstrap {
 	public function register( $container, callable $is_rest_api_request ): void {
 		/**
 		 * Whether WooCommerce loads its built-in payment provider and the Multi-Currency integration it starts on this request.
-		 * It is applied while WooCommerce loads, so only a mu-plugin can set it; returning false loads neither the built-in
-		 * payment provider nor the Multi-Currency it starts.
+		 * It is applied while WooCommerce loads, so the callback must be added before WooCommerce loads, from a mu-plugin or a
+		 * plugin that loads earlier; returning false loads neither the built-in payment provider nor the Multi-Currency it starts.
 		 *
 		 * @since 11.2.0
 		 *
