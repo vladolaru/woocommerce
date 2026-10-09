@@ -37,13 +37,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	const STORE_SETUP_SYNC_ACTION = 'wcpay_store_setup_sync';
 
 	/**
-	 * Preserved fee-breakdown order note hook.
-	 *
-	 * @var string
-	 */
-	const ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION = 'wcpay_add_fee_breakdown_to_order_notes';
-
-	/**
 	 * Preserved compatibility-data update hook.
 	 *
 	 * @var string
@@ -212,13 +205,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * WooPayments order data service.
-	 *
-	 * @var WooPaymentsOrderDataService
-	 */
-	private WooPaymentsOrderDataService $order_data_service;
-
-	/**
 	 * WooPayments settings service.
 	 *
 	 * @var WooPaymentsSettingsService|null
@@ -234,7 +220,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @param WooPaymentsActionSchedulerService $scheduler          Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
-	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
 	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
 	 */
 	final public function init(
@@ -242,15 +227,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsSettingsService $settings_service = null
 	): void {
-		$this->arbiter            = $arbiter;
-		$this->scheduler          = $scheduler;
-		$this->api_client         = $api_client;
-		$this->account_service    = $account_service;
-		$this->order_data_service = $order_data_service;
-		$this->settings_service   = $settings_service;
+		$this->arbiter          = $arbiter;
+		$this->scheduler        = $scheduler;
+		$this->api_client       = $api_client;
+		$this->account_service  = $account_service;
+		$this->settings_service = $settings_service;
 	}
 
 	/**
@@ -275,7 +258,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		}
 
 		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'handle_wcpay_store_setup_sync' ) );
-		add_action( self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, array( $this, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10, 3 );
 		add_action( self::UPDATE_COMPATIBILITY_DATA_ACTION, array( $this, 'handle_wcpay_update_compatibility_data' ), 10, 0 );
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'schedule_compatibility_data_update' ) );
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'handle_wcpay_instant_deposits_inbox_note' ) );
@@ -824,58 +806,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 		wp_safe_redirect( remove_query_arg( array( 'wcpay_referrer', 'wcpay_referrer_stage' ) ) );
 		exit;
-	}
-
-	/**
-	 * Add fee-breakdown details to an order note from the intent timeline.
-	 *
-	 * @internal
-	 *
-	 * @param int    $order_id     Order ID.
-	 * @param string $intent_id    PaymentIntent ID.
-	 * @param bool   $is_test_mode Whether this queued job should run in test mode.
-	 */
-	public function handle_wcpay_add_fee_breakdown_to_order_notes( $order_id, $intent_id, $is_test_mode = false ): void {
-		$this->account_service->run_in_test_mode_context(
-			(bool) $is_test_mode,
-			function () use ( $order_id, $intent_id ): void {
-				$order = wc_get_order( $order_id );
-				if ( ! $order instanceof WC_Order || ! is_string( $intent_id ) || '' === $intent_id ) {
-					return;
-				}
-
-				try {
-					$events = $this->api_client->get_timeline( $intent_id );
-				} catch ( Throwable $exception ) {
-					$this->log_exception(
-						'Failed to read native WooPayments intent timeline.',
-						$exception,
-						array(
-							'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
-							'order_id'  => $order->get_id(),
-							'intent_id' => $intent_id,
-						)
-					);
-					return;
-				}
-
-				if ( ! isset( $events['data'] ) || ! is_array( $events['data'] ) ) {
-					return;
-				}
-
-				foreach ( $events['data'] as $event ) {
-					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
-						// The client adds the note every time the job runs; the job is scheduled once per completed payment or capture.
-						$note = $this->order_data_service->get_fee_breakdown_note_from_timeline_event( $event );
-						if ( '' !== $note ) {
-							$order->add_order_note( $note );
-							$order->save();
-						}
-						return;
-					}
-				}
-			}
-		);
 	}
 
 	/**

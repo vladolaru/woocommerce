@@ -134,6 +134,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsAdminNoticesPassthrough::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsUserPreferenceFields::class,
 			WooPaymentsHomeTasks::class,
@@ -151,6 +152,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsApplePayDomainService::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsTestModeOrderEmailService::class,
 			WooPaymentsLoanApprovedNote::class,
 		);
@@ -173,6 +175,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			array(
 				WooPaymentsOrderTrackingService::class,
 				WooPaymentsOperationalQueueService::class,
+				WooPaymentsFeeDetailsNoteController::class,
 				WooPaymentsTestModeOrderEmailService::class,
 				WooPaymentsUserPreferenceFields::class,
 				WooPaymentsHomeTasks::class,
@@ -184,6 +187,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsOperationalQueueService::class,
+			WooPaymentsFeeDetailsNoteController::class,
 			WooPaymentsOrderTrackingService::class,
 			WooPaymentsWooPayOrderStatusSync::class,
 			WooPaymentsWooPayExtensionSync::class,
@@ -244,6 +248,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsFrontendTrackingController::class,
 						WooPaymentsOrderTrackingService::class,
 						WooPaymentsOperationalQueueService::class,
+						WooPaymentsFeeDetailsNoteController::class,
 						WooPaymentsTestModeOrderEmailService::class,
 						WooPaymentsVatDetailsRedirect::class,
 					)

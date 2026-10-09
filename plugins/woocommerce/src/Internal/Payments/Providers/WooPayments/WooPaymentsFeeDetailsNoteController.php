@@ -11,12 +11,15 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Throwable;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Schedules the "Fee details" note job when a payment's success or capture note is first added.
+ * Schedules the "Fee details" note job when a payment's success or capture note is first added, and runs it.
  *
  * Client 11.1.0 schedules `wcpay_add_fee_breakdown_to_order_notes` from `mark_payment_completed()` and
  * `mark_payment_capture_completed()`, which return early once their note exists, so the job runs once per completed
@@ -26,7 +29,35 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsFeeDetailsNoteController {
+class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
+
+	/**
+	 * Action Scheduler hook of the job that adds the "Fee details" note, as the client names it.
+	 *
+	 * @var string
+	 */
+	public const ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION = 'wcpay_add_fee_breakdown_to_order_notes';
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter
+	 */
+	private WooPaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient
+	 */
+	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * WooPayments order data service.
+	 *
+	 * @var WooPaymentsOrderDataService
+	 */
+	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
 	 * Order payment lifecycle service.
@@ -73,13 +104,87 @@ class WooPaymentsFeeDetailsNoteController {
 	 * @param WooPaymentsPersistenceVocabulary  $vocabulary          WooPayments persistence vocabulary.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler    Action scheduler service.
 	 * @param WooPaymentsAccountService         $account_service     Account service.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter             Runtime owner arbiter.
+	 * @param WooPaymentsApiClient              $api_client          WooPayments API client.
+	 * @param WooPaymentsOrderDataService       $order_data_service  WooPayments order data service.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service ): void {
+		$this->arbiter             = $arbiter;
+		$this->api_client          = $api_client;
+		$this->order_data_service  = $order_data_service;
 		$this->lifecycle_service   = $lifecycle_service;
 		$this->order_payment_notes = $order_payment_notes;
 		$this->vocabulary          = $vocabulary;
 		$this->action_scheduler    = $action_scheduler;
 		$this->account_service     = $account_service;
+	}
+
+	/**
+	 * Register the job's handler while the built-in WooPayments owns the store.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		add_action( self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, array( $this, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10, 3 );
+	}
+
+	/**
+	 * Add fee-breakdown details to an order note from the intent timeline.
+	 *
+	 * The job runs in the test mode it was scheduled in. Like the client's, it adds its note every time it runs.
+	 *
+	 * @internal
+	 *
+	 * @param int    $order_id     Order ID.
+	 * @param string $intent_id    PaymentIntent ID.
+	 * @param bool   $is_test_mode Whether this queued job should run in test mode.
+	 */
+	public function handle_wcpay_add_fee_breakdown_to_order_notes( $order_id, $intent_id, $is_test_mode = false ): void {
+		$this->account_service->run_in_test_mode_context(
+			(bool) $is_test_mode,
+			function () use ( $order_id, $intent_id ): void {
+				$order = wc_get_order( $order_id );
+				if ( ! $order instanceof WC_Order || ! is_string( $intent_id ) || '' === $intent_id ) {
+					return;
+				}
+
+				try {
+					$events = $this->api_client->get_timeline( $intent_id );
+				} catch ( Throwable $exception ) {
+					wc_get_logger()->error(
+						'Failed to read native WooPayments intent timeline.',
+						array_merge(
+							array(
+								'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+								'order_id'  => $order->get_id(),
+								'intent_id' => $intent_id,
+							),
+							WooPaymentsLogger::get_failure_context( $exception ),
+							array( 'source' => WooPaymentsLogger::SOURCE )
+						)
+					);
+					return;
+				}
+
+				if ( ! isset( $events['data'] ) || ! is_array( $events['data'] ) ) {
+					return;
+				}
+
+				foreach ( $events['data'] as $event ) {
+					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
+						// The client adds the note every time the job runs; the job is scheduled once per completed payment or capture.
+						$note = $this->order_data_service->get_fee_breakdown_note_from_timeline_event( $event );
+						if ( '' !== $note ) {
+							$order->add_order_note( $note );
+							$order->save();
+						}
+						return;
+					}
+				}
+			}
+		);
 	}
 
 	/**
@@ -143,7 +248,7 @@ class WooPaymentsFeeDetailsNoteController {
 	 */
 	public function schedule( WC_Order $order, string $intent_id ): void {
 		$this->action_scheduler->schedule_job(
-			WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+			self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
 			array(
 				'order_id'     => $order->get_id(),
 				'intent_id'    => $intent_id,

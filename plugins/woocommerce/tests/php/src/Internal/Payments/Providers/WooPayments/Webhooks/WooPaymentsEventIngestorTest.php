@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
@@ -1165,7 +1165,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->sut->process( $event );
 		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
-		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
 
 		$this->sut->process( $event );
 
@@ -5616,7 +5616,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function is_fee_details_job_pending( int $order_id, string $intent_id, bool $is_test_mode ): bool {
 		return as_has_scheduled_action(
-			WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+			WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
 			array(
 				'order_id'     => $order_id,
 				'intent_id'    => $intent_id,

@@ -19,9 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
@@ -98,7 +96,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
 		// Native never fires the plugin's update hook (no plugin version); a WooCommerce update queues the sync instead.
 		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		$this->assertSame( 10, has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
 		$this->assertSame( 10, has_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $service, 'schedule_compatibility_data_update' ) ) );
 		$this->assertSame( 10, has_action( 'after_switch_theme', array( $service, 'schedule_compatibility_data_update' ) ) );
@@ -122,7 +119,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 
 		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		$this->assertFalse( has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
 		$this->assertFalse( has_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) ) );
 		$this->assertFalse( has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
 		$this->assertFalse( has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
@@ -454,7 +450,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, $settings_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -522,7 +518,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, null, $settings_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, $settings_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -902,110 +898,13 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Fee-breakdown jobs write the note client 11.1.0 renders for the recorded captured timeline event.
-	 *
-	 * @dataProvider recorded_captured_event_names
-	 *
-	 * @param string $name Case name in `Fixtures/rec-n296-captured-event-notes.json`.
-	 */
-	public function test_add_fee_breakdown_to_order_notes_renders_captured_timeline_event( string $name ): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->save();
-
-		$case       = ClientRenderedCapturedEvents::get( $name );
-		$api_client = $this->create_api_client( array( 'get_timeline' ) );
-		$api_client->expects( $this->once() )
-			->method( 'get_timeline' )
-			->with( 'pi_123' )
-			->willReturn(
-				array(
-					'data' => array(
-						array( 'type' => 'authorized' ),
-						$case['event'],
-					),
-				)
-			);
-
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', true );
-
-		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-		$this->assertCount( 1, $notes );
-		$this->assertSame( '<strong>Fee details:</strong>' . $case['client_html'], $notes[0]->content );
-		$this->assertFalse( $this->is_wcpay_test_mode() );
-	}
-
-	/**
-	 * Recorded REC-5a captured events: one without conversion, one converted from EUR.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function recorded_captured_event_names(): array {
-		return array(
-			'USD, no conversion' => array( 'recorded-rec-5a:usd_full_refund_free_text_reason' ),
-			'converted from EUR' => array( 'recorded-rec-5a:eur_full_refund' ),
-		);
-	}
-
-	/**
-	 * @testdox Fee-breakdown jobs skip malformed timeline data without adding an empty note.
-	 */
-	public function test_add_fee_breakdown_to_order_notes_skips_malformed_timeline(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->save();
-
-		$api_client = $this->create_api_client( array( 'get_timeline' ) );
-		$api_client->method( 'get_timeline' )->willReturn( array( 'data' => array( array( 'type' => 'authorized' ) ) ) );
-
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
-
-		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
-	 * @testdox Fee-breakdown job failures log order and intent correlation context.
-	 */
-	public function test_add_fee_breakdown_failure_logs_order_and_intent_context(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->save();
-
-		$api_client = $this->create_api_client( array( 'get_timeline' ) );
-		$api_client->method( 'get_timeline' )->willThrowException( self::make_provider_error() );
-
-		$fake_logger = $this->create_fake_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			function () use ( $fake_logger ) {
-				return $fake_logger;
-			}
-		);
-
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
-
-		remove_all_filters( 'woocommerce_logging_class' );
-
-		$this->assertCount( 1, $fake_logger->error_calls, 'A single error should be logged when the timeline read fails.' );
-		$context = $fake_logger->error_calls[0]['context'];
-		$this->assertSame( 'woopayments', $context['source'] );
-		$this->assertSame( $order->get_id(), $context['order_id'] );
-		$this->assertSame( 'pi_123', $context['intent_id'] );
-		$this->assertSame( 'wcpay_add_fee_breakdown_to_order_notes', $context['action'] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
-		foreach ( self::$provider_leak_fragments as $fragment ) {
-			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $fake_logger->error_calls ) );
-		}
-	}
-
-	/**
 	 * @testdox A platform error in the $job job is logged with its status and code, never its message.
 	 * @testWith ["site language"]
 	 *           ["store setup sync"]
 	 *           ["compatibility data update"]
 	 *           ["store launch"]
 	 *
-	 * Client 11.1.0 appends the platform's message to these lines. The fee-breakdown job is covered above.
+	 * Client 11.1.0 appends the platform's message to these lines. The Fee details job's line is covered in WooPaymentsFeeDetailsNoteControllerTest.
 	 *
 	 * @param string $job Operational job whose platform call fails.
 	 */
@@ -1448,7 +1347,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsActionSchedulerService|null $scheduler          Scheduler service.
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
 	 * @param WooPaymentsAccountService|null         $account_service    Account service.
-	 * @param WooPaymentsOrderDataService|null       $order_data_service Order data service.
 	 * @param WooPaymentsSettingsService|null        $settings_service   Settings service.
 	 * @return WooPaymentsOperationalQueueService
 	 */
@@ -1457,7 +1355,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
-		?WooPaymentsOrderDataService $order_data_service = null,
 		?WooPaymentsSettingsService $settings_service = null
 	): WooPaymentsOperationalQueueService {
 		$service = new WooPaymentsOperationalQueueService();
@@ -1466,7 +1363,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
-			$order_data_service ?? wc_get_container()->get( WooPaymentsOrderDataService::class ),
 			$settings_service
 		);
 
@@ -1518,87 +1414,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a fake logger that records error calls with their context.
-	 *
-	 * Implements WC_Logger_Interface so it can be injected through the
-	 * woocommerce_logging_class filter.
-	 *
-	 * @return object Fake logger that tracks error calls.
-	 */
-	private function create_fake_logger(): object {
-		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
-		return new class() implements \WC_Logger_Interface {
-			public array $error_calls = array();
-
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				unset( $handle, $message, $level ); // Avoid parameter not used PHPCS errors.
-				return true;
-			}
-
-			public function log( $level, $message, $context = array() ) {
-				unset( $level, $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function emergency( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function alert( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function critical( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function notice( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function debug( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function info( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function warning( $message, $context = array() ) {
-				unset( $message, $context ); // Avoid parameter not used PHPCS errors.
-			}
-
-			public function error( $message, $context = array() ) {
-				$this->error_calls[] = array(
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-		};
-		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
-	}
-
-	/**
-	 * Check the current WooPayments test mode filter value.
-	 *
-	 * @return bool
-	 */
-	private function is_wcpay_test_mode(): bool {
-		/**
-		 * Filters whether the current WooPayments request runs in test mode.
-		 *
-		 * @since 11.0.0
-		 */
-		return (bool) apply_filters( 'wcpay_test_mode', false );
-	}
-
-	/**
 	 * Remove registered operational hooks for a service.
 	 *
 	 * @param WooPaymentsOperationalQueueService $service Service instance.
 	 */
 	private function remove_operational_hooks( WooPaymentsOperationalQueueService $service ): void {
 		remove_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) );
-		remove_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $service, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) );
 		remove_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) );
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );
 		remove_action( 'add_option_wcpay_kyc_completion_date', array( $service, 'handle_add_option_wcpay_kyc_completion_date' ) );

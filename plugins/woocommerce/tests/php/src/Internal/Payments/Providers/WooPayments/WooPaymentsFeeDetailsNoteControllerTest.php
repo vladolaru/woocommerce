@@ -3,12 +3,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -18,6 +25,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 
 	use OrderPaymentLockTestTrait;
+	use ProviderTextLogAssertions;
 
 	/**
 	 * The System Under Test.
@@ -27,19 +35,30 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	private WooPaymentsFeeDetailsNoteController $sut;
 
 	/**
+	 * Controllers whose job handler a test registered, removed on tear down.
+	 *
+	 * @var WooPaymentsFeeDetailsNoteController[]
+	 */
+	private array $hook_owners = array();
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 		$this->sut = wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
-		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
 	}
 
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		foreach ( $this->hook_owners as $controller ) {
+			remove_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $controller, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10 );
+		}
+		$this->hook_owners = array();
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
 		parent::tearDown();
 	}
 
@@ -208,6 +227,152 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The job's handler is registered while the built-in WooPayments owns the store, and not otherwise.
+	 */
+	public function test_registers_the_job_handler_only_for_the_builtin_owner(): void {
+		$owner             = $this->create_controller( $this->createMock( WooPaymentsApiClient::class ) );
+		$not_owner         = $this->create_controller( $this->createMock( WooPaymentsApiClient::class ), false );
+		$this->hook_owners = array( $owner, $not_owner );
+
+		$owner->register();
+		$not_owner->register();
+
+		$this->assertSame( 10, has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $owner, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
+		$this->assertFalse( has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $not_owner, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
+	}
+
+	/**
+	 * Fee-breakdown jobs write the note client 11.1.0 renders for the recorded captured timeline event.
+	 *
+	 * @dataProvider recorded_captured_event_names
+	 *
+	 * @param string $name Case name in `Fixtures/rec-n296-captured-event-notes.json`.
+	 */
+	public function test_add_fee_breakdown_to_order_notes_renders_captured_timeline_event( string $name ): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+
+		$case       = ClientRenderedCapturedEvents::get( $name );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->expects( $this->once() )
+			->method( 'get_timeline' )
+			->with( 'pi_123' )
+			->willReturnCallback(
+				function () use ( $case ): array {
+					$this->assertTrue( $this->is_wcpay_test_mode(), 'The timeline is read in the test mode the job was scheduled in.' );
+
+					return array(
+						'data' => array(
+							array( 'type' => 'authorized' ),
+							$case['event'],
+						),
+					);
+				}
+			);
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', true );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertCount( 1, $notes );
+		$this->assertSame( '<strong>Fee details:</strong>' . $case['client_html'], $notes[0]->content );
+		$this->assertFalse( $this->is_wcpay_test_mode() );
+	}
+
+	/**
+	 * Recorded REC-5a captured events: one without conversion, one converted from EUR.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function recorded_captured_event_names(): array {
+		return array(
+			'USD, no conversion' => array( 'recorded-rec-5a:usd_full_refund_free_text_reason' ),
+			'converted from EUR' => array( 'recorded-rec-5a:eur_full_refund' ),
+		);
+	}
+
+	/**
+	 * @testdox Fee-breakdown jobs skip malformed timeline data without adding an empty note.
+	 */
+	public function test_add_fee_breakdown_to_order_notes_skips_malformed_timeline(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willReturn( array( 'data' => array( array( 'type' => 'authorized' ) ) ) );
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
+
+		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox Fee-breakdown job failures log order and intent correlation context.
+	 */
+	public function test_add_fee_breakdown_failure_logs_order_and_intent_context(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willThrowException( self::make_provider_error() );
+
+		$logger = RecordingWcLogger::install();
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
+
+		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] ) );
+		$this->assertCount( 1, $errors, 'A single error should be logged when the timeline read fails.' );
+		$this->assertSame( 'Failed to read native WooPayments intent timeline.', $logger->lines[ $errors[0] ][1] );
+		$context = $logger->contexts[ $errors[0] ];
+		$this->assertSame( 'woopayments', $context['source'] );
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'pi_123', $context['intent_id'] );
+		$this->assertSame( 'wcpay_add_fee_breakdown_to_order_notes', $context['action'] );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Build a controller over a given platform API client.
+	 *
+	 * @param WooPaymentsApiClient $api_client    Platform API client.
+	 * @param bool                 $builtin_owner Whether the built-in WooPayments owns the store.
+	 * @return WooPaymentsFeeDetailsNoteController
+	 */
+	private function create_controller( WooPaymentsApiClient $api_client, bool $builtin_owner = true ): WooPaymentsFeeDetailsNoteController {
+		$container  = wc_get_container();
+		$controller = new WooPaymentsFeeDetailsNoteController();
+		$controller->init(
+			$container->get( OrderPaymentLifecycleService::class ),
+			$container->get( OrderPaymentNotes::class ),
+			new WooPaymentsPersistenceVocabulary(),
+			$container->get( WooPaymentsActionSchedulerService::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			new StaticWooPaymentsRuntimeArbiter( $builtin_owner ),
+			$api_client,
+			$container->get( WooPaymentsOrderDataService::class )
+		);
+
+		return $controller;
+	}
+
+	/**
+	 * Tell whether WooPayments runs in test mode for this request.
+	 *
+	 * @return bool
+	 */
+	private function is_wcpay_test_mode(): bool {
+		/**
+		 * Filters whether the current WooPayments request runs in test mode.
+		 *
+		 * @since 11.0.0
+		 */
+		return (bool) apply_filters( 'wcpay_test_mode', false );
+	}
+
+	/**
 	 * Build a completed event with a note.
 	 *
 	 * @param string $payment_reference Payment reference.
@@ -240,7 +405,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	private function get_pending_job_args(): array {
 		$actions = as_get_scheduled_actions(
 			array(
-				'hook'   => WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'hook'   => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
 				'status' => \ActionScheduler_Store::STATUS_PENDING,
 				'group'  => 'woocommerce_payments',
 			)
