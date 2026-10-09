@@ -409,22 +409,27 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string   $error_message Error message.
 	 */
 	private function log_dispute_refund_failure( WC_Order $order, string $charge_id, string $dispute_id, string $status, float $refund_amount, string $error_message ): void {
-		wc_get_logger()->error(
-			sprintf(
-				'Failed to create local refund for lost dispute %1$s on charge %2$s: %3$s',
-				$dispute_id,
-				$charge_id,
-				$error_message
-			),
-			array(
-				'source'         => 'native-payments-webhook',
-				'order_id'       => $order->get_id(),
-				'charge_id'      => $charge_id,
-				'dispute_id'     => $dispute_id,
-				'dispute_status' => $status,
-				'refund_amount'  => $refund_amount,
-			)
-		);
+		// Logging is best-effort: a logger that cannot be obtained or written must not fail the event.
+		try {
+			wc_get_logger()->error(
+				sprintf(
+					'Failed to create local refund for lost dispute %1$s on charge %2$s: %3$s',
+					$dispute_id,
+					$charge_id,
+					$error_message
+				),
+				array(
+					'source'         => 'native-payments-webhook',
+					'order_id'       => $order->get_id(),
+					'charge_id'      => $charge_id,
+					'dispute_id'     => $dispute_id,
+					'dispute_status' => $status,
+					'refund_amount'  => $refund_amount,
+				)
+			);
+		} catch ( Throwable $logger_exception ) {
+			unset( $logger_exception );
+		}
 	}
 
 	/**
@@ -468,14 +473,19 @@ class WooPaymentsDisputeEventHandler {
 		try {
 			return $this->api_client->get_dispute_summary( $dispute_id );
 		} catch ( Throwable $exception ) {
-			wc_get_logger()->error(
-				sprintf(
-					'Failed to fetch dispute summary for dispute %1$s (charge %2$s).',
-					$dispute_id,
-					$charge_id
-				),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
-			);
+			// Logging is best-effort: the event's own amount must still drive the local refund when the logger fails.
+			try {
+				wc_get_logger()->error(
+					sprintf(
+						'Failed to fetch dispute summary for dispute %1$s (charge %2$s).',
+						$dispute_id,
+						$charge_id
+					),
+					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'native-payments-webhook' ) )
+				);
+			} catch ( Throwable $logger_exception ) {
+				unset( $logger_exception );
+			}
 		}
 
 		return array();

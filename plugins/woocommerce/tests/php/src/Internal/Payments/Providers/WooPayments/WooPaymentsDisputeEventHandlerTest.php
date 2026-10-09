@@ -732,15 +732,17 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order.
-	 * @testWith ["USD", 300, "3.00"]
-	 *           ["JPY", 300, "300.00"]
+	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order, even when the logger cannot be obtained ($logger_fails).
+	 * @testWith ["USD", 300, "3.00", false]
+	 *           ["JPY", 300, "300.00", false]
+	 *           ["USD", 300, "3.00", true]
 	 *
-	 * @param string $currency Order and dispute currency.
-	 * @param int    $amount   Dispute amount in the currency's minor units, as Stripe sends it.
-	 * @param string $expected Refund amount.
+	 * @param string $currency     Order and dispute currency.
+	 * @param int    $amount       Dispute amount in the currency's minor units, as Stripe sends it.
+	 * @param string $expected     Refund amount.
+	 * @param bool   $logger_fails Whether obtaining the WooCommerce logger throws.
 	 */
-	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected ): void {
+	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected, bool $logger_fails ): void {
 		$order = $this->create_disputable_order();
 		$order->set_currency( $currency );
 		$order->set_total( 'JPY' === $currency ? '1000' : '10.00' );
@@ -769,6 +771,15 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			},
 			wc_get_container()->get( WooPaymentsDisputeCacheService::class )
 		);
+
+		if ( $logger_fails ) {
+			add_filter(
+				'woocommerce_logging_class',
+				static function () {
+					throw new \RuntimeException( 'Logger unavailable.' );
+				}
+			);
+		}
 
 		// A Stripe Dispute object, the charge.dispute.closed event's data.object: amount and currency are the fields the
 		// platform's summary copies into disputed_amount and currency (wpcom class-dispute-service.php:454-455).

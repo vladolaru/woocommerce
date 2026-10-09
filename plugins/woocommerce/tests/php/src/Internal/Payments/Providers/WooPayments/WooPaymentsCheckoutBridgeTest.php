@@ -1069,10 +1069,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 					'card_payments' => 'active',
 					'link_payments' => 'active',
 				),
+				// Client 11.1.0 returns the account's fees array (includes/class-wc-payments-account.php:639-641) and reads its keys as
+				// payment method IDs (includes/class-wc-payment-gateway-wcpay.php:4867).
 				'fees'         => array( 'link' => array() ),
 			)
 		);
-		$bridge          = new WooPaymentsCheckoutBridge();
+		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
 
 		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );

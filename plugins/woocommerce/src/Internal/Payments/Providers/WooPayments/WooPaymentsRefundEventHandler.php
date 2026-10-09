@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
+use Throwable;
 
 /**
  * Handles WooPayments refund webhook side effects for native WooPayments.
@@ -823,12 +824,17 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $message Error message.
 	 */
 	private function log_refund_failure( WC_Order $order, string $message ): void {
-		wc_get_logger()->error(
-			$message,
-			array(
-				'source'   => 'native-payments-webhook',
-				'order_id' => $order->get_id(),
-			)
-		);
+		// Logging is best-effort: a logger that cannot be obtained or written must not fail the event.
+		try {
+			wc_get_logger()->error(
+				$message,
+				array(
+					'source'   => 'native-payments-webhook',
+					'order_id' => $order->get_id(),
+				)
+			);
+		} catch ( Throwable $logger_exception ) {
+			unset( $logger_exception );
+		}
 	}
 }
