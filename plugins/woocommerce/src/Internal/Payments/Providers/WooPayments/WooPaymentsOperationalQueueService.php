@@ -489,22 +489,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function schedule_recurring_actions(): void {
-		if ( ! function_exists( 'as_schedule_recurring_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
-			return;
-		}
-
-		if ( as_has_scheduled_action( self::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID ) ) {
-			return;
-		}
-
-		as_schedule_recurring_action(
-			time() + wp_rand( 10, 60 ),
-			6 * HOUR_IN_SECONDS,
-			self::STORE_SETUP_SYNC_ACTION,
-			array(),
-			WooPaymentsActionSchedulerService::GROUP_ID,
-			true
-		);
+		$this->scheduler->schedule_recurring_job( self::STORE_SETUP_SYNC_ACTION, time() + wp_rand( 10, 60 ), 6 * HOUR_IN_SECONDS );
 	}
 
 	/**

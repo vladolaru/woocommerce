@@ -62,28 +62,38 @@ class WooPaymentsOrderEffectApplier {
 	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
+	 * Action Scheduler service.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $action_scheduler;
+
+	/**
 	 * Initialize the effect applier.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsTokenService          $token_service      WooPayments token service.
-	 * @param WooPaymentsOrderDataService      $order_data_service WooPayments order data service.
-	 * @param WooPaymentsAccountService        $account_service    WooPayments account service.
-	 * @param WooPaymentsOrderNoteService      $note_service       WooPayments order note service.
-	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry Payment method registry.
+	 * @param WooPaymentsTokenService           $token_service      WooPayments token service.
+	 * @param WooPaymentsOrderDataService       $order_data_service WooPayments order data service.
+	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
+	 * @param WooPaymentsOrderNoteService       $note_service       WooPayments order note service.
+	 * @param WooPaymentsPaymentMethodRegistry  $payment_method_registry Payment method registry.
+	 * @param WooPaymentsActionSchedulerService $action_scheduler  Action Scheduler service.
 	 */
 	final public function init(
 		WooPaymentsTokenService $token_service,
 		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderNoteService $note_service,
-		WooPaymentsPaymentMethodRegistry $payment_method_registry
+		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		WooPaymentsActionSchedulerService $action_scheduler
 	): void {
 		$this->token_service           = $token_service;
 		$this->order_data_service      = $order_data_service;
 		$this->account_service         = $account_service;
 		$this->note_service            = $note_service;
 		$this->payment_method_registry = $payment_method_registry;
+		$this->action_scheduler        = $action_scheduler;
 	}
 
 	/**
@@ -1032,7 +1042,7 @@ class WooPaymentsOrderEffectApplier {
 
 		$this->token_service->attach_token_to_order( $order, $token );
 		$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $outcome->get_customer_id() );
-		wc_get_container()->get( WooPaymentsActionSchedulerService::class )->schedule_job(
+		$this->action_scheduler->schedule_job(
 			WooPaymentsTokenService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
 			array(
 				'payment_method' => $payment_method_id,

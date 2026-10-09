@@ -59,6 +59,32 @@ class WooPaymentsActionSchedulerService {
 	}
 
 	/**
+	 * Schedule a recurring Action Scheduler job, unless an action of its hook is already scheduled or running in the group,
+	 * whatever its arguments.
+	 *
+	 * Called once Action Scheduler is loaded, from its `action_scheduler_ensure_recurring_actions` hook.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string                  $hook      Hook name.
+	 * @param int                     $timestamp First run timestamp.
+	 * @param int                     $interval  Seconds between runs.
+	 * @param array<int|string,mixed> $args      Action args.
+	 * @param string                  $group     Action Scheduler group. Defaults to the canonical group.
+	 */
+	public function schedule_recurring_job( string $hook, int $timestamp, int $interval, array $args = array(), string $group = self::GROUP_ID ): void {
+		if ( ! function_exists( 'as_schedule_recurring_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
+			return;
+		}
+
+		if ( as_has_scheduled_action( $hook, null, $group ) ) {
+			return;
+		}
+
+		as_schedule_recurring_action( $timestamp, $interval, $hook, $args, $group, true );
+	}
+
+	/**
 	 * Keep a job asked for before Action Scheduler initialized, and schedule it when it does.
 	 *
 	 * @param string                  $hook      Hook name.

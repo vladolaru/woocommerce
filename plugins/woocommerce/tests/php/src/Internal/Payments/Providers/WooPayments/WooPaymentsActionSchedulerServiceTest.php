@@ -177,6 +177,34 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A recurring job is scheduled once in the group, with its first run and interval, and not while any action of its hook is scheduled there.
+	 */
+	public function test_schedule_recurring_job_schedules_once_per_hook_in_the_group(): void {
+		$first = time() + 30;
+
+		$this->sut->schedule_recurring_job( $this->hook, $first, HOUR_IN_SECONDS );
+		$this->sut->schedule_recurring_job( $this->hook, $first + 60, HOUR_IN_SECONDS );
+
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'   => $this->hook,
+				'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			)
+		);
+		$this->assertCount( 1, $actions );
+		$action = reset( $actions );
+		$this->assertSame( $first, $action->get_schedule()->get_date()->getTimestamp() );
+		$this->assertSame( HOUR_IN_SECONDS, $action->get_schedule()->get_recurrence() );
+
+		$this->unschedule_test_actions();
+		$this->sut->schedule_job( $this->hook, array( 'event_id' => 'evt_single' ) );
+		$this->sut->schedule_recurring_job( $this->hook, $first, HOUR_IN_SECONDS );
+
+		$this->assertSame( 0, $this->count_pending_actions( $this->hook, array() ), 'A single action of the hook, whatever its args, keeps the recurring job off.' );
+	}
+
+	/**
 	 * @testdox Scheduling avoids duplicate pending actions with the same hook, args, and group.
 	 */
 	public function test_schedule_job_avoids_duplicate_pending_actions(): void {

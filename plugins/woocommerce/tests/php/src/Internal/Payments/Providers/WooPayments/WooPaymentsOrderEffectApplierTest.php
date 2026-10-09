@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -1815,7 +1816,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$order_data_service,
 			$account_service,
 			$note_service ?? new WooPaymentsOrderNoteService(),
-			new WooPaymentsPaymentMethodRegistry()
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
 
 		return $applier;
