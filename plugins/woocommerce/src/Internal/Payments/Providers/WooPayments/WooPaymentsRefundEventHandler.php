@@ -165,6 +165,9 @@ class WooPaymentsRefundEventHandler {
 			// Read the order again under the lock: a WP Admin refund of the same platform refund links its local row while
 			// it holds the lock, and a lookup made before the claim would miss it and create a second refund.
 			$order = $this->get_fresh_order( $order );
+			// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
+			// saved it before this claim is decided like any order found by its charge.
+			$record_only = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
 			if ( $record_only || ! $this->is_own_payment( $order, $charge, $charge_id ) ) {
 				$this->record_other_charge_refund( $order, 'charge.refunded', $charge, $charge_id, $refund_id, $refund_status, $refunded_amount, $currency );
 				return;

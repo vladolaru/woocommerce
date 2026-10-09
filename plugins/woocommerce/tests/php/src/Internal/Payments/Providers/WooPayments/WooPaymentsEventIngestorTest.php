@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -4635,6 +4636,84 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status() );
 		$this->assertSame( array(), $requested_intents );
 		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'which does not pay this order, expired' ) );
+	}
+
+	/**
+	 * @testdox charge.expired found by charge metadata fails the authorization when the order saved the charge as its payment before the event claimed the lock.
+	 */
+	public function test_expired_charge_found_by_metadata_applies_when_the_order_saved_the_charge_before_the_claim(): void {
+		$order = $this->create_woopayments_order();
+		$store = new class() extends OrderPaymentLock {
+			/**
+			 * Whether the authorization was saved.
+			 *
+			 * @var bool
+			 */
+			public bool $saved = false;
+
+			/**
+			 * Save the authorization from a separate request, as a checkout finishing just before the claim would, then grant it.
+			 *
+			 * @param WC_Order                                                                         $order      Order being locked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string|null                                                                      $reference  Payment reference.
+			 * @param string                                                                           $operation  Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				unset( $vocabulary, $reference, $operation );
+				if ( ! $this->saved ) {
+					$this->saved = true;
+					$writer      = new WC_Order( $order->get_id() );
+					$writer->set_status( 'on-hold' );
+					$writer->set_transaction_id( 'pi_late' );
+					$writer->update_meta_data( '_intent_id', 'pi_late' );
+					$writer->update_meta_data( '_charge_id', 'ch_late' );
+					$writer->update_meta_data( '_intention_status', 'requires_capture' );
+					$writer->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                                                                         $order      Order being unlocked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string                                                                           $lock_token Claim token.
+			 */
+			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
+			}
+		};
+		wc_get_container()->replace( OrderPaymentLock::class, $store );
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_late_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_late',
+						'payment_intent' => 'pi_late',
+						'metadata'       => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => $order->get_order_key(),
+						),
+					),
+				),
+			)
+		);
+
+		$this->assertTrue( $store->saved, 'The authorization must be saved inside the claim.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array( 'pi_late' ), $requested_intents );
+		$this->assertCount( 0, $this->get_order_notes_containing( $order, 'which does not pay this order' ) );
 	}
 
 	/**

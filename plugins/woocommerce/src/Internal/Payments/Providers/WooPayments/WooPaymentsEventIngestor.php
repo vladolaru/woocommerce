@@ -406,7 +406,7 @@ class WooPaymentsEventIngestor {
 	 * @param WC_Order            $order        Order the event resolved to.
 	 * @param string              $event_type   `payment_intent.succeeded`, `payment_intent.payment_failed` or `charge.expired`.
 	 * @param array<string,mixed> $event_object Payment intent or charge object.
-	 * @param bool                $record_only  Whether the order was found only by the charge's metadata, so the event is recorded.
+	 * @param bool                $record_only  Whether the order was found only by the charge's metadata, so the event is recorded while the order still does not hold the charge.
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
 	private function process_order_payment_event( WC_Order $order, string $event_type, array $event_object, bool $record_only = false ): void {
@@ -426,7 +426,10 @@ class WooPaymentsEventIngestor {
 			$is_charge_event = 'charge.expired' === $event_type;
 			$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
 			$intent_id       = $is_charge_event ? $this->get_event_order_resolver()->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
-			$is_own_payment  = ! $record_only && $this->get_event_order_resolver()->is_own_payment( $order, $intent_id, $charge_id );
+			// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
+			// saved it before this claim is decided like any order found by its charge.
+			$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
+			$is_own_payment = ! $record_only && $this->get_event_order_resolver()->is_own_payment( $order, $intent_id, $charge_id );
 
 			if ( ! $is_own_payment ) {
 				$this->get_other_charge_recorder()->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );

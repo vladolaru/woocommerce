@@ -652,6 +652,110 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded event found by charge metadata adds the refund row when the order saved the charge as its payment before the event claimed the lock.
+	 */
+	public function test_charge_refunded_found_by_metadata_applies_when_the_order_saved_the_charge_before_the_claim(): void {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+		$store                    = $this->create_lock_that_saves_the_payment_on_claim( 'pi_late', 'ch_late', 'processing' );
+		$handler                  = new WooPaymentsRefundEventHandler();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['id']             = 'ch_late';
+		$charge['payment_intent'] = 'pi_late';
+		$charge['metadata']       = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+		$handler->init( wc_get_container()->get( WooPaymentsLegacyRuntime::class ), $store, new WooPaymentsPersistenceVocabulary() );
+
+		$handler->process( 'charge.refunded', $charge );
+
+		$this->assertTrue( $store->saved, 'The payment must be saved inside the claim.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 0, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
+	}
+
+	/**
+	 * Build an order payment lock whose claim saves the order's payment, as a checkout finishing just before it would.
+	 *
+	 * @param string $intent_id Payment intent the checkout saves.
+	 * @param string $charge_id Charge the checkout saves.
+	 * @param string $status    Order status the checkout leaves.
+	 * @return OrderPaymentLock
+	 */
+	private function create_lock_that_saves_the_payment_on_claim( string $intent_id, string $charge_id, string $status ): OrderPaymentLock {
+		return new class( $intent_id, $charge_id, $status ) extends OrderPaymentLock {
+			/**
+			 * Whether the payment was saved.
+			 *
+			 * @var bool
+			 */
+			public bool $saved = false;
+
+			/**
+			 * Payment intent, charge and status the checkout saves.
+			 *
+			 * @var array{string,string,string}
+			 */
+			private array $payment;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $intent_id Payment intent.
+			 * @param string $charge_id Charge.
+			 * @param string $status    Order status.
+			 */
+			public function __construct( string $intent_id, string $charge_id, string $status ) {
+				$this->payment = array( $intent_id, $charge_id, $status );
+			}
+
+			/**
+			 * Save the payment from a separate request, then grant the claim.
+			 *
+			 * @param WC_Order                               $order      Order being locked.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string|null                            $reference  Payment reference.
+			 * @param string                                 $operation  Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				unset( $vocabulary, $reference, $operation );
+				if ( ! $this->saved ) {
+					$this->saved = true;
+					$writer      = new WC_Order( $order->get_id() );
+					$writer->set_status( $this->payment[2] );
+					$writer->set_transaction_id( $this->payment[0] );
+					$writer->update_meta_data( '_intent_id', $this->payment[0] );
+					$writer->update_meta_data( '_charge_id', $this->payment[1] );
+					$writer->save();
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                               $order      Order being unlocked.
+			 * @param ProviderPersistenceVocabularyInterface $vocabulary Persistence vocabulary.
+			 * @param string                                 $lock_token Claim token.
+			 */
+			public function release( WC_Order $order, ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
+			}
+		};
+	}
+
+	/**
 	 * @testdox A charge.refunded event on a charge no order holds, whose metadata names an order with another key, still fails as not found.
 	 */
 	public function test_charge_refunded_on_an_unheld_charge_with_another_order_key_is_not_found(): void {
