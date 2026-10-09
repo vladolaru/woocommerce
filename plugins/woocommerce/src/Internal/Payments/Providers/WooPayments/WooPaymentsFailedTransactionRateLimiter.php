@@ -47,15 +47,6 @@ class WooPaymentsFailedTransactionRateLimiter {
 	}
 
 	/**
-	 * Tell whether a WooCommerce session is available for limiter storage.
-	 *
-	 * @return bool
-	 */
-	public function has_session(): bool {
-		return $this->get_session() instanceof \WC_Session;
-	}
-
-	/**
 	 * Record a failed transaction attempt.
 	 *
 	 * @return void

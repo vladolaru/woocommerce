@@ -583,7 +583,7 @@ class WooPaymentsOrderEffects {
 	 * @param string              $refund_note_identity_meta_key Comment-meta key for the stable identity.
 	 * @return array<string,mixed>
 	 */
-	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity = '', array $refund_note_equivalents = array(), string $refund_note_identity_meta_key = '' ): array {
+	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents, string $refund_note_identity_meta_key ): array {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';

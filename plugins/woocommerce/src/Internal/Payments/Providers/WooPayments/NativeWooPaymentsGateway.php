@@ -2491,7 +2491,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function get_failed_transaction_rate_limiter_error_message(): string {
 		$rate_limiter = $this->get_failed_transaction_rate_limiter();
-		if ( ! $rate_limiter->has_session() || ! $rate_limiter->is_limited() ) {
+		if ( ! $rate_limiter->is_limited() ) {
 			return '';
 		}
 

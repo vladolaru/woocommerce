@@ -431,10 +431,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
 
-		$result = $service->track_new_order_action( $order->get_id() );
+		$service->handle_wcpay_track_new_order( $order->get_id() );
 
 		$updated_order = wc_get_order( $order->get_id() );
-		$this->assertTrue( $result );
 		$this->assertInstanceOf( WC_Order::class, $updated_order );
 		$this->assertSame( 'yes', $updated_order->get_meta( '_new_order_tracking_complete', true ) );
 	}
@@ -457,10 +456,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client );
 
-		$result = $service->track_update_order_action( $order->get_id() );
+		$service->handle_wcpay_track_update_order( $order->get_id() );
 
 		$updated_order = wc_get_order( $order->get_id() );
-		$this->assertTrue( $result );
 		$this->assertInstanceOf( WC_Order::class, $updated_order );
 		$this->assertSame( 'already-marked', $updated_order->get_meta( '_new_order_tracking_complete', true ) );
 	}
@@ -480,7 +478,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$api_client->expects( $this->never() )->method( 'track_order' );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
 
-		$this->assertFalse( $service->track_new_order_action( $order->get_id() ) );
+		$service->handle_wcpay_track_new_order( $order->get_id() );
 	}
 
 	/**
@@ -503,7 +501,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->willReturn( array( 'result' => 'success' ) );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
-		$this->assertTrue( $service->track_new_order_action( $order->get_id() ) );
+		$service->handle_wcpay_track_new_order( $order->get_id() );
 	}
 
 	/**
@@ -523,7 +521,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$api_client->expects( $this->never() )->method( 'track_order' );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
 
-		$this->assertFalse( $service->track_new_order_action( $order->get_id() ) );
+		$service->handle_wcpay_track_new_order( $order->get_id() );
 	}
 
 	/**

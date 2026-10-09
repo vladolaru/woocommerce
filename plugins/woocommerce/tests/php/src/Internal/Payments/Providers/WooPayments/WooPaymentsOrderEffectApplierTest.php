@@ -1173,7 +1173,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_raw_payment_method_details', '{"id":"pm_old","type":"card"}' );
 		$order->save();
 
-		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array( 'type' => 'card' ), '', 'pm_new', 'pm_old' );
+		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array( 'type' => 'card' ) );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertFalse( $applied );
@@ -1196,7 +1196,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_payment_method_details', '{"type":"card"}' );
 		$order->save();
 
-		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array(), '', 'pm_same', 'pm_same' );
+		$applied = $this->create_applier()->apply_setup_intent_payment_method_display_details( $order, array() );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertFalse( $applied );
@@ -1222,7 +1222,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$applier = $this->create_applier();
 
 		$details = $applier->get_same_method_payment_method_details( $order, 'pm_same_cache', 'pm_same_cache' );
-		$applied = $applier->apply_setup_intent_payment_method_display_details( $order, $details, '', 'pm_same_cache', 'pm_same_cache' );
+		$applied = $applier->apply_setup_intent_payment_method_display_details( $order, $details );
 		$order   = wc_get_order( $order->get_id() );
 
 		$this->assertSame( array(), $details );

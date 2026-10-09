@@ -138,7 +138,7 @@ class WooPaymentsOrderEffectApplier {
 							)['payment_method_details'];
 						}
 					}
-					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details, '', $outcome->get_payment_method_id(), $previous_payment_method_id );
+					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details );
 
 					// The client's process_payment() also ends in update_order_status_from_intent(), so the success note is written here too.
 					return $this->merge_effect_data_into_outcome(
@@ -515,14 +515,10 @@ class WooPaymentsOrderEffectApplier {
 	 *
 	 * @param WC_Order            $order           Order being updated.
 	 * @param array<string,mixed> $payment_method  Provider payment method response.
-	 * @param string              $account_country            Connected account country override.
-	 * @param string              $payment_method_id          Current provider payment method ID.
-	 * @param string              $previous_payment_method_id Provider payment method ID before this SetupIntent.
+	 * @param string              $account_country Connected account country override.
 	 * @return bool Whether details were safely applied.
 	 */
-	public function apply_setup_intent_payment_method_display_details( WC_Order $order, array $payment_method, string $account_country = '', string $payment_method_id = '', string $previous_payment_method_id = '' ): bool {
-		unset( $payment_method_id, $previous_payment_method_id );
-
+	public function apply_setup_intent_payment_method_display_details( WC_Order $order, array $payment_method, string $account_country = '' ): bool {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			$payment_method,
 			''
@@ -1022,15 +1018,14 @@ class WooPaymentsOrderEffectApplier {
 	 * @return void
 	 */
 	private function apply_zero_amount_without_intent( WC_Order $order, PaymentOutcome $outcome, WooPaymentsOrderEffectPlan $plan ): void {
-		$payment_method_id          = $outcome->get_payment_method_id();
-		$previous_payment_method_id = (string) $order->get_meta( '_payment_method_id', true );
+		$payment_method_id = $outcome->get_payment_method_id();
 		$this->persist_setup_intent_details( $order, $outcome, $plan->get_setup_meta() );
 
 		$token_id = (int) ( $plan->get_provider_result()['token_id'] ?? 0 );
 		$token    = 0 < $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
 		// The client skips the payment method fetch for Link tokens (gw:1693-1696).
 		$details = $token instanceof WooPaymentsLinkToken ? array() : $this->token_service->get_payment_method_details_for_display( $payment_method_id );
-		$this->apply_setup_intent_payment_method_display_details( $order, $details, '', $payment_method_id, $previous_payment_method_id );
+		$this->apply_setup_intent_payment_method_display_details( $order, $details );
 
 		if ( ! $token instanceof WC_Payment_Token ) {
 			return;

@@ -330,7 +330,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 						)['payment_method_details'];
 					}
 				}
-				$should_apply_display_details_before_lifecycle = $this->get_order_effect_applier()->apply_setup_intent_payment_method_display_details( $order, $payment_method_details, $this->account_service->get_account_country(), $this->get_result_payment_method_id( $intent ), $previous_payment_method_id );
+				$should_apply_display_details_before_lifecycle = $this->get_order_effect_applier()->apply_setup_intent_payment_method_display_details( $order, $payment_method_details, $this->account_service->get_account_country() );
 			}
 		}
 

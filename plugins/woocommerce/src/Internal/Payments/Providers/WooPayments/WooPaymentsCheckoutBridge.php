@@ -1213,7 +1213,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			),
 		);
 
-		if ( $this->should_fold_link_into_card( $enabled_method_ids, $currency ) ) {
+		if ( $this->should_fold_link_into_card( $currency ) ) {
 			$link_definition = $this->get_payment_method_registry()->get( 'link' );
 			if ( null !== $link_definition ) {
 				$config['link'] = $this->get_payment_method_config( $link_definition, $saved_cards_enabled );
@@ -1336,13 +1336,10 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	/**
 	 * Tell whether Link should be folded into the card Payment Element.
 	 *
-	 * @param string[] $enabled_method_ids Canonical enabled payment method IDs.
-	 * @param string   $currency           Checkout or order-pay currency.
+	 * @param string $currency Checkout or order-pay currency.
 	 * @return bool
 	 */
-	private function should_fold_link_into_card( array $enabled_method_ids, string $currency ): bool {
-		unset( $enabled_method_ids );
-
+	private function should_fold_link_into_card( string $currency ): bool {
 		return WooPaymentsFeaturePolicy::is_link_folded_into_card(
 			$this->get_account_service(),
 			$this->get_payment_method_registry(),

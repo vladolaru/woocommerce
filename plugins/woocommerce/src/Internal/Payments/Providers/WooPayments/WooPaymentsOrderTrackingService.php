@@ -234,7 +234,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * @param int $order_id Order ID.
 	 */
 	public function handle_wcpay_track_new_order( $order_id ): void {
-		$this->track_new_order_action( (int) $order_id );
+		$this->track_order( (int) $order_id, false );
 	}
 
 	/**
@@ -245,7 +245,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 * @param int $order_id Order ID.
 	 */
 	public function handle_wcpay_track_update_order( $order_id ): void {
-		$this->track_update_order_action( (int) $order_id );
+		$this->track_order( (int) $order_id, true );
 	}
 
 	/**
@@ -288,30 +288,6 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 		$order_meta_query .= sprintf( " AND `meta_key` NOT IN ('%s')", self::NEW_ORDER_TRACKING_COMPLETE_META_KEY );
 
 		return $order_meta_query;
-	}
-
-	/**
-	 * Track a new order through the preserved action handler.
-	 *
-	 * @internal
-	 *
-	 * @param int $order_id Order ID.
-	 * @return bool True when tracking succeeded.
-	 */
-	public function track_new_order_action( $order_id ): bool {
-		return $this->track_order( (int) $order_id, false );
-	}
-
-	/**
-	 * Track an order update through the preserved action handler.
-	 *
-	 * @internal
-	 *
-	 * @param int $order_id Order ID.
-	 * @return bool True when tracking succeeded.
-	 */
-	public function track_update_order_action( $order_id ): bool {
-		return $this->track_order( (int) $order_id, true );
 	}
 
 	/**
