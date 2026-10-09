@@ -62,7 +62,8 @@ class WooPaymentsActionSchedulerService {
 	 * Schedule a recurring Action Scheduler job, unless an action of its hook is already scheduled or running in the group,
 	 * whatever its arguments.
 	 *
-	 * Called once Action Scheduler is loaded, from its `action_scheduler_ensure_recurring_actions` hook.
+	 * The job is scheduled as unique. Unlike schedule_job(), nothing is deferred: without Action Scheduler loaded, the call
+	 * does nothing.
 	 *
 	 * @since 11.2.0
 	 *
