@@ -407,8 +407,8 @@ class WooPaymentsOrderNoteService {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string                                                                                                                                                            $event_type Provider event type.
-	 * @param array{intent_id?:string,charge_id?:string,refund_id?:string,dispute_id?:string,status?:string,message?:string,dispute_url?:string,amount?:float,currency?:string} $facts      The event's intent, charge, refund and dispute IDs, its status and message, the dispute details URL, and its amount and currency when it moves money.
+	 * @param string                                                                                                                                                                               $event_type Provider event type.
+	 * @param array{intent_id?:string,charge_id?:string,refund_id?:string,dispute_id?:string,warning_id?:string,status?:string,message?:string,dispute_url?:string,amount?:float,currency?:string} $facts      The event's intent, charge, refund, dispute and warning IDs, its status and message, the dispute details URL, and its amount and currency when it moves money.
 	 * @return string
 	 * @throws \InvalidArgumentException When the event type has no note.
 	 */
@@ -478,6 +478,11 @@ class WooPaymentsOrderNoteService {
 				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "under_review", %5$s: what happened, such as "Payment dispute has been updated". */
 				$format = __( '%5$s: the dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, has status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( (string) ( $facts['message'] ?? '' ) ) );
+
+			case 'radar.early_fraud_warning.created':
+				/* translators: %1$s: WooPayments early fraud warning ID, %2$s: WooPayments charge ID, %3$s: transaction URL. */
+				$format = __( 'An early fraud warning (<code>%1$s</code>) was raised on WooPayments charge <a>%2$s</a>, which does not pay this order.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%3$s' ), array( 'code' => '<code>' ) ) ), esc_html( (string) ( $facts['warning_id'] ?? '' ) ), esc_html( $charge_id ), $transaction_url );
 		}
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Event types are fixed strings, not HTML output.
