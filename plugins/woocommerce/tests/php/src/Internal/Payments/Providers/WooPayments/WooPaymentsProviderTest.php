@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
@@ -17,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
@@ -164,6 +166,82 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( ProviderPostLifecycleEffectApplierInterface::class, $provider );
 		$this->assertSame( $outcome, $provider->apply_operation_effects( $context, $outcome, 'charge' ) );
 		$provider->apply_post_lifecycle_effects( $context, $outcome, 'charge' );
+	}
+
+	/**
+	 * @testdox The post-lifecycle effects schedule the Fee details job only when the lifecycle added the payment's capture note ($_dataName).
+	 *
+	 * @dataProvider capture_note_before_the_lifecycle
+	 *
+	 * @param bool $note_before  Whether the order had the note before the lifecycle applied.
+	 * @param bool $expected_job Whether the job is scheduled.
+	 */
+	public function test_post_lifecycle_effects_schedule_the_fee_details_job_when_the_lifecycle_added_the_note( bool $note_before, bool $expected_job ): void {
+		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = wc_create_order();
+		$order->save();
+		$context        = PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$outcome        = ( new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_fee_details',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_NOTE      => 'Captured.',
+				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+			)
+		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array( 'status' => 'succeeded' ) ) );
+		$identity_meta  = array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', 'payment_lifecycle:pi_fee_details|completed|capture_success' ) );
+		$effect_applier = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$effect_applier->method( 'apply' )->willReturn( $outcome );
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( WooPaymentsAccountService::class ),
+			null,
+			$effect_applier
+		);
+		if ( $note_before ) {
+			$order->add_order_note( 'Captured.', 0, false, $identity_meta );
+		}
+
+		$applied = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		if ( ! $note_before ) {
+			// The payment lifecycle adds the note between the two ports.
+			$order->add_order_note( 'Captured.', 0, false, $identity_meta );
+		}
+		$provider->apply_post_lifecycle_effects( $context, $applied, 'capture' );
+
+		$this->assertSame(
+			$expected_job,
+			as_has_scheduled_action(
+				WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_fee_details',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
+		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+	}
+
+	/**
+	 * Whether the order had the capture note before the lifecycle, and whether the job is scheduled.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function capture_note_before_the_lifecycle(): array {
+		return array(
+			'note added by the lifecycle' => array( false, true ),
+			'note already on the order'   => array( true, false ),
+		);
 	}
 
 	/**

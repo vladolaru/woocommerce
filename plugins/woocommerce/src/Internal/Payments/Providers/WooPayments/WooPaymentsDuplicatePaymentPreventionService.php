@@ -108,6 +108,13 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
 
 	/**
+	 * Fee details note controller, which applies the attached intent's payment lifecycle event.
+	 *
+	 * @var WooPaymentsFeeDetailsNoteController|null
+	 */
+	private ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param \WC_Session|null $session Optional WooCommerce session.
@@ -121,24 +128,27 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient               $api_client         Native WooPayments API client.
-	 * @param OrderPaymentLifecycleService       $lifecycle_service Native order payment lifecycle service.
-	 * @param WooPaymentsOrderDataService        $order_data_service WooPayments order data service.
-	 * @param WooPaymentsRuntimeArbiter|null     $arbiter            Optional runtime owner arbiter.
-	 * @param WooPaymentsOrderEffectApplier|null $order_effect_applier Optional order effect applier.
+	 * @param WooPaymentsApiClient                     $api_client         Native WooPayments API client.
+	 * @param OrderPaymentLifecycleService             $lifecycle_service Native order payment lifecycle service.
+	 * @param WooPaymentsOrderDataService              $order_data_service WooPayments order data service.
+	 * @param WooPaymentsRuntimeArbiter|null           $arbiter            Optional runtime owner arbiter.
+	 * @param WooPaymentsOrderEffectApplier|null       $order_effect_applier Optional order effect applier.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Optional Fee details note controller.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsRuntimeArbiter $arbiter = null,
-		?WooPaymentsOrderEffectApplier $order_effect_applier = null
+		?WooPaymentsOrderEffectApplier $order_effect_applier = null,
+		?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null
 	): void {
-		$this->api_client           = $api_client;
-		$this->lifecycle_service    = $lifecycle_service;
-		$this->order_data_service   = $order_data_service;
-		$this->arbiter              = $arbiter;
-		$this->order_effect_applier = $order_effect_applier;
+		$this->api_client                  = $api_client;
+		$this->lifecycle_service           = $lifecycle_service;
+		$this->order_data_service          = $order_data_service;
+		$this->arbiter                     = $arbiter;
+		$this->order_effect_applier        = $order_effect_applier;
+		$this->fee_details_note_controller = $fee_details_note_controller;
 	}
 
 	/**
@@ -664,7 +674,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			: array();
 		$vocabulary       = new WooPaymentsPersistenceVocabulary();
 
-		$this->get_lifecycle_service()->apply(
+		$this->get_fee_details_note_controller()->apply_and_schedule_fee_details_with_lock(
 			$order,
 			new PaymentLifecycleEvent(
 				self::get_lifecycle_status( $outcome ),
@@ -674,8 +684,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 				$note,
 				$note_type,
 				$note_equivalents
-			),
-			$vocabulary
+			)
 		);
 	}
 
@@ -790,6 +799,19 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		return $this->lifecycle_service;
+	}
+
+	/**
+	 * Get the Fee details note controller.
+	 *
+	 * @return WooPaymentsFeeDetailsNoteController
+	 */
+	private function get_fee_details_note_controller(): WooPaymentsFeeDetailsNoteController {
+		if ( null === $this->fee_details_note_controller ) {
+			$this->fee_details_note_controller = wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
+		}
+
+		return $this->fee_details_note_controller;
 	}
 
 	/**

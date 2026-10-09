@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -12,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -628,7 +628,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_failed' );
 		$order->save();
 
-		$api_client        = new class() extends WooPaymentsApiClient {
+		$api_client                  = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -652,15 +652,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply' ) )
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
 			->getMock();
-		$lifecycle_service->expects( $this->once() )
-			->method( 'apply' )
+		$fee_details_note_controller->expects( $this->once() )
+			->method( 'apply_and_schedule_fee_details_with_lock' )
 			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
 
-		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
 			->get_update_order_status_response(
 				array(
 					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
@@ -683,7 +683,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'pi_runtime_conflict' );
 		$order->save();
 
-		$api_client        = new class() extends WooPaymentsApiClient {
+		$api_client                  = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether transport is available.
 			 *
@@ -706,15 +706,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply' ) )
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
 			->getMock();
-		$lifecycle_service->expects( $this->once() )
-			->method( 'apply' )
+		$fee_details_note_controller->expects( $this->once() )
+			->method( 'apply_and_schedule_fee_details_with_lock' )
 			->willThrowException( new \RuntimeException( 'Unrelated lifecycle conflict.', 409 ) );
 
-		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
 			->get_update_order_status_response(
 				array(
 					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
@@ -738,7 +738,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_intent_id', 'seti_read_only' );
 		$order->save();
 
-		$api_client        = new class() extends WooPaymentsApiClient {
+		$api_client                  = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -763,15 +763,15 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply' ) )
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
 			->getMock();
-		$lifecycle_service->expects( $this->once() )
-			->method( 'apply' )
+		$fee_details_note_controller->expects( $this->once() )
+			->method( 'apply_and_schedule_fee_details_with_lock' )
 			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
 
-		$response = $this->create_controller( $api_client, null, null, null, $lifecycle_service )
+		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
 			->get_update_order_status_response(
 				array(
 					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
@@ -3594,14 +3594,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a checkout AJAX controller.
 	 *
-	 * @param WooPaymentsApiClient              $api_client       API client.
-	 * @param WooPaymentsCustomerService|null   $customer_service Customer service.
-	 * @param WooPaymentsTokenService|null      $token_service    Token service.
-	 * @param WooPaymentsAccountService|null    $account_service  Account service.
-	 * @param OrderPaymentLifecycleService|null $lifecycle_service Lifecycle service.
+	 * @param WooPaymentsApiClient                     $api_client       API client.
+	 * @param WooPaymentsCustomerService|null          $customer_service Customer service.
+	 * @param WooPaymentsTokenService|null             $token_service    Token service.
+	 * @param WooPaymentsAccountService|null           $account_service  Account service.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
-	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsCheckoutAjaxController {
+	private function create_controller( WooPaymentsApiClient $api_client, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 
@@ -3632,7 +3632,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			$arbiter,
 			$api_client,
 			$customer_service,
-			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			$token_service,
 			$account_service,
 			$registry,

@@ -1638,13 +1638,7 @@ class WooPaymentsOrderNoteService {
 			$before_add();
 		}
 
-		if ( 0 >= $this->get_order_payment_notes()->add( $order, $note, $identity, $this->get_persistence_vocabulary() ) ) {
-			return false;
-		}
-
-		wc_get_container()->get( WooPaymentsFeeDetailsNoteScheduler::class )->schedule_after_lifecycle_note( $order, $identity );
-
-		return true;
+		return 0 < $this->get_order_payment_notes()->add( $order, $note, $identity, $this->get_persistence_vocabulary() );
 	}
 
 	/**

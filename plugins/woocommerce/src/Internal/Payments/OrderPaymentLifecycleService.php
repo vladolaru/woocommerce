@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use WC_Order;
 
 /**
@@ -20,6 +19,27 @@ use WC_Order;
 class OrderPaymentLifecycleService {
 
 	/**
+	 * Result of an event the order payment lock refused: nothing was written.
+	 *
+	 * @since 11.2.0
+	 */
+	public const RESULT_REFUSED = 'refused';
+
+	/**
+	 * Result of an applied event whose note this call first added to the order.
+	 *
+	 * @since 11.2.0
+	 */
+	public const RESULT_NOTE_ADDED = 'note_added';
+
+	/**
+	 * Result of an applied event that added no note: the order already had it, the event was skipped, or it has no note.
+	 *
+	 * @since 11.2.0
+	 */
+	public const RESULT_NOTE_NOT_ADDED = 'note_not_added';
+
+	/**
 	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
@@ -27,23 +47,23 @@ class OrderPaymentLifecycleService {
 	private OrderPaymentLock $order_payment_lock;
 
 	/**
-	 * WooPayments order note service.
+	 * Order payment notes.
 	 *
-	 * @var WooPaymentsOrderNoteService|null
+	 * @var OrderPaymentNotes
 	 */
-	private ?WooPaymentsOrderNoteService $order_note_service = null;
+	private OrderPaymentNotes $order_payment_notes;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock            $order_payment_lock  Order payment lock.
-	 * @param WooPaymentsOrderNoteService $order_note_service  WooPayments order note service.
+	 * @param OrderPaymentLock  $order_payment_lock  Order payment lock.
+	 * @param OrderPaymentNotes $order_payment_notes Order payment notes.
 	 */
-	final public function init( OrderPaymentLock $order_payment_lock, ?WooPaymentsOrderNoteService $order_note_service = null ): void {
-		$this->order_payment_lock = $order_payment_lock;
-		$this->order_note_service = $order_note_service;
+	final public function init( OrderPaymentLock $order_payment_lock, OrderPaymentNotes $order_payment_notes ): void {
+		$this->order_payment_lock  = $order_payment_lock;
+		$this->order_payment_notes = $order_payment_notes;
 	}
 
 	/**
@@ -51,16 +71,18 @@ class OrderPaymentLifecycleService {
 	 *
 	 * An event with a payment reference runs under the order payment lock. When another operation holds the lock,
 	 * the event is skipped with a warning and nothing is written; a caller that can deliver the event again uses the
-	 * return value to retry it.
+	 * return value to retry it. The result also tells whether this call first added the event's note, decided under
+	 * the lock.
 	 *
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order                               $order               Order object.
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
-	 * @return bool False when the order payment lock refused the event, true otherwise.
+	 * @return string self::RESULT_REFUSED when the order payment lock refused the event, otherwise the result of
+	 *                apply_under_lock().
 	 */
-	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): bool {
+	public function apply( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 		$payment_reference = $event->get_payment_reference();
 		$lock_token        = null;
 
@@ -68,19 +90,17 @@ class OrderPaymentLifecycleService {
 			$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $payment_reference, 'payment status update' );
 			if ( null === $lock_token ) {
 				$this->log_skipped_locked_event( $order, $event, $payment_reference, $persistence_vocabulary );
-				return false;
+				return self::RESULT_REFUSED;
 			}
 		}
 
 		try {
-			$this->apply_under_lock( $order, $event, $persistence_vocabulary );
+			return $this->apply_under_lock( $order, $event, $persistence_vocabulary );
 		} finally {
 			if ( null !== $lock_token ) {
 				$this->order_payment_lock->release( $order, $persistence_vocabulary, $lock_token );
 			}
 		}
-
-		return true;
 	}
 
 	/**
@@ -165,12 +185,14 @@ class OrderPaymentLifecycleService {
 	 * @param WC_Order                               $order               Order object.
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return string self::RESULT_NOTE_ADDED when this call first added the event's note, self::RESULT_NOTE_NOT_ADDED
+	 *                otherwise.
 	 */
-	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+	public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
-			return;
+			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
 		$note                        = $event->get_note();
@@ -178,7 +200,7 @@ class OrderPaymentLifecycleService {
 		if ( null !== $completed_event_skip_reason ) {
 			$this->synchronize_skipped_completed_event_order( $order, $completed_event_order, $completed_event_skip_reason, $persistence_vocabulary );
 			$this->log_skipped_completed_event( $order, $event, $completed_event_skip_reason );
-			return;
+			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
 		$this->apply_meta_changes( $order, $event );
@@ -194,14 +216,9 @@ class OrderPaymentLifecycleService {
 			$order->save();
 		}
 
-		if ( $should_add_note ) {
-			$this->get_order_note_service()->add_note_once(
-				$order,
-				(string) $note,
-				$this->get_note_identity( $event, (string) $note ),
-				$event->get_note_equivalents()
-			);
-		}
+		return $should_add_note && $this->add_lifecycle_note( $order, $event, $persistence_vocabulary )
+			? self::RESULT_NOTE_ADDED
+			: self::RESULT_NOTE_NOT_ADDED;
 	}
 
 	/**
@@ -324,19 +341,9 @@ class OrderPaymentLifecycleService {
 		}
 
 		$note = $event->get_note();
-		if ( null === $note || '' === $note ) {
+		if ( null === $note || '' === $note || 0 === $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
 			return null;
 		}
-
-		$note_service = $this->get_order_note_service();
-		$identity     = $this->get_note_identity( $event, $note );
-		$note_id      = $note_service->find_note( $order, $note, $identity, $event->get_note_equivalents() );
-		if ( 0 === $note_id ) {
-			return null;
-		}
-
-		// A note found by its text gets the identity, so the next delivery finds it whatever its text reads by then.
-		$note_service->record_note_identity( $note_id, $identity );
 
 		return 'success_note_exists';
 	}
@@ -429,28 +436,42 @@ class OrderPaymentLifecycleService {
 	}
 
 	/**
-	 * Get the stable private identity for a lifecycle note.
+	 * Find the event's note on the order, by its identity or else by its text, and give a note found by its text the
+	 * identity, so the next delivery finds it whatever its text reads by then.
 	 *
-	 * @param PaymentLifecycleEvent $event Lifecycle event.
-	 * @param string                $note  Note content.
-	 * @return string
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event with a note.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return int The note's comment ID, or 0 when the order does not have the note.
 	 */
-	private function get_note_identity( PaymentLifecycleEvent $event, string $note ): string {
-		$note_key = $event->get_note_type() ?? $note;
+	private function find_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): int {
+		$identity = $event->get_note_identity();
+		$note_id  = $this->order_payment_notes->find_by_identity( $order, $identity, $persistence_vocabulary );
+		if ( 0 < $note_id ) {
+			return $note_id;
+		}
 
-		return 'payment_lifecycle:' . (string) $event->get_payment_reference() . '|' . $event->get_status() . '|' . $note_key;
+		$note_id = $this->order_payment_notes->find_by_content( $order, (string) $event->get_note(), $event->get_note_equivalents() );
+		if ( 0 < $note_id ) {
+			$this->order_payment_notes->record_identity( $note_id, $identity, $persistence_vocabulary );
+		}
+
+		return $note_id;
 	}
 
 	/**
-	 * Get the shared WooPayments order note service.
+	 * Add the event's note to the order unless the order already has it.
 	 *
-	 * @return WooPaymentsOrderNoteService
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Lifecycle event with a note.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 * @return bool Whether the note was added.
 	 */
-	private function get_order_note_service(): WooPaymentsOrderNoteService {
-		if ( null === $this->order_note_service ) {
-			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+	private function add_lifecycle_note( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): bool {
+		if ( 0 < $this->find_lifecycle_note( $order, $event, $persistence_vocabulary ) ) {
+			return false;
 		}
 
-		return $this->order_note_service;
+		return 0 < $this->order_payment_notes->add( $order, (string) $event->get_note(), $event->get_note_identity(), $persistence_vocabulary );
 	}
 }

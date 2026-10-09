@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -56,11 +55,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private WooPaymentsFraudPreventionService $fraud_prevention_service;
 
 	/**
-	 * Order lifecycle service.
+	 * Fee details note controller, which applies the confirmed intent's payment lifecycle event.
 	 *
-	 * @var OrderPaymentLifecycleService
+	 * @var WooPaymentsFeeDetailsNoteController
 	 */
-	private OrderPaymentLifecycleService $lifecycle_service;
+	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
 
 	/**
 	 * WooPayments token service.
@@ -98,7 +97,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter             $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
 	 * @param WooPaymentsCustomerService            $customer_service        WooPayments customer service.
-	 * @param OrderPaymentLifecycleService          $lifecycle_service       Order lifecycle service.
+	 * @param WooPaymentsFeeDetailsNoteController   $fee_details_note_controller Fee details note controller.
 	 * @param WooPaymentsTokenService               $token_service           WooPayments token service.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
@@ -108,20 +107,20 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsCustomerService $customer_service,
-		OrderPaymentLifecycleService $lifecycle_service,
+		WooPaymentsFeeDetailsNoteController $fee_details_note_controller,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
 		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
 		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {
-		$this->arbiter                 = $arbiter;
-		$this->api_client              = $api_client;
-		$this->customer_service        = $customer_service;
-		$this->lifecycle_service       = $lifecycle_service;
-		$this->token_service           = $token_service;
-		$this->account_service         = $account_service;
-		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
-		$this->order_effect_applier    = $order_effect_applier;
+		$this->arbiter                     = $arbiter;
+		$this->api_client                  = $api_client;
+		$this->customer_service            = $customer_service;
+		$this->fee_details_note_controller = $fee_details_note_controller;
+		$this->token_service               = $token_service;
+		$this->account_service             = $account_service;
+		$this->payment_method_registry     = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
+		$this->order_effect_applier        = $order_effect_applier;
 	}
 
 	/**
@@ -335,7 +334,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$this->lifecycle_service->apply( $order, $event, new WooPaymentsPersistenceVocabulary() );
+		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event );
 		if ( $this->is_authorized_intent_status( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}

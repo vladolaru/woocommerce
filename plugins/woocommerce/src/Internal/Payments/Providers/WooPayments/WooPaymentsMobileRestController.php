@@ -1183,10 +1183,9 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		// The terminal capture holds the order payment lock.
-		$this->get_lifecycle_service()->apply_under_lock(
+		wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->apply_and_schedule_fee_details(
 			$order,
-			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates ),
-			new WooPaymentsPersistenceVocabulary()
+			new PaymentLifecycleEvent( $status, $intent_id, $meta, array(), $candidates[0], $note_type, $candidates )
 		);
 	}
 

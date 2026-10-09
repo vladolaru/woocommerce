@@ -6,24 +6,16 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 use WC_Unit_Test_Case;
 
 /**
- * Keeps the neutral payments layer provider-agnostic: outside `Providers/WooPayments/`, only the
- * allow-listed files may use or name `Providers\WooPayments` classes.
+ * Keeps the payments runtime provider-agnostic: no file in `src/Internal/Payments/` outside `Providers/WooPayments/`
+ * may use or name `Providers\WooPayments` classes.
  *
- * The committed `woocommerce-payments-runtime` skill, which AGENTS.md lists for this folder, carries the same
- * allow-list, so both change together.
+ * The committed `woocommerce-payments-runtime` skill, which AGENTS.md lists for this folder, states the same rule.
  */
 class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 
 	private const PAYMENTS_DIRECTORY = 'src/Internal/Payments/';
 
 	private const PROVIDER_DIRECTORY = 'Providers/WooPayments/';
-
-	/**
-	 * Neutral-layer files that may reference the WooPayments provider, relative to `src/Internal/Payments/`.
-	 */
-	private const ALLOWED_FILES = array(
-		'OrderPaymentLifecycleService.php',
-	);
 
 	/**
 	 * @testdox The scanner finds provider references in code and strings and ignores them in comments.
@@ -66,25 +58,14 @@ class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Outside the provider folder, only the allow-listed files reference the WooPayments provider.
+	 * @testdox No payments runtime file outside the provider folder references the WooPayments provider.
 	 */
-	public function test_only_allowed_files_reference_the_provider(): void {
-		$violations = array_values( array_diff( $this->referencing_files(), self::ALLOWED_FILES ) );
-
-		$this->assertSame( array(), $violations, 'Only the files listed in the woocommerce-payments-runtime skill may reference Providers\WooPayments from the neutral layer. Route new provider needs through the provider contracts.' );
+	public function test_no_runtime_file_references_the_provider(): void {
+		$this->assertSame( array(), $this->referencing_files(), 'The payments runtime must not reference Providers\WooPayments. Route new provider needs through the provider contracts.' );
 	}
 
 	/**
-	 * @testdox Every allow-listed file still references the provider, so the list only shrinks deliberately.
-	 */
-	public function test_allowed_files_still_need_the_exception(): void {
-		$stale = array_values( array_diff( self::ALLOWED_FILES, $this->referencing_files() ) );
-
-		$this->assertSame( array(), $stale, 'These files no longer reference Providers\WooPayments: remove them from the allow-list here and in the woocommerce-payments-runtime skill.' );
-	}
-
-	/**
-	 * Neutral-layer files that reference the provider, relative to `src/Internal/Payments/`.
+	 * Payments runtime files that reference the provider, relative to `src/Internal/Payments/`.
 	 *
 	 * @return array<int,string>
 	 */

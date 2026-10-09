@@ -291,6 +291,20 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
+	 * Get the private identity of the event's order note: its payment reference, status and note type, or its text when
+	 * it has no type.
+	 *
+	 * The identity names the note across deliveries of the same event, whatever the note's text reads.
+	 *
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function get_note_identity(): string {
+		return 'payment_lifecycle:' . (string) $this->payment_reference . '|' . $this->status . '|' . ( $this->note_type ?? (string) $this->note );
+	}
+
+	/**
 	 * Get supported lifecycle statuses.
 	 *
 	 * @return string[]

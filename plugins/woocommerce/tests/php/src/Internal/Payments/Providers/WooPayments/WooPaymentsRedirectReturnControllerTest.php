@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -1313,8 +1314,8 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$product = \WC_Helper_Product::create_simple_product();
 		WC()->cart->add_to_cart( $product->get_id() );
-		$api_client                 = new RedirectReturnApiClientStub();
-		$api_client->payment_intent = array_merge(
+		$api_client                  = new RedirectReturnApiClientStub();
+		$api_client->payment_intent  = array_merge(
 			$this->successful_payment_intent( $order, 'pi_confirm_throws', 'pm_confirm_throws' ),
 			array(
 				'status'      => 'requires_action',
@@ -1325,11 +1326,11 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$lifecycle                  = $this->createMock( OrderPaymentLifecycleService::class );
-		$lifecycle->method( 'apply' )->willThrowException( $failure );
+		$fee_details_note_controller = $this->createMock( WooPaymentsFeeDetailsNoteController::class );
+		$fee_details_note_controller->method( 'apply_and_schedule_fee_details_with_lock' )->willThrowException( $failure );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $lifecycle ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $fee_details_note_controller ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_confirm_throws' );
 
 		$location = $this->handle_wp_expecting_redirect();
@@ -1363,17 +1364,17 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		unset( $failure_label );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$order                      = $this->create_order();
-		$api_client                 = new RedirectReturnApiClientStub();
-		$api_client->payment_intent = array_merge(
+		$order                       = $this->create_order();
+		$api_client                  = new RedirectReturnApiClientStub();
+		$api_client->payment_intent  = array_merge(
 			$this->successful_payment_intent( $order, 'pi_money_moved', 'pm_money_moved' ),
 			array( 'status' => $intent_status )
 		);
-		$lifecycle                  = $this->createMock( OrderPaymentLifecycleService::class );
-		$lifecycle->method( 'apply' )->willThrowException( $failure );
+		$fee_details_note_controller = $this->createMock( WooPaymentsFeeDetailsNoteController::class );
+		$fee_details_note_controller->method( 'apply_and_schedule_fee_details_with_lock' )->willThrowException( $failure );
 		$logger = new RedirectReturnRecordingLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $lifecycle ), $api_client );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_owner( $api_client, null, $fee_details_note_controller ), $api_client );
 		$this->set_payment_intent_return_request( $order, 'pi_money_moved' );
 
 		try {
@@ -2283,12 +2284,12 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the shared confirmation owner.
 	 *
-	 * @param WooPaymentsApiClient              $api_client        API client.
-	 * @param WooPaymentsTokenService|null      $token_service     Token service.
-	 * @param OrderPaymentLifecycleService|null $lifecycle_service Lifecycle service the confirmation applies events with.
+	 * @param WooPaymentsApiClient                     $api_client        API client.
+	 * @param WooPaymentsTokenService|null             $token_service     Token service.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller the confirmation applies events with.
 	 * @return WooPaymentsCheckoutAjaxController
 	 */
-	private function create_confirmation_owner( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsCheckoutAjaxController {
+	private function create_confirmation_owner( WooPaymentsApiClient $api_client, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsCheckoutAjaxController {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -2314,7 +2315,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$arbiter,
 			$api_client,
 			$this->createMock( WooPaymentsCustomerService::class ),
-			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			$token_service,
 			$account_service,
 			$registry,

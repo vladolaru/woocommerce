@@ -11,7 +11,7 @@ use RuntimeException;
 
 /**
  * Thrown when a delivered provider event cannot run because another operation holds the order payment lock.
- * OrderPaymentLifecycleService::apply() reports a refused event by returning false; a provider's event handling throws
+ * OrderPaymentLifecycleService::apply() reports a refused event in its result; a provider's event handling throws
  * this, so its delivery can tell a lock refusal from other failures and retry the event.
  *
  * It is thrown before the refused operation writes anything, so a later delivery cannot duplicate a write. Whether

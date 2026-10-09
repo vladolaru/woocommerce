@@ -523,6 +523,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Apply a request-scoped WooPayments effect plan.
 	 *
+	 * The plan also records whether the order already had the payment's success or capture note, which the
+	 * post-lifecycle effects read.
+	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
 	 * @param string                  $operation Operation name.
@@ -536,14 +539,23 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			return $outcome;
 		}
 
-		return $this->get_order_effect_applier()->apply( $context, $outcome, $plan );
+		$outcome      = $this->get_order_effect_applier()->apply( $context, $outcome, $plan );
+		$note_existed = $this->get_fee_details_note_controller()->has_outcome_note( $context->get_order(), $outcome );
+		$plan         = $outcome->get_effect_plan();
+		if ( null === $note_existed || ! $plan instanceof WooPaymentsOrderEffectPlan ) {
+			return $outcome;
+		}
+
+		// The runtime applies the payment lifecycle next; the post-lifecycle effects schedule the Fee details job when it added the note.
+		return $outcome->with_effect_plan( $plan->with_success_or_capture_note_existed( $note_existed ) );
 	}
 
 	/**
 	 * Apply WooPayments display details after the generic payment lifecycle.
 	 *
-	 * After a charge it also retires the order's charge idempotency key once the outcome is definitive,
-	 * through WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key().
+	 * It schedules the Fee details job when the lifecycle added the payment's success or capture note, and after a charge
+	 * it also retires the order's charge idempotency key once the outcome is definitive, through
+	 * WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key().
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Applied provider outcome.
@@ -557,6 +569,10 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			&& PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
 		) {
 			$this->get_order_effect_applier()->apply_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
+		}
+
+		if ( $plan instanceof WooPaymentsOrderEffectPlan && false === $plan->success_or_capture_note_existed() ) {
+			$this->get_fee_details_note_controller()->schedule_when_outcome_note_added( $context->get_order(), $outcome );
 		}
 
 		if ( 'charge' === $operation ) {
@@ -584,6 +600,15 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		}
 
 		return $this->order_effect_applier;
+	}
+
+	/**
+	 * Get the Fee details note controller.
+	 *
+	 * @return WooPaymentsFeeDetailsNoteController
+	 */
+	private function get_fee_details_note_controller(): WooPaymentsFeeDetailsNoteController {
+		return wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
 	}
 
 	/**

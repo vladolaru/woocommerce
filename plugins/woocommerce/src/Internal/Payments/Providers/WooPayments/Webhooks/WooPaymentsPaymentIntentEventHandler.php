@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -102,30 +103,39 @@ class WooPaymentsPaymentIntentEventHandler {
 	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
 
 	/**
+	 * Fee details note controller.
+	 *
+	 * @var WooPaymentsFeeDetailsNoteController
+	 */
+	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService     $lifecycle_service        Order lifecycle service.
-	 * @param WooPaymentsApiClient             $api_client               Native WooPayments API client.
-	 * @param WooPaymentsOrderDataService      $order_data_service       WooPayments order data service.
-	 * @param WooPaymentsAccountService        $account_service          WooPayments account service.
-	 * @param WooPaymentsOrderEffectApplier    $order_effect_applier     WooPayments order effect applier.
-	 * @param WooPaymentsOrderNoteService      $order_note_service       WooPayments order note service.
-	 * @param WooPaymentsAdminMenuBadgeService $admin_menu_badge_service WooPayments admin menu badge service.
-	 * @param WooPaymentsEventOrderResolver    $event_order_resolver     Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder    Recorder of events on a charge that does not pay the order.
+	 * @param OrderPaymentLifecycleService        $lifecycle_service           Order lifecycle service.
+	 * @param WooPaymentsApiClient                $api_client                  Native WooPayments API client.
+	 * @param WooPaymentsOrderDataService         $order_data_service          WooPayments order data service.
+	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
+	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
+	 * @param WooPaymentsOrderNoteService         $order_note_service          WooPayments order note service.
+	 * @param WooPaymentsAdminMenuBadgeService    $admin_menu_badge_service    WooPayments admin menu badge service.
+	 * @param WooPaymentsEventOrderResolver       $event_order_resolver        Webhook event order resolver.
+	 * @param WooPaymentsOtherChargeRecorder      $other_charge_recorder       Recorder of events on a charge that does not pay the order.
+	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
-		$this->lifecycle_service        = $lifecycle_service;
-		$this->api_client               = $api_client;
-		$this->order_data_service       = $order_data_service;
-		$this->account_service          = $account_service;
-		$this->order_effect_applier     = $order_effect_applier;
-		$this->order_note_service       = $order_note_service;
-		$this->admin_menu_badge_service = $admin_menu_badge_service;
-		$this->event_order_resolver     = $event_order_resolver;
-		$this->other_charge_recorder    = $other_charge_recorder;
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
+		$this->lifecycle_service           = $lifecycle_service;
+		$this->api_client                  = $api_client;
+		$this->order_data_service          = $order_data_service;
+		$this->account_service             = $account_service;
+		$this->order_effect_applier        = $order_effect_applier;
+		$this->order_note_service          = $order_note_service;
+		$this->admin_menu_badge_service    = $admin_menu_badge_service;
+		$this->event_order_resolver        = $event_order_resolver;
+		$this->other_charge_recorder       = $other_charge_recorder;
+		$this->fee_details_note_controller = $fee_details_note_controller;
 	}
 
 	/**
@@ -219,7 +229,7 @@ class WooPaymentsPaymentIntentEventHandler {
 		try {
 			// Decide on what the order is now: another gateway marks an order paid without taking this lock.
 			$this->lifecycle_service->reread_order_from_data_store( $order );
-			$this->apply_succeeded_payment_intent_under_lock( $order, $payment_intent, $vocabulary );
+			$this->apply_succeeded_payment_intent_under_lock( $order, $payment_intent );
 		} finally {
 			$order_payment_lock->release( $order, $vocabulary, $lock_token );
 		}
@@ -269,7 +279,7 @@ class WooPaymentsPaymentIntentEventHandler {
 			if ( ! $is_own_payment ) {
 				$this->other_charge_recorder->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );
 			} elseif ( 'payment_intent.succeeded' === $event_type ) {
-				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object, $vocabulary );
+				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object );
 			} else {
 				$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 				if ( null !== $lifecycle_event ) {
@@ -344,11 +354,12 @@ class WooPaymentsPaymentIntentEventHandler {
 	/**
 	 * Apply a succeeded payment intent to an order read under the order payment lock the caller holds.
 	 *
-	 * @param WC_Order                         $order          Order the intent pays, read under the lock.
-	 * @param array<string,mixed>              $payment_intent Provider payment intent object.
-	 * @param WooPaymentsPersistenceVocabulary $vocabulary     WooPayments persistence vocabulary.
+	 * The Fee details job is scheduled when the intent's payment note is first added.
+	 *
+	 * @param WC_Order            $order          Order the intent pays, read under the lock.
+	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
-	private function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent, WooPaymentsPersistenceVocabulary $vocabulary ): void {
+	private function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		// The client's webhook never retitles an order, so an order of another gateway keeps its payment method.
 		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
@@ -356,7 +367,7 @@ class WooPaymentsPaymentIntentEventHandler {
 		}
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
-		$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $vocabulary );
+		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event );
 	}
 
 	/**

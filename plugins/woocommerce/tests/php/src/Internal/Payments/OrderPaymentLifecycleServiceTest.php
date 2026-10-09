@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableControlle
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -1218,13 +1219,13 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws \RuntimeException Always.
 			 */
-			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 				unset( $order, $event, $persistence_vocabulary );
 				throw new \RuntimeException( 'Simulated lifecycle failure.' );
 			}
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
-		$sut->init( $this->order_payment_lock );
+		$sut->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
 
 		$thrown = null;
 		try {
@@ -1299,6 +1300,49 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The result tells whether the event first added its note: added on the first delivery, not added on a replay, when the order has the note by its text or when the event has no note, and refused under a held lock.
+	 */
+	public function test_apply_reports_whether_it_first_added_the_note(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $this->sut->apply( $order, $this->paid_event( 'pi_result' ), $this->persistence_vocabulary ) );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply( $order, $this->paid_event( 'pi_result' ), $this->persistence_vocabulary ), 'A replay finds the note it added.' );
+
+		$text_order = $this->create_woopayments_order();
+		$text_order->add_order_note( 'Paid by pi_text.' );
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply( $text_order, $this->paid_event( 'pi_text' ), $this->persistence_vocabulary ), 'A note found by its text is not added again.' );
+
+		$no_note_order = $this->create_woopayments_order();
+		$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_NOT_ADDED, $this->sut->apply_under_lock( $no_note_order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, 'pi_no_note' ), $this->persistence_vocabulary ) );
+
+		$locked_order = $this->create_woopayments_order();
+		$this->hold_order_payment_lock( $locked_order, $this->persistence_vocabulary, 'native_charge_operation' );
+		try {
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_REFUSED, $this->sut->apply( $locked_order, $this->paid_event( 'pi_locked_result' ), $this->persistence_vocabulary ) );
+		} finally {
+			$this->clear_order_payment_lock( $locked_order, $this->persistence_vocabulary );
+		}
+	}
+
+	/**
+	 * @testdox An event without a payment reference applies without the order payment lock, even while another operation holds it.
+	 */
+	public function test_event_without_a_payment_reference_applies_without_the_lock(): void {
+		$order = $this->create_woopayments_order();
+		$this->assertNotNull( $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'native_charge_operation', 'payment operation' ) );
+
+		try {
+			$result = $this->sut->apply( $order, new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_STARTED, null, array(), array(), 'Payment started.' ), $this->persistence_vocabulary );
+
+			$this->assertSame( OrderPaymentLifecycleService::RESULT_NOTE_ADDED, $result );
+			$this->assertTrue( $this->is_order_payment_lock_held_for( $order, $this->persistence_vocabulary, 'native_charge_operation' ), 'The holder keeps its lock.' );
+		} finally {
+			$this->clear_order_payment_lock( $order, $this->persistence_vocabulary );
+		}
+
+		$this->assertSame( 1, $this->countOrderNotesMatching( wc_get_order( $order->get_id() ), 'Payment started.' ) );
+	}
+
+	/**
 	 * Apply a lifecycle event with the WooPayments vocabulary unless a test supplies another one.
 	 *
 	 * @param WC_Order                                    $order               Order object.
@@ -1338,6 +1382,16 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 			'Payment complete.',
 			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE
 		);
+	}
+
+	/**
+	 * Build a completed event whose success note names its payment.
+	 *
+	 * @param string $payment_reference Payment reference.
+	 * @return PaymentLifecycleEvent
+	 */
+	private function paid_event( string $payment_reference ): PaymentLifecycleEvent {
+		return new PaymentLifecycleEvent( PaymentLifecycleEvent::STATUS_COMPLETED, $payment_reference, array(), array(), 'Paid by ' . $payment_reference . '.', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS );
 	}
 
 	/**

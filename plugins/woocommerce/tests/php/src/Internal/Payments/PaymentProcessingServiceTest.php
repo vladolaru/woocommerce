@@ -3086,12 +3086,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always.
 			 */
-			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'No such customer: shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123', 9 );
 			}
 		};
-		$lifecycle->init( $this->order_payment_lock );
+		$lifecycle->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
 		$sut         = $this->build_sut_with_lifecycle( $lifecycle );
 		$provider    = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_apply_failure', '', 'pm_apply_failure' ) );
 		$fake_logger = $this->create_fake_logger();
@@ -4817,13 +4817,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 			 * @throws RuntimeException Always, to drive the post-charge failure path.
 			 */
-			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+			public function apply_under_lock( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): string {
 				// Avoid parameter not used PHPCS errors.
 				unset( $order, $event, $persistence_vocabulary );
 				throw new RuntimeException( 'Simulated lifecycle failure after a successful charge.' );
 			}
 		};
-		$lifecycle->init( $this->order_payment_lock );
+		$lifecycle->init( $this->order_payment_lock, wc_get_container()->get( OrderPaymentNotes::class ) );
 
 		return $lifecycle;
 	}

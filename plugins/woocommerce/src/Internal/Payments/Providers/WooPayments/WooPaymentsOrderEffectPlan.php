@@ -109,6 +109,14 @@ class WooPaymentsOrderEffectPlan {
 	private bool $writes_fee_meta = true;
 
 	/**
+	 * Whether the order had the payment's success or capture note before the payment lifecycle applied, or null when
+	 * the outcome brings no such note.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $success_or_capture_note_existed = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string               $type                Effect plan type.
@@ -208,6 +216,33 @@ class WooPaymentsOrderEffectPlan {
 		$plan->apply_token_effects = false;
 
 		return $plan;
+	}
+
+	/**
+	 * Get a copy of this plan that records whether the order had the payment's success or capture note before the payment
+	 * lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $existed Whether the order had the note.
+	 * @return self
+	 */
+	public function with_success_or_capture_note_existed( bool $existed ): self {
+		$plan                                  = clone $this;
+		$plan->success_or_capture_note_existed = $existed;
+
+		return $plan;
+	}
+
+	/**
+	 * Tell whether the order had the payment's success or capture note before the payment lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool|null Null when the outcome brings no such note.
+	 */
+	public function success_or_capture_note_existed(): ?bool {
+		return $this->success_or_capture_note_existed;
 	}
 
 	/**

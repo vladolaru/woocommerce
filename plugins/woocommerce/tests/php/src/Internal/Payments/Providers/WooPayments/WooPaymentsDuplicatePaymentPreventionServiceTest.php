@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -339,6 +341,67 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox A succeeded attached PaymentIntent schedules the Fee details job once, and the same check again schedules none.
+	 *
+	 * Client 11.1.0 applies the attached intent through update_order_status_from_intent()
+	 * (class-duplicate-payment-prevention-service.php:143), whose mark_payment_completed() schedules the job when it first
+	 * writes the payment note and returns once the note exists (class-wc-payments-order-service.php:1565-1599).
+	 */
+	public function test_attached_succeeded_intent_schedules_the_fee_details_job_once(): void {
+		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+		$sut = $this->create_service( $this->create_session(), $api_client );
+
+		$sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$this->assertSame( array( $this->fee_details_job_args( $order ) ), $this->get_pending_fee_details_job_args() );
+
+		as_unschedule_all_actions( WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$this->assertSame( array(), $this->get_pending_fee_details_job_args() );
+	}
+
+	/**
+	 * The Fee details job's arguments for the attached intent, as the client schedules it.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<string,mixed>
+	 */
+	private function fee_details_job_args( WC_Order $order ): array {
+		return array(
+			'order_id'     => $order->get_id(),
+			'intent_id'    => 'pi_existing',
+			'is_test_mode' => false,
+		);
+	}
+
+	/**
+	 * Get the arguments of every pending Fee details job.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_pending_fee_details_job_args(): array {
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsOperationalQueueService::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'group'    => 'woocommerce_payments',
+				'per_page' => -1,
+			)
+		);
+
+		return array_values( array_map( static fn( $action ): array => $action->get_args(), $actions ) );
+	}
+
+	/**
 	 * @testdox Attached intent recovery does not persist effects when lifecycle ownership is unavailable.
 	 */
 	public function test_attached_intent_does_not_persist_effects_before_lifecycle_application(): void {
@@ -353,13 +416,13 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			->getMock();
 		$api_client->method( 'get_payment_intention' )
 			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
-		$lifecycle_service = $this->getMockBuilder( OrderPaymentLifecycleService::class )
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply' ) )
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
 			->getMock();
-		$lifecycle_service->expects( $this->once() )->method( 'apply' );
+		$fee_details_note_controller->expects( $this->once() )->method( 'apply_and_schedule_fee_details_with_lock' );
 
-		$result   = $this->create_service( $this->create_session(), $api_client, $lifecycle_service )
+		$result   = $this->create_service( $this->create_session(), $api_client, $fee_details_note_controller )
 			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
 		$reloaded = wc_get_order( $order->get_id() );
 
@@ -850,19 +913,20 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	/**
 	 * Create a duplicate-payment prevention service.
 	 *
-	 * @param \WC_Session|null                  $session    Optional WooCommerce session.
-	 * @param WooPaymentsApiClient|null         $api_client Optional API client.
-	 * @param OrderPaymentLifecycleService|null $lifecycle_service Optional lifecycle service.
+	 * @param \WC_Session|null                         $session                     Optional WooCommerce session.
+	 * @param WooPaymentsApiClient|null                $api_client                  Optional API client.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Optional Fee details note controller, which applies the lifecycle event.
 	 * @return WooPaymentsDuplicatePaymentPreventionService
 	 */
-	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null, ?OrderPaymentLifecycleService $lifecycle_service = null ): WooPaymentsDuplicatePaymentPreventionService {
+	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsDuplicatePaymentPreventionService {
 		$service = new WooPaymentsDuplicatePaymentPreventionService( $session ?? $this->create_session() );
 		$service->init(
 			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
-			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new WooPaymentsOrderDataService(),
 			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			$fee_details_note_controller
 		);
 
 		return $service;
