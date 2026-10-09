@@ -14,6 +14,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Registers what WooCommerce's built-in payment provider needs on the current request, and starts Multi-Currency.
+ * Payment extensions add their gateways through `woocommerce_payment_gateways`; this bootstrap loads only the payment
+ * provider built into WooCommerce.
  *
  * A listed class that is a payment gateway provider is handed to ProviderGatewaysController, which resolves it only when
  * WooCommerce builds its gateway list; it is register()ed as well only when it also registers hooks. Every other listed
@@ -68,9 +70,10 @@ final class PaymentsBootstrap {
 	/**
 	 * Create the bootstrap for WooCommerce's built-in payment provider.
 	 *
-	 * The inputs are the built-in provider's: the classes each request type registers, in order and empty when nothing
-	 * is set up; whether its gateways belong in the gateway list, which the bootstrap only hands to ProviderGatewaysController;
-	 * and the Multi-Currency classes it contributes, as the bootstrap starts Multi-Currency.
+	 * WooCommerce::init_hooks() builds these inputs as closures, so the bootstrap names no provider, and building it loads
+	 * no provider class and makes no WC() call while WooCommerce is still being constructed. They give the classes each
+	 * request type registers, in order and empty when nothing is set up; whether the gateways belong in the gateway list,
+	 * which the bootstrap only hands to ProviderGatewaysController; and the Multi-Currency classes the provider contributes.
 	 *
 	 * @param callable $classes_for_request      Lists the classes a request type registers.
 	 * @param callable $should_register_gateways Tells whether the provider's gateways belong in the gateway list now.
@@ -96,7 +99,8 @@ final class PaymentsBootstrap {
 	public function register( $container, callable $is_rest_api_request ): void {
 		/**
 		 * Whether WooCommerce loads its built-in payment provider and the Multi-Currency integration it starts on this request.
-		 * Returning false loads neither.
+		 * It is applied while WooCommerce loads, so only a mu-plugin can set it; returning false loads neither the built-in
+		 * payment provider nor the Multi-Currency it starts.
 		 *
 		 * @since 11.2.0
 		 *
@@ -116,7 +120,8 @@ final class PaymentsBootstrap {
 	}
 
 	/**
-	 * Register the tier's cron classes that this request lacks once Action Scheduler runs an action in it.
+	 * Classes load per request type, so a front or admin request that runs a scheduled action registers the cron classes
+	 * it lacks just before the action runs.
 	 *
 	 * ALTERNATE_WP_CRON and the Tools > Scheduled Actions "Run" link run actions inside a front or admin request.
 	 * The client attaches its scheduled-action handlers on every request (client 11.1.0 `includes/class-wc-payments.php:603,657`).

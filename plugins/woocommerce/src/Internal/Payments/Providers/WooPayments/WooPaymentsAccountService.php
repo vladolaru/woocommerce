@@ -817,13 +817,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Rewrite the durable native payments state from the persisted account cache and gateway settings.
-	 *
-	 * Reads raw options only, with no account refresh.
+	 * Rewrite the setup tier from the stored account cache and gateway settings, without refreshing the account.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param bool $extension_owns_payments Whether the standalone plugin owns the runtime; false once the caller has deactivated it.
+	 * @param bool $extension_owns_payments True while the WooPayments extension takes payments: an eligible account then reads
+	 *                                      `available`. False derives `connected` or `active` from the account and the
+	 *                                      gateway's enabled setting.
 	 */
 	public function sync_setup_tier_from_options( bool $extension_owns_payments ): void {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
@@ -841,14 +841,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Rewrite the durable native payments state after the WooPayments plugin writes its account cache.
+	 * Rewrite the setup tier when the WooPayments extension writes its account cache.
 	 *
-	 * Without this, a plugin store keeps the state the upgrade repair wrote, so an account that becomes eligible later
-	 * never gets the start notice. Errored or data-less writes keep the prior state, as native's own cache writes do.
+	 * An account that becomes eligible later then reads `available`; an errored or data-less write keeps the stored tier.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param mixed $cache_contents Account cache contents the plugin wrote.
+	 * @param mixed $cache_contents Account cache contents the WooPayments extension wrote.
 	 */
 	public function sync_setup_tier_from_extension_account_cache( $cache_contents ): void {
 		if (
@@ -865,12 +864,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Synchronize durable state without affecting the account source write.
+	 * Write the setup tier for this account data.
 	 *
-	 * Missing account data preserves the prior state unless native is disabled or the plugin owns the runtime.
+	 * Missing account data keeps the stored tier unless the built-in WooPayments is disabled or the WooPayments extension
+	 * owns payments.
 	 *
-	 * @param mixed $account_data          Last persisted account data.
-	 * @param bool  $extension_owns_payments Whether the standalone plugin owns the runtime.
+	 * @param mixed $account_data            Last persisted account data.
+	 * @param bool  $extension_owns_payments True while the WooPayments extension takes payments.
 	 */
 	private function sync_setup_tier( $account_data, bool $extension_owns_payments ): void {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {

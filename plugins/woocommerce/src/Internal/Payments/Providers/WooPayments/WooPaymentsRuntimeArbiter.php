@@ -11,6 +11,8 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Decides per site whether the WooPayments extension, the built-in WooPayments or nothing owns payments.
+ * Three inputs decide whether the built-in WooPayments is enabled: the option install and upgrade write, the kill switch
+ * that turns it off without changing that option, and the filter that overrides both from a mu-plugin.
  *
  * At most one WooPayments runtime owns payments on a site; the WooPayments extension wins while it is active. The extension is
  * found by its main file name, in any folder, in the per-site and network active-plugins lists, with `WCPAY_PLUGIN_FILE` as
@@ -66,8 +68,8 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Filter that reports whether the built-in WooPayments is enabled for this site.
 	 *
-	 * The stored option supplies the default. Even when enabled, the WooPayments extension still wins
-	 * while it is active.
+	 * The filter has the option's name because its default is the stored option, unless the kill switch is on. Even
+	 * when enabled, the WooPayments extension still wins while it is active.
 	 *
 	 * Registrations made while WooCommerce loads resolve this filter early. To affect every
 	 * registration in a request, set the filter from a mu-plugin or earlier bootstrap code.

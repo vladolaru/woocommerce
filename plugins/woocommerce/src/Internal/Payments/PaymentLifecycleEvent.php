@@ -53,21 +53,22 @@ class PaymentLifecycleEvent {
 	public const STATUS_CAPTURE_EXPIRED = 'capture_expired';
 
 	/**
-	 * Lifecycle status: payment was started but is not terminal.
+	 * Lifecycle status: the payment is not settled. It waits for the shopper or the provider, or a capture or cancel
+	 * failed and the authorization stays. The order status does not change.
 	 *
 	 * @var string
 	 */
 	public const STATUS_STARTED = 'started';
 
 	/**
-	 * Note type: generic payment completion.
+	 * Note type: completion note without payment details, such as a zero-total order's.
 	 *
 	 * @var string
 	 */
 	public const NOTE_TYPE_PAYMENT_COMPLETE = 'payment_complete';
 
 	/**
-	 * Note type: payment success details.
+	 * Note type: completion note with the payment's details.
 	 *
 	 * @var string
 	 */
@@ -130,7 +131,7 @@ class PaymentLifecycleEvent {
 	private string $status;
 
 	/**
-	 * Provider payment reference, such as a PaymentIntent ID or charge ID.
+	 * Provider payment reference, such as the provider's payment or charge ID.
 	 *
 	 * @var string|null
 	 */
@@ -165,7 +166,8 @@ class PaymentLifecycleEvent {
 	private ?string $note_type;
 
 	/**
-	 * Exact equivalent renderings of the order note.
+	 * Other texts of the same note the order may already carry, such as the note in another language or without its
+	 * currency code, so the note is added once.
 	 *
 	 * @var string[]
 	 */

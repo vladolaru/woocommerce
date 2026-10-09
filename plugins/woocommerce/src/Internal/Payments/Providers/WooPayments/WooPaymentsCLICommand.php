@@ -59,6 +59,9 @@ class WooPaymentsCLICommand {
 	/**
 	 * Get the formatted status lines.
 	 *
+	 * It reads keys WooPaymentsStatusReport::get_status_data() always returns; WC_CLI registers the command as
+	 * `wc woopayments`.
+	 *
 	 * @return string[]
 	 */
 	public function get_status_lines(): array {

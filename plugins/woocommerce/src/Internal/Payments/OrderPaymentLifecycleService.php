@@ -50,8 +50,8 @@ class OrderPaymentLifecycleService {
 	 * Apply a payment lifecycle event to an order.
 	 *
 	 * An event with a payment reference runs under the order payment lock. When another operation holds the lock,
-	 * the event is skipped with a warning and nothing is written; a caller that can deliver the event again, such as
-	 * the webhook path, uses the return value to retry it instead of treating it as handled.
+	 * the event is skipped with a warning and nothing is written; a caller that can deliver the event again uses the
+	 * return value to retry it.
 	 *
 	 * @since 11.0.0
 	 *
@@ -134,9 +134,8 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Log a warning when a lifecycle event is skipped because the order payment lock is contested.
 	 *
-	 * Webhook-triggered lifecycle events can arrive while a checkout or capture is mid-flight and
-	 * already holds the order payment lock. The event is skipped, and the webhook path delivers it
-	 * again later; the warning makes each skip observable.
+	 * A lifecycle event can arrive while a checkout, refund or capture holds the order payment lock; it is skipped, and
+	 * the caller decides whether to deliver it again. The warning makes each skip observable.
 	 *
 	 * @param WC_Order                               $order               Order object.
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event being skipped.
@@ -307,6 +306,9 @@ class OrderPaymentLifecycleService {
 	/**
 	 * Get the reason a completed lifecycle event must be ignored before it changes the order.
 	 *
+	 * A completed event whose note is already on the order was applied before, so it changes nothing, and an open
+	 * dispute keeps the order on hold.
+	 *
 	 * @param WC_Order                               $order               Order object.
 	 * @param PaymentLifecycleEvent                  $event               Lifecycle event.
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
@@ -406,6 +408,9 @@ class OrderPaymentLifecycleService {
 
 	/**
 	 * Tell whether a lifecycle note should be skipped for an already-applied event.
+	 *
+	 * An order already paid by the event's payment reference gets no second completion note, even when the note it has
+	 * reads differently.
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.

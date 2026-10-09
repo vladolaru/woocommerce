@@ -23,7 +23,7 @@ interface ProviderOperationEffectApplierInterface {
 	 * Apply provider-specific effects and optionally replace the outcome.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
-	 * @param PaymentOutcome          $outcome   Provider transport outcome.
+	 * @param PaymentOutcome          $outcome   Outcome the provider call returned.
 	 * @param string                  $operation One of PaymentProcessingService::OPERATION_*.
 	 * @return PaymentOutcome
 	 */

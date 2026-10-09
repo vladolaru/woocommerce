@@ -7,8 +7,10 @@ use WC_Unit_Test_Case;
 
 /**
  * Keeps the neutral payments layer provider-agnostic: outside `Providers/WooPayments/`, only the
- * allow-listed files may use or name `Providers\WooPayments` classes (see the
- * `woocommerce-payments-runtime` skill).
+ * allow-listed files may use or name `Providers\WooPayments` classes.
+ *
+ * The committed `woocommerce-payments-runtime` skill, which AGENTS.md lists for this folder, carries the same
+ * allow-list, so both change together.
  */
 class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 

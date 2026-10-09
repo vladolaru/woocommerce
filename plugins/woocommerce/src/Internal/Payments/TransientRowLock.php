@@ -10,8 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments;
 /**
  * Holds a lock in the database rows of a transient, so exactly one of several concurrent requests holds it.
  *
- * WordPress add_option() and set_transient() can let two requests both believe they stored a lock, so a claim inserts with INSERT
- * IGNORE, as WC_Install::seed_autoloaded_option() does, and takes an expired lock over with one compare-and-set UPDATE.
+ * The order payment lock is built on it, and provider code that needs a row lock uses the same class; a claim inserts
+ * with INSERT IGNORE because add_option() and set_transient() can let two requests both believe they stored the lock.
+ * An expired lock is taken over with one compare-and-set UPDATE.
  * A release deletes the rows only while they hold the caller's value; an optional holder record fences it on a token.
  *
  * @since 11.2.0

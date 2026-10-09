@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
  *
  * The effective tier is `disabled` while no WooPayments runtime is enabled and at most `available` while the WooPayments
- * extension owns payments.
+ * extension owns payments, because the extension takes payments then.
  *
  * @since 11.2.0
  * @internal
@@ -33,8 +33,7 @@ final class WooPaymentsSetupTier {
 	/**
 	 * WooPayments checkout is enabled.
 	 *
-	 * Onboarding enables the card gateway when it applies the payment-method picks, so a store reaches this tier once its account is cached, before KYC.
-	 * Checkout still offers nothing until the account can take payments.
+	 * The card gateway is enabled, so checkout classes load; the gateways offer nothing until the account can take payments.
 	 * Client 11.1.0 builds and hooks its checkout code on every request, before KYC (`includes/class-wc-payments.php:647-650`).
 	 */
 	public const ACTIVE = 'active';
@@ -143,6 +142,9 @@ final class WooPaymentsSetupTier {
 
 	/**
 	 * Persist a setup tier and update the current-blog memo only after exact readback.
+	 *
+	 * The write is read back from the database because the tier decides which classes the next request loads, and an
+	 * option filter or a failed write would otherwise go unnoticed.
 	 *
 	 * @since 11.2.0
 	 *

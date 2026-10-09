@@ -807,7 +807,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Apply optional provider-owned effects after transport and before the generic lifecycle.
+	 * Apply optional provider-owned effects after the provider call and before the generic lifecycle.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -824,7 +824,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Apply optional provider-owned effects after the generic lifecycle.
+	 * Apply optional provider-owned effects after the provider call and the generic lifecycle.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Applied provider outcome.
@@ -849,9 +849,8 @@ class PaymentProcessingService {
 	 */
 	private function apply_order_operation_outcome( WC_Order $order, PaymentOutcome $outcome, string $operation, ProviderInterface $provider ): void {
 		if ( in_array( $operation, array( self::OPERATION_CAPTURE, self::OPERATION_CANCEL ), true ) && PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
-			// An expired authorization is the one capture failure that must move the order:
-			// the provider effects carry the capture-expired note when the re-fetched intent
-			// came back canceled, and the order goes to failed like the charge.expired webhook.
+			// An expired authorization is the one failed capture that moves the order: when the provider marks the
+			// outcome with the capture-expired note type, the order goes to failed.
 			if ( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_EXPIRED === $this->get_lifecycle_note_type( $outcome ) ) {
 				$this->lifecycle_service->apply_under_lock(
 					$order,
@@ -869,8 +868,8 @@ class PaymentProcessingService {
 				return;
 			}
 
-			// A failed authorization operation leaves the original authorization active, regardless of whether
-			// the attempted operation was capture or cancellation.
+			// A failed capture or cancel leaves the authorization in place, so the event is STATUS_STARTED: the
+			// authorization stays and the order status does not change.
 			$meta = $this->get_failed_capture_or_cancel_outcome_meta( $outcome, $provider );
 
 			$this->lifecycle_service->apply_under_lock(
@@ -971,7 +970,7 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Map provider outcome metadata through the optional provider port.
+	 * Map provider outcome metadata through the provider's ProviderOutcomeMetadataMapperInterface, when it implements it.
 	 *
 	 * @param PaymentOutcome    $outcome  Provider outcome.
 	 * @param ProviderInterface $provider Provider.
@@ -982,7 +981,8 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Map a failed capture or cancel outcome to metadata through the optional provider port.
+	 * Map a failed capture or cancel outcome to metadata through the provider's ProviderOutcomeMetadataMapperInterface,
+	 * when it implements it.
 	 *
 	 * @param PaymentOutcome    $outcome  Provider outcome.
 	 * @param ProviderInterface $provider Provider.

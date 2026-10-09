@@ -32,6 +32,8 @@ interface ProviderOutcomeMetadataMapperInterface {
 	/**
 	 * Map a failed capture or cancel, which leaves the authorization active, to provider-owned order metadata.
 	 *
+	 * A failed capture or cancel leaves the authorization in place, so this meta records the payment as still authorized.
+	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 *

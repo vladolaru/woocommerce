@@ -12,7 +12,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Keeps the built-in WooPayments setup tier current when the WooPayments extension writes its account cache.
  *
- * Registered only while the WooPayments extension owns payments.
+ * It runs only on stores the WooPayments extension owns, so an eligible account there reads `available` and the store
+ * can be offered the switch.
  *
  * @since 11.2.0
  * @internal

@@ -65,10 +65,10 @@ class OrderPaymentLock {
 	 * returned token.
 	 * Client 11.1.0 locks only intent-driven status updates (class-wc-payments-order-service.php:2756-2761).
 	 *
-	 * The lock value is the payment reference, so a request processing that reference sees the order as locked.
-	 * A holder record names the operation, for the refusal log, and carries a
-	 * token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL cannot
-	 * release a lock a later claim with the same reference took over.
+	 * The lock value names what the claim processes, or the provider's sentinel when it names nothing; the runtime only
+	 * logs it, and other code of the provider may compare it. A holder record names the operation, for the refusal log,
+	 * and carries a token unique to this claim. Releasing needs that token, so an operation that ran past the lock TTL
+	 * cannot release a lock a later claim took over, even one with the same lock value.
 	 *
 	 * @since 11.2.0
 	 *
@@ -198,7 +198,7 @@ class OrderPaymentLock {
 	 * Release the order payment lock, but only while the caller's claim still holds it.
 	 *
 	 * The counterpart of claim(): an operation that ran past the lock TTL must not
-	 * release a lock another claim has since taken over, even one with the same payment reference, so the holder
+	 * release a lock another claim has since taken over, even one with the same lock value, so the holder
 	 * record must still carry this claim's token.
 	 *
 	 * @since 11.2.0
@@ -226,6 +226,8 @@ class OrderPaymentLock {
 			return;
 		}
 
+		// The holder row is read as stored, expired or not: the delete below matches it exactly, so it removes a lock this
+		// claim still holds and never one a later claim took over.
 		$stored_holder = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", '_transient_' . $holder_key ) );
 		$holder        = null === $stored_holder ? null : maybe_unserialize( $stored_holder );
 
@@ -283,7 +285,7 @@ class OrderPaymentLock {
 	}
 
 	/**
-	 * Get the value stored in the order payment lock for a payment reference.
+	 * Get the value stored in the order payment lock for this claim.
 	 *
 	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
 	 * @param string|null                            $lock_value          What this claim processes, stored as the lock's value: a payment

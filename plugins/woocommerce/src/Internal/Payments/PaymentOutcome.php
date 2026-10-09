@@ -74,56 +74,57 @@ class PaymentOutcome {
 	public const STATUS_NO_EXTERNAL_PAYMENT = 'no_external_payment';
 
 	/**
-	 * Additional data key: order meta keys to delete.
+	 * Checkout, capture and cancel outcomes: order meta keys to delete.
 	 *
 	 * @var string
 	 */
 	public const DATA_META_TO_DELETE = 'meta_to_delete';
 
 	/**
-	 * Additional data key: order note.
+	 * Checkout, capture and cancel outcomes: order note.
 	 *
 	 * @var string
 	 */
 	public const DATA_NOTE = 'note';
 
 	/**
-	 * Additional data key: stable order note type.
+	 * Checkout, capture and cancel outcomes: stable order note type.
 	 *
 	 * @var string
 	 */
 	public const DATA_NOTE_TYPE = 'note_type';
 
 	/**
-	 * Additional data key: exact equivalent order-note renderings.
+	 * Checkout, capture and cancel outcomes: other texts of the same note the order may already carry, such as the note
+	 * in another language or without its currency code, so the note is added once.
 	 *
 	 * @var string
 	 */
 	public const DATA_NOTE_EQUIVALENTS = 'note_equivalents';
 
 	/**
-	 * Additional data key: refund meta updates.
+	 * Refund outcomes: refund meta updates.
 	 *
 	 * @var string
 	 */
 	public const DATA_REFUND_META = 'refund_meta';
 
 	/**
-	 * Additional data key: parent order meta updates for a refund.
+	 * Refund outcomes: parent order meta updates.
 	 *
 	 * @var string
 	 */
 	public const DATA_ORDER_META = 'order_meta';
 
 	/**
-	 * Additional data key: refund order note.
+	 * Refund outcomes: refund order note.
 	 *
 	 * @var string
 	 */
 	public const DATA_REFUND_NOTE = 'refund_note';
 
 	/**
-	 * Additional data key: stable refund note identity.
+	 * Refund outcomes: stable refund note identity.
 	 *
 	 * @since 11.2.0
 	 *
@@ -132,7 +133,8 @@ class PaymentOutcome {
 	public const DATA_REFUND_NOTE_IDENTITY = 'refund_note_identity';
 
 	/**
-	 * Additional data key: exact equivalent refund-note renderings.
+	 * Refund outcomes: other texts of the same refund note the order may already carry, such as the note in another
+	 * language or without its currency code, so the note is added once.
 	 *
 	 * @since 11.2.0
 	 *
@@ -141,7 +143,7 @@ class PaymentOutcome {
 	public const DATA_REFUND_NOTE_EQUIVALENTS = 'refund_note_equivalents';
 
 	/**
-	 * Additional data key: refund-note identity comment-meta key.
+	 * Refund outcomes: refund-note identity comment-meta key.
 	 *
 	 * @since 11.2.0
 	 *
@@ -150,28 +152,28 @@ class PaymentOutcome {
 	public const DATA_REFUND_NOTE_IDENTITY_META_KEY = 'refund_note_identity_meta_key';
 
 	/**
-	 * Additional data key: provider error code.
+	 * Failed outcomes: provider error code.
 	 *
 	 * @var string
 	 */
 	public const DATA_ERROR_CODE = 'error_code';
 
 	/**
-	 * Additional data key: provider error message.
+	 * Failed outcomes: provider error message.
 	 *
 	 * @var string
 	 */
 	public const DATA_ERROR_MESSAGE = 'error_message';
 
 	/**
-	 * Additional data key: checkout redirect URL override.
+	 * Checkout outcomes: checkout redirect URL override.
 	 *
 	 * @var string
 	 */
 	public const DATA_CHECKOUT_REDIRECT = 'checkout_redirect';
 
 	/**
-	 * Data key flagging that a failed outcome must not change the order status.
+	 * Failed outcomes: flags that the outcome must not change the order status.
 	 *
 	 * A payment refused before processing (for example by fraud screening) records
 	 * its meta and note effects while leaving the order status for the merchant to
@@ -182,7 +184,7 @@ class PaymentOutcome {
 	public const DATA_PRESERVE_ORDER_STATUS = 'preserve_order_status';
 
 	/**
-	 * Data key flagging that another request paid the order while this one waited for the payment lock.
+	 * Checkout outcomes: flags that another request paid the order while this one waited for the payment lock.
 	 *
 	 * Nothing was charged; the checkout sends the shopper to the order-received page.
 	 *

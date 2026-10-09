@@ -36,6 +36,9 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	/**
 	 * WooPayments-compatible order processing lock transient prefix.
 	 *
+	 * The built-in WooPayments and the WooPayments extension share this order lock on stores that switch, so the key,
+	 * the sentinel and the lifetime are the extension's.
+	 *
 	 * @var string
 	 */
 	public const LOCK_TRANSIENT_PREFIX = 'wcpay_processing_intent_';
@@ -70,7 +73,7 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	public const EARLY_FRAUD_WARNING_META_KEY = '_wcpay_early_fraud_warning';
 
 	/**
-	 * WooPayments Bucket-E order/refund meta keys that native code must preserve.
+	 * Order and refund meta keys that hold WooPayments payment state, returned by get_preserved_payment_meta_keys().
 	 *
 	 * @var string[]
 	 */

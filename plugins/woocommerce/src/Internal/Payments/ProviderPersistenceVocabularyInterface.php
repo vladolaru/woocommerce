@@ -11,8 +11,11 @@ use WC_Order;
 
 /**
  * Names the order meta keys and lock settings the payments runtime reads and writes for a provider.
+ * The order lock's transient key, sentinel and lifetime come from the provider, so the lock is the same row any other
+ * code of that provider checks.
  *
- * It holds only identifiers; turning an outcome into meta belongs to ProviderOutcomeMetadataMapperInterface.
+ * Each provider keeps its payment state under its own names, so the runtime reads and writes it through this vocabulary
+ * instead of fixed keys; turning an outcome into meta belongs to ProviderOutcomeMetadataMapperInterface.
  *
  * @since 11.0.0
  * @internal
@@ -77,8 +80,9 @@ interface ProviderPersistenceVocabularyInterface {
 	/**
 	 * Get the order meta key holding the idempotency key a charge keeps on the order while its outcome is unknown.
 	 *
-	 * A new value under this key since the order was loaded means another request attempted a charge. Return '' when the
-	 * provider keeps no such key.
+	 * The provider stores a charge's idempotency key here before it sends the charge and deletes it once the outcome is
+	 * definitive, so a key still here belongs to a charge whose outcome is unknown; the runtime only reads it, and refuses
+	 * a charge when it changed since the order was loaded. Return '' when the provider stores no such key.
 	 *
 	 * @return string
 	 *
@@ -89,9 +93,9 @@ interface ProviderPersistenceVocabularyInterface {
 	/**
 	 * Get the order meta key holding the provider's open dispute IDs.
 	 *
-	 * The meta value is an array of the IDs of the disputes still open on the order's payment, empty or absent when
-	 * none is open. While it holds an ID, a completed payment event leaves the order status alone. Return '' when the
-	 * provider records no disputes on the order.
+	 * An array of open dispute IDs is the one shape the runtime reads, so a provider keeps its open disputes under this
+	 * key in that shape, whatever else it stores; it is empty or absent when none is open. While it holds an ID, a
+	 * completed payment event leaves the order status alone. Return '' when the provider records no disputes on the order.
 	 *
 	 * @return string
 	 *
