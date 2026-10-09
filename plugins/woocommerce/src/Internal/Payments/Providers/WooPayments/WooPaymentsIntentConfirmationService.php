@@ -148,11 +148,7 @@ class WooPaymentsIntentConfirmationService {
 		$previous_payment_method_id                    = (string) $order->get_meta( '_payment_method_id', true );
 
 		if ( WooPaymentsIntentCodec::holds_money( $status ) ) {
-			$token_save_result      = $this->maybe_save_payment_method_for_order(
-				$order,
-				$intent,
-				array( 'should_save_payment_method' => $save_payment_method ? 'true' : 'false' )
-			);
+			$token_save_result      = $this->maybe_save_payment_method_for_order( $order, $intent, $save_payment_method );
 			$payment_method_details = $token_save_result['payment_method_details'];
 			// The redirect return logs a token-save error and completes the order; only the order-status callback stops a recurring order (gw:2389-2396, 4309-4321).
 			if ( null !== $token_save_result['error'] && ! $is_redirect_return ) {
@@ -417,15 +413,14 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Persist a requested payment method as a WooCommerce token before completing the order.
 	 *
-	 * @param WC_Order            $order   Order being updated.
-	 * @param array<string,mixed> $intent  Native intent response.
-	 * @param array<string,mixed> $request Request data.
+	 * @param WC_Order            $order               Order being updated.
+	 * @param array<string,mixed> $intent              Native intent response.
+	 * @param bool                $save_payment_method Whether the shopper asked to save the payment method; a recurring order saves it anyway.
 	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>} Token result and any blocking error response.
 	 */
-	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, array $request ): array {
-		$is_recurring               = $this->request_builder->is_recurring_payment( $order );
-		$should_save_payment_method = $is_recurring || $this->should_save_payment_method( $request ) || $this->is_subscription_change_payment_request( $request );
-		if ( ! $should_save_payment_method ) {
+	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, bool $save_payment_method ): array {
+		$is_recurring = $this->request_builder->is_recurring_payment( $order );
+		if ( ! $is_recurring && ! $save_payment_method ) {
 			return array(
 				'error'                  => null,
 				'token'                  => null,
@@ -480,26 +475,6 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Tell whether the customer requested payment-method saving.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return bool
-	 */
-	private function should_save_payment_method( array $request ): bool {
-		return 'true' === strtolower( $this->get_request_string( $request, 'should_save_payment_method' ) );
-	}
-
-	/**
-	 * Tell whether the current callback is completing a WC Subscriptions payment-method change.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return bool
-	 */
-	private function is_subscription_change_payment_request( array $request ): bool {
-		return 'true' === strtolower( $this->get_request_string( $request, 'is_changing_payment' ) );
-	}
-
-	/**
 	 * Get the user ID that should own a saved payment token.
 	 *
 	 * @param WC_Order $order Order object.
@@ -541,22 +516,5 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		return '';
-	}
-
-	/**
-	 * Read a sanitized request string.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @param string              $key     Request key.
-	 * @return string
-	 */
-	private function get_request_string( array $request, string $key ): string {
-		$value = $request[ $key ] ?? '';
-
-		if ( is_array( $value ) || is_object( $value ) ) {
-			return '';
-		}
-
-		return sanitize_text_field( (string) $value );
 	}
 }
