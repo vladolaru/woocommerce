@@ -3094,9 +3094,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                   = new NativeWooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, null );
+		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$gateway->process_payment( $order->get_id() );
 
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
@@ -4609,8 +4611,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new WooPaymentsFailedTransactionRateLimiter( $session )
 		);
 
+		$_POST['wcpay-payment-method'] = 'pm_card';
+
 		$result = $gateway->process_payment( $order->get_id() );
 
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'failure', $result['result'] );
 		$this->assertSame( array(), $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
 	}
@@ -5151,10 +5156,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A subscription payment-method change with no payment method and no saved token is refused and keeps the subscription as it is.
 	 *
-	 * Client 11.1.0 refuses the request when it builds the payment information (`includes/class-payment-information.php:157-162`).
-	 * Its catch then asks the subscription to move to failed (`class-wc-payment-gateway-wcpay.php:1326-1328`), which WooCommerce
-	 * Subscriptions turns into on-hold for an active subscription or refuses with an exception; native leaves the subscription
-	 * as it is, as for a client payment-method error.
+	 * WooCommerce Subscriptions calls the gateway for the change inside a try (subscriptions-core 6.7.1, which client 11.1.0
+	 * pins, `includes/class-wc-subscriptions-change-payment-gateway.php:335-338`). Client 11.1.0 refuses the request before its
+	 * payment information exists (`includes/class-payment-information.php:157-162`) and then attempts to fail the subscription
+	 * (`class-wc-payment-gateway-wcpay.php:1326`); native keeps the subscription's status.
 	 */
 	public function test_process_payment_does_not_complete_subscription_change_without_provider_credential(): void {
 		wc_clear_notices();
@@ -5239,6 +5244,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_POST['wcpay-payment-method']          = 'pm_card';
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -5255,6 +5261,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
 		}
 
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
+		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
 		$this->assertSame( 'failure', $result['result'] );
 		$this->assertSame( 0, $return_filter_calls );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );

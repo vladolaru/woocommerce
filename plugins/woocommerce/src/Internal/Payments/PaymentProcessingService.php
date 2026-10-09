@@ -728,9 +728,8 @@ class PaymentProcessingService {
 	 * it is: a completed capture moved the money and a completed cancel released the authorization, and the service attempts,
 	 * best effort, to save the reference on the order so the provider's next event settles it; checkout throws
 	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed. When applying a
-	 * failed capture or cancel fails, the failed outcome is returned and nothing is saved: the order keeps the authorization
-	 * state it recorded before the call, whether the provider still holds the authorization or it expired, as client 11.1.0
-	 * leaves it when its failure handling throws.
+	 * failed capture or cancel fails, the failed outcome is returned. Recovery saves nothing further; changes already
+	 * persisted during local application remain, as client 11.1.0 leaves them when its failure handling throws.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param ProviderInterface       $provider  Provider.
