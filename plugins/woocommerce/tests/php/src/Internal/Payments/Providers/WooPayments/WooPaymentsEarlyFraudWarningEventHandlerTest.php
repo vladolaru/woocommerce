@@ -3,6 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
@@ -10,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -490,6 +494,98 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				'id'         => 'efw_123',
 				'actionable' => true,
 				'created'    => 123,
+			)
+		);
+	}
+
+	/**
+	 * @testdox Should decide on the order as stored when another request paid it with another gateway after this request cached it.
+	 *
+	 * The other request writes straight to the database, leaving this request's post, meta and HPOS order caches as they were.
+	 */
+	public function test_decides_on_the_stored_order_when_another_request_changed_it_after_the_lookup(): void {
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+			update_option( CustomOrdersTableController::HPOS_DATASTORE_CACHING_ENABLED_OPTION, 'yes' );
+		}
+		$order = $this->create_woopayments_order();
+		$store = new class() extends OrderPaymentLock {
+			/**
+			 * Whether the other request wrote its change.
+			 *
+			 * @var bool
+			 */
+			public bool $changed = false;
+
+			/**
+			 * Pay the order with another gateway as another request would, writing past this request's caches, then grant the claim.
+			 *
+			 * @param WC_Order                                                                         $order      Order being locked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
+			 * @param string|null                                                                      $reference  Payment reference being processed.
+			 * @param string                                                                           $operation  Operation claiming the lock.
+			 * @return string|null
+			 */
+			public function claim( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, ?string $reference, string $operation ): ?string {
+				global $wpdb;
+				unset( $vocabulary, $reference, $operation );
+				if ( ! $this->changed ) {
+					$this->changed = true;
+					// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Raw writes emulate another request without cache invalidation.
+					if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
+						$wpdb->update(
+							OrdersTableDataStore::get_orders_table_name(),
+							array(
+								'status'         => 'wc-processing',
+								'payment_method' => 'cheque',
+							),
+							array( 'id' => $order->get_id() )
+						);
+					} else {
+						$wpdb->update( $wpdb->posts, array( 'post_status' => 'wc-processing' ), array( 'ID' => $order->get_id() ) );
+						$wpdb->update(
+							$wpdb->postmeta,
+							array( 'meta_value' => 'cheque' ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+							array(
+								'post_id'  => $order->get_id(),
+								'meta_key' => '_payment_method', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+							)
+						);
+					}
+					// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				}
+
+				return 'test_lock_token';
+			}
+
+			/**
+			 * Release nothing: the claim above holds no lock.
+			 *
+			 * @param WC_Order                                                                         $order      Order being unlocked.
+			 * @param \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary Provider persistence vocabulary.
+			 * @param string                                                                           $lock_token Token the claim returned.
+			 */
+			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {
+				unset( $order, $vocabulary, $lock_token );
+			}
+		};
+		// This request reads the order before the claim, so its caches hold the unpaid WooPayments order.
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
+		$event                   = $this->valid_event_object();
+		$event['payment_intent'] = 'pi_other_gateway';
+
+		$handler->process( 'radar.early_fraud_warning.created', $event );
+
+		$this->assertTrue( $store->changed, 'The other request must write inside the claim.' );
+		$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$this->assertSame( 'processing', $fresh_order->get_status() );
+		$this->assertSame( '', $fresh_order->get_meta( '_wcpay_early_fraud_warning', true ), 'A warning on an order another gateway paid must not be stored as its payment warning.' );
+		$this->assertCount(
+			1,
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'which does not pay this order' )
 			)
 		);
 	}

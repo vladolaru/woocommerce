@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
@@ -126,8 +127,9 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		}
 
 		try {
-			$fresh_order = wc_get_order( $order->get_id() );
-			if ( ! $fresh_order instanceof WC_Order || $warning['charge'] !== (string) $fresh_order->get_meta( '_charge_id', true ) ) {
+			// Read the order past the request's caches: another request may have paid it or moved its charge since the lookup.
+			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+			if ( $warning['charge'] !== (string) $fresh_order->get_meta( '_charge_id', true ) ) {
 				throw new RuntimeException( esc_html( sprintf( 'WooPayments order did not match early fraud warning charge ID: %s', $warning['charge'] ) ) );
 			}
 
