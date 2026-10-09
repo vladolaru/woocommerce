@@ -6963,6 +6963,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$context = $this->get_logged_context( $logger, 'A WooPayments refund failed to complete.' );
 		$this->assertSame( array( $order->get_id(), 'unknown_error' ), array( $context['order_id'], $context['error_code'] ) );
+		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

@@ -744,6 +744,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$context = $this->get_logged_context( $logger, 'Error when saving payment method from webhook.' );
 		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
+		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
@@ -778,6 +779,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Failed to fetch dispute summary for dispute ' ) ) );
 		$this->assertCount( 1, $lines );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$this->assertSame( 'woopayments', $logger->contexts[ $lines[0] ]['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
@@ -4154,11 +4156,17 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The recorded dispute close, with only its dispute ID replaced by one the handler refuses, makes the handler throw after
+	 * the order is found.
+	 *
 	 * @testdox An event whose handler throws fires the before-delivery hook only and keeps the dispute caches.
 	 */
 	public function test_event_whose_handler_throws_skips_the_after_delivery_hook_and_the_dispute_cache_purge(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_123' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event                         = $this->load_recorded_dispute_closed_event( 'accept_closed_lost' );
+		$event['data']['object']['id'] = array( 'not-scalar' );
+		$order                         = $this->create_woopayments_order();
+		$order->update_meta_data( '_charge_id', $event['data']['object']['charge'] );
 		$order->save();
 		$this->seed_dispute_cache_options();
 		$hook_calls = array();
@@ -4177,7 +4185,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$exception = null;
 		try {
-			$this->sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'lost', array( 'id' => array( 'not-scalar' ) ) ) );
+			$this->sut->process( $event );
 		} catch ( RuntimeException $caught ) {
 			$exception = $caught;
 		}

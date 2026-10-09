@@ -134,7 +134,9 @@ final class WooCommerceSubscriptionsDoubles {
 	/**
 	 * Define `wcs_get_subscriptions_for_order()`, which returns the subscriptions `ORDER_SUBSCRIPTIONS` relates to an order.
 	 *
-	 * The registry may hold an `ArrayAccess` object in place of an array, so a test can see each lookup as it happens.
+	 * It stands in for WooCommerce Subscriptions 9.0.1 `includes/core/wcs-order-functions.php:33`, which reads the order's
+	 * stored subscription relations. The registry may hold an `ArrayAccess` object in place of an array, so a test can see
+	 * each lookup as it happens.
 	 */
 	public static function load_order_subscriptions(): void {
 		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
@@ -145,6 +147,10 @@ final class WooCommerceSubscriptionsDoubles {
 
 	/**
 	 * Define `wcs_order_contains_renewal()`, which reports only the order IDs in the `wcpay_test_renewal_order_ids` global as renewals.
+	 *
+	 * WooCommerce Subscriptions 9.0.1 `includes/core/wcs-renewal-functions.php:90` derives it from the order's `renewal`
+	 * relation, the same relation `wcs_get_subscriptions_for_order()` reads. The two doubles keep separate registries only for
+	 * test isolation: a test can make an order a renewal, or relate a renewal subscription to it, without the other.
 	 */
 	public static function load_renewal_detector(): void {
 		if ( ! function_exists( 'wcs_order_contains_renewal' ) ) {
