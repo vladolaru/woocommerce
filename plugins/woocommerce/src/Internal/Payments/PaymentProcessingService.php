@@ -89,7 +89,7 @@ class PaymentProcessingService {
 		// events are logged.
 		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
-			return $this->get_checkout_in_progress_outcome();
+			return $this->get_operation_in_progress_outcome();
 		}
 
 		try {
@@ -127,11 +127,11 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get the failed outcome for a checkout refused because another payment operation is in progress.
+	 * Get the failed outcome for an operation refused because another payment operation holds the order payment lock.
 	 *
 	 * @return PaymentOutcome
 	 */
-	private function get_checkout_in_progress_outcome(): PaymentOutcome {
+	private function get_operation_in_progress_outcome(): PaymentOutcome {
 		return new PaymentOutcome(
 			PaymentOutcome::STATUS_FAILED,
 			'',
@@ -188,7 +188,7 @@ class PaymentProcessingService {
 
 		$this->log_checkout_refused_after_claim( $order, $reason );
 
-		return $this->get_checkout_in_progress_outcome();
+		return $this->get_operation_in_progress_outcome();
 	}
 
 	/**
@@ -727,14 +727,7 @@ class PaymentProcessingService {
 		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $vocabulary, $operation );
-			return new PaymentOutcome(
-				PaymentOutcome::STATUS_FAILED,
-				'',
-				'',
-				'',
-				'',
-				array( PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ) )
-			);
+			return $this->get_operation_in_progress_outcome();
 		}
 
 		try {
