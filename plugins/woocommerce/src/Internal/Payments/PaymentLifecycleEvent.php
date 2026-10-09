@@ -63,6 +63,9 @@ class PaymentLifecycleEvent {
 	/**
 	 * Note type: completion note without payment details, such as a zero-total order's.
 	 *
+	 * Note types name a note's kind whatever its text or language; the runtime keys each lifecycle note's identity on its
+	 * type, and itself compares only payment complete, payment success and capture expired.
+	 *
 	 * @var string
 	 */
 	public const NOTE_TYPE_PAYMENT_COMPLETE = 'payment_complete';
@@ -304,7 +307,8 @@ class PaymentLifecycleEvent {
 	}
 
 	/**
-	 * Normalize meta updates to deterministic string-keyed scalar values.
+	 * Turn meta updates into the string values get_meta_to_update() returns (non-scalars as JSON), sorted by key so an
+	 * event writes its meta in the same order whatever order the provider built it in.
 	 *
 	 * @param array<string,mixed> $meta_to_update Raw meta updates.
 	 * @return array<string,string>

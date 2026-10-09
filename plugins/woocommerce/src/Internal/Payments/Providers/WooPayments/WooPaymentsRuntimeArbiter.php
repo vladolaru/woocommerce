@@ -92,6 +92,9 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * The legacy proxy, used for mockable calls to global functions.
 	 *
+	 * The plugin lists, the multisite check and the WCPAY_PLUGIN_FILE constant are read through it so tests can stand in
+	 * for them; the built-in WooPayments options are plain options, read with get_option().
+	 *
 	 * @var LegacyProxy
 	 */
 	private LegacyProxy $legacy_proxy;

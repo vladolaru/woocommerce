@@ -20,7 +20,10 @@ use WP_Error;
  */
 class PaymentProcessingService {
 
-	/** Operation name for a checkout charge. */
+	/**
+	 * Operation name for a checkout's provider call; the order payment lock names its holder 'checkout' instead, because a
+	 * zero-total checkout holds the lock without calling the provider.
+	 */
 	public const OPERATION_CHARGE = 'charge';
 
 	/** Operation name for a refund. */
@@ -81,7 +84,9 @@ class PaymentProcessingService {
 		$idempotency_key = $this->mint_idempotency_key();
 		$vocabulary      = $provider->get_persistence_vocabulary();
 
-		// A refused checkout claim returns the in-progress outcome without logging.
+		// A refused checkout claim returns the in-progress outcome without logging: the shopper sees that error, and a second
+		// submission of one checkout is the common case the lock stops; refused refunds, captures, cancels and provider
+		// events are logged.
 		$lock_token = $this->order_payment_lock->claim( $order, $vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
 			return $this->get_checkout_in_progress_outcome();
@@ -237,7 +242,8 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Persist provider reconciliation context after local outcome application fails.
+	 * Save the provider's payment reference and meta on the order after applying its outcome failed, the reconciliation
+	 * context, so a retry or the provider's next event finds the payment the provider already made instead of paying again.
 	 *
 	 * The order is reloaded to avoid clobbering concurrent writes. The provider's order meta is needed
 	 * by later confirmation and reconciliation paths, so persisting only the transaction ID is not enough.
@@ -332,6 +338,9 @@ class PaymentProcessingService {
 
 	/**
 	 * Process a refund through a provider.
+	 *
+	 * When applying a refund the provider already made fails, the refund still reports success, because WooCommerce
+	 * deletes its refund row when the gateway reports a failure.
 	 *
 	 * @since 11.0.0
 	 *
@@ -699,6 +708,10 @@ class PaymentProcessingService {
 
 	/**
 	 * Run a capture/cancel provider operation under the shared order lock.
+	 *
+	 * When applying a capture or cancel the provider already made fails, the provider's outcome is returned as it is: the
+	 * money moved, and the reference saved on the order lets the provider's next event settle the order; checkout throws
+	 * PaymentOutcomeApplyException instead, because what the shopper sees depends on how applying failed.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param ProviderInterface       $provider  Provider.
