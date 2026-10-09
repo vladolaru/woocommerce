@@ -159,81 +159,81 @@ class WooPaymentsEventIngestor {
 	/**
 	 * WooPayments order data service.
 	 *
-	 * @var WooPaymentsOrderDataService|null
+	 * @var WooPaymentsOrderDataService
 	 */
-	private ?WooPaymentsOrderDataService $order_data_service = null;
+	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
 	 * WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService|null
+	 * @var WooPaymentsAccountService
 	 */
-	private ?WooPaymentsAccountService $account_service = null;
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * WooPayments order effect applier.
 	 *
-	 * @var WooPaymentsOrderEffectApplier|null
+	 * @var WooPaymentsOrderEffectApplier
 	 */
-	private ?WooPaymentsOrderEffectApplier $order_effect_applier = null;
+	private WooPaymentsOrderEffectApplier $order_effect_applier;
 
 	/**
 	 * WooPayments order note service.
 	 *
-	 * @var WooPaymentsOrderNoteService|null
+	 * @var WooPaymentsOrderNoteService
 	 */
-	private ?WooPaymentsOrderNoteService $order_note_service = null;
+	private WooPaymentsOrderNoteService $order_note_service;
 
 	/**
 	 * WooPayments admin menu badge service.
 	 *
-	 * @var WooPaymentsAdminMenuBadgeService|null
+	 * @var WooPaymentsAdminMenuBadgeService
 	 */
-	private ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null;
+	private WooPaymentsAdminMenuBadgeService $admin_menu_badge_service;
 
 	/**
 	 * WooPayments early fraud warning event handler.
 	 *
-	 * @var WooPaymentsEarlyFraudWarningEventHandler|null
+	 * @var WooPaymentsEarlyFraudWarningEventHandler
 	 */
-	private ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null;
+	private WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler;
 
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver|null
+	 * @var WooPaymentsEventOrderResolver
 	 */
-	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+	private WooPaymentsEventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder|null
+	 * @var WooPaymentsOtherChargeRecorder
 	 */
-	private ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null;
+	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLifecycleService                  $lifecycle_service                  Order lifecycle service.
-	 * @param LegacyProxy                                   $legacy_proxy                       Legacy proxy.
-	 * @param WooPaymentsApiClient                          $api_client                         Native WooPayments API client.
-	 * @param WooPaymentsDisputeEventHandler                $dispute_event_handler              Dispute event handler.
-	 * @param WooPaymentsRefundEventHandler                 $refund_event_handler               Refund event handler.
-	 * @param WooPaymentsAccountEventHandler                $account_event_handler              Account event handler.
-	 * @param WooPaymentsNotificationEventHandler           $notification_event_handler         Notification event handler.
-	 * @param WooPaymentsOrderDataService|null              $order_data_service                 WooPayments order data service.
-	 * @param WooPaymentsAccountService|null                $account_service                    WooPayments account service.
-	 * @param WooPaymentsOrderEffectApplier|null            $order_effect_applier               Optional order effect applier.
-	 * @param WooPaymentsOrderNoteService|null              $order_note_service                 Optional order note service.
-	 * @param WooPaymentsAdminMenuBadgeService|null         $admin_menu_badge_service           Optional admin menu badge service.
-	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning event handler.
-	 * @param WooPaymentsEventOrderResolver|null            $event_order_resolver               Optional webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder|null           $other_charge_recorder              Optional recorder of events on another charge.
+	 * @param OrderPaymentLifecycleService             $lifecycle_service                  Order lifecycle service.
+	 * @param LegacyProxy                              $legacy_proxy                       Legacy proxy.
+	 * @param WooPaymentsApiClient                     $api_client                         Native WooPayments API client.
+	 * @param WooPaymentsDisputeEventHandler           $dispute_event_handler              Dispute event handler.
+	 * @param WooPaymentsRefundEventHandler            $refund_event_handler               Refund event handler.
+	 * @param WooPaymentsAccountEventHandler           $account_event_handler              Account event handler.
+	 * @param WooPaymentsNotificationEventHandler      $notification_event_handler         Notification event handler.
+	 * @param WooPaymentsOrderDataService              $order_data_service                 WooPayments order data service.
+	 * @param WooPaymentsAccountService                $account_service                    WooPayments account service.
+	 * @param WooPaymentsOrderEffectApplier            $order_effect_applier               Order effect applier.
+	 * @param WooPaymentsOrderNoteService              $order_note_service                 Order note service.
+	 * @param WooPaymentsAdminMenuBadgeService         $admin_menu_badge_service           Admin menu badge service.
+	 * @param WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler Early fraud warning event handler.
+	 * @param WooPaymentsEventOrderResolver            $event_order_resolver               Webhook event order resolver.
+	 * @param WooPaymentsOtherChargeRecorder           $other_charge_recorder              Recorder of events on another charge.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null, ?WooPaymentsOrderNoteService $order_note_service = null, ?WooPaymentsAdminMenuBadgeService $admin_menu_badge_service = null, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
 		$this->lifecycle_service                 = $lifecycle_service;
 		$this->legacy_proxy                      = $legacy_proxy;
 		$this->api_client                        = $api_client;
@@ -335,8 +335,8 @@ class WooPaymentsEventIngestor {
 		}
 
 		$event_object = $this->get_event_object( $event );
-		if ( $this->get_early_fraud_warning_event_handler()->is_supported_event( $event_type ) ) {
-			$this->get_early_fraud_warning_event_handler()->process( $event_type, $event_object );
+		if ( $this->early_fraud_warning_event_handler->is_supported_event( $event_type ) ) {
+			$this->early_fraud_warning_event_handler->process( $event_type, $event_object );
 			return;
 		}
 
@@ -362,19 +362,19 @@ class WooPaymentsEventIngestor {
 		// The plugin's canceled/amount_capturable_updated handlers are nothing but
 		// this cache invalidation and never resolve an order.
 		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
-			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 			return;
 		}
 
 		$record_only = false;
 		if ( 'charge.expired' === $event_type ) {
-			$order = $this->get_event_order_resolver()->find_order_by_charge_id( $this->get_object_id( $event_object ) );
+			$order = $this->event_order_resolver->find_order_by_charge_id( $this->get_object_id( $event_object ) );
 			if ( ! $order instanceof WC_Order ) {
-				$order       = $this->get_event_order_resolver()->find_order_from_charge_metadata( $event_object );
+				$order       = $this->event_order_resolver->find_order_from_charge_metadata( $event_object );
 				$record_only = true;
 			}
 		} else {
-			$order = $this->get_event_order_resolver()->find_order_for_intent_event( $event_object );
+			$order = $this->event_order_resolver->find_order_for_intent_event( $event_object );
 		}
 		if ( ! $order instanceof WC_Order ) {
 			return;
@@ -389,7 +389,7 @@ class WooPaymentsEventIngestor {
 		// Captures and expiries change what the uncaptured-transactions badge counts; the plugin
 		// invalidates after the order effects land.
 		if ( 'payment_intent.payment_failed' !== $event_type ) {
-			$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 		}
 	}
 
@@ -422,14 +422,14 @@ class WooPaymentsEventIngestor {
 			$this->lifecycle_service->reread_order_from_data_store( $order );
 			$is_charge_event = 'charge.expired' === $event_type;
 			$charge_id       = $is_charge_event ? $this->get_object_id( $event_object ) : $this->get_charge_id_from_intent( $event_object );
-			$intent_id       = $is_charge_event ? $this->get_event_order_resolver()->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
+			$intent_id       = $is_charge_event ? $this->event_order_resolver->get_event_intent_id( $event_object, $order ) : $this->get_object_id( $event_object );
 			// An order found by the charge's metadata is recorded only while it still does not hold the charge: one that
 			// saved it before this claim is decided like any order found by its charge.
 			$record_only    = $record_only && $charge_id !== (string) $order->get_meta( '_charge_id', true );
-			$is_own_payment = ! $record_only && $this->get_event_order_resolver()->is_own_payment( $order, $intent_id, $charge_id );
+			$is_own_payment = ! $record_only && $this->event_order_resolver->is_own_payment( $order, $intent_id, $charge_id );
 
 			if ( ! $is_own_payment ) {
-				$this->get_other_charge_recorder()->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );
+				$this->other_charge_recorder->record( $order, $event_type, $this->get_other_charge_facts( $event_type, $event_object, $intent_id, $charge_id ) );
 			} elseif ( 'payment_intent.succeeded' === $event_type ) {
 				$this->apply_succeeded_payment_intent_under_lock( $order, $event_object, $vocabulary );
 			} else {
@@ -580,7 +580,7 @@ class WooPaymentsEventIngestor {
 
 		// Captures change what the uncaptured-transactions badge counts; the plugin
 		// invalidates after the order effects land.
-		$this->get_admin_menu_badge_service()->invalidate_authorization_summary_caches();
+		$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 	}
 
 	/**
@@ -716,24 +716,11 @@ class WooPaymentsEventIngestor {
 	 * @param array<string,mixed> $event_object Provider object.
 	 */
 	private function apply_completed_payment_method_display_title( WC_Order $order, array $event_object ): void {
-		$this->get_order_effect_applier()->apply_payment_method_display_title(
+		$this->order_effect_applier->apply_payment_method_display_title(
 			$order,
 			$event_object,
-			$this->get_account_service()->get_account_country()
+			$this->account_service->get_account_country()
 		);
-	}
-
-	/**
-	 * Get the WooPayments order effect applier.
-	 *
-	 * @return WooPaymentsOrderEffectApplier
-	 */
-	private function get_order_effect_applier(): WooPaymentsOrderEffectApplier {
-		if ( null === $this->order_effect_applier ) {
-			$this->order_effect_applier = wc_get_container()->get( WooPaymentsOrderEffectApplier::class );
-		}
-
-		return $this->order_effect_applier;
 	}
 
 	/**
@@ -755,15 +742,15 @@ class WooPaymentsEventIngestor {
 				// Plugin 11.1.0 stores the webhook's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:497,514).
 				'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
 				'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
-				'_wcpay_mode'            => $this->get_account_service()->get_order_mode(),
+				'_wcpay_mode'            => $this->account_service->get_order_mode(),
 				'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
 			)
 		);
 		if ( ! empty( $charge ) ) {
-			$settlement_meta = $this->get_order_data_service()->get_settlement_exchange_rate_order_meta(
+			$settlement_meta = $this->order_data_service->get_settlement_exchange_rate_order_meta(
 				$order,
 				$charge,
-				$this->get_account_service()->get_account_default_currency()
+				$this->account_service->get_account_default_currency()
 			);
 			$meta            = array_merge(
 				$meta,
@@ -814,8 +801,8 @@ class WooPaymentsEventIngestor {
 				$intent_id           = $this->get_object_id( $event_object );
 				$charge_id           = $this->get_charge_id_from_intent( $event_object );
 				$note_candidates     = 'card_present' === $payment_method_type
-					? $this->get_order_note_service()->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
-					: $this->get_order_note_service()->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
+					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
+					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
 
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_FAILED,
@@ -837,7 +824,7 @@ class WooPaymentsEventIngestor {
 				$intent_id       = isset( $event_object['payment_intent'] ) && is_string( $event_object['payment_intent'] )
 					? $event_object['payment_intent']
 					: (string) $order->get_meta( '_intent_id', true );
-				$note_candidates = $this->get_order_note_service()->format_capture_expired_note_candidates( $intent_id, $charge_id );
+				$note_candidates = $this->order_note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
 				// The stored intention status still says requires_capture; only the live
 				// intent knows its post-expiry status (canceled), and leaving the stale
@@ -995,7 +982,7 @@ class WooPaymentsEventIngestor {
 	 */
 	private function get_completed_payment_note_data_from_intent( array $event_object, WC_Order $order ): array {
 		$charge          = $this->get_first_charge_from_intent( $event_object );
-		$note_candidates = $this->get_order_note_service()->format_payment_success_note_candidates(
+		$note_candidates = $this->order_note_service->format_payment_success_note_candidates(
 			$order,
 			$this->get_object_id( $event_object ),
 			$this->get_charge_id_from_intent( $event_object ),
@@ -1025,32 +1012,6 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Get the WooPayments order note service.
-	 *
-	 * @return WooPaymentsOrderNoteService
-	 */
-	private function get_order_note_service(): WooPaymentsOrderNoteService {
-		if ( null === $this->order_note_service ) {
-			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		}
-
-		return $this->order_note_service;
-	}
-
-	/**
-	 * Get the WooPayments early fraud warning event handler.
-	 *
-	 * @return WooPaymentsEarlyFraudWarningEventHandler
-	 */
-	private function get_early_fraud_warning_event_handler(): WooPaymentsEarlyFraudWarningEventHandler {
-		if ( null === $this->early_fraud_warning_event_handler ) {
-			$this->early_fraud_warning_event_handler = wc_get_container()->get( WooPaymentsEarlyFraudWarningEventHandler::class );
-		}
-
-		return $this->early_fraud_warning_event_handler;
-	}
-
-	/**
 	 * Remove empty string meta values.
 	 *
 	 * @param array<string,string> $values Raw values.
@@ -1063,58 +1024,6 @@ class WooPaymentsEventIngestor {
 				return '' !== $value;
 			}
 		);
-	}
-
-	/**
-	 * Get the WooPayments admin menu badge service.
-	 *
-	 * @return WooPaymentsAdminMenuBadgeService
-	 */
-	private function get_admin_menu_badge_service(): WooPaymentsAdminMenuBadgeService {
-		if ( null === $this->admin_menu_badge_service ) {
-			$this->admin_menu_badge_service = wc_get_container()->get( WooPaymentsAdminMenuBadgeService::class );
-		}
-
-		return $this->admin_menu_badge_service;
-	}
-
-	/**
-	 * Get the webhook event order resolver.
-	 *
-	 * @return WooPaymentsEventOrderResolver
-	 */
-	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
-		if ( null === $this->event_order_resolver ) {
-			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
-		}
-
-		return $this->event_order_resolver;
-	}
-
-	/**
-	 * Get the recorder of events on a charge that does not pay the order.
-	 *
-	 * @return WooPaymentsOtherChargeRecorder
-	 */
-	private function get_other_charge_recorder(): WooPaymentsOtherChargeRecorder {
-		if ( null === $this->other_charge_recorder ) {
-			$this->other_charge_recorder = wc_get_container()->get( WooPaymentsOtherChargeRecorder::class );
-		}
-
-		return $this->other_charge_recorder;
-	}
-
-	/**
-	 * Get the WooPayments order data service.
-	 *
-	 * @return WooPaymentsOrderDataService
-	 */
-	private function get_order_data_service(): WooPaymentsOrderDataService {
-		if ( null === $this->order_data_service ) {
-			$this->order_data_service = wc_get_container()->get( WooPaymentsOrderDataService::class );
-		}
-
-		return $this->order_data_service;
 	}
 
 	/**
@@ -1184,7 +1093,7 @@ class WooPaymentsEventIngestor {
 	 * @return array<string,mixed>
 	 */
 	private function get_ipp_receipt_merchant_settings(): array {
-		$account_service = $this->get_account_service();
+		$account_service = $this->account_service;
 		$support_address = $account_service->get_gateway_setting( 'account_business_support_address', array() );
 
 		return array(
@@ -1293,19 +1202,6 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Get the account service.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_account_service(): WooPaymentsAccountService {
-		if ( null === $this->account_service ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
-		return $this->account_service;
-	}
-
-	/**
 	 * Tell whether the webhook livemode does not match native runtime mode, logging one error line when it does.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:268-290` skips the event and logs the same line.
@@ -1343,7 +1239,7 @@ class WooPaymentsEventIngestor {
 	 * @return bool
 	 */
 	private function is_native_live_mode(): bool {
-		return ! $this->get_account_service()->is_test_mode_enabled();
+		return ! $this->account_service->is_test_mode_enabled();
 	}
 
 	/**

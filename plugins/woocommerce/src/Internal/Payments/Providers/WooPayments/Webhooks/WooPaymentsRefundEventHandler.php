@@ -52,28 +52,28 @@ class WooPaymentsRefundEventHandler {
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver|null
+	 * @var WooPaymentsEventOrderResolver
 	 */
-	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+	private WooPaymentsEventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder|null
+	 * @var WooPaymentsOtherChargeRecorder
 	 */
-	private ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null;
+	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock                    $order_payment_lock     Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary WooPayments persistence profile.
-	 * @param WooPaymentsEventOrderResolver|null  $event_order_resolver   Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder|null $other_charge_recorder  Recorder of events on another charge.
+	 * @param OrderPaymentLock                 $order_payment_lock     Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
+	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
+	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder  Recorder of events on another charge.
 	 */
-	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
+	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->event_order_resolver   = $event_order_resolver;
@@ -141,7 +141,7 @@ class WooPaymentsRefundEventHandler {
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = 'pending' === $refund_status;
-		$order             = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $charge );
+		$order             = $this->event_order_resolver->find_order_by_charge_id( $charge_id, $charge );
 		$record_only       = false;
 		if ( ! $order instanceof WC_Order ) {
 			// A second charge on an order already paid is held by no order; its metadata still names the order.
@@ -491,7 +491,7 @@ class WooPaymentsRefundEventHandler {
 	 * @throws RuntimeException When the charge resolves to no order, or to one whose key does not match the event.
 	 */
 	private function get_order_for_charge_id( string $charge_id, array $event_object = array() ): WC_Order {
-		$order = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $event_object );
+		$order = $this->event_order_resolver->find_order_by_charge_id( $charge_id, $event_object );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}
@@ -508,7 +508,7 @@ class WooPaymentsRefundEventHandler {
 	 * @throws RuntimeException When the metadata names no order, or one whose key does not match.
 	 */
 	private function get_order_for_charge_metadata( string $charge_id, array $charge ): WC_Order {
-		$order = $this->get_event_order_resolver()->find_order_from_charge_metadata( $charge );
+		$order = $this->event_order_resolver->find_order_from_charge_metadata( $charge );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}
@@ -525,7 +525,7 @@ class WooPaymentsRefundEventHandler {
 	 * @return bool
 	 */
 	private function is_own_payment( WC_Order $order, array $event_object, string $charge_id ): bool {
-		$resolver = $this->get_event_order_resolver();
+		$resolver = $this->event_order_resolver;
 
 		return $resolver->is_own_payment( $order, $resolver->get_event_intent_id( $event_object, $order ), $charge_id );
 	}
@@ -546,7 +546,7 @@ class WooPaymentsRefundEventHandler {
 		$facts = array(
 			'object_id' => $refund_id,
 			'status'    => $refund_status,
-			'intent_id' => $this->get_event_order_resolver()->get_event_intent_id( $event_object, $order ),
+			'intent_id' => $this->event_order_resolver->get_event_intent_id( $event_object, $order ),
 			'charge_id' => $charge_id,
 			'refund_id' => $refund_id,
 		);
@@ -555,7 +555,7 @@ class WooPaymentsRefundEventHandler {
 			$facts['currency'] = $currency;
 		}
 
-		$this->get_other_charge_recorder()->record( $order, $event_type, $facts );
+		$this->other_charge_recorder->record( $order, $event_type, $facts );
 	}
 
 	/**
@@ -573,32 +573,6 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Get the webhook event order resolver.
-	 *
-	 * @return WooPaymentsEventOrderResolver
-	 */
-	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
-		if ( null === $this->event_order_resolver ) {
-			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
-		}
-
-		return $this->event_order_resolver;
-	}
-
-	/**
-	 * Get the recorder of events on a charge that does not pay the order.
-	 *
-	 * @return WooPaymentsOtherChargeRecorder
-	 */
-	private function get_other_charge_recorder(): WooPaymentsOtherChargeRecorder {
-		if ( null === $this->other_charge_recorder ) {
-			$this->other_charge_recorder = wc_get_container()->get( WooPaymentsOtherChargeRecorder::class );
-		}
-
-		return $this->other_charge_recorder;
 	}
 
 	/**

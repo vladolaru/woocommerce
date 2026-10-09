@@ -5098,8 +5098,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		// Match the test-mode notification events (livemode === false) so they are not skipped as a mode mismatch.
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {},
@@ -5108,8 +5107,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
 			$notification_event_handler
 		);
-
-		return $sut;
 	}
 
 	/**
@@ -5143,8 +5140,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsEventIngestor
 	 */
 	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		return $this->build_event_ingestor(
 			$lifecycle_service,
 			$legacy_proxy,
 			$api_client,
@@ -5152,15 +5148,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
 			wc_get_container()->get( WooPaymentsAccountEventHandler::class ),
 			$this->create_notification_event_handler(),
-			null,
-			null,
-			null,
-			null,
-			null,
 			$early_fraud_warning_event_handler
 		);
-
-		return $sut;
 	}
 
 	/**

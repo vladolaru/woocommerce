@@ -389,8 +389,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 		$account_event_handler = new WooPaymentsAccountEventHandler();
 		$account_event_handler->init( $account_service, $token_service );
 
-		$sut = new WooPaymentsEventIngestor();
-		$sut->init(
+		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
 			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {},
@@ -399,8 +398,6 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			$account_event_handler,
 			$this->create_notification_event_handler()
 		);
-
-		return $sut;
 	}
 
 	/**

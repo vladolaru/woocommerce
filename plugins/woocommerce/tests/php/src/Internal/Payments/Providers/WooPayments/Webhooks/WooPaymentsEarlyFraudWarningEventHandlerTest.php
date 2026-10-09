@@ -8,6 +8,8 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -55,8 +57,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$logger       = RecordingWcLogger::install();
-		$handler      = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( null, null, $note_service );
+		$handler      = $this->create_handler( null, null, $note_service );
 
 		$handler->process(
 			'radar.early_fraud_warning.created',
@@ -106,8 +107,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_casts_scalar_fields_of_another_type_as_the_client_does(): void {
 		$order   = $this->create_woopayments_order();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$handler->process(
 			'radar.early_fraud_warning.created',
@@ -134,8 +134,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $event_object Malformed provider object.
 	 */
 	public function test_rejects_malformed_event_objects_before_order_lookup( array $event_object ): void {
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$this->expectException( \InvalidArgumentException::class );
 		$handler->process( 'radar.early_fraud_warning.created', $event_object );
@@ -146,8 +145,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_without_stored_warning_is_a_successful_no_op(): void {
 		$order   = $this->create_woopayments_order();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -170,8 +168,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_replaces_stored_warning_and_records_a_resolved_note(): void {
 		$order   = $this->create_woopayments_order();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 		$handler->process(
 			'radar.early_fraud_warning.created',
 			array(
@@ -204,8 +201,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_identical_content_with_a_different_warning_id_does_not_duplicate_notes(): void {
 		$order   = $this->create_woopayments_order();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 		foreach ( array( 'efw_first', 'efw_second' ) as $warning_id ) {
 			$handler->process(
 				'radar.early_fraud_warning.created',
@@ -227,8 +223,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_changed_reason_has_a_distinct_content_sensitive_note(): void {
 		$order   = $this->create_woopayments_order();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 		foreach ( array( 'made_with_lost_card', 'made_with_stolen_card' ) as $fraud_type ) {
 			$handler->process(
 				'radar.early_fraud_warning.created',
@@ -260,8 +255,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$order->save();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -287,8 +281,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_wcpay_early_fraud_warning', $stored_warning );
 		$order->save();
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -308,8 +301,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox Should reject a warning whose charge matches no order as a retryable failure.
 	 */
 	public function test_rejects_unmatched_orders(): void {
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler = $this->create_handler();
 
 		$this->expectException( \RuntimeException::class );
 		$handler->process(
@@ -338,10 +330,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_date_paid( time() );
 		$order->update_meta_data( '_charge_id', 'ch_early_warning' );
 		$order->save();
-		$order_id = $order->get_id();
-		$logger   = RecordingWcLogger::install();
-		$handler  = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$order_id                = $order->get_id();
+		$logger                  = RecordingWcLogger::install();
+		$handler                 = $this->create_handler();
 		$event                   = $this->valid_event_object();
 		$event['payment_intent'] = 'pi_cheque';
 
@@ -387,8 +378,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$event                   = $this->valid_event_object();
 		$event['payment_intent'] = 'pi_early_warning';
-		$handler                 = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler                 = $this->create_handler();
 
 		$handler->process( 'radar.early_fraud_warning.created', $event );
 
@@ -419,8 +409,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$store->init( new TransientRowLock() );
 		$this->assertNotNull( $store->claim( $order, $vocabulary, 'other_operation', 'payment operation' ) );
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, $vocabulary );
+		$handler = $this->create_handler( $store, $vocabulary );
 
 		try {
 			// The reliability service retries this exception for every event type.
@@ -484,8 +473,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			 */
 			public function release( WC_Order $order, \Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface $vocabulary, string $lock_token ): void {}
 		};
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
+		$handler = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$this->expectException( \RuntimeException::class );
 		$handler->process(
@@ -514,8 +502,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$event                   = $this->valid_event_object();
 		$event['payment_intent'] = 'pi_second';
-		$handler                 = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init();
+		$handler                 = $this->create_handler();
 
 		$handler->process( 'radar.early_fraud_warning.created', $event );
 
@@ -596,8 +583,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		};
 		// This request reads the order before the claim, so its caches hold the unpaid WooPayments order.
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
+		$handler                 = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary() );
 		$event                   = $this->valid_event_object();
 		$event['payment_intent'] = 'pi_other_gateway';
 
@@ -620,8 +606,8 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply an update when a created warning appears while waiting for the order lock.
 	 */
 	public function test_update_uses_warning_created_during_lock_acquisition(): void {
-		$order   = $this->create_woopayments_order();
-		$store   = new class( $order ) extends OrderPaymentLock {
+		$order = $this->create_woopayments_order();
+		$store = new class( $order ) extends OrderPaymentLock {
 			/**
 			 * Order whose warning appears during lock acquisition.
 			 *
@@ -664,9 +650,8 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				return $claimed;
 			}
 		};
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
 		$store->init( new TransientRowLock() );
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
+		$handler = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary() );
 
 		$handler->process(
 			'radar.early_fraud_warning.updated',
@@ -754,8 +739,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Note persistence failed.' );
 			}
 		};
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), $notes );
+		$handler = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary(), $notes );
 
 		try {
 			$handler->process(
@@ -798,8 +782,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$store->init( new TransientRowLock() );
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, $vocabulary, $notes );
+		$handler = $this->create_handler( $store, $vocabulary, $notes );
 
 		$failure = null;
 		try {
@@ -855,8 +838,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Order persistence failed.' );
 			}
 		};
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary() );
+		$handler = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary() );
 		add_action( 'woocommerce_before_order_object_save', $thrower );
 
 		$failure = null;
@@ -893,8 +875,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		try {
 			$this->install_woocommerce_tables_for_current_site();
 			$subsite_order = $this->create_woopayments_order( 'ch_shared_warning' );
-			$handler       = new WooPaymentsEarlyFraudWarningEventHandler();
-			$handler->init();
+			$handler       = $this->create_handler();
 			$handler->process( 'radar.early_fraud_warning.created', $this->valid_event_object( 'ch_shared_warning' ) );
 
 			$this->assertSame( $subsite_id, get_current_blog_id() );
@@ -975,8 +956,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 					throw new \RuntimeException( 'Note persistence failed.' );
 				}
 			};
-			$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-			$handler->init( $store, new WooPaymentsPersistenceVocabulary(), $notes );
+			$handler = $this->create_handler( $store, new WooPaymentsPersistenceVocabulary(), $notes );
 
 			try {
 				$handler->process( 'radar.early_fraud_warning.created', $this->valid_event_object() );
@@ -1003,8 +983,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$transaction_url = $note_service->transaction_url( '', 'ch_early_warning' );
 		$client_note     = 'Payment has received an early fraud warning with reason &quot;Made with stolen card&quot;. <a href="' . $transaction_url . '" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">Refunding the payment now</a> can prevent a dispute. See <a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">payment details</a> for more information.';
 		$order->add_order_note( $client_note );
-		$handler = new WooPaymentsEarlyFraudWarningEventHandler();
-		$handler->init( null, null, $note_service );
+		$handler = $this->create_handler( null, null, $note_service );
 		$handler->process( 'radar.early_fraud_warning.created', $this->valid_event_object() );
 
 		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
@@ -1170,6 +1149,28 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * Build the handler with the given collaborators, and the container's for any left out.
+	 *
+	 * @param OrderPaymentLock|null                 $order_payment_lock     Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary|null $persistence_vocabulary WooPayments persistence vocabulary.
+	 * @param WooPaymentsOrderNoteService|null      $note_service           WooPayments note service.
+	 * @return WooPaymentsEarlyFraudWarningEventHandler
+	 */
+	private function create_handler( ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsOrderNoteService $note_service = null ): WooPaymentsEarlyFraudWarningEventHandler {
+		$container = wc_get_container();
+		$handler   = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler->init(
+			$order_payment_lock ?? $container->get( OrderPaymentLock::class ),
+			$persistence_vocabulary ?? $container->get( WooPaymentsPersistenceVocabulary::class ),
+			$note_service ?? $container->get( WooPaymentsOrderNoteService::class ),
+			$container->get( WooPaymentsEventOrderResolver::class ),
+			$container->get( WooPaymentsOtherChargeRecorder::class )
+		);
+
+		return $handler;
 	}
 
 	/**

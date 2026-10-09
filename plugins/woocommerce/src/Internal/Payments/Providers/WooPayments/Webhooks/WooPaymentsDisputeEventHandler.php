@@ -56,52 +56,52 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * WooPayments order note service.
 	 *
-	 * @var WooPaymentsOrderNoteService|null
+	 * @var WooPaymentsOrderNoteService
 	 */
-	private ?WooPaymentsOrderNoteService $order_note_service = null;
+	private WooPaymentsOrderNoteService $order_note_service;
 
 	/**
 	 * Order payment store.
 	 *
-	 * @var OrderPaymentLock|null
+	 * @var OrderPaymentLock
 	 */
-	private ?OrderPaymentLock $order_payment_lock = null;
+	private OrderPaymentLock $order_payment_lock;
 
 	/**
 	 * WooPayments persistence profile.
 	 *
-	 * @var WooPaymentsPersistenceVocabulary|null
+	 * @var WooPaymentsPersistenceVocabulary
 	 */
-	private ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null;
+	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
 
 	/**
 	 * Webhook event order resolver.
 	 *
-	 * @var WooPaymentsEventOrderResolver|null
+	 * @var WooPaymentsEventOrderResolver
 	 */
-	private ?WooPaymentsEventOrderResolver $event_order_resolver = null;
+	private WooPaymentsEventOrderResolver $event_order_resolver;
 
 	/**
 	 * Recorder of events on a charge that does not pay the order.
 	 *
-	 * @var WooPaymentsOtherChargeRecorder|null
+	 * @var WooPaymentsOtherChargeRecorder
 	 */
-	private ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null;
+	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
 
 	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                $api_client             Native WooPayments API client.
-	 * @param WooPaymentsDisputeCacheService      $dispute_cache_service  Dispute cache service.
-	 * @param WooPaymentsOrderNoteService         $order_note_service     WooPayments order note service.
-	 * @param OrderPaymentLock                    $order_payment_lock     Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary WooPayments persistence profile.
-	 * @param WooPaymentsEventOrderResolver|null  $event_order_resolver   Webhook event order resolver.
-	 * @param WooPaymentsOtherChargeRecorder|null $other_charge_recorder Recorder of events on another charge.
+	 * @param WooPaymentsApiClient             $api_client             Native WooPayments API client.
+	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service  Dispute cache service.
+	 * @param WooPaymentsOrderNoteService      $order_note_service     WooPayments order note service.
+	 * @param OrderPaymentLock                 $order_payment_lock     Order payment store.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
+	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
+	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder Recorder of events on another charge.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, ?WooPaymentsOrderNoteService $order_note_service = null, ?OrderPaymentLock $order_payment_lock = null, ?WooPaymentsPersistenceVocabulary $persistence_vocabulary = null, ?WooPaymentsEventOrderResolver $event_order_resolver = null, ?WooPaymentsOtherChargeRecorder $other_charge_recorder = null ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, WooPaymentsOrderNoteService $order_note_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
 		$this->api_client             = $api_client;
 		$this->dispute_cache_service  = $dispute_cache_service;
 		$this->order_note_service     = $order_note_service;
@@ -140,7 +140,7 @@ class WooPaymentsDisputeEventHandler {
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		$charge_id = $this->get_required_string( $event_object, 'charge' );
-		$order     = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id );
+		$order     = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
 		}
@@ -739,7 +739,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @return bool True when the note was added.
 	 */
 	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null, array $equivalent_notes = array() ): bool {
-		return $this->get_order_note_service()->add_note_once(
+		return $this->order_note_service->add_note_once(
 			$order,
 			$note,
 			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
@@ -773,10 +773,10 @@ class WooPaymentsDisputeEventHandler {
 
 		try {
 			$fresh_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-			$resolver    = $this->get_event_order_resolver();
+			$resolver    = $this->event_order_resolver;
 			$intent_id   = $resolver->get_event_intent_id( $event_object, $fresh_order );
 			if ( ! $resolver->is_own_payment( $fresh_order, $intent_id, $charge_id ) ) {
-				$this->get_other_charge_recorder()->record(
+				$this->other_charge_recorder->record(
 					$fresh_order,
 					$event_type,
 					array(
@@ -794,7 +794,7 @@ class WooPaymentsDisputeEventHandler {
 
 			return $change( $fresh_order );
 		} finally {
-			$this->get_order_payment_lock()->release( $order, $this->get_persistence_vocabulary(), $lock_token );
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}
 	}
 
@@ -807,9 +807,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @throws OrderPaymentLockRefusedException When the order payment lock cannot be claimed; nothing has been written.
 	 */
 	private function claim_dispute_lock( WC_Order $order, string $dispute_id ): string {
-		$lock_token = $this->get_order_payment_lock()->claim( $order, $this->get_persistence_vocabulary(), 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, 'dispute_webhook_' . $dispute_id, 'dispute webhook' );
 		if ( null === $lock_token ) {
-			$this->get_order_payment_lock()->log_refusal( $order, $this->get_persistence_vocabulary(), 'dispute webhook' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'dispute webhook' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		}
@@ -900,70 +900,5 @@ class WooPaymentsDisputeEventHandler {
 		$order->save();
 
 		return $remaining;
-	}
-
-	/**
-	 * Get the shared WooPayments order note service.
-	 *
-	 * @return WooPaymentsOrderNoteService
-	 */
-	private function get_order_note_service(): WooPaymentsOrderNoteService {
-		if ( null === $this->order_note_service ) {
-			$this->order_note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		}
-
-		return $this->order_note_service;
-	}
-
-	/**
-	 * Get the shared order payment store.
-	 *
-	 * @return OrderPaymentLock
-	 */
-	private function get_order_payment_lock(): OrderPaymentLock {
-		if ( null === $this->order_payment_lock ) {
-			$this->order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
-		}
-
-		return $this->order_payment_lock;
-	}
-
-	/**
-	 * Get the WooPayments persistence profile.
-	 *
-	 * @return WooPaymentsPersistenceVocabulary
-	 */
-	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
-		if ( null === $this->persistence_vocabulary ) {
-			$this->persistence_vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
-		}
-
-		return $this->persistence_vocabulary;
-	}
-
-	/**
-	 * Get the webhook event order resolver.
-	 *
-	 * @return WooPaymentsEventOrderResolver
-	 */
-	private function get_event_order_resolver(): WooPaymentsEventOrderResolver {
-		if ( null === $this->event_order_resolver ) {
-			$this->event_order_resolver = wc_get_container()->get( WooPaymentsEventOrderResolver::class );
-		}
-
-		return $this->event_order_resolver;
-	}
-
-	/**
-	 * Get the recorder of events on a charge that does not pay the order.
-	 *
-	 * @return WooPaymentsOtherChargeRecorder
-	 */
-	private function get_other_charge_recorder(): WooPaymentsOtherChargeRecorder {
-		if ( null === $this->other_charge_recorder ) {
-			$this->other_charge_recorder = wc_get_container()->get( WooPaymentsOtherChargeRecorder::class );
-		}
-
-		return $this->other_charge_recorder;
 	}
 }
