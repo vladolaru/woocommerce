@@ -3037,7 +3037,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	private function order_shows_authorization( WC_Order $order, PaymentOutcome $outcome ): bool {
 		$intent_id     = $outcome->get_provider_payment_id();
-		$intent_status = $this->get_provider()->get_outcome_meta( $outcome )['_intention_status'] ?? '';
+		$intent_status = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome )['_intention_status'] ?? '';
 		if ( '' === $intent_id || ! in_array( $intent_status, array( 'requires_capture', 'processing' ), true ) ) {
 			return false;
 		}
@@ -3071,7 +3071,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		return 'succeeded' === ( $this->get_provider()->get_outcome_meta( $exception->get_outcome() )['_intention_status'] ?? '' );
+		return 'succeeded' === ( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $exception->get_outcome() )['_intention_status'] ?? '' );
 	}
 
 	/**

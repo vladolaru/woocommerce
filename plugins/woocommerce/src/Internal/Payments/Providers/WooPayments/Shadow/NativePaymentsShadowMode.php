@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -524,7 +525,7 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	private function project_surface_from_outcome( WC_Order $order, array $intent, PaymentOutcome $outcome, array $effect_meta ): array {
 		$display_effects = $this->get_projected_display_effects( $outcome );
 		$payment_method  = (string) $order->get_payment_method();
-		$meta            = array_merge( $this->persistence_vocabulary->get_outcome_meta( $outcome ), $effect_meta );
+		$meta            = array_merge( ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ), $effect_meta );
 		if ( ! empty( $display_effects ) ) {
 			$meta = array_merge( $meta, $display_effects['meta'] );
 			if ( '' !== $display_effects['payment_method_id'] ) {

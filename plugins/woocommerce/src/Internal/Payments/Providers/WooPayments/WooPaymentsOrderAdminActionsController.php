@@ -165,7 +165,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	public function handle_woocommerce_order_action_capture_charge( $order ): void {
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
-			$this->run_operation( $order, 'capture' );
+			$this->run_operation( $order, PaymentProcessingService::OPERATION_CAPTURE );
 		}
 	}
 
@@ -178,7 +178,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	public function handle_woocommerce_order_action_cancel_authorization( $order ): void {
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, true ) ) {
-			$this->run_operation( $order, 'cancel' );
+			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL );
 		}
 	}
 
@@ -196,7 +196,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
-			$this->run_operation( $order, 'capture', true );
+			$this->run_operation( $order, PaymentProcessingService::OPERATION_CAPTURE, true );
 		}
 	}
 
@@ -214,7 +214,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
-			$this->run_operation( $order, 'cancel' );
+			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL );
 		}
 	}
 
@@ -263,7 +263,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 */
 	private function run_operation( WC_Order $order, string $operation, bool $on_status_change = false ): void {
 		try {
-			$outcome = 'capture' === $operation
+			$outcome = PaymentProcessingService::OPERATION_CAPTURE === $operation
 				? $this->processing_service->capture(
 					PaymentOperationContext::for_capture(
 						$order,
@@ -301,7 +301,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function operation_failed_without_note( PaymentOutcome $outcome, string $operation ): bool {
-		$expected_status = 'capture' === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED;
+		$expected_status = PaymentProcessingService::OPERATION_CAPTURE === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED;
 		$data            = $outcome->get_data();
 
 		return $expected_status !== $outcome->get_status()
@@ -315,7 +315,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param string   $operation Capture or cancel.
 	 */
 	private function add_operation_failure_note( WC_Order $order, string $operation ): void {
-		$note = 'capture' === $operation
+		$note = PaymentProcessingService::OPERATION_CAPTURE === $operation
 			? __( 'Capture authorization <strong>failed</strong> to complete.', 'woocommerce' )
 			: __( 'Canceling authorization <strong>failed</strong> to complete.', 'woocommerce' );
 

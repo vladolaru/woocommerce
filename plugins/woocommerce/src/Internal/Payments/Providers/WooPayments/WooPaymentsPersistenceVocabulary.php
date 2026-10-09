@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use WC_Order;
@@ -237,17 +236,5 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 */
 	public function get_note_identity_meta_key(): string {
 		return self::NOTE_IDENTITY_META_KEY;
-	}
-
-	/**
-	 * Map a neutral outcome to WooPayments order meta.
-	 *
-	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return array<string,string>
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_outcome_meta( PaymentOutcome $outcome ): array {
-		return ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
 	}
 }

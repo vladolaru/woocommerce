@@ -224,7 +224,7 @@ class WooPaymentsIntentConfirmationService {
 
 		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock(
 			$order,
-			$this->lifecycle_event( $outcome, ( new WooPaymentsPersistenceVocabulary() )->get_outcome_meta( $outcome ) )
+			$this->lifecycle_event( $outcome, ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome ) )
 		);
 	}
 
@@ -275,7 +275,7 @@ class WooPaymentsIntentConfirmationService {
 			$plain_note_equivalents = $order->is_paid() ? array() : wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_zero_amount_setup_success_note_candidates( $order, $intent_id );
 		}
 
-		$meta = ( new WooPaymentsPersistenceVocabulary() )->get_outcome_meta( $outcome );
+		$meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
 		if ( ( $intent['status'] ?? '' ) !== $provider_status ) {
 			$meta['_intention_status'] = $provider_status;
 		}
