@@ -609,7 +609,47 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a refundable WooPayments order.
+	 * @testdox A charge.refunded event on the charge that paid the order adds the refund row (payment method $payment_method, transaction ID $transaction_id).
+	 * @dataProvider own_charge_order_provider
+	 *
+	 * The event's `payment_intent` is the Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 *
+	 * @param string $payment_method Order payment method ID.
+	 * @param string $transaction_id Order transaction ID.
+	 */
+	public function test_charge_refunded_on_the_orders_own_charge_adds_the_refund_row( string $payment_method, string $transaction_id ): void {
+		$order = $this->create_refundable_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_transaction_id( $transaction_id );
+		$order->save();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['payment_intent'] = 'pi_123';
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-4.00', $refunds[0]->get_total() );
+		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
+	 * Paid orders whose transaction ID names the refunded charge's payment.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function own_charge_order_provider(): array {
+		return array(
+			'payment method changed by the merchant' => array( 'cod', 'pi_123' ),
+			'transaction ID is the charge'           => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'ch_123' ),
+		);
+	}
+
+	/**
+	 * Create a refundable order in the state a WooPayments payment leaves it: paid, with the intent as its transaction ID.
 	 *
 	 * @return WC_Order
 	 */
@@ -620,6 +660,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'USD' );
 		$order->set_total( '10.00' );
 		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
 		$order->update_meta_data( '_charge_id', 'ch_123' );
 		$order->save();
 

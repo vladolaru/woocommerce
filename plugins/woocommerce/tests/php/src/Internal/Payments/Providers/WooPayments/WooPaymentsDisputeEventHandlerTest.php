@@ -917,15 +917,41 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an order suitable for dispute processing.
+	 * @testdox A charge.dispute.created event on the charge that paid the order holds it after the merchant changed its payment method.
+	 *
+	 * The event's `payment_intent` is the Stripe Dispute field (https://docs.stripe.com/api/disputes/object#dispute_object-payment_intent).
+	 */
+	public function test_dispute_created_on_the_orders_own_charge_holds_it_whatever_its_payment_method(): void {
+		$order = $this->create_disputable_order();
+		$order->set_payment_method( 'bacs' );
+		$order->update_meta_data( '_charge_id', 'ch_disputed' );
+		$order->save();
+		$event                   = $this->get_created_event_object( 'dp_own_charge', 'needs_response' );
+		$event['charge']         = 'ch_disputed';
+		$event['payment_intent'] = 'pi_disputed';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'dp_own_charge' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Payment has been disputed' ) );
+	}
+
+	/**
+	 * Create an order suitable for dispute processing, in the state a WooPayments payment leaves it: paid, with the intent as its transaction ID.
 	 *
 	 * @return \WC_Order
 	 */
 	private function create_disputable_order(): \WC_Order {
 		$order = wc_create_order();
 		$this->assertInstanceOf( \WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_total( '10.00' );
 		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_disputed' );
+		$order->update_meta_data( '_intent_id', 'pi_disputed' );
 		$order->save();
 
 		return $order;

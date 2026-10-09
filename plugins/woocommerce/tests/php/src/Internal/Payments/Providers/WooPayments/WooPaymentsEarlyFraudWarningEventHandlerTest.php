@@ -391,6 +391,44 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The event's `payment_intent` is the Stripe Early Fraud Warning field
+	 * (https://docs.stripe.com/api/radar/early_fraud_warnings/object#early_fraud_warning_object-payment_intent).
+	 *
+	 * @testdox Should store a warning on the charge that paid the order after the merchant changed its payment method.
+	 */
+	public function test_stores_a_warning_on_the_orders_own_charge_whatever_its_payment_method(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method( 'cheque' );
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_early_warning' );
+		$order->update_meta_data( '_intent_id', 'pi_early_warning' );
+		$order->save();
+		$event                   = $this->valid_event_object();
+		$event['payment_intent'] = 'pi_early_warning';
+		$handler                 = new WooPaymentsEarlyFraudWarningEventHandler();
+		$handler->init();
+
+		$handler->process( 'radar.early_fraud_warning.created', $event );
+
+		$fresh_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $fresh_order );
+		$this->assertSame(
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => true,
+				'efw_type'       => 'made_with_stolen_card',
+				'created'        => 123,
+			),
+			$fresh_order->get_meta( '_wcpay_early_fraud_warning', true )
+		);
+		$warning_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( (string) $note->content, 'Made with stolen card' )
+		);
+		$this->assertCount( 1, $warning_notes );
+	}
+
+	/**
 	 * @testdox Should fail retryably when another payment operation owns the order lock.
 	 */
 	public function test_rejects_lock_contention(): void {

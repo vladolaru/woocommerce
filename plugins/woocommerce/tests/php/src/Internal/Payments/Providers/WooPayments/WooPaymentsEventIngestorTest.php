@@ -4544,6 +4544,115 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $event_type event for an unpaid order's current attempt applies while its transaction ID still names an abandoned attempt.
+	 * @dataProvider current_attempt_events
+	 *
+	 * The runtime writes the transaction ID on the first attempt that needs 3D Secure or a redirect and leaves it there,
+	 * while each attempt writes its intent to `_intent_id`.
+	 *
+	 * @param string $event_type             Payment intent event type.
+	 * @param string $expected_status        Order status once the event applies.
+	 * @param string $expected_transaction_id Order transaction ID once the event applies.
+	 */
+	public function test_event_for_the_current_attempt_applies_while_the_transaction_id_names_an_abandoned_attempt( string $event_type, string $expected_status, string $expected_transaction_id ): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_abandoned' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->save();
+		$failed_overrides = array(
+			'status'             => 'requires_payment_method',
+			'last_payment_error' => array(
+				'payment_method' => array(
+					'id'   => 'pm_123',
+					'type' => 'card',
+				),
+			),
+		);
+
+		$this->sut->process( $this->create_payment_intent_event( $event_type, $order, 'payment_intent.payment_failed' === $event_type ? $failed_overrides : array() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_transaction_id, $order->get_transaction_id() );
+	}
+
+	/** @return array<string,array{string,string,string}> */
+	public static function current_attempt_events(): array {
+		return array(
+			'succeeded'      => array( 'payment_intent.succeeded', 'completed', 'pi_123' ),
+			'payment failed' => array( 'payment_intent.payment_failed', 'failed', 'pi_abandoned' ),
+		);
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded for the intent an unpaid order recorded pays it after the shopper switched to another gateway.
+	 *
+	 * Classic checkout resumes a pending or failed order, meta included, when the shopper pays again with another gateway
+	 * (WC_Checkout::create_order(), includes/class-wc-checkout.php:413-433), so a late success of the abandoned card intent
+	 * still names the order through `_intent_id`. Client 11.1.0 resolves the order by `_intent_id`
+	 * (class-wc-payments-webhook-processing-service.php:974-1000) and completes it through update_order_status_from_intent() (:582).
+	 */
+	public function test_succeeded_intent_the_order_recorded_pays_it_after_a_gateway_switch(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_123' );
+		$order->update_meta_data( '_intent_id', 'pi_123' );
+		$order->set_payment_method( 'bacs' );
+		$order->set_payment_method_title( 'Direct bank transfer' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertNotNull( $order->get_date_paid() );
+		$this->assertSame( 'pi_123', $order->get_transaction_id() );
+		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'bacs', $order->get_payment_method() );
+		$this->assertCount( 1, $this->get_order_notes_containing( $order, 'successfully charged' ) );
+	}
+
+	/**
+	 * @testdox charge.expired fails an authorized order, which is on hold and not yet paid.
+	 *
+	 * An authorization leaves the order on hold with the intent as its transaction ID. The event's `payment_intent` is the
+	 * Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent), which client 11.1.0 reads
+	 * before the order's `_intent_id` (class-wc-payments-webhook-processing-service.php:394).
+	 */
+	public function test_charge_expired_fails_an_authorized_order(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_authorized' );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_intent_id', 'pi_authorized' );
+		$order->update_meta_data( '_charge_id', 'ch_authorized' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$this->assertNull( $order->get_date_paid() );
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+
+		$sut->process(
+			array(
+				'id'   => 'evt_authorized_expired',
+				'type' => 'charge.expired',
+				'data' => array(
+					'object' => array(
+						'id'             => 'ch_authorized',
+						'payment_intent' => 'pi_authorized',
+					),
+				),
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
 	 * Intent overrides giving the first charge a card payment method, so the event names a WooPayments display title.
 	 *
 	 * Stripe API Charge `payment_method_details` with its `type` (read by client 11.1.0 at
