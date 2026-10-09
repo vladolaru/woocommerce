@@ -649,6 +649,25 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded event on a charge two orders share refunds the order created last, whatever their IDs.
+	 *
+	 * Client 11.1.0 finds a charge's order with the wc_get_orders() defaults, the newest by creation date
+	 * (class-wc-payments-db.php:24-31, :87-104), as the other webhook lookups do. Here the order created last has the lower ID.
+	 */
+	public function test_charge_refunded_on_a_shared_charge_refunds_the_order_created_last(): void {
+		$created_last  = $this->create_refundable_order();
+		$created_first = $this->create_refundable_order();
+		$created_first->set_date_created( time() - DAY_IN_SECONDS );
+		$created_first->save();
+		$this->assertGreaterThan( $created_last->get_id(), $created_first->get_id() );
+
+		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+
+		$this->assertCount( 1, wc_get_order( $created_last->get_id() )->get_refunds(), 'The order created last takes the refund.' );
+		$this->assertCount( 0, wc_get_order( $created_first->get_id() )->get_refunds(), 'The older order sharing the charge is left alone.' );
+	}
+
+	/**
 	 * Create a refundable order in the state a WooPayments payment leaves it: paid, with the intent as its transaction ID.
 	 *
 	 * @return WC_Order

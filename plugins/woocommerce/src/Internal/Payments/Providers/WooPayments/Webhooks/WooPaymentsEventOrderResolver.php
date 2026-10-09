@@ -23,33 +23,15 @@ class WooPaymentsEventOrderResolver {
 	/**
 	 * Find the order whose `_charge_id` is the charge ID.
 	 *
+	 * When orders share the charge ID, the one created last is found, as client 11.1.0 finds it with the `wc_get_orders()`
+	 * defaults (class-wc-payments-db.php:24-31, :87-104).
+	 *
 	 * @param string              $charge_id    Charge ID.
 	 * @param array<string,mixed> $event_object Event object whose metadata order key must match, or an empty array for no key check.
 	 * @return WC_Order|null
 	 */
 	public function find_order_by_charge_id( string $charge_id, array $event_object = array() ): ?WC_Order {
 		$order = $this->find_order_by_payment_meta( '_charge_id', $charge_id );
-
-		return $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ? $order : null;
-	}
-
-	/**
-	 * Find the order with the highest ID whose `_charge_id` is the charge ID, among orders of every status but trash.
-	 *
-	 * @param string              $charge_id    Charge ID.
-	 * @param array<string,mixed> $event_object Event object whose metadata order key must match, or an empty array for no key check.
-	 * @return WC_Order|null
-	 */
-	public function find_newest_order_by_charge_id( string $charge_id, array $event_object = array() ): ?WC_Order {
-		$order = $this->find_order_by_payment_meta(
-			'_charge_id',
-			$charge_id,
-			array(
-				'orderby' => 'ID',
-				'order'   => 'DESC',
-				'status'  => 'any',
-			)
-		);
 
 		return $order instanceof WC_Order && $this->does_order_key_match_event_object( $order, $event_object ) ? $order : null;
 	}
@@ -123,24 +105,20 @@ class WooPaymentsEventOrderResolver {
 	/**
 	 * Find the first order whose payment meta key has the value.
 	 *
-	 * @param string              $meta_key   Payment meta key.
-	 * @param string              $meta_value Payment meta value; an empty value finds no order.
-	 * @param array<string,mixed> $query_args Further `wc_get_orders()` arguments.
+	 * @param string $meta_key   Payment meta key.
+	 * @param string $meta_value Payment meta value; an empty value finds no order.
 	 * @return WC_Order|null
 	 */
-	private function find_order_by_payment_meta( string $meta_key, string $meta_value, array $query_args = array() ): ?WC_Order {
+	private function find_order_by_payment_meta( string $meta_key, string $meta_value ): ?WC_Order {
 		if ( '' === $meta_value ) {
 			return null;
 		}
 
 		$orders = wc_get_orders(
-			array_merge(
-				array(
-					'limit'      => 1,
-					'meta_key'   => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-					'meta_value' => $meta_value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				),
-				$query_args
+			array(
+				'limit'      => 1,
+				'meta_key'   => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value' => $meta_value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 			)
 		);
 

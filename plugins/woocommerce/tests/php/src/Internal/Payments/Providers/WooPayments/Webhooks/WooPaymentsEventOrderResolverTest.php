@@ -38,10 +38,8 @@ class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 		$order = $this->create_order( array( '_charge_id' => 'ch_resolved' ) );
 
 		$this->assertSame( $order->get_id(), $this->sut->find_order_by_charge_id( 'ch_resolved' )->get_id() );
-		$this->assertSame( $order->get_id(), $this->sut->find_newest_order_by_charge_id( 'ch_resolved' )->get_id() );
 		$this->assertNull( $this->sut->find_order_by_charge_id( 'ch_unknown' ) );
 		$this->assertNull( $this->sut->find_order_by_charge_id( '' ) );
-		$this->assertNull( $this->sut->find_newest_order_by_charge_id( '' ) );
 	}
 
 	/**
@@ -65,10 +63,9 @@ class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {
 			'metadata' => array( 'order_key' => $keys[ $key_case ] ),
 		);
 
-		foreach ( array( 'find_order_by_charge_id', 'find_newest_order_by_charge_id' ) as $method ) {
-			$found = $this->sut->$method( 'ch_keyed', $event_object );
-			$this->assertSame( $expected ? $order->get_id() : null, $found instanceof WC_Order ? $found->get_id() : null, $method );
-		}
+		$found = $this->sut->find_order_by_charge_id( 'ch_keyed', $event_object );
+
+		$this->assertSame( $expected ? $order->get_id() : null, $found instanceof WC_Order ? $found->get_id() : null );
 	}
 
 	/**

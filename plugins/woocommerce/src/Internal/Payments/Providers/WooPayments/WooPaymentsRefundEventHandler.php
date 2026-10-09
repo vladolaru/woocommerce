@@ -466,7 +466,7 @@ class WooPaymentsRefundEventHandler {
 	 * @throws RuntimeException When the charge resolves to no order, or to one whose key does not match the event.
 	 */
 	private function get_order_for_charge_id( string $charge_id, string $event_type, array $event_object = array() ): WC_Order {
-		$order = $this->get_event_order_resolver()->find_newest_order_by_charge_id( $charge_id, $event_object );
+		$order = $this->get_event_order_resolver()->find_order_by_charge_id( $charge_id, $event_object );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}
