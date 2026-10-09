@@ -657,6 +657,10 @@ class WooPaymentsRefundEventHandler {
 	/**
 	 * Get a required string field.
 	 *
+	 * Refund events are read more strictly than dispute events: an empty string or a boolean is refused where a string is
+	 * expected, and a float where an integer is expected, because the refund ID finds the local refund and the amounts
+	 * decide how much is refunded.
+	 *
 	 * @param array<string,mixed> $data Data array.
 	 * @param string              $key  Field key.
 	 * @return string
