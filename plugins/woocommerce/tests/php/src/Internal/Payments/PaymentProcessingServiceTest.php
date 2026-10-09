@@ -2000,7 +2000,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $resubmit );
 		$this->assertNotSame( '', $resubmit->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 
-		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEventIngestor::class )->process(
+		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor::class )->process(
 			array(
 				'id'   => 'evt_paid_between_submissions',
 				'type' => 'payment_intent.succeeded',

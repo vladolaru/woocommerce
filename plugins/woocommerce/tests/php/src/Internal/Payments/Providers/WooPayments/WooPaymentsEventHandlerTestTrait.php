@@ -5,14 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
 
 /**
  * Shared fixtures for building event handlers used to wire a native WooPayments event ingestor.
  *
- * Used by {@see WooPaymentsEventIngestorTest} and by the dedicated
+ * Used by {@see Webhooks\WooPaymentsEventIngestorTest} and by the dedicated
  * {@see WooPaymentsAccountEventHandlerTest}, both of which construct a full ingestor to
  * exercise their target handler through the same production dispatch path.
  */
