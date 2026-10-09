@@ -857,7 +857,7 @@ class PaymentProcessingService {
 					new PaymentLifecycleEvent(
 						PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
 						$this->get_lifecycle_payment_reference( $outcome ),
-						$this->get_lifecycle_meta( $outcome, $provider ),
+						$this->get_provider_outcome_meta( $outcome, $provider ),
 						array(),
 						$this->get_lifecycle_note( $outcome ),
 						$this->get_lifecycle_note_type( $outcome ),
@@ -904,7 +904,7 @@ class PaymentProcessingService {
 			new PaymentLifecycleEvent(
 				$this->get_lifecycle_status( $outcome ),
 				$this->get_lifecycle_payment_reference( $outcome ),
-				$this->get_lifecycle_meta( $outcome, $provider ),
+				$this->get_provider_outcome_meta( $outcome, $provider ),
 				$this->get_lifecycle_meta_to_delete( $outcome ),
 				$this->get_lifecycle_note( $outcome ),
 				$this->get_lifecycle_note_type( $outcome ),
@@ -959,17 +959,6 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Build lifecycle meta from a provider outcome.
-	 *
-	 * @param PaymentOutcome    $outcome  Provider outcome.
-	 * @param ProviderInterface $provider Provider.
-	 * @return array<string,string>
-	 */
-	private function get_lifecycle_meta( PaymentOutcome $outcome, ProviderInterface $provider ): array {
-		return $this->get_provider_outcome_meta( $outcome, $provider );
-	}
-
-	/**
 	 * Map provider outcome metadata through the provider's ProviderOutcomeMetadataMapperInterface, when it implements it.
 	 *
 	 * @param PaymentOutcome    $outcome  Provider outcome.
@@ -993,10 +982,10 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get order meta keys to delete from an outcome.
+	 * Get order meta keys to delete from an outcome, as the outcome carries them; the lifecycle event casts them to strings.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return string[]
+	 * @return array<mixed>
 	 */
 	private function get_lifecycle_meta_to_delete( PaymentOutcome $outcome ): array {
 		$data = $outcome->get_data();
@@ -1004,7 +993,7 @@ class PaymentProcessingService {
 			return array();
 		}
 
-		return array_values( array_map( 'strval', $data[ PaymentOutcome::DATA_META_TO_DELETE ] ) );
+		return $data[ PaymentOutcome::DATA_META_TO_DELETE ];
 	}
 
 	/**
@@ -1058,10 +1047,11 @@ class PaymentProcessingService {
 	}
 
 	/**
-	 * Get exact equivalent order-note renderings from an outcome.
+	 * Get equivalent order-note renderings from an outcome, as the outcome carries them; the lifecycle event keeps each
+	 * non-empty string once.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
-	 * @return string[]
+	 * @return array<mixed>
 	 */
 	private function get_lifecycle_note_equivalents( PaymentOutcome $outcome ): array {
 		$data = $outcome->get_data();
@@ -1069,11 +1059,6 @@ class PaymentProcessingService {
 			return array();
 		}
 
-		return array_values(
-			array_filter(
-				$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ],
-				static fn( $note_equivalent ): bool => is_string( $note_equivalent ) && '' !== $note_equivalent
-			)
-		);
+		return $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ];
 	}
 }
