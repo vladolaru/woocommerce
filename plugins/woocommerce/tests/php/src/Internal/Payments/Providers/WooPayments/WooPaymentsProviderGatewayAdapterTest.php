@@ -8604,6 +8604,34 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Refund, capture and cancel fail closed without a platform call when the order holds no charge or intent ID.
+	 */
+	public function test_operations_fail_closed_without_a_charge_or_intent_id(): void {
+		$order      = $this->create_woopayments_order();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'refund_charge', 'capture_intention', 'cancel_intention' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->never() )->method( 'refund_charge' );
+		$api_client->expects( $this->never() )->method( 'capture_intention' );
+		$api_client->expects( $this->never() )->method( 'cancel_intention' );
+		$sut = $this->create_adapter( $api_client );
+
+		$outcomes = array(
+			'refund'  => $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' ),
+			'capture' => $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' ),
+			'cancel'  => $sut->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_cancel' ),
+		);
+
+		foreach ( $outcomes as $operation => $outcome ) {
+			$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status(), "The $operation must fail." );
+			$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'], "The $operation must report the unavailable gateway." );
+			$this->assertSame( $operation, $outcome->get_data()['operation'], "The $operation must name itself." );
+		}
+	}
+
+	/**
 	 * Ensure a minimal WooCommerce Subscriptions renewal-order detector exists.
 	 */
 	private function ensure_wcs_order_renewal_detector_double(): void {
