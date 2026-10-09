@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconci
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PerAppBearer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PPCP;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
@@ -87,6 +88,13 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * @var bool
 	 */
 	private bool $booted = false;
+
+	/**
+	 * The surfaces that work whoever owns the wallet, once built.
+	 *
+	 * @var OwnerIndependent|null
+	 */
+	private ?OwnerIndependent $surfaces = null;
 
 	/**
 	 * Initialize the class instance.
@@ -261,6 +269,21 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
+	 * The surfaces that concern held orders and work whoever owns the wallet, built once.
+	 *
+	 * Registering them twice would attach their hooks twice, and maybe_boot() can run more than once.
+	 *
+	 * @return OwnerIndependent
+	 */
+	protected function owner_independent_surfaces(): OwnerIndependent {
+		if ( null === $this->surfaces ) {
+			$this->surfaces = new OwnerIndependent();
+		}
+
+		return $this->surfaces;
+	}
+
+	/**
 	 * The URL of the wallet's settings, a route of the Payments settings app.
 	 *
 	 * @since 11.3.0
@@ -287,6 +310,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		if ( $this->booted ) {
 			return;
 		}
+		// The held-order surfaces (Home task, Inbox note, emails) work whoever owns the wallet, so they register before every ownership return below.
+		$this->owner_independent_surfaces()->register();
 		$this->track_runtime_owner();
 		// Runs before the loaded-elsewhere return: on the extension's deactivation request its main file is already loaded, so that guard would return first.
 		// The extension owns this request; if native is enabled it owns the next one, so keep the PayPal webhooks across the hand-back.

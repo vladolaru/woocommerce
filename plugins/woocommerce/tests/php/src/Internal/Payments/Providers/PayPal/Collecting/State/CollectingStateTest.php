@@ -248,11 +248,17 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should store the collecting and platform options as autoloaded.
+	 * @testdox Should store the collecting, platform and first-order options as autoloaded.
 	 */
 	public function test_state_options_are_autoloaded(): void {
 		$this->sut->enter( 'payee@example.com', 'sandbox' );
 		$this->assertContains( $this->stored_autoload( Options::COLLECTING ), wp_autoload_values_to_autoload(), 'The collecting option is read on every request' );
+
+		$this->assertTrue( $this->sut->claim_first_order( 17 ) );
+		$this->assertContains( $this->stored_autoload( Options::FIRST_ORDER ), wp_autoload_values_to_autoload(), 'The first-order option is checked on every request, so an absent row must cost no query' );
+		$this->assertSame( 17, ( new Options() )->first_order_id(), 'The autoloaded set answers' );
+		$this->assertTrue( ( new Options() )->has_autoloaded( Options::FIRST_ORDER ) );
+		$this->assertFalse( ( new Options() )->has_autoloaded( Options::NOTE_STATE ) );
 
 		$this->sut->complete( 'M2' );
 		$this->assertContains( $this->stored_autoload( Options::PLATFORM ), wp_autoload_values_to_autoload(), 'The platform option is read on every request' );

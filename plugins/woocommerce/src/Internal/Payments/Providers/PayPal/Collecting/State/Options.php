@@ -34,7 +34,7 @@ class Options {
 	public const PLATFORM = 'woocommerce_paypal_wallet_platform';
 
 	/**
-	 * The ID of the first order that was routed to the collecting payee. Written once, with add_option().
+	 * The ID of the first order that was routed to the collecting payee. Written once, with add_option(), autoloaded.
 	 *
 	 * @since 11.3.0
 	 */
@@ -46,6 +46,28 @@ class Options {
 	 * @since 11.3.0
 	 */
 	public const WEBHOOKS = 'woocommerce_paypal_wallet_webhooks';
+
+	/**
+	 * Where the Inbox note stands: `added` once it exists, `actioned` once the store is connected. Absent before the note
+	 * is first added. Autoloaded, so the admin requests that check it run no query.
+	 *
+	 * @since 11.3.0
+	 */
+	public const NOTE_STATE = 'wc_paypal_wallet_note_state';
+
+	/**
+	 * The note state: the note exists and waits for setup.
+	 *
+	 * @since 11.3.0
+	 */
+	public const NOTE_ADDED = 'added';
+
+	/**
+	 * The note state: the store is connected and the note is actioned.
+	 *
+	 * @since 11.3.0
+	 */
+	public const NOTE_ACTIONED = 'actioned';
 
 	/**
 	 * The collecting option.
@@ -78,6 +100,48 @@ class Options {
 	 */
 	public function webhooks(): array {
 		return $this->read( self::WEBHOOKS );
+	}
+
+	/**
+	 * Whether an autoloaded option exists, answered from the autoloaded set: a row that is absent costs no query.
+	 *
+	 * An option written without autoload is not seen. The collecting, platform, first-order and note-state options are all
+	 * written autoloaded.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param string $name The option name.
+	 * @return bool
+	 */
+	public function has_autoloaded( string $name ): bool {
+		return array_key_exists( $name, wp_load_alloptions() );
+	}
+
+	/**
+	 * The ID of the first order routed to the collecting payee, or 0 when none was. Read from the autoloaded set.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return int
+	 */
+	public function first_order_id(): int {
+		$all = wp_load_alloptions();
+
+		return isset( $all[ self::FIRST_ORDER ] ) ? (int) $all[ self::FIRST_ORDER ] : 0;
+	}
+
+	/**
+	 * Where the Inbox note stands: `added`, `actioned`, or an empty string before the note was first added. Read from the
+	 * autoloaded set.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return string
+	 */
+	public function note_state(): string {
+		$all = wp_load_alloptions();
+
+		return isset( $all[ self::NOTE_STATE ] ) ? (string) $all[ self::NOTE_STATE ] : '';
 	}
 
 	/**

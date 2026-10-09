@@ -4,13 +4,19 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Blocks\AssetsController;
 use Automattic\WooCommerce\Blocks\Package as BlocksPackage;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\FirstOrderEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\HeldPaymentReturnedEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\InboxNote;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SetUpPayPalWalletTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
@@ -1267,6 +1273,141 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			$this->assertNotContains( $id, $config_ids, "$id must not be configured" );
 			$this->assertFalse( TaskLists::get_list( 'extended' )->get_task( $id ), "$id must not be registered" );
 		}
+	}
+
+	/**
+	 * Run the callbacks a class attached to a hook.
+	 *
+	 * @param string $hook  The hook.
+	 * @param string $owner The class that owns the callbacks.
+	 * @return int How many callbacks ran.
+	 */
+	private function run_hook_callbacks_of( string $hook, string $owner ): int {
+		$ran = 0;
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( $owner === $this->get_callback_owner( $callback['function'] ) ) {
+					call_user_func( $callback['function'] );
+					++$ran;
+				}
+			}
+		}
+
+		return $ran;
+	}
+
+	/**
+	 * How many callbacks a class has on a hook.
+	 *
+	 * @param string $hook  The hook.
+	 * @param string $owner The class that owns the callbacks.
+	 * @return int
+	 */
+	private function count_owner_callbacks( string $hook, string $owner ): int {
+		$count = 0;
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( $owner === $this->get_callback_owner( $callback['function'] ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register the setup task and the Inbox note check when the extension owns the wallet.
+	 */
+	public function test_registers_the_held_order_surfaces_when_the_extension_owns_the_wallet(): void {
+		if ( null === TaskLists::get_list( 'extended' ) ) {
+			TaskLists::init_default_lists();
+		}
+		add_option( Options::FIRST_ORDER, 7, '', true );
+		$order = wc_create_order();
+		$order->set_payment_method( 'ppcp-gateway' );
+		$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
+
+		try {
+			$this->sut->maybe_boot();
+			$registered_task = $this->run_hook_callbacks_of( 'init', OwnerIndependent::class );
+			$checked_note    = $this->run_hook_callbacks_of( 'admin_init', OwnerIndependent::class );
+
+			$this->assertFalse( $this->sut->is_booted(), 'The extension owns the wallet, so nothing boots' );
+			$this->assertGreaterThanOrEqual( 1, $registered_task, 'An init callback registers the task' );
+			$this->assertGreaterThanOrEqual( 1, $checked_note, 'An admin_init callback checks the note' );
+			$task = TaskLists::get_list( 'extended' )->get_task( 'wc-paypal-wallet-setup' );
+			$this->assertInstanceOf( SetUpPayPalWalletTask::class, $task );
+			$this->assertFalse( $task->is_complete() );
+			$this->assertNotFalse( Notes::get_note_by_name( InboxNote::NOTE_NAME ), 'The note is added' );
+			$emails = apply_filters( 'woocommerce_email_classes', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core's filter, run to see what the shell registered.
+			$this->assertArrayHasKey( FirstOrderEmail::class, $emails );
+			$this->assertArrayHasKey( HeldPaymentReturnedEmail::class, $emails );
+		} finally {
+			$list        = TaskLists::get_list( 'extended' );
+			$list->tasks = array_values(
+				array_filter(
+					$list->tasks,
+					static function ( $task ): bool {
+						return ! $task instanceof SetUpPayPalWalletTask;
+					}
+				)
+			);
+			InboxNote::possibly_delete_note();
+			delete_option( Options::FIRST_ORDER );
+			delete_option( Options::NOTE_STATE );
+		}
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should register the held order surfaces before the early returns of a boot, and only once however often it runs.
+	 */
+	public function test_registers_the_surfaces_once_and_before_the_early_returns(): void {
+		add_option( Options::FIRST_ORDER, 7, '', true );
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, false );
+		$GLOBALS['pagenow'] = 'update.php'; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulating the admin page.
+		$before             = $this->count_owner_callbacks( 'init', OwnerIndependent::class );
+
+		$this->sut->maybe_boot();
+		$this->sut->maybe_boot();
+
+		$this->assertSame( $before + 1, $this->count_owner_callbacks( 'init', OwnerIndependent::class ), 'The update.php return comes after the registration, and a second boot adds nothing' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should read no history option and no order, notes or post table on an extension-owned store with no wallet history.
+	 */
+	public function test_an_extension_owned_store_without_history_pays_no_history_query(): void {
+		global $wpdb;
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+		wp_load_alloptions();
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		$this->sut->maybe_boot();
+
+		remove_filter( 'query', $record );
+		$needles = array( $wpdb->posts, $wpdb->prefix . 'wc_orders', $wpdb->prefix . 'wc_admin_notes', Options::FIRST_ORDER, Options::COLLECTING, Options::PLATFORM );
+		foreach ( $queries as $sql ) {
+			foreach ( $needles as $needle ) {
+				$this->assertFalse( str_contains( $sql, $needle ), "Unexpected query for $needle: $sql" );
+			}
+		}
+		$this->assertFalse( $this->sut->is_booted() );
 	}
 
 	/**

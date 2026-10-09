@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\ReconcileCommand;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\EmailTriggers;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
@@ -72,7 +73,7 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
 	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
-	 * order, the reconcile, and the filters that name the payee.
+	 * order, the reconcile, the admin emails and the filters that name the payee.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -105,6 +106,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			add_action( 'woocommerce_payment_complete', array( $held, 'handle_woocommerce_payment_complete' ) );
 
 			$this->register_reconcile( $container );
+
+			// The surfaces that read only options and orders are registered by the shell, whoever owns the wallet; the emails need the module's actions, so they belong here.
+			$emails = new EmailTriggers( $logger );
+			add_action( 'woocommerce_paypal_wallet_first_order', array( $emails, 'handle_woocommerce_paypal_wallet_first_order' ), 10, 2 );
+			add_action( 'woocommerce_paypal_wallet_held_payment_returned', array( $emails, 'handle_woocommerce_paypal_wallet_held_payment_returned' ), 10, 2 );
 
 			$payee = new PayeeFilters( $connection_state, $state );
 			add_filter( 'ppcp_create_order_request_body_data', array( $payee, 'handle_ppcp_create_order_request_body_data' ), self::GATE_PRIORITY );

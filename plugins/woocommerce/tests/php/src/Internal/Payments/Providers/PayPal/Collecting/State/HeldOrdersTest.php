@@ -29,6 +29,8 @@ class HeldOrdersTest extends WalletTestCase {
 		$order = wc_create_order();
 		$order->set_payment_method( $payment_method );
 		if ( null !== $held_at ) {
+			// An order is held from the moment it is captured, so the order dates follow the held-at times.
+			$order->set_date_created( $held_at );
 			$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
 			$order->update_meta_data( HeldCapture::HELD_AT_META_KEY, $held_at );
 			$order->update_meta_data( HeldCapture::CAPTURE_ID_META_KEY, 'CAPTURE-' . $order->get_id() );
@@ -96,6 +98,28 @@ class HeldOrdersTest extends WalletTestCase {
 		$this->assertSame( 1000 + 30 * DAY_IN_SECONDS, $sut->deadline_for( $early ) );
 		$this->assertSame( 5000 + 30 * DAY_IN_SECONDS, $sut->deadline_for( $late ) );
 		$this->assertSame( 1000 + 30 * DAY_IN_SECONDS, $sut->earliest_deadline(), 'A released or settled order does not count' );
+	}
+
+	/**
+	 * @testdox Should find the earliest deadline by loading the one oldest held order, however many are held.
+	 */
+	public function test_the_earliest_deadline_loads_one_order(): void {
+		$this->order( 'on-hold', 'ppcp-gateway', 3000 );
+		$this->order( 'on-hold', 'ppcp-gateway', 1000 );
+		$this->order( 'on-hold', 'ppcp-gateway', 2000 );
+		$sut   = new HeldOrders();
+		$loads = 0;
+		$count = static function ( $class_name ) use ( &$loads ) {
+			++$loads;
+			return $class_name;
+		};
+		add_filter( 'woocommerce_order_class', $count );
+
+		$deadline = $sut->earliest_deadline();
+
+		remove_filter( 'woocommerce_order_class', $count );
+		$this->assertSame( 1000 + 30 * DAY_IN_SECONDS, $deadline );
+		$this->assertSame( 1, $loads, 'One order is loaded, not three' );
 	}
 
 	/**

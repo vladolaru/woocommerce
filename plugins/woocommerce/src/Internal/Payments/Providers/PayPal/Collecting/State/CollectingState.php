@@ -255,8 +255,9 @@ class CollectingState {
 	/**
 	 * Claim the first-order slot for an order. Only the first caller wins.
 	 *
-	 * Uses add_option(), which fails when the row exists, so concurrent orders cannot both claim it. The collecting
-	 * option is never touched.
+	 * Uses add_option(), which fails when the row exists, so concurrent orders cannot both claim it. The row is
+	 * autoloaded, so the surfaces that ask whether a wallet order ever existed run no query on a store that has none. The
+	 * collecting option is never touched.
 	 *
 	 * @since 11.3.0
 	 *
@@ -265,7 +266,7 @@ class CollectingState {
 	 * @return bool True when this call claimed the slot.
 	 */
 	public function claim_first_order( int $order_id ): bool {
-		return add_option( Options::FIRST_ORDER, $order_id, '', false );
+		return add_option( Options::FIRST_ORDER, $order_id, '', true );
 	}
 
 	/**

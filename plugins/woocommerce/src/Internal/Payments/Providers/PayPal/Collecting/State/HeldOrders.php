@@ -70,17 +70,29 @@ class HeldOrders implements HeldOrdersCount {
 	/**
 	 * The earliest deadline across the held orders, or null when none is held.
 	 *
-	 * The cost grows with the number of held orders, since each one is loaded; a caller that needs it more than once in
-	 * a request should keep the answer.
+	 * Loads one order, not all of them: the oldest held order, because an order is held from the moment its payment is
+	 * captured, so the oldest order is the one whose 30 days end first.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @return int|null A UTC timestamp.
 	 */
 	public function earliest_deadline(): ?int {
-		$deadlines = array_map( array( $this, 'deadline_for' ), $this->all() );
+		$ids   = wc_get_orders(
+			array_merge(
+				$this->query_args(),
+				array(
+					'limit'   => 1,
+					'return'  => 'ids',
+					'orderby' => 'date',
+					'order'   => 'ASC',
+				)
+			)
+		);
+		$first = is_array( $ids ) && isset( $ids[0] ) ? $ids[0] : 0;
+		$order = $first ? wc_get_order( $first ) : false;
 
-		return array() === $deadlines ? null : min( $deadlines );
+		return $order instanceof WC_Order ? $this->deadline_for( $order ) : null;
 	}
 
 	/**
