@@ -558,7 +558,7 @@ class WooPaymentsOrderEffects {
 	public static function compose_refund_effect_data( array $result, string $rendered_note, string $refund_note_identity, array $refund_note_equivalents ): array {
 		$refund_id              = isset( $result['id'] ) ? (string) $result['id'] : '';
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
-		$refund_status          = 'pending' === $provider_status ? 'pending' : 'successful';
+		$refund_status          = WooPaymentsIntentCodec::is_pending_refund_status( $provider_status ) ? 'pending' : 'successful';
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $result['balance_transaction'] ?? null );
 		$refund_meta            = array( '_wcpay_refund_id' => $refund_id );
 		$effect_data            = array(

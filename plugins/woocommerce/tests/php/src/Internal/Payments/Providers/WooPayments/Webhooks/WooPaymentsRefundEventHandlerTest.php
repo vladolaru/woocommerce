@@ -965,6 +965,58 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded event whose refund is in requires_action records it as pending, and a succeeded charge.refund.updated settles it.
+	 *
+	 * Monitor ruling 2026-10-10 13:45 (U1): the webhook's refund row follows the same pending rule as the refund call. The
+	 * refund is HAND-BUILT (`Fixtures/stripe-docs-f458-requires-action-refund.json`, from Stripe's refund object,
+	 * https://docs.stripe.com/api/refunds/object, and https://docs.stripe.com/refunds#requires-action): no WooPayments
+	 * payment method reaches requires_action today. The charge fields are those client 11.1.0 reads
+	 * (class-wc-payments-webhook-processing-service.php:1079-1143).
+	 */
+	public function test_charge_refunded_with_a_requires_action_refund_records_it_as_pending(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/stripe-docs-f458-requires-action-refund.json' ), true );
+		$this->assertTrue( $fixture['_meta']['hand_built'] ?? false );
+		$refund = $fixture['entries'][0]['response']['body'];
+		$order  = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_currency( 'EUR' );
+		$order->set_total( '10.00' );
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( (string) $refund['payment_intent'] );
+		$order->update_meta_data( '_intent_id', (string) $refund['payment_intent'] );
+		$order->update_meta_data( '_charge_id', (string) $refund['charge'] );
+		$order->save();
+
+		$this->sut->process(
+			'charge.refunded',
+			array(
+				'id'             => (string) $refund['charge'],
+				'status'         => 'succeeded',
+				'captured'       => true,
+				'amount'         => 1000,
+				'currency'       => 'eur',
+				'payment_intent' => (string) $refund['payment_intent'],
+				'refunds'        => array( 'data' => array( $refund ) ),
+			)
+		);
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$status  = $order->get_meta( '_wcpay_refund_status', true );
+		$notes   = $this->get_notes_containing( $order, (string) $refund['id'] );
+
+		$refund['status'] = 'succeeded';
+		$this->sut->process( 'charge.refund.updated', $refund );
+
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( (string) $refund['id'], $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'pending', $status, 'A requires_action refund is recorded as pending.' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'is pending', (string) $notes[0]->content );
+		$this->assertSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ), 'The succeeded update settles it.' );
+	}
+
+	/**
 	 * Create a refundable order in the state a WooPayments payment leaves it: paid, with the intent as its transaction ID.
 	 *
 	 * @return WC_Order

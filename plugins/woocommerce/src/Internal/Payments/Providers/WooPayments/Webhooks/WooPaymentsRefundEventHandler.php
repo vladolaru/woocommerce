@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -150,7 +151,7 @@ class WooPaymentsRefundEventHandler {
 		$balance_txn_id    = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
-		$is_pending_refund = 'pending' === $refund_status;
+		$is_pending_refund = WooPaymentsIntentCodec::is_pending_refund_status( $refund_status );
 		$order             = $this->event_order_resolver->find_order_by_charge_id( $charge_id, $charge );
 		$record_only       = false;
 		if ( ! $order instanceof WC_Order ) {

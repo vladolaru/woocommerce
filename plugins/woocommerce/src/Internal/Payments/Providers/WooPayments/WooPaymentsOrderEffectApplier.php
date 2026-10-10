@@ -201,7 +201,7 @@ class WooPaymentsOrderEffectApplier {
 				$payment_data    = $context->get_payment_data();
 				$result          = $plan->get_provider_result();
 				$refund_id       = isset( $result['id'] ) ? (string) $result['id'] : $outcome->get_provider_payment_id();
-				$is_pending      = 'pending' === (string) ( $result['status'] ?? '' );
+				$is_pending      = WooPaymentsIntentCodec::is_pending_refund_status( (string) ( $result['status'] ?? '' ) );
 				$note_candidates = $this->note_service->format_created_refund_note_candidates(
 					$context->get_order(),
 					(float) ( $payment_data['amount'] ?? 0.0 ),

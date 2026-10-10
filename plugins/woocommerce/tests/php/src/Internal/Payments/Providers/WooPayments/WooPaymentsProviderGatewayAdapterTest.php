@@ -8153,6 +8153,73 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund answered with requires_action is recorded on the order as a pending refund, not as a failure.
+	 *
+	 * Monitor ruling 2026-10-10 13:45 (U1): a requires_action refund awaits the customer's bank details and has moved no
+	 * money; it is a live refund, recorded and settled by charge.refund.updated like a pending one. Client 11.1.0 records
+	 * every refund its request returns (class-wc-payment-gateway-wcpay.php:3003-3009). The answer is HAND-BUILT
+	 * (`Fixtures/stripe-docs-f458-requires-action-refund.json`) from Stripe's refund object
+	 * (https://docs.stripe.com/api/refunds/object) and https://docs.stripe.com/refunds#requires-action, on a recorded
+	 * Multibanco refund: no WooPayments payment method reaches requires_action today.
+	 */
+	public function test_requires_action_refund_answer_is_recorded_as_pending(): void {
+		$answer = $this->load_requires_action_refund();
+		$order  = $this->create_woopayments_order( '10.00' );
+		$order->set_currency( 'EUR' );
+		$order->update_meta_data( '_charge_id', (string) $answer['charge'] );
+		$order->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $answer ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 3.00 );
+
+		$this->assertTrue( $result, 'The refund is live: it must not be reported as failed.' );
+		$this->assertSame( (string) $answer['id'], wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$notes = self::note_texts_containing( $order, (string) $answer['id'] );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'is pending', $notes[0] );
+	}
+
+	/**
+	 * @testdox An unrecorded earlier refund found in requires_action is linked to the same-amount call as a pending refund.
+	 *
+	 * Monitor ruling 2026-10-10 13:45: in the hold a requires_action refund follows rows 3 to 6 like a pending one. The
+	 * status is HAND-BUILT on the recorded list (Stripe refund object, https://docs.stripe.com/api/refunds/object).
+	 */
+	public function test_found_requires_action_refund_is_linked_as_pending(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold( $order );
+		$list                      = $this->recorded_refund_list();
+		$list['data'][0]['status'] = 'requires_action';
+		$http_client               = new FakeWooPaymentsHttpClient();
+		$http_client->responses    = array( self::http_json( 200, $list ) );
+		$provider                  = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Load the hand-built requires_action refund answer.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function load_requires_action_refund(): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/stripe-docs-f458-requires-action-refund.json' ), true );
+		$this->assertTrue( $decoded['_meta']['hand_built'] ?? false, 'The fixture is hand-built and says so.' );
+
+		return $decoded['entries'][0]['response']['body'];
+	}
+
+	/**
 	 * Create an order paid by the charge recorded in `Fixtures/rec-f458-refund-list.json`.
 	 *
 	 * @return WC_Order

@@ -166,7 +166,28 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
+	 * Tell whether a provider refund status is a refund still on its way: recorded on the order as pending, and settled
+	 * by `charge.refund.updated`.
+	 *
+	 * Stripe's `requires_action` refund (https://docs.stripe.com/api/refunds/object, https://docs.stripe.com/refunds#requires-action)
+	 * waits for the customer's bank details and has moved no money yet, like `pending`. Client 11.1.0 records any refund its
+	 * request returns and marks it pending only for `pending` (class-wc-payment-gateway-wcpay.php:3003-3009); native marks
+	 * both pending (monitor ruling 2026-10-10 13:45).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $status Provider refund status.
+	 * @return bool
+	 */
+	public static function is_pending_refund_status( string $status ): bool {
+		return in_array( $status, array( 'pending', 'requires_action' ), true );
+	}
+
+	/**
 	 * Normalize a native refund response before local enrichment.
+	 *
+	 * A refund that failed or was canceled maps to a failed outcome, so the order never shows a refund that moved no money;
+	 * the client records it (decided improvement).
 	 *
 	 * @param array<string,mixed> $result Native refund result.
 	 * @return PaymentOutcome
@@ -176,7 +197,7 @@ class WooPaymentsIntentCodec {
 		$provider_status        = isset( $result['status'] ) ? (string) $result['status'] : '';
 		$balance_transaction_id = self::balance_transaction_id( $result['balance_transaction'] ?? null );
 
-		if ( ! in_array( $provider_status, array( '', 'pending', 'succeeded' ), true ) ) {
+		if ( ! in_array( $provider_status, array( '', 'succeeded' ), true ) && ! self::is_pending_refund_status( $provider_status ) ) {
 			$failure_reason = isset( $result['failure_reason'] ) ? (string) $result['failure_reason'] : '';
 
 			return new PaymentOutcome(
@@ -194,7 +215,7 @@ class WooPaymentsIntentCodec {
 			);
 		}
 
-		$data = array( 'refund_status' => 'pending' === $provider_status ? 'pending' : 'successful' );
+		$data = array( 'refund_status' => self::is_pending_refund_status( $provider_status ) ? 'pending' : 'successful' );
 		if ( '' !== $balance_transaction_id ) {
 			$data['refund_balance_transaction_id'] = $balance_transaction_id;
 		}
