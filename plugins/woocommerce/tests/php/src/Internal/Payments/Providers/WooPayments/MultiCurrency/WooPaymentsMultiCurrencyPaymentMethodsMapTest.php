@@ -98,6 +98,20 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should title the methods for a US account, as the client does, without an account country.
+	 */
+	public function test_titles_methods_for_a_us_account_without_an_account_country(): void {
+		$this->enable_methods( array( 'card', 'afterpay_clearpay' ) );
+
+		// The client titles each method for the gateway's account country, else US (client 11.1.0
+		// `includes/compat/multi-currency/class-wc-payments-currency-manager.php:82`, `includes/class-wc-payment-gateway-wcpay.php:3604-3613`).
+		$this->assertSame(
+			array( 'USD' => array( 'afterpay_clearpay' => 'Cash App Afterpay' ) ),
+			$this->create_sut( true, '' )->get_currency_payment_methods_map()
+		);
+	}
+
+	/**
 	 * @testdox Should print the map on the Multi-Currency settings page only.
 	 */
 	public function test_prints_the_map_on_the_multi_currency_settings_page(): void {

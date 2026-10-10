@@ -127,7 +127,9 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	 * Get the enabled payment methods that need each currency.
 	 *
 	 * A domestic-only method needs the account country's currency, as the client's currency manager maps it (client 11.1.0
-	 * `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-82`); others need their supported currencies.
+	 * `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-90`); others need their supported currencies.
+	 * Like the client, titles follow the account country else US, while supported currencies read no country when the
+	 * account has none (`includes/payment-methods/Configs/Definitions/AlipayDefinition.php:106-108`).
 	 *
 	 * @return array<string,array<string,string>> Method titles keyed by method ID, keyed by currency code.
 	 */
@@ -135,6 +137,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 		$account_service = $this->get_account_service();
 		$country         = $account_service->get_account_country();
 		$country         = '' !== $country ? $country : null;
+		$title_country   = $account_service->get_account_country_or_us();
 		$map             = array();
 
 		foreach ( $this->get_currency_dependent_definitions() as $definition ) {
@@ -144,7 +147,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 				: $definition->get_supported_currencies( $country );
 
 			foreach ( $currencies as $currency_code ) {
-				$map[ strtoupper( (string) $currency_code ) ][ $payment_method_id ] = $definition->get_title( $country );
+				$map[ strtoupper( (string) $currency_code ) ][ $payment_method_id ] = $definition->get_title( $title_country );
 			}
 		}
 
