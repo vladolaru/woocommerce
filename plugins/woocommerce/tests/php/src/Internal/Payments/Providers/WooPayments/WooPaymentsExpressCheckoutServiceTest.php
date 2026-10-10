@@ -1504,6 +1504,59 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * In admin (the block editor preview) the client's Amazon Pay gateway skips its full availability checks and asks only whether
+	 * the WooPayments gateway and the Amazon Pay gateway are enabled (client 11.1.0 class-wc-payment-gateway-wcpay.php:956-966).
+	 * Both answers come from the WooPayments settings: its `enabled`, and Amazon Pay among the enabled methods, which the settings
+	 * save keeps in step with the Amazon Pay gateway's own `enabled` (class-wc-rest-payments-settings-controller.php:766-795).
+	 *
+	 * @testdox In admin, Amazon Pay express follows only the WooPayments and Amazon Pay switches: $scenario.
+	 * @dataProvider provider_amazon_pay_admin_preview
+	 *
+	 * @param string              $scenario     Scenario description.
+	 * @param array<string,mixed> $settings     Gateway setting overrides.
+	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param string              $currency     Currency asked about.
+	 * @param bool                $expected     Whether Amazon Pay should be offered.
+	 */
+	public function test_amazon_pay_admin_preview_follows_only_the_gateway_switches( string $scenario, array $settings, array $account_data, string $currency, bool $expected ): void {
+		unset( $scenario );
+		$sut = $this->create_service(
+			array_merge(
+				array(
+					'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+					'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+				),
+				$settings
+			),
+			true,
+			array_merge( array( 'ece_confirmation_tokens_disabled' => false ), $account_data )
+		);
+
+		$GLOBALS['current_screen'] = \WP_Screen::get( 'dashboard' ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		try {
+			$this->assertSame( $expected, $sut->is_amazon_pay_usable( 'checkout', $currency ) );
+			$this->assertSame( $expected, in_array( 'amazon_pay', $sut->get_enabled_methods_for_context( 'checkout', $currency ), true ) );
+		} finally {
+			unset( $GLOBALS['current_screen'] );
+		}
+	}
+
+	/**
+	 * Data provider for the Amazon Pay admin preview.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string,4:bool}>
+	 */
+	public function provider_amazon_pay_admin_preview(): array {
+		return array(
+			'both switches on'                  => array( 'both switches on', array(), array(), 'USD', true ),
+			'capability not active'             => array( 'capability not active', array(), array( 'capabilities' => array( 'amazon_pay_payments' => 'inactive' ) ), 'USD', true ),
+			'currency Amazon Pay does not take' => array( 'currency Amazon Pay does not take', array(), array(), 'EUR', true ),
+			'amazon pay switched off'           => array( 'amazon pay switched off', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), array(), 'USD', false ),
+			'woopayments switched off'          => array( 'woopayments switched off', array( 'enabled' => 'no' ), array(), 'USD', false ),
+		);
+	}
+
+	/**
 	 * @testdox Should reject a submitted Amazon Pay payment type once the merchant switched Amazon Pay off.
 	 */
 	public function test_payment_time_allowlist_rejects_amazon_pay_the_merchant_switched_off(): void {

@@ -339,7 +339,6 @@ class WooPaymentsExpressPaymentMethodTypes {
 	private static function can_use_amazon_pay( WooPaymentsAccountService $account_service, string $context, string $currency = '' ): bool {
 		$context = self::normalize_context( $context );
 
-		$account_data = $account_service->get_cached_account_data();
 		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
 			return false;
 		}
@@ -352,6 +351,14 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
+		// In admin (the block editor preview) the client asks only whether the WooPayments and Amazon Pay gateways are enabled, which
+		// is_amazon_pay_button_available() and the merchant switch above cover; the account and currency checks are storefront checks
+		// (client 11.1.0 class-wc-payment-gateway-wcpay.php:956-966).
+		if ( is_admin() ) {
+			return true;
+		}
+
+		$account_data = $account_service->get_cached_account_data();
 		if ( ! self::is_amazon_pay_enabled_for_account( $account_service, $account_data ) ) {
 			return false;
 		}
