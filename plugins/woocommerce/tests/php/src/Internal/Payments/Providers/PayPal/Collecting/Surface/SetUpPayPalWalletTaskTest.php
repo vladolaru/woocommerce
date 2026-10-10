@@ -33,12 +33,12 @@ class SetUpPayPalWalletTaskTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should carry the task ID, the title, the time, the level and the settings URL, and be dismissable.
+	 * @testdox Should carry the task ID, the title, no time, the level and the settings URL, and be dismissable.
 	 */
 	public function test_describes_itself(): void {
 		$this->assertSame( 'wc-paypal-wallet-setup', $this->sut->get_id() );
 		$this->assertSame( 'Set up PayPal Wallet', $this->sut->get_title() );
-		$this->assertSame( '2 minutes', $this->sut->get_time() );
+		$this->assertSame( '', $this->sut->get_time() );
 		$this->assertSame( 1, $this->sut->get_level() );
 		$this->assertSame( PayPalWalletBootstrap::get_settings_url(), $this->sut->get_action_url() );
 		$this->assertTrue( $this->sut->is_dismissable() );
@@ -148,6 +148,17 @@ class SetUpPayPalWalletTaskTest extends WalletTestCase {
 		}
 
 		$this->assertSame( 'You received an order paid with PayPal Wallet. Connect PayPal Wallet to receive the payment.', $this->sut->get_content() );
+	}
+
+	/**
+	 * @testdox Should repeat the content as the additional info, which "Things to do next" shows under the title.
+	 */
+	public function test_additional_info_is_the_content(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+
+		$this->assertSame( 'You received an order paid with PayPal Wallet. Connect PayPal Wallet to receive the payment.', $this->sut->get_additional_info() );
+		$this->assertSame( $this->sut->get_content(), $this->sut->get_json()['additionalInfo'] );
 	}
 
 	/**

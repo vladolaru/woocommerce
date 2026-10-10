@@ -181,16 +181,30 @@ $payments-header-row-height: 38px;
 		cursor: pointer;
 	}
 
-	// The notice a provider reports under its row (the PayPal Wallet setup reminder).
+	// The notice a provider reports under its row (the PayPal Wallet setup reminder): it wraps onto its own line, under
+	// the row's main line and as wide as the row.
+	.woocommerce-list__item.has-notice {
+		flex-wrap: wrap;
+	}
+
 	.woocommerce-list__item-notice {
-		padding: 0 $gap-large $gap-large;
+		flex: 0 0 100%;
+		padding-block-end: $gap-large;
 
 		.components-notice {
 			margin: 0;
 		}
 
 		.woocommerce-list__item-notice-text {
-			margin: $gap-smaller 0 0;
+			margin: $gap-smallest 0 0;
+		}
+
+		.components-notice__actions {
+			margin-block-start: $gap-small;
+		}
+
+		.components-notice__action.components-button {
+			margin-inline: 0;
 		}
 	}
 

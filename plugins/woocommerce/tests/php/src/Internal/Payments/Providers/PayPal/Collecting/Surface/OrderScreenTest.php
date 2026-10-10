@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\O
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\BootsCollectingContainer;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
@@ -124,6 +125,7 @@ class OrderScreenTest extends WalletTestCase {
 		$this->assertStringContainsString( self::D1, $html );
 		$this->assertStringContainsString( 'wc-paypal-wallet-order-notice', $html );
 		$this->assertStringNotContainsString( 'Confirm the email', $html );
+		$this->assertStringContainsString( '<a class="button button-primary" href="' . esc_url( PayPalWalletBootstrap::get_settings_url() ) . '">Complete setup</a>', $html );
 	}
 
 	/**
@@ -153,6 +155,7 @@ class OrderScreenTest extends WalletTestCase {
 
 		$this->assertStringContainsString( 'Confirm the email PayPal sent to payee@example.com to release the payment.', $html );
 		$this->assertStringNotContainsString( self::D1, $html );
+		$this->assertStringNotContainsString( 'Complete setup', $html, 'Only the email confirmation releases the payment' );
 	}
 
 	/**
@@ -237,6 +240,27 @@ class OrderScreenTest extends WalletTestCase {
 
 		$this->assertStringContainsString( 'The payment for this order is waiting for the PayPal account payee@example.com to be set up and confirmed.', $html );
 		$this->assertStringNotContainsString( self::D1, $html );
+		$this->assertStringNotContainsString( 'Complete setup', $html, 'Setup cannot complete from the store while the extension owns the wallet' );
+	}
+
+	/**
+	 * @testdox Should give the notice the admin's notice text color on the order edit screen only.
+	 */
+	public function test_notice_style_on_the_order_edit_screen(): void {
+		wp_register_style( 'woocommerce_admin_styles', 'admin.css', array(), '1' );
+		wp_enqueue_style( 'woocommerce_admin_styles' );
+
+		set_current_screen( 'edit-post' );
+		$this->sut->handle_admin_enqueue_scripts();
+		$this->assertFalse( wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ), 'Not on another screen' );
+
+		set_current_screen( wc_get_page_screen_id( 'shop-order' ) );
+		$this->sut->handle_admin_enqueue_scripts();
+		$this->assertSame( array( '#order_data .wc-paypal-wallet-order-notice p { color: inherit; }' ), wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ) );
+
+		set_current_screen( 'front' );
+		wp_dequeue_style( 'woocommerce_admin_styles' );
+		wp_deregister_style( 'woocommerce_admin_styles' );
 	}
 
 	/**

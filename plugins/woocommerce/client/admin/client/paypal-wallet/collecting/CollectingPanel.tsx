@@ -3,19 +3,21 @@
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { useState } from '@wordpress/element';
-import {
-	Button,
-	Card,
-	CardBody,
-	CardHeader,
-	Notice,
-	TextControl,
-} from '@wordpress/components';
+import { useInstanceId } from '@wordpress/compose';
+import { Button, Notice, TextControl } from '@wordpress/components';
 import { dateI18n, getSettings as getDateSettings } from '@wordpress/date';
+import type { ComponentType, ReactNode } from 'react';
 
 /**
  * Internal dependencies
  */
+import SettingsCard from '../app/Components/ReusableComponents/SettingsCard';
+import AppSettingsBlock from '../app/Components/ReusableComponents/SettingsBlock';
+import {
+	Action as AppAction,
+	Description,
+} from '../app/Components/ReusableComponents/Elements';
+import { HStack } from '../app/Components/ReusableComponents/Stack';
 import {
 	checkStatus,
 	requestReferral,
@@ -23,8 +25,20 @@ import {
 	type CollectingData,
 	type MerchantState,
 } from './api';
+import './style.scss';
 
 type Message = { status: 'success' | 'error'; text: string };
+
+/**
+ * The settings app's components are plain JS, so TypeScript reads every prop they destructure as required, optional
+ * ones included. The panel uses them through this looser type.
+ */
+type AppComponent = ComponentType< {
+	[ prop: string ]: unknown;
+	children?: ReactNode;
+} >;
+const SettingsBlock = AppSettingsBlock as unknown as AppComponent;
+const Action = AppAction as unknown as AppComponent;
 
 /**
  * The panel data the page was served with, as `ppcpSettings.collecting`. Present only while the platform serves the store.
@@ -83,7 +97,7 @@ const errorText = ( error: unknown ): string =>
 
 /**
  * The collecting panel on the PayPal Wallet settings Overview: the payee email, where the merchant stands with PayPal,
- * the orders waiting for setup, and the actions that complete it.
+ * the orders waiting for setup, and the actions that complete it. It is laid out as the Overview's other cards are.
  */
 export const CollectingPanel = () => {
 	const [ data, setData ] = useState< CollectingData | null >(
@@ -92,6 +106,9 @@ export const CollectingPanel = () => {
 	const [ email, setEmail ] = useState( data?.payee_email ?? '' );
 	const [ busy, setBusy ] = useState< string | null >( null );
 	const [ message, setMessage ] = useState< Message | null >( null );
+	const payeeHelpId = `paypal-wallet-collecting-payee-help-${ useInstanceId(
+		CollectingPanel
+	) }`;
 
 	if ( ! data ) {
 		return null;
@@ -157,40 +174,62 @@ export const CollectingPanel = () => {
 	const isConnected = data.merchant_state === 'connected';
 	const dateFormat = getDateSettings().formats.date;
 	const moreOrders = data.held_orders_count - data.held_orders.length;
+	const hasOrders = data.held_orders.length > 0;
+	let payeeHelp: string = __(
+		'A customer has paid to this email, so it can no longer change.',
+		'woocommerce'
+	);
+	if ( data.can_change_payee_email ) {
+		payeeHelp = __(
+			'Customers pay to this email until setup is complete. You can change it until the first payment.',
+			'woocommerce'
+		);
+	} else if ( data.state === 'platform_connected' ) {
+		payeeHelp = __(
+			'This is the PayPal account connected to your store.',
+			'woocommerce'
+		);
+	}
 
 	return (
-		<Card className="paypal-wallet-collecting-panel">
-			<CardHeader>
-				<h2>{ __( 'PayPal Wallet setup', 'woocommerce' ) }</h2>
-			</CardHeader>
-			<CardBody>
-				{ message && (
-					<Notice
-						status={ message.status }
-						onRemove={ () => setMessage( null ) }
-					>
-						{ message.text }
-					</Notice>
-				) }
-
-				{ ! data.transport_ready ? (
-					<p>
-						{ __(
-							'PayPal Wallet setup is not available on this store yet.',
-							'woocommerce'
-						) }
-					</p>
-				) : (
-					<>
-						<p role="status">
-							{ merchantStateCopy(
+		<SettingsCard
+			className="paypal-wallet-collecting-panel"
+			title={ __( 'PayPal Wallet setup', 'woocommerce' ) }
+			description={
+				<p role="status">
+					{ data.transport_ready
+						? merchantStateCopy(
 								data.merchant_state,
 								data.payee_email
-							) }
-						</p>
+						  )
+						: __(
+								'PayPal Wallet setup is not available on this store yet.',
+								'woocommerce'
+						  ) }
+				</p>
+			}
+			// The card holds the payee, the actions and the orders; a store with none of them shows the description alone.
+			contentContainer={ data.transport_ready || hasOrders }
+		>
+			{ message && (
+				<Notice
+					className="paypal-wallet-collecting-panel__message"
+					status={ message.status }
+					onRemove={ () => setMessage( null ) }
+				>
+					{ message.text }
+				</Notice>
+			) }
 
+			{ data.transport_ready && (
+				<SettingsBlock
+					className="paypal-wallet-collecting-panel__payee"
+					title={ __( 'PayPal email', 'woocommerce' ) }
+				>
+					{ /* The value, then its help, as the app's own fields show them. */ }
+					<Action>
 						{ data.can_change_payee_email ? (
-							<div className="paypal-wallet-collecting-panel__payee">
+							<HStack className="paypal-wallet-collecting-panel__payee-field">
 								<TextControl
 									__next40pxDefaultSize
 									__nextHasNoMarginBottom
@@ -199,10 +238,8 @@ export const CollectingPanel = () => {
 										'PayPal email',
 										'woocommerce'
 									) }
-									help={ __(
-										'Customers pay to this email until setup is complete. You can change it until the first payment.',
-										'woocommerce'
-									) }
+									hideLabelFromVision
+									aria-describedby={ payeeHelpId }
 									value={ email }
 									onChange={ setEmail }
 								/>
@@ -218,28 +255,19 @@ export const CollectingPanel = () => {
 								>
 									{ __( 'Save', 'woocommerce' ) }
 								</Button>
-							</div>
+							</HStack>
 						) : (
-							<div className="paypal-wallet-collecting-panel__payee">
-								<strong>
-									{ __( 'PayPal email', 'woocommerce' ) }
-								</strong>
-								<p>{ data.payee_email }</p>
-								<p>
-									{ data.state === 'platform_connected'
-										? __(
-												'This is the PayPal account connected to your store.',
-												'woocommerce'
-										  )
-										: __(
-												'A customer has paid to this email, so it can no longer change.',
-												'woocommerce'
-										  ) }
-								</p>
+							<div className="ppcp--static-value">
+								{ data.payee_email }
 							</div>
 						) }
+						<Description className="paypal-wallet-collecting-panel__payee-help">
+							<span id={ payeeHelpId }>{ payeeHelp }</span>
+						</Description>
+					</Action>
 
-						<div className="paypal-wallet-collecting-panel__actions">
+					<Action>
+						<HStack className="paypal-wallet-collecting-panel__actions">
 							{ ! isConnected && (
 								<Button
 									variant="primary"
@@ -260,26 +288,28 @@ export const CollectingPanel = () => {
 							>
 								{ __( 'Check status', 'woocommerce' ) }
 							</Button>
-						</div>
-					</>
-				) }
+						</HStack>
+					</Action>
+				</SettingsBlock>
+			) }
 
-				{ data.held_orders.length > 0 && (
-					<div className="paypal-wallet-collecting-panel__orders">
-						<h3>
-							{ __( 'Orders waiting for setup', 'woocommerce' ) }
-						</h3>
-						<ul>
-							{ data.held_orders.map( ( order ) => (
-								<li key={ order.id }>
-									<a href={ order.edit_url }>
-										{ sprintf(
-											/* translators: %s: the order number. */
-											__( 'Order #%s', 'woocommerce' ),
-											order.number
-										) }
-									</a>{ ' ' }
-									<span>
+			{ hasOrders && (
+				<SettingsBlock
+					className="paypal-wallet-collecting-panel__orders"
+					title={ __( 'Orders waiting for setup', 'woocommerce' ) }
+				>
+					<ul className="paypal-wallet-collecting-panel__order-list">
+						{ data.held_orders.map( ( order ) => (
+							<li key={ order.id }>
+								<a href={ order.edit_url }>
+									{ sprintf(
+										/* translators: %s: the order number. */
+										__( 'Order #%s', 'woocommerce' ),
+										order.number
+									) }
+								</a>
+								<Description>
+									<>
 										{ sprintf(
 											/* translators: %s: the date PayPal returns the payment. */
 											__(
@@ -292,12 +322,14 @@ export const CollectingPanel = () => {
 												undefined
 											)
 										) }
-									</span>
-								</li>
-							) ) }
-						</ul>
-						{ moreOrders > 0 && (
-							<p>
+									</>
+								</Description>
+							</li>
+						) ) }
+					</ul>
+					{ moreOrders > 0 && (
+						<Description>
+							<>
 								{ sprintf(
 									/* translators: %d: the number of other orders waiting for setup. */
 									_n(
@@ -308,12 +340,12 @@ export const CollectingPanel = () => {
 									),
 									moreOrders
 								) }
-							</p>
-						) }
-					</div>
-				) }
-			</CardBody>
-		</Card>
+							</>
+						</Description>
+					) }
+				</SettingsBlock>
+			) }
+		</SettingsCard>
 	);
 };
 

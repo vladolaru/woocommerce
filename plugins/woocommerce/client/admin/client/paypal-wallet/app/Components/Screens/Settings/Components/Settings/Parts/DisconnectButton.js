@@ -26,6 +26,12 @@ const DisconnectButton = () => {
 		goToPluginSettings();
 	}, [ disconnectMerchant, resetFlag ] );
 
+	// POC seam (PayPal Wallet in core): WooCommerce manages the connection of a store the platform serves, so there is
+	// nothing to disconnect here; the disconnect route refuses it as well.
+	if ( window.ppcpSettings?.collecting ) {
+		return null;
+	}
+
 	const confirmationTitle = __( 'Disconnect from PayPal?', 'woocommerce' );
 
 	return (

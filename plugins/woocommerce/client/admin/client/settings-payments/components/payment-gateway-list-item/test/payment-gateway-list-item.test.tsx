@@ -1364,11 +1364,13 @@ describe( 'PaymentGatewayListItem', () => {
 			expect( item?.lastElementChild ).toBe(
 				getByTestId( 'provider-notice' )
 			);
+			// The class lets the notice wrap onto its own full-width line under the row.
+			expect( item ).toHaveClass( 'has-notice' );
 		} );
 
 		it( 'renders no notice when the gateway reports none', () => {
 			const gateway = createMockGateway();
-			const { queryByTestId } = render(
+			const { queryByTestId, container } = render(
 				<PaymentGatewayListItem
 					gateway={ gateway }
 					{ ...defaultProps }
@@ -1378,6 +1380,9 @@ describe( 'PaymentGatewayListItem', () => {
 			expect(
 				queryByTestId( 'provider-notice' )
 			).not.toBeInTheDocument();
+			expect(
+				container.querySelector( '.woocommerce-item__payment-gateway' )
+			).not.toHaveClass( 'has-notice' );
 		} );
 	} );
 } );

@@ -164,12 +164,22 @@ class SetUpPayPalWalletTask extends Task {
 	}
 
 	/**
-	 * Time.
+	 * The line under the title: "Things to do next" shows a task's additional info, not its content, so the task repeats
+	 * its content here. Escaped: the list renders it as HTML.
+	 *
+	 * @return string
+	 */
+	public function get_additional_info() {
+		return esc_html( $this->get_content() );
+	}
+
+	/**
+	 * Time: none, so the list shows what to do in its place.
 	 *
 	 * @return string
 	 */
 	public function get_time() {
-		return __( '2 minutes', 'woocommerce' );
+		return '';
 	}
 
 	// phpcs:disable Squiz.Commenting.FunctionComment.WrongStyle -- PHPStan reads its ignore from the line above the signature.

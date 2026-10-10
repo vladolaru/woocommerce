@@ -1,0 +1,54 @@
+// The collecting panel uses the settings app's own card, blocks and stack, so it takes their spacing; these rules only
+// size what those components leave open.
+.paypal-wallet-collecting-panel {
+	// Each block's title sits close to its content, as in the app's Connection status card; blocks keep their separator.
+	--block-item-gap: #{$gap-smaller};
+	--block-header-gap: 0;
+
+	.paypal-wallet-collecting-panel__message {
+		margin: 0 0 $gap-large;
+	}
+
+	// The email field takes the row; the Save button keeps its own width.
+	.paypal-wallet-collecting-panel__payee-field {
+		> .components-base-control {
+			flex: 1;
+			min-width: 0;
+		}
+	}
+
+	// The help sits under the value, as the app's text fields show theirs.
+	.paypal-wallet-collecting-panel__payee-help {
+		display: block;
+		margin-block-start: $gap-smallest;
+	}
+
+	.paypal-wallet-collecting-panel__actions {
+		flex-wrap: wrap;
+	}
+
+	.paypal-wallet-collecting-panel__order-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+
+		li {
+			display: flex;
+			flex-wrap: wrap;
+			gap: $gap-smallest $gap-smaller;
+			margin: 0;
+		}
+
+		li + li {
+			margin-block-start: $gap-smaller;
+		}
+
+		a {
+			color: var(--color-blueberry);
+		}
+	}
+
+	.paypal-wallet-collecting-panel__order-list + .ppcp--description {
+		margin-block-start: $gap-small;
+	}
+}

@@ -83,6 +83,32 @@ describe( 'CollectingPanel', () => {
 		).not.toHaveLength( 0 );
 	} );
 
+	it( 'is laid out as a settings card, with the help describing the email field and the actions in one group', () => {
+		setScriptData( collecting() );
+
+		const { container } = render( <CollectingPanel /> );
+
+		expect(
+			container.querySelector(
+				'.ppcp-r-settings-card.paypal-wallet-collecting-panel'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'textbox', { name: 'PayPal email' } )
+		).toHaveAccessibleDescription(
+			'Customers pay to this email until setup is complete. You can change it until the first payment.'
+		);
+		const actions = container.querySelector(
+			'.paypal-wallet-collecting-panel__actions'
+		);
+		expect( actions ).toContainElement(
+			screen.getByRole( 'button', { name: 'Complete setup' } )
+		);
+		expect( actions ).toContainElement(
+			screen.getByRole( 'button', { name: 'Check status' } )
+		);
+	} );
+
 	it( 'shows the payee email read-only once it is bound', () => {
 		setScriptData( collecting( { can_change_payee_email: false } ) );
 

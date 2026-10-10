@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Connect
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -26,6 +27,11 @@ defined( 'ABSPATH' ) || exit;
  * @internal POC component for the PayPal Wallet in core proof of concept.
  */
 class OrderScreen {
+
+	/**
+	 * The order data box greys its paragraphs; the notice keeps the admin's notice text color, as on other screens.
+	 */
+	private const NOTICE_STYLE = '#order_data .wc-paypal-wallet-order-notice p { color: inherit; }';
 
 	/**
 	 * The option reader.
@@ -77,6 +83,24 @@ class OrderScreen {
 	}
 
 	/**
+	 * Give the notice the admin's notice text color on the order edit screen.
+	 *
+	 * Hooked to `admin_enqueue_scripts` after WooCommerce enqueues its admin styles.
+	 *
+	 * @since 11.3.0
+	 */
+	public function handle_admin_enqueue_scripts(): void {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || ! in_array( $screen->id, array( 'shop_order', wc_get_page_screen_id( 'shop-order' ) ), true ) ) {
+			return;
+		}
+
+		if ( wp_style_is( 'woocommerce_admin_styles', 'enqueued' ) ) {
+			wp_add_inline_style( 'woocommerce_admin_styles', self::NOTICE_STYLE );
+		}
+	}
+
+	/**
 	 * The notice HTML for an order, or an empty string when the order does not wait for setup.
 	 *
 	 * @since 11.3.0
@@ -90,30 +114,46 @@ class OrderScreen {
 			return '';
 		}
 
-		return '<div class="wc-paypal-wallet-order-notice notice notice-warning inline"><p>' . esc_html( $this->text() ) . '</p></div>';
+		$notice = $this->notice();
+		$html   = '<div class="wc-paypal-wallet-order-notice notice notice-warning inline"><p>' . esc_html( $notice['text'] ) . '</p>';
+		if ( $notice['offers_setup'] ) {
+			$html .= '<p><a class="button button-primary" href="' . esc_url( PayPalWalletBootstrap::get_settings_url() ) . '">' . esc_html__( 'Complete setup', 'woocommerce' ) . '</a></p>';
+		}
+
+		return $html . '</div>';
 	}
 
 	/**
-	 * The text: what the Plugins page says while the extension owns the wallet; else confirm the email when the last seller
-	 * status reads receivable but unconfirmed, else connect the wallet.
+	 * The text, and whether the merchant can act on it here: what the Plugins page says while the extension owns the
+	 * wallet; else confirm the email when the last seller status reads receivable but unconfirmed; else connect the
+	 * wallet, which the notice's "Complete setup" button starts.
 	 *
-	 * @return string
+	 * @return array{text: string, offers_setup: bool}
 	 */
-	private function text(): string {
+	private function notice(): array {
 		$status = $this->options->seller_status();
 		$payee  = $this->options->payee_email();
 
 		// The extension owns the wallet: setup cannot complete from the store, so say what the Plugins page says.
 		if ( '' !== $payee && RuntimeServices::extension_owns_wallet() ) {
-			/* translators: %s: the email address of the PayPal account the payment waits for. */
-			return sprintf( __( 'The payment for this order is waiting for the PayPal account %s to be set up and confirmed.', 'woocommerce' ), $payee );
+			return array(
+				/* translators: %s: the email address of the PayPal account the payment waits for. */
+				'text'         => sprintf( __( 'The payment for this order is waiting for the PayPal account %s to be set up and confirmed.', 'woocommerce' ), $payee ),
+				'offers_setup' => false,
+			);
 		}
 
 		if ( '' !== $payee && ! empty( $status['payments_receivable'] ) && empty( $status['primary_email_confirmed'] ) ) {
-			/* translators: %s: the email address of the PayPal account the payment waits for. */
-			return sprintf( __( 'Confirm the email PayPal sent to %s to release the payment.', 'woocommerce' ), $payee );
+			return array(
+				/* translators: %s: the email address of the PayPal account the payment waits for. */
+				'text'         => sprintf( __( 'Confirm the email PayPal sent to %s to release the payment.', 'woocommerce' ), $payee ),
+				'offers_setup' => false,
+			);
 		}
 
-		return __( 'To receive the payment, connect PayPal Wallet to your store and complete the setup.', 'woocommerce' );
+		return array(
+			'text'         => __( 'To receive the payment, connect PayPal Wallet to your store and complete the setup.', 'woocommerce' ),
+			'offers_setup' => true,
+		);
 	}
 }

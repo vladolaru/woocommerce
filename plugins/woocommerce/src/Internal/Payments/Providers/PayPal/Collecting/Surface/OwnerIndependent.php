@@ -152,6 +152,7 @@ class OwnerIndependent {
 		$this->plugins_page_notice = $this->plugins_page_notice ?? new PluginsPageNotice( $this->options );
 		$this->provider_row->register();
 		add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->order_screen, 'handle_woocommerce_admin_order_data_after_payment_info' ) );
+		add_action( 'admin_enqueue_scripts', array( $this->order_screen, 'handle_admin_enqueue_scripts' ), 20 );
 		$this->plugins_page_notice->register();
 
 		// The order screen applies this filter to false, so the lock answers it from the order's meta and the options,

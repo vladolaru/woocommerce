@@ -66,6 +66,9 @@ export const ProviderNotice = ( {
 					{
 						label: notice.action_label,
 						url: notice.action_url,
+						// A button, as the row's own action is; without this the Notice turns a URL action into a link.
+						variant: 'secondary',
+						noDefaultClasses: true,
 					},
 				] }
 			>

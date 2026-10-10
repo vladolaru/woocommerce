@@ -176,6 +176,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertTrue( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'The Payments row notice' );
 		$this->assertTrue( $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ), 'The row notice dismissal' );
 		$this->assertTrue( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'The order screen notice' );
+		$this->assertTrue( $this->has_surface_callback( 'admin_enqueue_scripts', OrderScreen::class ), 'The order screen notice style' );
 		$this->assertTrue( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'The Plugins page notice' );
 		$this->assertSame( 30, has_action( 'woocommerce_paypal_wallet_capture_pending', array( $this->sut, 'handle_woocommerce_paypal_wallet_capture_pending' ) ), 'After the collecting module records the held capture at 10' );
 		foreach ( array( Options::PLATFORM, 'woocommerce-ppcp-data-common' ) as $option ) {
@@ -220,6 +221,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'admin_enqueue_scripts', OrderScreen::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'load-plugins.php', PluginsPageNotice::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'admin_init', OwnerIndependent::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_paypal_wallet_refund_locked', RefundLock::class ) );

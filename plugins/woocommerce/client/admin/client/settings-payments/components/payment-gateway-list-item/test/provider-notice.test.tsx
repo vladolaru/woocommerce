@@ -31,14 +31,16 @@ describe( 'ProviderNotice', () => {
 		expect( container ).toBeEmptyDOMElement();
 	} );
 
-	it( 'renders the title, the text and the action link', () => {
+	it( 'renders the title, the text and the action as a button link', () => {
 		render( <ProviderNotice notice={ notice } /> );
 
 		expect( screen.getByText( notice.title ) ).toBeInTheDocument();
 		expect( screen.getByText( notice.text ) ).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'link', { name: 'Complete setup' } )
-		).toHaveAttribute( 'href', notice.action_url );
+		const action = screen.getByRole( 'link', { name: 'Complete setup' } );
+		expect( action ).toHaveAttribute( 'href', notice.action_url );
+		// A secondary button, as the mock shows, not the Notice's default text link.
+		expect( action ).toHaveClass( 'is-secondary' );
+		expect( action ).not.toHaveClass( 'is-link' );
 	} );
 
 	it( 'calls the dismiss handler and hides the notice', () => {

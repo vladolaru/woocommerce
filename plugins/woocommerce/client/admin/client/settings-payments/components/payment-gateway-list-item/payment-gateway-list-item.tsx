@@ -129,7 +129,7 @@ export const PaymentGatewayListItem = ( {
 				hasIncentive( gateway ) && shouldHighlightIncentive
 					? `has-incentive`
 					: ''
-			}` }
+			} ${ gateway._notice ? 'has-notice' : '' }` }
 			{ ...props }
 		>
 			<div className="woocommerce-list__item-inner">
