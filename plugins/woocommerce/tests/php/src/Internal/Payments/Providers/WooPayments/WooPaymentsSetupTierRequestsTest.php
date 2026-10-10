@@ -9,6 +9,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -26,6 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
+use WC_Order_Refund;
 use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
@@ -520,6 +522,66 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $builtin_owner, $renewal_hooked, 'Subscription renewals reach the built-in gateway only through this handler.' );
 		$this->assertSame( $builtin_owner ? 2 : 0, count( $authorization_routes ), 'The capture and cancel authorization routes register only while the built-in WooPayments owns payments.' );
 		$this->assertSame( $builtin_owner ? array( 'capture', 'cancel', 'capture', 'cancel', 'refund' ) : array(), $adapter->operations, 'Only a request the built-in WooPayments owns may reach the gateway adapter.' );
+	}
+
+	/**
+	 * @testdox A refund through wc_create_refund() reaches the provider with the row WooCommerce created, and that row is marked as a gateway refund before the provider call.
+	 *
+	 * Review F-458 final 3 (T1) and review C10a (F3): the bootstrap's refund row capture, the container's controller wiring
+	 * and core's `woocommerce_create_refund` timing (an unsaved row at fire time), pinned on the real path in one place.
+	 */
+	public function test_core_refund_hands_its_marked_row_to_the_provider(): void {
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
+		$adapter = new class() extends WooPaymentsProviderGatewayAdapter {
+			/**
+			 * Refund row IDs the refund calls were handed.
+			 *
+			 * @var array<int,mixed>
+			 */
+			public array $refund_row_ids = array();
+
+			/**
+			 * The handed-over row's stored gateway refund marker, read when the provider was called.
+			 *
+			 * @var array<int,string>
+			 */
+			public array $markers = array();
+
+			/**
+			 * Record the handed-over row, then refund.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $idempotency_key );
+				$row_id                 = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
+				$this->refund_row_ids[] = $row_id;
+				$row                    = is_int( $row_id ) ? wc_get_order( $row_id ) : null;
+				$this->markers[]        = $row instanceof WC_Order_Refund ? (string) $row->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) : '';
+				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_entry_points_core_refund' );
+			}
+		};
+		wc_get_container()->replace( WooPaymentsProviderGatewayAdapter::class, $adapter );
+		$this->arrange_request( 'rest' );
+		$this->run_bootstrap( '__return_true' );
+		$this->reload_payment_gateways();
+		$paid = $this->create_woopayments_order( 'processing', array( '_charge_id' => 'ch_entry_points' ) );
+
+		$refund = wc_create_refund(
+			array(
+				'amount'         => 5,
+				'order_id'       => $paid->get_id(),
+				'reason'         => 'requested_by_customer',
+				'refund_payment' => true,
+			)
+		);
+
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame( array( $refund->get_id() ), $adapter->refund_row_ids, 'The provider gets the row wc_create_refund() created.' );
+		$this->assertSame( array( 'yes' ), $adapter->markers, 'The row is stored as a gateway refund before the provider call.' );
+		$this->assertSame( 'yes', wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) );
 	}
 
 	/** @return array<string,array{string,bool,string}> */

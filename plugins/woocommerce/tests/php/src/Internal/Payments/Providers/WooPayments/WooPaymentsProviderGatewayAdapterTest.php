@@ -8528,10 +8528,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund answered synchronously as $status is a failed refund: the call errors and no refund row is kept.
+	 * @testdox A refund through wc_create_refund() answered synchronously as $status is a failed refund: it errors, no refund row is kept and the order records the failure.
 	 *
 	 * Codex review 202 finding 3 and the recorded improvement on client 11.1.0 (which records any returned refund,
-	 * class-wc-payment-gateway-wcpay.php:3003-3009): a refund that failed or was canceled moved no money.
+	 * class-wc-payment-gateway-wcpay.php:3003-3009): a refund that failed or was canceled moved no money. Final review 3
+	 * (T2): driven through core's wc_create_refund() so the row assertions read WooCommerce's own delete, not a helper's.
 	 *
 	 * @testWith ["failed"]
 	 *           ["canceled"]
@@ -8544,14 +8545,21 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$answer['status']       = $status;
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::http_json( 200, $answer ) );
-		$provider               = $this->create_refund_hold_provider( $http_client );
+		$handed_over            = null;
+		$provider               = $this->create_refund_hold_provider(
+			$http_client,
+			static function ( PaymentOperationContext $context ) use ( &$handed_over ): void {
+				$handed_over = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
+			}
+		);
 
-		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$result = $this->create_refund_through_the_gateway( $provider, $order, 2.00 );
 
 		$this->assertWPError( $result );
-		$this->assertFalse( wc_get_order( $row ), 'WooCommerce deletes the row of a failed refund.' );
+		$this->assertIsInt( $handed_over, 'The refund call got the row wc_create_refund() saved.' );
+		$this->assertFalse( wc_get_order( $handed_over ), 'WooCommerce deletes the row of a failed refund.' );
 		$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds() );
-		$this->assertNotContains( wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ), array( 'pending', 'successful' ) );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
 	}
 
 	/**
@@ -8647,6 +8655,37 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
 		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
 		$this->assertSame( $hold, self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A completed refund through the gateway counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 *
+	 * Review C10a (F1): every completed native refund leaves a marked row with refunded_payment set and a provider refund
+	 * ID. The backstop skips marked rows only while they are not refunded (monitor ruling 2026-10-10 15:05); skipping
+	 * them all would count none of the order's native refunds and block every later refund.
+	 */
+	public function test_completed_gateway_refund_counts_for_the_backstop(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->create_completed_gateway_row( $order, 40.00, 're_f458_completed_gateway_refund' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_completed', 'key_f458_not_read', 200 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $trail, 'The backstop clears the hold with no lookup.' );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_f458_after_completed', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
 	}
 
 	/**
@@ -8943,6 +8982,53 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		}
 
 		return array( $result, $row->get_id() );
+	}
+
+	/**
+	 * Refund through core's wc_create_refund() with the native gateway as the order's gateway in WooCommerce's gateway
+	 * list, so WooCommerce fires `woocommerce_create_refund`, saves the row, refunds it and deletes it when that fails.
+	 *
+	 * @param WooPaymentsProvider $provider Provider.
+	 * @param WC_Order            $order    Order.
+	 * @param float               $amount   Refund amount.
+	 * @return WC_Order_Refund|WP_Error What wc_create_refund() returned.
+	 */
+	private function create_refund_through_the_gateway( WooPaymentsProvider $provider, WC_Order $order, float $amount ) {
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->use_runtime_refund_capture()->register();
+		$gateways                                  = WC()->payment_gateways()->payment_gateways;
+		WC()->payment_gateways()->payment_gateways = array( $gateway );
+		try {
+			return wc_create_refund(
+				array(
+					'order_id'       => $order->get_id(),
+					'amount'         => $amount,
+					'reason'         => 'requested_by_customer',
+					'refund_payment' => true,
+				)
+			);
+		} finally {
+			WC()->payment_gateways()->payment_gateways = $gateways;
+		}
+	}
+
+	/**
+	 * Create a refund row as a completed refund through the runtime's gateway leaves it: marked as a gateway refund,
+	 * refunded through the gateway and linked to its provider refund.
+	 *
+	 * @param WC_Order $order     Parent order.
+	 * @param float    $amount    Amount.
+	 * @param string   $refund_id Provider refund ID.
+	 * @return WC_Order_Refund
+	 */
+	private function create_completed_gateway_row( WC_Order $order, float $amount, string $refund_id ): WC_Order_Refund {
+		$row = $this->create_in_flight_gateway_row( $order, $amount );
+		$row->set_refunded_payment( true );
+		$row->update_meta_data( '_wcpay_refund_id', $refund_id );
+		$row->save();
+
+		return $row;
 	}
 
 	/**
