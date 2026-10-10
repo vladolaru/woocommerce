@@ -1532,6 +1532,76 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should heal a collecting option stored without autoload on the first request of a store that has an owner row, and boot the store in that request.
+	 */
+	public function test_first_request_heals_a_flipped_autoload_flag(): void {
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option(
+			Options::COLLECTING,
+			array(
+				'payee_email' => 'payee@example.com',
+				'tracking_id' => 'T',
+				'environment' => 'sandbox',
+				'payee_bound' => true,
+			)
+		);
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
+		wp_set_option_autoload( Options::COLLECTING, false );
+		$this->build_sut( true, PayPalWalletRuntimeArbiter::OWNER_NATIVE, true );
+		$this->assertFalse( ( new Options() )->has_autoloaded( Options::COLLECTING ) );
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( ( new Options() )->has_autoloaded( Options::COLLECTING ) );
+		$this->assertFalse( $this->sut->is_dormant() );
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ), 'The row stays: the store is served again' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should delete the owner row, after one set of raw reads, when it finds no state option to heal, so the next request reads nothing.
+	 */
+	public function test_an_owner_row_without_state_is_deleted_after_one_check(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
+		$this->build_sut( true, PayPalWalletRuntimeArbiter::OWNER_NATIVE, true );
+
+		$this->sut->maybe_boot();
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertFalse( get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ) );
+
+		// A second request: the row is gone, so nothing reads the state options.
+		$this->build_sut( true, PayPalWalletRuntimeArbiter::OWNER_NATIVE, true );
+		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$this->sut->maybe_boot();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$needles = array( Options::COLLECTING, Options::PLATFORM, PayPalWalletBootstrap::LAST_OWNER_OPTION );
+		foreach ( $queries as $sql ) {
+			foreach ( $needles as $needle ) {
+				$this->assertFalse( str_contains( $sql, $needle ), "Unexpected query for $needle: $sql" );
+			}
+		}
+		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
 	 * @testdox Should leave the modules filter alone when the store is dormant.
 	 */
 	public function test_attaches_no_modules_filter_callback_when_dormant(): void {

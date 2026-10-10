@@ -154,6 +154,11 @@ class OwnerIndependent {
 			$this->profiler_card()->register();
 		}
 
+		// A store whose option lost its autoload flag reads as having no history, so the heal is hooked before the guard.
+		if ( $this->is_payments_settings_request() ) {
+			add_action( 'admin_init', array( $this, 'handle_admin_init_heal_autoload' ) );
+		}
+
 		if ( ! $history ) {
 			return;
 		}
@@ -187,6 +192,21 @@ class OwnerIndependent {
 			add_action( 'add_option_' . $option, array( $this, 'handle_connection_change' ), 10, 0 );
 			add_action( 'update_option_' . $option, array( $this, 'handle_connection_change' ), 10, 0 );
 		}
+	}
+
+	/**
+	 * Set the autoload flag back on a wallet option a tool stored without it, so the store stops reading as dormant.
+	 *
+	 * Hooked to `admin_init` on the Payments settings screen. The surfaces attach on the next request.
+	 *
+	 * @since 11.3.0
+	 */
+	public function handle_admin_init_heal_autoload(): void {
+		$this->guarded(
+			function (): void {
+				$this->options->heal_autoload();
+			}
+		);
 	}
 
 	/**
@@ -423,6 +443,17 @@ class OwnerIndependent {
 		}
 
 		return isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) && function_exists( 'WC' ) && WC()->is_rest_api_request(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Only its type is checked.
+	}
+
+	/**
+	 * Whether this is the Payments settings screen (any path under the checkout tab).
+	 *
+	 * @return bool
+	 */
+	private function is_payments_settings_request(): bool {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only routing decision.
+		return is_admin() && isset( $_GET['page'], $_GET['tab'] ) && 'wc-settings' === $_GET['page'] && 'checkout' === $_GET['tab'];
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 	}
 
 	/**

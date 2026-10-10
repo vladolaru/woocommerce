@@ -79,6 +79,13 @@ class Options {
 	public const NOTE_ACTIONED = 'actioned';
 
 	/**
+	 * The options written autoloaded, which every reader answers from the autoloaded set.
+	 *
+	 * @since 11.3.0
+	 */
+	public const AUTOLOADED = array( self::COLLECTING, self::PLATFORM, self::FIRST_ORDER, self::NOTE_STATE );
+
+	/**
 	 * The collecting option.
 	 *
 	 * @since 11.3.0
@@ -183,13 +190,44 @@ class Options {
 	}
 
 	/**
+	 * Set the autoload flag back on every autoloaded option that exists outside the autoloaded set.
+	 *
+	 * A tool that flips autoload makes the store read as dormant (the autoloaded set is the authority). This looks the
+	 * four names up, one query each, so it runs only where a merchant looks at the wallet or on a store the platform
+	 * serves that reads as dormant.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return string[] The names healed.
+	 */
+	public function heal_autoload(): array {
+		$healed = array();
+		foreach ( self::AUTOLOADED as $name ) {
+			if ( $this->has_autoloaded( $name ) || null === get_option( $name, null ) ) {
+				continue;
+			}
+			if ( wp_set_option_autoload( $name, true ) ) {
+				$healed[] = $name;
+				wc_get_logger()->notice( sprintf( 'PayPal wallet option %s was stored without autoload; the flag was set again.', $name ), array( 'source' => 'woocommerce-paypal-wallet' ) );
+			}
+		}
+
+		return $healed;
+	}
+
+	/**
 	 * Read an option as an array; anything that is not an array reads as an empty one.
+	 *
+	 * The collecting and platform options are answered from the autoloaded set: one that is not in it reads as empty.
 	 *
 	 * @param string $name The option name.
 	 *
 	 * @return array
 	 */
 	private function read( string $name ): array {
+		if ( in_array( $name, self::AUTOLOADED, true ) && ! $this->has_autoloaded( $name ) ) {
+			return array();
+		}
 		$value = get_option( $name, array() );
 
 		return is_array( $value ) ? $value : array();

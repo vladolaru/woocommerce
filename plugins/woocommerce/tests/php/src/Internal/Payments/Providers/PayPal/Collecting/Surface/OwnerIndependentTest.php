@@ -394,6 +394,66 @@ class OwnerIndependentTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should heal a collecting option stored without autoload on the Payments settings screen, and nowhere else.
+	 */
+	public function test_admin_init_heals_the_autoload_flag_on_the_payments_settings_screen(): void {
+		$this->set_collecting();
+		wp_set_option_autoload( Options::COLLECTING, false );
+		$this->simulate_admin_request(
+			array(
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+				'path' => '/paypal-wallet',
+			)
+		);
+		$sut = new OwnerIndependent( null, null, '__return_false' );
+
+		$sut->register();
+		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'handle_admin_init_heal_autoload' ) ) );
+		$sut->handle_admin_init_heal_autoload(); // Not do_action(): admin_init also runs core's own callbacks, which send headers.
+
+		$this->assertTrue( ( new Options() )->has_autoloaded( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should not hook the heal on other admin screens.
+	 */
+	public function test_no_heal_on_other_admin_screens(): void {
+		$this->simulate_admin_request( array( 'page' => 'wc-orders' ) );
+		$sut = new OwnerIndependent( null, null, '__return_true' );
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'admin_init', array( $sut, 'handle_admin_init_heal_autoload' ) ) );
+	}
+
+	/**
+	 * @testdox Should run only the option reads for the wallet's four option names on the Payments settings screen of a store with no wallet history.
+	 */
+	public function test_the_heal_on_a_store_without_history_reads_only_the_four_options(): void {
+		global $wpdb;
+		$sut = new OwnerIndependent( null, null, '__return_false' );
+
+		$this->record_queries_while_in_context(
+			'admin',
+			function () use ( $sut ): void {
+				$_GET = array(
+					'page' => 'wc-settings',
+					'tab'  => 'checkout',
+				);
+				$sut->register();
+				$sut->handle_admin_init_heal_autoload();
+			}
+		);
+
+		$this->assertCount( count( Options::AUTOLOADED ), $this->queries, 'One option read per name' );
+		foreach ( $this->queries as $sql ) {
+			$this->assertStringContainsString( $wpdb->options, $sql );
+			$this->assertSame( 1, preg_match( '/' . implode( '|', Options::AUTOLOADED ) . '/', $sql ), "A read of one of the four names: $sql" );
+		}
+	}
+
+	/**
 	 * @testdox Should attach neither the routes nor the card, and run no query, on a store where the wallet is not available and nothing was ever sold with it: $context.
 	 * @testWith ["admin"]
 	 *           ["rest"]

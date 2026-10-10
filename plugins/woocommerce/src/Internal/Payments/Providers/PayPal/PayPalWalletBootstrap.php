@@ -338,12 +338,33 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Heal a flipped autoload flag on a store the platform served, on its first request after the flip.
+	 *
+	 * The owner row is autoloaded and exists only on a store the platform serves (abandon() deletes it with the state), so
+	 * its presence with no platform state means a tool flipped the flag, or the options were deleted by hand. Both reads
+	 * come from the autoloaded set, so a healthy store pays nothing. When the heal restores neither state option the row
+	 * is deleted, so a store whose options are really gone pays the raw reads once. The Payments settings screen runs the
+	 * same heal for a store that has no row (OwnerIndependent).
+	 */
+	private function maybe_heal_autoload(): void {
+		$options = new Options();
+		if ( ! $options->has_autoloaded( self::LAST_OWNER_OPTION ) || ( new ConnectionState( $options ) )->has_platform_state() ) {
+			return;
+		}
+		$healed = $options->heal_autoload();
+		if ( ! in_array( Options::COLLECTING, $healed, true ) && ! in_array( Options::PLATFORM, $healed, true ) ) {
+			delete_option( self::LAST_OWNER_OPTION );
+		}
+	}
+
+	/**
 	 * Boot the wallet if native owns the site. Safe to call more than once.
 	 */
 	public function maybe_boot(): void {
 		if ( $this->booted ) {
 			return;
 		}
+		$this->maybe_heal_autoload();
 		// The held-order surfaces (Home task, Inbox note, emails) work whoever owns the wallet, so they register before every ownership return below.
 		$this->owner_independent_surfaces()->register();
 		$this->track_runtime_owner();
