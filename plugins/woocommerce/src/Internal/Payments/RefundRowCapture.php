@@ -44,11 +44,12 @@ class RefundRowCapture implements RegisterHooksInterface {
 	private ProviderGatewaysController $gateways_controller;
 
 	/**
-	 * The refund the current request is refunding through a gateway, saved or about to be.
+	 * The refunds this request is refunding through a gateway, one per wc_create_refund() call not yet handed over,
+	 * innermost call last.
 	 *
-	 * @var WC_Order_Refund|null
+	 * @var WC_Order_Refund[]
 	 */
-	private ?WC_Order_Refund $refund = null;
+	private array $refunds = array();
 
 	/**
 	 * Initialize the class instance.
@@ -92,10 +93,12 @@ class RefundRowCapture implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep a refund WooCommerce is about to refund through a gateway; any other refund it creates clears what was kept.
+	 * Keep a refund WooCommerce is about to refund through a gateway, on top of those kept for calls still running.
 	 *
-	 * A refund that does not go through the gateway loses the marker its first save gave it; the save that follows this
-	 * hook stores the removal. Refunds through other plugins' gateways are never marked.
+	 * A refund that does not go through the gateway leaves what was kept alone, so a manual refund a callback creates
+	 * inside a gateway refund's call never takes that call's row away (Codex review 204 F3). It loses the marker its first
+	 * save gave it; the save that follows this hook stores the removal. Refunds through other plugins' gateways are never
+	 * marked.
 	 *
 	 * @internal
 	 *
@@ -104,17 +107,15 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 */
 	public function handle_create_refund( $refund, $args ): void {
 		if ( ! $refund instanceof WC_Order_Refund ) {
-			$this->refund = null;
 			return;
 		}
 
 		if ( ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
-			$this->refund = null;
 			$refund->delete_meta_data( self::GATEWAY_REFUND_META );
 			return;
 		}
 
-		$this->refund = $refund;
+		$this->refunds[] = $refund;
 		if ( '' === $refund->get_meta( self::GATEWAY_REFUND_META, true ) ) {
 			$this->mark_if_runtime_gateway_refund( $refund );
 		}
@@ -137,17 +138,18 @@ class RefundRowCapture implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Take the kept refund's row ID for a refund call, once.
+	 * Take the row ID of the refund kept for the innermost wc_create_refund() call still running, once.
 	 *
-	 * Only a saved refund of this order, for this call's amount, is handed over; whatever was kept is forgotten either way.
+	 * A gateway refund call belongs to that innermost call: WooCommerce refunds through the gateway before it returns.
+	 * Only a saved refund of this order, for this call's amount, is handed over; the innermost refund is forgotten either
+	 * way, and those kept for outer calls stay.
 	 *
 	 * @param WC_Order $order  Order being refunded.
 	 * @param float    $amount Refund amount of the call.
 	 * @return int|null The row ID, or null when nothing applies.
 	 */
 	public function consume( WC_Order $order, float $amount ): ?int {
-		$refund       = $this->refund;
-		$this->refund = null;
+		$refund = array_pop( $this->refunds );
 		if (
 			null === $refund
 			|| 0 >= $refund->get_id()

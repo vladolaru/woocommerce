@@ -71,20 +71,41 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A manual refund created after a gateway refund clears it, so a later refund call never takes the earlier row.
+	 * @testdox A manual refund created while a gateway refund is kept leaves it kept for that refund's call.
+	 *
+	 * Codex review 204 F3: a callback on the gateway refund's `woocommerce_create_refund` may create a manual refund
+	 * before WooCommerce refunds through the gateway.
 	 */
-	public function test_a_later_manual_refund_clears_what_was_kept(): void {
+	public function test_a_manual_refund_leaves_the_kept_gateway_refund(): void {
 		$order   = $this->create_order();
-		$gateway = new WC_Order_Refund();
-		$gateway->set_parent_id( $order->get_id() );
-		$gateway->set_amount( '4.25' );
-		$gateway->save();
-		$sut = new RefundRowCapture();
+		$gateway = $this->create_refund( $order, '4.25' );
+		$sut     = new RefundRowCapture();
 
 		$sut->handle_create_refund( $gateway, array( 'refund_payment' => true ) );
-		$sut->handle_create_refund( new WC_Order_Refund(), array( 'refund_payment' => false ) );
+		$sut->handle_create_refund( $this->create_refund( $order, '1.00' ), array( 'refund_payment' => false ) );
 
-		$this->assertNull( $sut->consume( $order, 4.25 ) );
+		$this->assertSame( $gateway->get_id(), $sut->consume( $order, 4.25 ) );
+	}
+
+	/**
+	 * @testdox A gateway refund created inside another one's call is handed to its own call first, then the outer one to its call.
+	 *
+	 * Codex review 204 F3 and monitor ruling 2026-10-10 16:30: each wc_create_refund() call keeps its own refund, and a
+	 * refund call takes the one kept for the innermost call still running.
+	 */
+	public function test_nested_gateway_refunds_are_handed_to_their_own_calls(): void {
+		$outer_order = $this->create_order();
+		$inner_order = $this->create_order();
+		$outer       = $this->create_refund( $outer_order, '4.25' );
+		$inner       = $this->create_refund( $inner_order, '3.00' );
+		$sut         = new RefundRowCapture();
+
+		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
+		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
+
+		$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The inner call takes its own refund.' );
+		$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
+		$this->assertNull( $sut->consume( $outer_order, 4.25 ) );
 	}
 
 	/**
@@ -185,6 +206,22 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 			'manual refund on a runtime order'      => array( 'manual', 'runtime_gateway', false, 'yes', '' ),
 			'manual refund on another plugin order' => array( 'other plugin', 'other_plugin_gateway', false, '', '' ),
 		);
+	}
+
+	/**
+	 * Create a saved refund of an order.
+	 *
+	 * @param WC_Order $order  Parent order.
+	 * @param string   $amount Amount.
+	 * @return WC_Order_Refund
+	 */
+	private function create_refund( WC_Order $order, string $amount ): WC_Order_Refund {
+		$refund = new WC_Order_Refund();
+		$refund->set_parent_id( $order->get_id() );
+		$refund->set_amount( $amount );
+		$refund->save();
+
+		return $refund;
 	}
 
 	/**

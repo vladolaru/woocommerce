@@ -8719,6 +8719,44 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A manual refund a callback creates inside a gateway refund's woocommerce_create_refund keeps the gateway refund's own row: the provider gets it and the refund is linked to it.
+	 *
+	 * Codex review 204 F3 and monitor ruling 2026-10-10 16:30: the nested wc_create_refund() fired the hook again and
+	 * cleared the gateway refund's row, so the call fell back to the newest row and linked the new refund to the manual one.
+	 */
+	public function test_nested_manual_refund_keeps_the_gateway_refunds_own_row(): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_nested_200', 'key_f458_not_read', 200 ) ) );
+		$handed_over            = null;
+		$provider               = $this->create_refund_hold_provider(
+			$http_client,
+			static function ( PaymentOperationContext $context ) use ( &$handed_over ): void {
+				$handed_over = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
+			}
+		);
+		$manual_row             = null;
+		$nested                 = function ( $refund, $args ) use ( &$nested, &$manual_row, $order ): void {
+			if ( ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
+				return;
+			}
+			remove_action( 'woocommerce_create_refund', $nested, 20 );
+			unset( $refund );
+			$manual_row = $this->create_refund_row( $order, 1.00, 'Recorded by a callback' );
+		};
+		add_action( 'woocommerce_create_refund', $nested, 20, 2 );
+
+		$refund = $this->create_refund_through_the_gateway( $provider, $order, 2.00 );
+		remove_action( 'woocommerce_create_refund', $nested, 20 );
+
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertInstanceOf( WC_Order_Refund::class, $manual_row );
+		$this->assertSame( $refund->get_id(), $handed_over, 'The provider gets the gateway refund\'s own row.' );
+		$this->assertSame( 're_f458_nested_200', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row is not linked.' );
+	}
+
+	/**
 	 * @testdox Another request's gateway refund row still in flight does not count as refunded, so the backstop keeps a found hold.
 	 *
 	 * Monitor ruling 2026-10-10 15:05 (R1b): the in-flight refund may still fail; counting it could only clear the hold early.
