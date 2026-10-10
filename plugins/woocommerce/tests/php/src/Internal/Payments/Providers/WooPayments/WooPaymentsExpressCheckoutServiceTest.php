@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -581,6 +582,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_product_page_has_subscription_for_subscription_product(): void {
 		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
 
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
@@ -635,12 +637,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected    Expected localized subscription state.
 	 */
 	public function test_checkout_subscription_context_uses_supported_cart_detectors( bool $initial, $renewal, $resubscribe, $switch_result, bool $expected ): void {
-		// WooCommerce Subscriptions loads its core library with its cart; the mock is reset after every test.
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
-			)
-		);
+		WooCommerceSubscriptionsDoubles::load_product();
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $initial;
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = $renewal;
@@ -648,6 +645,50 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SWITCHES ]     = $switch_result;
 
 		$this->assertSame( $expected, $this->create_service()->get_express_checkout_params( 'checkout' )['has_subscription'] );
+	}
+
+	/**
+	 * @testdox Should flag a subscription cart without asking for the WooCommerce Subscriptions version (client 11.1.0 `class-wc-payments-express-checkout-button-helper.php:321-347`).
+	 */
+	public function test_checkout_subscription_context_ignores_subscriptions_support(): void {
+		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
+
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available(), 'Neither WooCommerce Subscriptions 2.2.0+ nor its core library is reported loaded.' );
+		$this->assertTrue( $this->create_service()->get_express_checkout_params( 'checkout' )['has_subscription'] );
+	}
+
+	/**
+	 * @testdox Should flag no subscription while WooCommerce Subscriptions' cart or product class is not loaded (client 11.1.0 `class-wc-payments-express-checkout-button-helper.php:322-324`).
+	 * @testWith ["product", "WC_Subscriptions_Cart"]
+	 *           ["checkout", "WC_Subscriptions_Product"]
+	 *
+	 * @param string $context        Express checkout context.
+	 * @param string $missing_class  WooCommerce Subscriptions class reported as not loaded.
+	 */
+	public function test_subscription_context_requires_both_subscriptions_classes( string $context, string $missing_class ): void {
+		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => $missing_class !== $class_name && class_exists( $class_name, ...$args ),
+			)
+		);
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Sub Widget',
+				'regular_price' => '10',
+				'virtual'       => true,
+				'price'         => '10',
+			)
+		);
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ]  = array( $product->get_id() );
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RESUBSCRIBE ] = array( 'resubscribe' );
+		$this->set_current_product( $product );
+
+		$this->assertFalse( $this->create_service()->get_express_checkout_params( $context )['has_subscription'] );
 	}
 
 	/**
@@ -670,6 +711,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_login_confirmation_required_for_subscription_product_page(): void {
 		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
 
 		wp_set_current_user( 0 );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
@@ -699,6 +741,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_login_confirmation_false_when_subscription_signup_possible(): void {
 		WooCommerceSubscriptionsDoubles::load_product();
+		WooCommerceSubscriptionsDoubles::load_cart();
 
 		wp_set_current_user( 0 );
 		update_option( 'woocommerce_enable_guest_checkout', 'no' );

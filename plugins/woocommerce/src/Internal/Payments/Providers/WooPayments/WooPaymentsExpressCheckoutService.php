@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Native WooPayments express checkout helpers for platform payment methods.
@@ -915,41 +915,51 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Tell whether express checkout should treat the context as carrying a
-	 * subscription: a subscription product on the product page, or any
-	 * subscription schedule in the cart (initial, renewal, resubscribe or
-	 * switch), mirroring the client plugin's has_subscription_product().
+	 * Tell whether express checkout should treat the context as carrying a subscription: a subscription product on the
+	 * product page, or any subscription schedule in the cart (initial, renewal, resubscribe or switch).
+	 *
+	 * Client 11.1.0 `has_subscription_product()` (class-wc-payments-express-checkout-button-helper.php:321-347): both
+	 * WooCommerce Subscriptions classes must be loaded, and the Subscriptions version is not checked.
 	 *
 	 * @param string $context Express checkout context.
 	 * @return bool
 	 */
 	private function context_has_subscription( string $context ): bool {
-		if ( 'product' === $context ) {
-			$product = $this->get_product_for_product_page();
+		$legacy_proxy = wc_get_container()->get( LegacyProxy::class );
+		if ( ! $legacy_proxy->call_function( 'class_exists', 'WC_Subscriptions_Product' ) || ! $legacy_proxy->call_function( 'class_exists', 'WC_Subscriptions_Cart' ) ) {
+			return false;
+		}
 
-			return class_exists( 'WC_Subscriptions_Product' ) &&
-				$product instanceof \WC_Product &&
-				\WC_Subscriptions_Product::is_subscription( $product );
+		if ( 'product' === $context ) {
+			$product         = $this->get_product_for_product_page();
+			$is_subscription = array( 'WC_Subscriptions_Product', 'is_subscription' );
+
+			return $product instanceof \WC_Product && is_callable( $is_subscription ) && (bool) call_user_func( $is_subscription, $product );
 		}
 
 		return $this->cart_has_any_subscription_schedule();
 	}
 
 	/**
-	 * Tell whether the cart carries any subscription schedule.
+	 * Tell whether the cart carries any subscription schedule: an initial subscription, a renewal, a resubscribe or a switch.
 	 *
 	 * @return bool
 	 */
 	private function cart_has_any_subscription_schedule(): bool {
-		if ( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() ) {
+		$cart_contains_subscription = array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' );
+		if ( is_callable( $cart_contains_subscription ) && call_user_func( $cart_contains_subscription ) ) {
 			return true;
 		}
 
-		if ( function_exists( 'wcs_cart_contains_resubscribe' ) && false !== wcs_cart_contains_resubscribe() ) {
+		if ( function_exists( 'wcs_cart_contains_renewal' ) && wcs_cart_contains_renewal() ) {
 			return true;
 		}
 
-		return function_exists( 'wcs_cart_contains_switches' ) && false !== wcs_cart_contains_switches();
+		if ( function_exists( 'wcs_cart_contains_resubscribe' ) && wcs_cart_contains_resubscribe() ) {
+			return true;
+		}
+
+		return function_exists( 'wcs_cart_contains_switches' ) && (bool) wcs_cart_contains_switches();
 	}
 
 	/**
