@@ -964,7 +964,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 */
 	private function get_store_setup_details(): array {
 		$settings                         = $this->get_gateway_settings();
-		$payment_methods_available        = $this->get_payment_methods_available( $settings );
+		$payment_methods_available        = $this->get_payment_methods_available();
 		$payment_methods_enabled          = $this->get_payment_methods_enabled( $settings, $payment_methods_available );
 		$payment_methods_disabled         = array_values( array_diff( $payment_methods_available, $payment_methods_enabled ) );
 		$provider_capabilities_enabled    = $this->map_payment_methods_to_capabilities( $payment_methods_enabled );
@@ -1061,18 +1061,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get available payment method IDs.
+	 * Get the payment method IDs WooPayments offers on this store: the available methods the account has fees for.
 	 *
-	 * @param array<string,mixed> $settings Gateway settings.
 	 * @return string[]
 	 */
-	private function get_payment_methods_available( array $settings ): array {
-		$available = $settings['upe_available_payment_methods'] ?? array();
-		if ( ! is_array( $available ) || empty( $available ) ) {
-			$available = $settings['upe_enabled_payment_method_ids'] ?? array( 'card' );
-		}
+	private function get_payment_methods_available(): array {
+		$account_data = $this->account_service->get_cached_account_data();
+		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 
-		return $this->sanitize_string_list( $available );
+		return $this->sanitize_string_list( wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_with_fees( $fees ) );
 	}
 
 	/**

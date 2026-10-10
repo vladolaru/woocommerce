@@ -103,11 +103,7 @@ class WooPaymentsSetUpLinkNote {
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 		$fee_ids      = array_map( 'strval', array_keys( $fees ) );
 
-		// Client `get_upe_available_payment_methods()`: filtered definition IDs that have account fees.
-		if (
-			! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids(), true )
-			|| ! in_array( self::LINK, $fee_ids, true )
-		) {
+		if ( ! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids_with_fees( $fees ), true ) ) {
 			return false;
 		}
 

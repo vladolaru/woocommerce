@@ -383,7 +383,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			array(
 				'enabled'                           => 'yes',
 				'test_mode'                         => 'yes',
-				'upe_available_payment_methods'     => array( 'card', 'ideal' ),
 				'upe_enabled_payment_method_ids'    => array( 'card' ),
 				'manual_capture'                    => 'yes',
 				'enable_logging'                    => 'yes',
@@ -403,9 +402,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 					function ( array $snapshot ): bool {
 						return true === $snapshot['gateway']['enabled']
 							&& true === $snapshot['gateway']['test_mode']
-							&& array( 'card', 'ideal' ) === $snapshot['payment_methods']['available']
+							&& array( 'card', 'ideal', 'apple_pay', 'google_pay' ) === $snapshot['payment_methods']['available']
 							&& array( 'card' ) === $snapshot['payment_methods']['enabled']
-							&& array( 'ideal' ) === $snapshot['payment_methods']['disabled']
+							&& array( 'ideal', 'apple_pay', 'google_pay' ) === $snapshot['payment_methods']['disabled']
 							&& in_array( 'card_payments', $snapshot['provider_capabilities']['enabled'], true )
 							&& in_array( 'ideal_payments', $snapshot['provider_capabilities']['disabled'], true )
 							&& true === $snapshot['manual_capture_enabled']
@@ -419,7 +418,16 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		$account_service = $this->create_account_service(
+			array(
+				'fees' => array(
+					'card'  => array(),
+					'ideal' => array(),
+				),
+			)
+		);
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -538,12 +546,45 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the available payment methods as the registered methods the account has fees for (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
+	 */
+	public function test_store_setup_sync_reports_available_methods_from_account_fees(): void {
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		$account_service = $this->create_account_service(
+			array(
+				'country' => 'US',
+				'fees'    => array(
+					'card'       => array(),
+					'bancontact' => array(),
+					'link'       => array(),
+				),
+			)
+		);
+
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+			),
+			$account_service
+		);
+
+		// Registry order; Apple Pay and Google Pay are charged at card fees, so they count while card has fees.
+		$this->assertSame( array( 'card', 'bancontact', 'link', 'apple_pay', 'google_pay' ), $snapshot['payment_methods']['available'] );
+		$this->assertSame( array( 'card', 'link' ), $snapshot['payment_methods']['enabled'] );
+		$this->assertSame( array( 'bancontact', 'apple_pay', 'google_pay' ), $snapshot['payment_methods']['disabled'] );
+		$this->assertSame( array( 'bancontact_payments', 'card_payments' ), $snapshot['provider_capabilities']['disabled'] );
+	}
+
+	/**
 	 * Run the store setup sync and return the one snapshot it sends to the platform.
 	 *
+	 * @param array<string,mixed>            $settings        Gateway settings to store first.
+	 * @param WooPaymentsAccountService|null $account_service Account service, or the default double.
 	 * @return array<string,mixed>
 	 */
-	private function send_store_setup_snapshot(): array {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null ): array {
+		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 
 		$snapshots  = array();
 		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
@@ -555,7 +596,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
 

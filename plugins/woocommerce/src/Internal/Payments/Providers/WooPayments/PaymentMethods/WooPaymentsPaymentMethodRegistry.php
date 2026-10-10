@@ -80,6 +80,30 @@ class WooPaymentsPaymentMethodRegistry {
 	}
 
 	/**
+	 * Get the payment methods WooPayments offers on this store: the available methods the account has fees for.
+	 *
+	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Client 11.1.0
+	 * `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879).
+	 *
+	 * @param array<mixed> $account_fees The account's fees, keyed by payment method ID.
+	 * @return string[]
+	 */
+	public function get_available_payment_method_ids_with_fees( array $account_fees ): array {
+		$available_ids = $this->get_available_payment_method_ids();
+		$fee_ids       = array_map( 'strval', array_keys( $account_fees ) );
+
+		if ( in_array( 'card', $fee_ids, true ) ) {
+			foreach ( array( 'google_pay', 'apple_pay' ) as $wallet_id ) {
+				if ( in_array( $wallet_id, $available_ids, true ) ) {
+					$fee_ids[] = $wallet_id;
+				}
+			}
+		}
+
+		return array_values( array_intersect( $available_ids, $fee_ids ) );
+	}
+
+	/**
 	 * Get a definition by payment method ID.
 	 *
 	 * @param string $payment_method_id Payment method ID.
