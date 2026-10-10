@@ -8454,6 +8454,42 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund row ID already in the caller's refund context is never handed to the provider: with no row from WooCommerce, no manual record is taken.
+	 *
+	 * Codex review 204 F2 and monitor ruling 2026-10-10 16:30: the runtime always sets the row ID it validated, else 0.
+	 * Kept from a reused context, an earlier row's ID made the provider treat that row as this call's own, take the
+	 * merchant's 5.55 record for the earlier refund, clear the hold and send 2.00.
+	 */
+	public function test_stale_refund_row_id_in_the_context_is_never_handed_over(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$earlier_row = $this->create_refund_row( $order, 1.00, 'An earlier refund in this request' );
+		$manual_row  = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$this->create_refund_row( $order, 2.00, 'requested_by_customer' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_stale_key_200', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$context                = PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.00, 'requested_by_customer' )
+			->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $earlier_row->get_id() ) );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund( $context, $provider );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'No refund is sent.' );
+		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'No manual record is taken.' );
+	}
+
+	/**
 	 * @testdox A manual row saved by another request after the runtime handed this call's row over still records the earlier refund, and this call's row links its own new refund.
 	 *
 	 * Codex review 202 finding 2: the pin interleaves at provider entry, after the runtime took this call's row and before

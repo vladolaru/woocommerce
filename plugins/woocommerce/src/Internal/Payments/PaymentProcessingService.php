@@ -367,7 +367,7 @@ class PaymentProcessingService {
 	 * so a request that waited on the lock sees what the earlier one saved, while the caller's object, unsaved changes
 	 * included, is left as it was. The row this call links is the one WooCommerce is refunding through the gateway in this
 	 * request (RefundRowCapture), handed to the provider in the payment data (PaymentOperationContext::PAYMENT_DATA_REFUND_ID);
-	 * with none, as for a direct wc_refund_payment() caller, it is the order's newest row and the provider gets no ID.
+	 * with none, as for a direct wc_refund_payment() caller, it is the order's newest row and the provider gets 0.
 	 *
 	 * @since 11.0.0
 	 *
@@ -419,9 +419,8 @@ class PaymentProcessingService {
 				);
 			}
 
-			if ( $own_row_known ) {
-				$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $wc_refund_id ) );
-			}
+			// Always set, so an ID the caller's context already carried never reaches the provider (Codex review 204 F2).
+			$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $own_row_known ? $wc_refund_id : 0 ) );
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {

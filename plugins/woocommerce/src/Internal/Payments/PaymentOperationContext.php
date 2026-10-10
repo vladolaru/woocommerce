@@ -18,8 +18,8 @@ use WC_Order;
 class PaymentOperationContext {
 
 	/**
-	 * Payment data key the runtime sets on a refund: the ID of the WooCommerce refund row the call links, read under the
-	 * order payment lock before the provider call.
+	 * Payment data key the runtime sets on every refund: the ID of the WooCommerce refund row WooCommerce is refunding in
+	 * this request, validated under the order payment lock before the provider call, or 0 when there is none.
 	 *
 	 * @since 11.2.0
 	 */
