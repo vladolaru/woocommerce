@@ -149,7 +149,7 @@ class WooPaymentsPaymentMethodRegistry {
 		}
 
 		foreach ( $this->get_definition_configs() as $config ) {
-			$definition                                 = new WooPaymentsStaticPaymentMethodDefinition( $config );
+			$definition                                 = new WooPaymentsPaymentMethodDefinition( $config );
 			$this->definitions[ $definition->get_id() ] = $definition;
 		}
 	}
