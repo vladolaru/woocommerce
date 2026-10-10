@@ -8555,6 +8555,42 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund that fails after a refund status was saved elsewhere leaves the order one refund status, and it reads failed.
+	 *
+	 * Review F-458 final 3 (G1): the gateway loads the order before the refund call, which runs on a fresh copy, so the
+	 * gateway's object never sees a status saved meanwhile. Writing the failure through it added a second
+	 * `_wcpay_refund_status` row, and reads kept returning the earlier `successful`.
+	 */
+	public function test_refund_failure_status_replaces_a_status_saved_during_the_call(): void {
+		$order                  = $this->create_refund_hold_order();
+		$error                  = $this->load_recorded_refund_error( 'refund_exceeds_charge' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			array(
+				'response' => array( 'code' => $error['response']['http_status'] ),
+				'headers'  => array( 'content-type' => $error['response']['content_type'] ),
+				'body'     => $error['response']['raw_body'],
+			),
+		);
+		$provider               = $this->create_refund_hold_provider(
+			$http_client,
+			static function () use ( $order ): void {
+				// Another request records an earlier refund of the order as successful while this call is in flight.
+				$elsewhere = wc_get_order( $order->get_id() );
+				$elsewhere->update_meta_data( '_wcpay_refund_status', 'successful' );
+				$elsewhere->save_meta_data();
+			}
+		);
+
+		list( $result ) = $this->run_gateway_refund( $provider, $order, 5.55 );
+		$stored         = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( wc_get_order( $order->get_id() ) );
+
+		$this->assertWPError( $result );
+		$this->assertCount( 1, $stored->get_meta( '_wcpay_refund_status', false ), 'The order keeps one refund status.' );
+		$this->assertSame( 'failed', $stored->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
 	 * @testdox Another request's gateway refund row of the earlier amount, still in flight, is never taken for the merchant's manual record: this call links the earlier refund and sends nothing.
 	 *
 	 * Monitor ruling 2026-10-10 15:05 (R1b): the runtime marks a row created to be refunded through its gateways, and the

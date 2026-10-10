@@ -2002,6 +2002,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param WP_Error $error  Refund failure.
 	 */
 	private function record_refund_failure( WC_Order $order, float $amount, WP_Error $error ): void {
+		// The refund ran on a fresh copy, so this object, loaded before it, misses what was saved since. Writing a meta key it
+		// never loaded would add a second row instead of replacing the saved one.
+		$this->get_lifecycle_service()->reread_order_from_data_store( $order );
 		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
 		$currency        = '' !== $intent_currency ? $intent_currency : (string) $order->get_currency();
