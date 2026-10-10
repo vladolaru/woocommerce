@@ -32,6 +32,19 @@ class WooPaymentsSessionService {
 	private const SESSION_STORE_ID_OPTION = 'wcpay_session_store_id';
 
 	/**
+	 * Get the current WooCommerce session, or null while WooCommerce has none.
+	 *
+	 * The one lookup the session-backed services share; each keeps the session it finds.
+	 *
+	 * @return \WC_Session|null
+	 */
+	public static function get_wc_session(): ?\WC_Session {
+		$session = WC()->session;
+
+		return $session instanceof \WC_Session ? $session : null;
+	}
+
+	/**
 	 * Get the Sift session ID for the current browsing session.
 	 *
 	 * @return string|null Session ID, or null when there is no valid session for the current process.

@@ -103,15 +103,10 @@ class WooPaymentsFailedTransactionRateLimiter {
 	 * @return \WC_Session|null
 	 */
 	private function get_session(): ?\WC_Session {
-		if ( $this->session instanceof \WC_Session ) {
-			return $this->session;
+		if ( ! $this->session instanceof \WC_Session ) {
+			$this->session = WooPaymentsSessionService::get_wc_session();
 		}
 
-		$woocommerce = WC();
-		if ( $woocommerce && $woocommerce->session instanceof \WC_Session ) {
-			$this->session = $woocommerce->session;
-		}
-
-		return $this->session instanceof \WC_Session ? $this->session : null;
+		return $this->session;
 	}
 }
