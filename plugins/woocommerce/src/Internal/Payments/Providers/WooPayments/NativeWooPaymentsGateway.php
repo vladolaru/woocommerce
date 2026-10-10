@@ -2738,18 +2738,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Tell whether the current cart contains a subscription, ignoring subscription renewals.
+	 * Tell whether the current cart contains a subscription, not counting subscription renewals.
 	 *
-	 * Renewal-blind, unlike WooPaymentsCheckoutBridge::cart_contains_subscription(), which counts renewals.
+	 * Only the classic save checkbox asks, and a renewal-only cart still shows it unchecked, as in client 11.1.0
+	 * `display_save_payment_method_checkbox()`; the save is forced server-side either way. The surfaces that count renewals
+	 * ask WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal().
 	 *
 	 * @return bool
 	 */
 	private function cart_contains_subscription(): bool {
-		// Deliberately renewal-blind: this gates only the classic save checkbox, and the
-		// extension's display_save_payment_method_checkbox keeps that surface showing the
-		// checkbox on a renewal-only cart (the save is forced server-side regardless).
-		// The renewal-inclusive check lives in WooPaymentsSubscriptionMethodPolicy for the
-		// surfaces the extension does include renewals on.
 		return class_exists( 'WC_Subscriptions_Cart' )
 			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
 			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();

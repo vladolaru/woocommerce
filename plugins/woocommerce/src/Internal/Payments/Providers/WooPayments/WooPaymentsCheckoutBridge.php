@@ -535,7 +535,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'currency'                                 => $payment_context['currency'],
 			'cartTotal'                                => $payment_context['total'],
 			'storeCountry'                             => $this->get_account_country(),
-			'cartContainsSubscription'                 => $this->cart_contains_subscription(),
+			'cartContainsSubscription'                 => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_styles_cache_version(),
 			'forceNetworkSavedCards'                   => $force_network_saved_cards,
 			'isSavedCardsEnabled'                      => $saved_cards_enabled,
@@ -720,7 +720,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			array(
 				array_values( $supports ),
 				$payment_context,
-				$this->cart_contains_subscription(),
+				WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 				get_current_user_id(),
 			)
 		);
@@ -1634,7 +1634,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_show_save_option( bool $saved_cards_enabled ): bool {
-		return $saved_cards_enabled && ! $this->cart_contains_subscription();
+		return $saved_cards_enabled && ! WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**
@@ -1695,17 +1695,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return $enabled_fields;
-	}
-
-	/**
-	 * Tell whether the current cart contains a subscription or a subscription renewal.
-	 *
-	 * Renewal-inclusive, unlike NativeWooPaymentsGateway::cart_contains_subscription(), which ignores renewals.
-	 *
-	 * @return bool
-	 */
-	private function cart_contains_subscription(): bool {
-		return WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**
