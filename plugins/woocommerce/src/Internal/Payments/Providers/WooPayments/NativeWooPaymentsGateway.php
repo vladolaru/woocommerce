@@ -2041,7 +2041,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( 'insufficient_balance_for_refund' === $error->get_error_code() ) {
 			// The dedicated note carries the funding guidance; the generic failure
 			// line (and its log) is deliberately skipped, matching the extension.
-			$note = $note_service->format_insufficient_balance_refund_note( $order, $amount, $currency, $this->get_account_service()->get_account_country() );
+			$note = $note_service->format_insufficient_balance_refund_note( $order, $amount, $currency, $this->get_account_country() );
 		} else {
 			$note          = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
 			$tracks_reason = $note;
