@@ -407,7 +407,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
 		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
 		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
-		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+		// Every gateway with saved cards on claims tokenization, reusable or not (client 11.1.0 class-wc-payment-gateway-wcpay.php:338-340).
+		$this->assertTrue( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertTrue( $link_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 		$this->assertSame( $gateways, $provider->get_payment_gateways(), 'Provider should cache split gateway instances for the request.' );
 	}

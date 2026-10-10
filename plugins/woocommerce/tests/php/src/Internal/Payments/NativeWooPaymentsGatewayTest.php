@@ -446,6 +446,120 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 reads saved cards per gateway (class-wc-payment-gateway-wcpay.php:987-989). Only the card gateway's setting
+	 * is ever saved (class-wc-rest-payments-settings-controller.php:1108-1116), so every other gateway keeps the form field's
+	 * "yes" (:404-410) and claims tokenization and adding payment methods (:338-340). With saved cards off, an available iDEAL
+	 * gateway therefore keeps WooCommerce's My Account "Payment methods" entry (wc-account-functions.php:123-136), while it
+	 * offers no save checkbox at checkout (class-wc-payments-checkout.php:505) and no place on the add-payment-method page
+	 * (class-wc-payment-gateway-wcpay.php:915-917).
+	 *
+	 * @testdox Should keep the My Account payment methods entry through an available split gateway while saved cards are off.
+	 */
+	public function test_split_gateway_keeps_the_payment_methods_entry_while_saved_cards_are_off(): void {
+		global $wp;
+
+		$this->activate_builtin_tier();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'NL',
+				'capabilities' => array(
+					'card_payments'  => 'active',
+					'ideal_payments' => 'active',
+				),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_gateway_for_method' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_gateway_for_method' )->willReturn( null );
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function (): void {
+				echo '<div id="wcpay-bridge-marker"></div>';
+			}
+		);
+		// The WooPayments settings turn saved cards off; iDEAL's own settings, as the extension leaves them, hold no saved_cards.
+		$card_settings      = static fn(): array => array(
+			'enabled'                        => 'yes',
+			'saved_cards'                    => 'no',
+			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+		);
+		$ideal_settings     = static fn(): array => array(
+			'enabled'                        => 'yes',
+			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+		);
+		$currency_filter    = static fn(): string => 'EUR';
+		$my_account_page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$original_page_id   = get_option( 'woocommerce_myaccount_page_id' );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_ideal_settings', $ideal_settings );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$card_gateway = new NativeWooPaymentsGateway();
+			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge, null, $account_service );
+			$ideal_gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'ideal' ) );
+			$ideal_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge, null, $account_service );
+			WC()->payment_gateways()->payment_gateways = array(
+				$card_gateway->id  => $card_gateway,
+				$ideal_gateway->id => $ideal_gateway,
+			);
+
+			$this->assertArrayHasKey( 'payment-methods', wc_get_account_menu_items() );
+
+			add_filter( 'woocommerce_is_checkout', '__return_true' );
+			ob_start();
+			$ideal_gateway->payment_fields();
+			$fields = (string) ob_get_clean();
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			$this->assertStringContainsString( 'wcpay-bridge-marker', $fields );
+			$this->assertStringNotContainsString( 'wc-woocommerce_payments_ideal-new-payment-method', $fields, 'iDEAL cannot be saved, so it offers no save checkbox.' );
+
+			update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+			$this->go_to( get_permalink( $my_account_page_id ) );
+			$wp->query_vars['add-payment-method'] = '';
+			$this->assertArrayNotHasKey( $ideal_gateway->id, WC()->payment_gateways()->get_available_payment_gateways(), 'iDEAL has nothing to add on the add-payment-method page.' );
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			unset( $wp->query_vars['add-payment-method'] );
+			update_option( 'woocommerce_myaccount_page_id', $original_page_id );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $card_settings );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_ideal_settings', $ideal_settings );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			WC()->payment_gateways()->payment_gateways = array();
+			WC()->payment_gateways()->init();
+		}
+	}
+
+	/**
+	 * @testdox Should treat saved cards as on while the WooPayments settings hold no saved cards setting, as the client's form field default (class-wc-payment-gateway-wcpay.php:404-410,987-989).
+	 */
+	public function test_card_gateway_saved_cards_default_on(): void {
+		$this->with_gateway_settings(
+			array( 'enabled' => 'yes' ),
+			function (): void {
+				$gateway = new NativeWooPaymentsGateway();
+
+				$this->assertTrue( $gateway->is_saved_cards_enabled() );
+				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ) );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should recalculate availability when the checkout currency and payment method definition change.
 	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
 	 */
@@ -6375,7 +6489,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should load core's tokenization-form.js on the My Account add-payment-method form without saved methods or a save checkbox, as client 11.1.0 does.
+	 * Client 11.1.0 also prints a hidden, pre-checked save checkbox on this page (class-wc-payments-checkout.php:513-516,
+	 * class-wc-payment-gateway-wcpay.php:1144-1148). Native prints none, a decided difference: nothing reads that field when a
+	 * payment method is added.
+	 *
+	 * @testdox Should load core's tokenization-form.js on the My Account add-payment-method form, without saved methods or a save checkbox.
 	 */
 	public function test_payment_fields_load_tokenization_form_on_add_payment_method_page(): void {
 		global $wp;
@@ -6418,7 +6536,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:401,493-499: tokenization shows on this page, so core's
-		// script loads, but the saved methods list does not.
+		// script loads, but the saved methods list does not. The save checkbox is the decided difference above.
 		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'enqueued' ) );
 		$this->assertNull( $received_callback );
 		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );

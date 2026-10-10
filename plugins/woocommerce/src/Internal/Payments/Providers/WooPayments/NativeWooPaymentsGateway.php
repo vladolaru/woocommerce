@@ -1347,17 +1347,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Tell whether saved payment methods are enabled.
+	 * Tell whether saved payment methods are enabled for this gateway.
+	 *
+	 * Each gateway reads its own setting, "yes" when none is stored, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989,
+	 * form field default :404-410). Only the card gateway's setting is ever saved, so the other gateways keep "yes".
 	 *
 	 * @return bool
 	 */
 	public function is_saved_cards_enabled(): bool {
-		$settings = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
-		if ( is_array( $settings ) && array_key_exists( 'saved_cards', $settings ) ) {
-			return 'yes' === $settings['saved_cards'];
-		}
-
-		return 'yes' === $this->get_option( 'saved_cards' );
+		// A literal default: the shared defaults translate labels, which gateway construction must not do before init.
+		return 'yes' === $this->get_option( 'saved_cards', 'yes' );
 	}
 
 	/**
@@ -2232,11 +2231,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->title                = $this->payment_method_definition->get_title();
 		$this->method_title         = $this->get_untranslated_method_title();
 		$this->init_settings();
-		$this->refresh_site_supports(
-			'card' === $this->get_payment_method_id()
-				? 'yes' === $this->get_option( 'saved_cards' )
-				: $this->is_saved_cards_enabled()
-		);
+		$this->refresh_site_supports( $this->is_saved_cards_enabled() );
 	}
 
 	/**
@@ -2878,7 +2873,9 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		if ( ( $saved_cards_enabled ?? $this->is_saved_cards_enabled() ) && $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION ) ) {
+		// Every gateway with saved cards on claims both, reusable or not, as in client 11.1.0 (class-wc-payment-gateway-wcpay.php:338-340).
+		// The save checkbox and the add-payment-method page still offer only methods that can be saved.
+		if ( $saved_cards_enabled ?? $this->is_saved_cards_enabled() ) {
 			$this->supports[] = PaymentGatewayFeature::TOKENIZATION;
 			$this->supports[] = PaymentGatewayFeature::ADD_PAYMENT_METHOD;
 		}

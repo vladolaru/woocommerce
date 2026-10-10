@@ -800,8 +800,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	public function test_get_payment_method_data_uses_current_gateway_definition(): void {
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
-		$card_gateway->supports  = array( 'products', 'refunds', 'tokenization', 'add_payment_method' );
-		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		// A card list unlike the Klarna gateway's, so the test shows which list Blocks receives.
+		$card_gateway->supports = array( 'products', 'refunds', 'tokenization', 'add_payment_method', 'subscriptions' );
+		$klarna_gateway         = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
 		$this->assertNotSame( $card_gateway->supports, $klarna_gateway->supports );
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
@@ -814,7 +815,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$bridge
 			->expects( $this->once() )
 			->method( 'get_blocks_payment_method_data' )
-			->with( array( 'products', 'refunds', 'tokenization', 'add_payment_method' ), $klarna_gateway->get_payment_method_definition() )
+			->with( array( 'products', 'refunds', 'tokenization', 'add_payment_method', 'subscriptions' ), $klarna_gateway->get_payment_method_definition() )
 			->willReturn(
 				array(
 					'gatewayId'          => 'woocommerce_payments_klarna',
