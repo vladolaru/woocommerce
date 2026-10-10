@@ -558,8 +558,20 @@ class WooPaymentsRefundAmbiguityService {
 		$found_minor = (int) $record['found_amount'];
 
 		// Another request's gateway refund may still be running and fail; only the rows already settled count, which can
-		// only keep the hold (monitor ruling 2026-10-10 15:05).
-		$settled_rows = array_filter( $rows, static fn( WC_Order_Refund $refund ): bool => ! self::is_gateway_refund_row( $refund ) || $refund->get_refunded_payment() );
+		// only keep the hold: a manual record, a refund through the gateway (monitor rulings 2026-10-10 15:05, 17:40), or a
+		// row created before the failure, which cannot be in flight for it, so rows recorded before the manual mark existed
+		// still count (orchestrator ruling on Codex review 205 R1).
+		$failed_at    = (int) $record['failed_at'];
+		$settled_rows = array_filter(
+			$rows,
+			static function ( WC_Order_Refund $refund ) use ( $failed_at ): bool {
+				$created = $refund->get_date_created();
+
+				return self::is_manual_record_row( $refund )
+					|| $refund->get_refunded_payment()
+					|| ( null !== $created && $created->getTimestamp() < $failed_at );
+			}
+		);
 		$other_minor  = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $settled_rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
 			$manual_row = strtolower( $currency ) === (string) ( $record['found_currency'] ?? '' ) && ! $this->is_recorded_on_order( $order, $found_id )
@@ -594,8 +606,9 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Find the manual refund row that records the earlier attempt's refund: not refunded through the gateway, with no
-	 * provider refund ID, created after the failure, for exactly the refund's amount. The oldest one takes the link.
+	 * Find the manual refund row that records the earlier attempt's refund: marked as a manual record, not refunded through
+	 * the gateway, with no provider refund ID, created after the failure, for exactly the refund's amount. The oldest one
+	 * takes the link.
 	 *
 	 * @param WC_Order_Refund[] $rows         The order's refunds other than this call's own row.
 	 * @param string            $currency     Order currency.
@@ -609,7 +622,7 @@ class WooPaymentsRefundAmbiguityService {
 		foreach ( $rows as $refund ) {
 			$created = $refund->get_date_created();
 			if (
-				! self::is_gateway_refund_row( $refund )
+				self::is_manual_record_row( $refund )
 				&& ! $refund->get_refunded_payment()
 				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
 				&& null !== $created && $created->getTimestamp() >= $failed_at
@@ -627,16 +640,17 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Tell whether a refund row was created to be refunded through one of the runtime's gateways (RefundRowCapture).
+	 * Tell whether a refund row is marked as one the merchant recorded without refunding through a gateway (RefundRowCapture).
 	 *
-	 * Such a row is never the merchant's manual record, even while its refund call is still running or after its request
-	 * died before the call returned.
+	 * A row without the mark is never taken for the merchant's record: a gateway refund, a row still inside its datastore
+	 * write, or one saved by code that never fires `woocommerce_create_refund` (Codex review 205 R1, monitor ruling
+	 * 2026-10-10 17:40).
 	 *
 	 * @param WC_Order_Refund $refund Refund row.
 	 * @return bool
 	 */
-	private static function is_gateway_refund_row( WC_Order_Refund $refund ): bool {
-		return '' !== (string) $refund->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true );
+	private static function is_manual_record_row( WC_Order_Refund $refund ): bool {
+		return '' !== (string) $refund->get_meta( RefundRowCapture::MANUAL_REFUND_META, true );
 	}
 
 	/**

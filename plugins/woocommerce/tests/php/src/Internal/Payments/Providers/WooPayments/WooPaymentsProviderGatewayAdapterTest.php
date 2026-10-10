@@ -44,7 +44,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
+use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -8637,9 +8640,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Another request's gateway refund row of the earlier amount, still in flight, is never taken for the merchant's manual record: this call links the earlier refund and sends nothing.
 	 *
-	 * Monitor ruling 2026-10-10 15:05 (R1b): the runtime marks a row created to be refunded through its gateways, and the
-	 * manual-record search skips marked rows. Without the marker the in-flight 5.55 row passed for a manual record of the
-	 * earlier 5.55 refund, and this call sent 5.55 again.
+	 * Monitor rulings 2026-10-10 15:05 (R1b) and 17:40 (Codex review 205 R1): only a row marked as the merchant's manual
+	 * record is taken for one, and a gateway refund row is never marked. Taken, the in-flight 5.55 row passed for a manual
+	 * record of the earlier 5.55 refund, and this call sent 5.55 again.
 	 */
 	public function test_in_flight_gateway_row_is_never_taken_for_a_manual_record(): void {
 		$order = $this->create_refund_hold_order();
@@ -8667,14 +8670,54 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A gateway refund row is never taken for a manual record at its first save, before WooCommerce fires woocommerce_create_refund: no refund is sent again and the earlier refund stays linked.
+	 * @testdox A gateway refund row is never taken for a manual record $moment: no refund is sent again and the earlier refund stays linked.
+	 * @dataProvider gateway_row_first_save_moments_data
 	 *
 	 * Codex review 204 F1 and monitor ruling 2026-10-10 16:30: wc_create_refund() first saves the row inside update_taxes()
 	 * (includes/wc-order-functions.php:657, abstracts/abstract-wc-order.php:2455) and fires the hook only at :672. Another
-	 * request's refund that ran right after that first save took the unmarked 5.55 row for the merchant's record of the
+	 * request's refund that ran right after that first save took the 5.55 row for the merchant's record of the
 	 * earlier 5.55 refund and sent 2.00; the 5.55 request then sent 5.55 again and its own refund replaced the link.
+	 * Codex review 205 R1 and monitor ruling 2026-10-10 17:40: inside that first save, both refund datastores write the
+	 * amount before the custom meta (`woocommerce_order_refund_object_updated_props`), so only a positive manual mark can
+	 * tell a manual record apart.
+	 *
+	 * @param string $moment Case label.
+	 * @param string $hook   The hook the other request runs on.
+	 * @param bool   $hpos   Whether orders are stored in the HPOS tables.
 	 */
-	public function test_gateway_row_is_never_taken_for_a_manual_record_at_its_first_save(): void {
+	public function test_gateway_row_is_never_taken_for_a_manual_record_while_it_is_first_saved( string $moment, string $hook, bool $hpos ): void {
+		unset( $moment );
+		// Keep both order stores in step, so switching the authoritative store back afterwards is allowed.
+		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn(): string => 'yes' );
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		OrderHelper::toggle_cot_feature_and_usage( $hpos );
+		try {
+			$this->assert_gateway_row_is_never_taken_for_a_manual_record_on( $hook );
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
+	}
+
+	/**
+	 * Moments of a gateway refund row's first save.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function gateway_row_first_save_moments_data(): array {
+		return array(
+			'after its first save'                     => array( 'after its first save', 'woocommerce_after_order_refund_object_save', true ),
+			'inside its first datastore write (HPOS)'  => array( 'inside its first datastore write (HPOS)', 'woocommerce_order_refund_object_updated_props', true ),
+			'inside its first datastore write (posts)' => array( 'inside its first datastore write (posts)', 'woocommerce_order_refund_object_updated_props', false ),
+		);
+	}
+
+	/**
+	 * Run another request's 2.00 refund on a hook the 5.55 gateway refund row's first save fires, and assert neither
+	 * request sends a refund again.
+	 *
+	 * @param string $hook Hook fired during the row's first save.
+	 */
+	private function assert_gateway_row_is_never_taken_for_a_manual_record_on( string $hook ): void {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
@@ -8690,15 +8733,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$other_provider          = $this->create_refund_hold_provider( $other_client );
 		$other_result            = null;
-		$interleave              = function ( $refund ) use ( &$interleave, &$other_result, $other_provider, $order ): void {
+		$interleave              = function ( $refund ) use ( &$interleave, &$other_result, $other_provider, $order, $hook ): void {
 			if ( ! $refund instanceof WC_Order_Refund || $order->get_id() !== $refund->get_parent_id() ) {
 				return;
 			}
-			remove_action( 'woocommerce_after_order_refund_object_save', $interleave );
-			// Another request refunds 2.00 right after the 5.55 row's first save.
+			remove_action( $hook, $interleave );
+			// Another request refunds 2.00 during the 5.55 row's first save.
 			list( $other_result ) = $this->run_refund( $other_provider, $order, 2.00 );
 		};
-		add_action( 'woocommerce_after_order_refund_object_save', $interleave );
+		add_action( $hook, $interleave );
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
 			self::http_json( 200, $this->recorded_refund_list() ),
@@ -8707,7 +8750,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
 		$refund = $this->create_refund_through_the_gateway( $provider, $order, 5.55 );
-		remove_action( 'woocommerce_after_order_refund_object_save', $interleave );
+		remove_action( $hook, $interleave );
 
 		$this->assertWPError( $other_result, 'The 2.00 refund is refused while the earlier 5.55 refund is unrecorded.' );
 		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $other_result->get_error_code() );
@@ -8716,6 +8759,43 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'The 5.55 request sends nothing again.' );
 		$this->assertSame( self::F458_REFUND_555, wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The 5.55 row records the earlier refund.' );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A refund row saved after the failure without the manual record mark is never linked to the earlier refund.
+	 *
+	 * Codex review 205 R1 and monitor ruling 2026-10-10 17:40: a row whose creation never fired `woocommerce_create_refund`
+	 * (code that saves rows itself, or a row still inside its datastore write) is not known to be the merchant's record,
+	 * so the earlier refund stays held.
+	 */
+	public function test_unmarked_row_after_the_failure_is_never_linked(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$unmarked = new WC_Order_Refund();
+		$unmarked->set_parent_id( $order->get_id() );
+		$unmarked->set_amount( '5.55' );
+		$unmarked->set_total( -5.55 );
+		$unmarked->set_reason( 'Saved without wc_create_refund()' );
+		$unmarked->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_unmarked_200', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'No refund is sent.' );
+		$this->assertSame( '', wc_get_order( $unmarked->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The unmarked row is not linked.' );
 	}
 
 	/**
@@ -8894,9 +8974,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed refund through the gateway counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
 	 *
-	 * Review C10a (F1): every completed native refund leaves a marked row with refunded_payment set and a provider refund
-	 * ID. The backstop skips marked rows only while they are not refunded (monitor ruling 2026-10-10 15:05); skipping
-	 * them all would count none of the order's native refunds and block every later refund.
+	 * Review C10a (F1): every completed native refund leaves a row with refunded_payment set and a provider refund ID, and
+	 * no manual record mark. The backstop counts it through refunded_payment (monitor rulings 2026-10-10 15:05, 17:40);
+	 * skipping it would count none of the order's native refunds and block every later refund.
 	 */
 	public function test_completed_gateway_refund_counts_for_the_backstop(): void {
 		$order = $this->create_refund_hold_order();
@@ -8919,6 +8999,42 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $trail, 'The backstop clears the hold with no lookup.' );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
 		$this->assertSame( 're_f458_after_completed', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox An unmarked refund row created before the failure counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 *
+	 * Orchestrator ruling on Codex review 205 R1 (2026-10-10): a row older than the ambiguous attempt cannot be one of its
+	 * in-flight rows, so it counts whatever its mark. Without it, a store's manual refund recorded before the mark existed
+	 * made the backstop overstate what the order can still refund, and the hold asked for an amount WooCommerce rejects.
+	 */
+	public function test_unmarked_row_from_before_the_failure_counts_for_the_backstop(): void {
+		$order = $this->create_woopayments_order( '50.00' );
+		$order->set_currency( 'USD' );
+		$order->update_meta_data( '_charge_id', self::F458_CHARGE );
+		$order->save();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'       => time() - 1000,
+				'last_failed_at'  => time() - 1000,
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->create_unmarked_row( $order, 45.00, time() - 2000 );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_old_row_200', 'key_f458_not_read', 200 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $trail, 'The backstop clears the hold with no lookup.' );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_f458_old_row_200', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
 	}
 
@@ -9248,8 +9364,28 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a refund row as a completed refund through the runtime's gateway leaves it: marked as a gateway refund,
-	 * refunded through the gateway and linked to its provider refund.
+	 * Create a refund row the way code that never fires `woocommerce_create_refund` saves it: no manual record mark.
+	 *
+	 * @param WC_Order $order      Parent order.
+	 * @param float    $amount     Amount.
+	 * @param int      $created_at Unix time the row was created.
+	 * @return WC_Order_Refund
+	 */
+	private function create_unmarked_row( WC_Order $order, float $amount, int $created_at ): WC_Order_Refund {
+		$row = new WC_Order_Refund();
+		$row->set_parent_id( $order->get_id() );
+		$row->set_amount( (string) $amount );
+		$row->set_total( -1 * $amount );
+		$row->set_reason( 'Recorded before the manual record mark existed' );
+		$row->set_date_created( $created_at );
+		$row->save();
+
+		return $row;
+	}
+
+	/**
+	 * Create a refund row as a completed refund through the runtime's gateway leaves it: refunded through the gateway,
+	 * linked to its provider refund and not marked as a manual record.
 	 *
 	 * @param WC_Order $order     Parent order.
 	 * @param float    $amount    Amount.
@@ -9305,6 +9441,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @return WC_Order_Refund
 	 */
 	private function create_refund_row( WC_Order $order, float $amount, string $reason ): WC_Order_Refund {
+		// As on a store where the runtime loads, the capture listens and marks the row as a manual record.
+		$this->use_runtime_refund_capture()->register();
 		$refund = wc_create_refund(
 			array(
 				'order_id'       => $order->get_id(),

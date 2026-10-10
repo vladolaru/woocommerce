@@ -525,14 +525,15 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund through wc_create_refund() reaches the provider with the row WooCommerce created, and that row is marked as a gateway refund before the provider call.
+	 * @testdox A refund through wc_create_refund() reaches the provider with the row WooCommerce created, not marked as a manual record; a manual refund is marked.
 	 *
 	 * Review F-458 final 3 (T1) and review C10a (F3): the bootstrap's refund row capture, the container's controller wiring
-	 * and core's save order, pinned on the real path in one place. wc_create_refund() first saves the row inside
-	 * update_taxes(), where the marker is written, then fires `woocommerce_create_refund` and saves it again
-	 * (includes/wc-order-functions.php:657,672-674; Codex review 204 F6).
+	 * (the capture keeps only refunds through gateways the controller owns, Codex review 205 R2) and core's save order,
+	 * pinned on the real path in one place. wc_create_refund() first saves the row inside update_taxes(), then fires
+	 * `woocommerce_create_refund` and saves it again (includes/wc-order-functions.php:657,672-674; Codex review 204 F6);
+	 * a refund without refund_payment gets the manual record mark there (Codex review 205 R1, monitor ruling 2026-10-10 17:40).
 	 */
-	public function test_core_refund_hands_its_marked_row_to_the_provider(): void {
+	public function test_core_refund_hands_its_row_to_the_provider(): void {
 		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		$adapter = new class() extends WooPaymentsProviderGatewayAdapter {
 			/**
@@ -543,11 +544,11 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			public array $refund_row_ids = array();
 
 			/**
-			 * The handed-over row's stored gateway refund marker, read when the provider was called.
+			 * The handed-over row's stored manual record mark, read when the provider was called.
 			 *
-			 * @var array<int,string>
+			 * @var array<int,string|null>
 			 */
-			public array $markers = array();
+			public array $manual_marks = array();
 
 			/**
 			 * Record the handed-over row, then refund.
@@ -561,7 +562,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 				$row_id                 = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
 				$this->refund_row_ids[] = $row_id;
 				$row                    = is_int( $row_id ) ? wc_get_order( $row_id ) : null;
-				$this->markers[]        = $row instanceof WC_Order_Refund ? (string) $row->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) : '';
+				$this->manual_marks[]   = $row instanceof WC_Order_Refund ? (string) $row->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) : null;
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_entry_points_core_refund' );
 			}
 		};
@@ -582,8 +583,19 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 		$this->assertSame( array( $refund->get_id() ), $adapter->refund_row_ids, 'The provider gets the row wc_create_refund() created.' );
-		$this->assertSame( array( 'yes' ), $adapter->markers, 'The row is stored as a gateway refund before the provider call.' );
-		$this->assertSame( 'yes', wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) );
+		$this->assertSame( array( '' ), $adapter->manual_marks, 'The gateway refund row is not a manual record.' );
+
+		$manual = wc_create_refund(
+			array(
+				'amount'         => 1,
+				'order_id'       => $paid->get_id(),
+				'reason'         => 'Recorded manually',
+				'refund_payment' => false,
+			)
+		);
+
+		$this->assertInstanceOf( WC_Order_Refund::class, $manual );
+		$this->assertSame( 'yes', wc_get_order( $manual->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ), 'A manual refund is marked as a manual record.' );
 	}
 
 	/** @return array<string,array{string,bool,string}> */

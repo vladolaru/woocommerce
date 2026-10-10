@@ -12,7 +12,8 @@ use WC_Order;
 use WC_Order_Refund;
 
 /**
- * Remembers, for this request, the refund row WooCommerce is about to refund through a gateway.
+ * Remembers, for this request, the refund row WooCommerce is about to refund through a gateway, and marks the refunds
+ * the merchant records without one.
  *
  * `wc_create_refund()` first saves the refund inside `update_taxes()`, then fires `woocommerce_create_refund` with it,
  * saves it again and, for a refund through the gateway, calls `wc_refund_payment()` in the same request
@@ -26,15 +27,16 @@ use WC_Order_Refund;
 class RefundRowCapture implements RegisterHooksInterface {
 
 	/**
-	 * Refund row meta key marking a row created to be refunded through a gateway the runtime owns, so code looking for
-	 * the merchant's manual refunds never takes it for one, even while its refund call is still running.
+	 * Refund row meta key marking a refund the merchant recorded without refunding through a gateway.
 	 *
-	 * It is written at the row's first save, before WooCommerce says whether the refund goes through the gateway, and
-	 * removed at `woocommerce_create_refund` when it does not (monitor ruling 2026-10-10 16:30).
+	 * It is written at `woocommerce_create_refund` when wc_create_refund() is not asked to refund the payment, and stored by
+	 * the save that follows the hook (includes/wc-order-functions.php:672-674). Only a row with the mark is taken for the
+	 * merchant's record of an earlier refund, so a row still inside its datastore write, with no mark yet, never is
+	 * (Codex review 205 R1, monitor ruling 2026-10-10 17:40).
 	 *
 	 * @since 11.2.0
 	 */
-	public const GATEWAY_REFUND_META = '_wc_provider_gateway_refund';
+	public const MANUAL_REFUND_META = '_wc_manual_refund_record';
 
 	/**
 	 * Provider gateways controller.
@@ -68,9 +70,6 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register(): void {
-		if ( false === has_action( 'woocommerce_before_order_refund_object_save', array( $this, 'handle_before_refund_save' ) ) ) {
-			add_action( 'woocommerce_before_order_refund_object_save', array( $this, 'handle_before_refund_save' ), 10, 1 );
-		}
 		if ( false === has_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ) ) ) {
 			add_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ), 10, 2 );
 		}
@@ -82,29 +81,13 @@ class RefundRowCapture implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Mark a new refund of an order paid through one of the runtime's gateways before its first save.
-	 *
-	 * WooCommerce saves the row in wc_create_refund() before it fires `woocommerce_create_refund`, so the marker must
-	 * already be there for another request never to take the row for a manual record (Codex review 204 F1).
-	 *
-	 * @internal
-	 *
-	 * @param mixed $refund Refund about to be saved.
-	 */
-	public function handle_before_refund_save( $refund ): void {
-		if ( $refund instanceof WC_Order_Refund && 0 === $refund->get_id() && $this->is_runtime_gateway_refund( $refund ) ) {
-			$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
-		}
-	}
-
-	/**
 	 * Keep a refund WooCommerce is about to refund through one of the runtime's gateways, next to those kept for calls
 	 * still running.
 	 *
-	 * A refund that does not go through the gateway leaves what was kept alone, so a manual refund a callback creates
-	 * inside a gateway refund's call never takes that call's row away (Codex review 204 F3). It loses the marker its first
-	 * save gave it; the save that follows this hook stores the removal. Refunds through other plugins' gateways are neither
-	 * marked nor kept: no refund call of the runtime takes them (Codex review 205 R2).
+	 * A refund that does not go through the gateway gets MANUAL_REFUND_META, which the save that follows this hook stores,
+	 * and leaves what was kept alone, so a manual refund a callback creates inside a gateway refund's call never takes that
+	 * call's row away (Codex review 204 F3). Refunds through other plugins' gateways are not kept: no refund call of the
+	 * runtime takes them (Codex review 205 R2).
 	 *
 	 * @internal
 	 *
@@ -117,7 +100,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 		}
 
 		if ( ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
-			$refund->delete_meta_data( self::GATEWAY_REFUND_META );
+			$refund->update_meta_data( self::MANUAL_REFUND_META, 'yes' );
 			return;
 		}
 
@@ -125,7 +108,6 @@ class RefundRowCapture implements RegisterHooksInterface {
 			return;
 		}
 
-		$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
 		$this->refunds[] = array(
 			'refund'  => $refund,
 			'blog_id' => get_current_blog_id(),

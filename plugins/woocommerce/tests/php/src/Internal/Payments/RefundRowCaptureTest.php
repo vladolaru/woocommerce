@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Unit_Test_Case;
+use WP_REST_Request;
 
 /**
  * Tests for RefundRowCapture.
@@ -271,103 +272,129 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund through one of the runtime's gateways is marked as a gateway refund before it is saved; a refund through another plugin's gateway is left untouched.
+	 * @testdox A refund recorded without the gateway is marked as a manual record when WooCommerce creates it; a refund through the gateway is not.
 	 *
-	 * Monitor ruling 2026-10-10 15:05 (R1b): the marker keeps another request's in-flight gateway row from passing for the
-	 * merchant's manual record.
+	 * Codex review 205 R1 and monitor ruling 2026-10-10 17:40: only a row carrying the mark is ever taken for the
+	 * merchant's manual record of an earlier refund, so a row still inside a datastore write, which has no mark yet, never is.
 	 */
-	public function test_marks_only_refunds_through_the_runtime_gateways(): void {
-		$controller = $this->createMock( ProviderGatewaysController::class );
-		$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => 'runtime_gateway' === $gateway_id );
-		$sut = new RefundRowCapture();
-		$sut->init( $controller );
+	public function test_marks_only_refunds_recorded_without_the_gateway(): void {
+		$sut    = $this->create_capture();
 		$marked = array();
+		$kinds  = array(
+			'manual'  => false,
+			'gateway' => true,
+		);
 
-		foreach ( array( 'runtime_gateway', 'other_plugin_gateway' ) as $payment_method ) {
-			$order = $this->create_order();
-			$order->set_payment_method( $payment_method );
-			$order->save();
+		foreach ( $kinds as $kind => $refund_payment ) {
 			$refund = new WC_Order_Refund();
-			$refund->set_parent_id( $order->get_id() );
+			$refund->set_parent_id( $this->create_order()->get_id() );
 			$refund->set_amount( '4.25' );
-
-			$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
 			$refund->save();
 
-			$marked[ $payment_method ] = wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true );
+			$sut->handle_create_refund( $refund, array( 'refund_payment' => $refund_payment ) );
+			$refund->save();
+
+			$marked[ $kind ] = wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true );
 		}
 
-		$this->assertSame( 'yes', $marked['runtime_gateway'] );
-		$this->assertSame( '', $marked['other_plugin_gateway'] );
+		$this->assertSame( 'yes', $marked['manual'] );
+		$this->assertSame( '', $marked['gateway'] );
 	}
 
 	/**
-	 * @testdox Through wc_create_refund(), a $label refund is stored with marker "$first_save_marker" at its first save and "$final_marker" once created.
+	 * @testdox A refund recorded manually through $entry is stored with the manual record mark.
+	 * @dataProvider manual_refund_entries_data
 	 *
-	 * The gateway case has no gateway to refund through, so WooCommerce deletes its row; only its first save is read.
-	 * @dataProvider first_save_marker_data
+	 * Monitor ruling 2026-10-10 17:40: both of WooCommerce's merchant entry points create the row through
+	 * wc_create_refund() without refund_payment, whose save after `woocommerce_create_refund` (includes/wc-order-functions.php:674)
+	 * stores the mark.
 	 *
-	 * Codex review 204 F1 and monitor ruling 2026-10-10 16:30: wc_create_refund() first saves the row inside update_taxes()
-	 * (includes/wc-order-functions.php:657), before `woocommerce_create_refund` at :672, so the marker is written at that
-	 * first save and removed again at the hook when the refund does not go through the gateway.
-	 *
-	 * @param string      $label             Case label.
-	 * @param string      $payment_method    The order's payment method.
-	 * @param bool        $refund_payment    Whether the refund goes through the gateway.
-	 * @param string      $first_save_marker The marker stored at the row's first save.
-	 * @param string|null $final_marker      The marker stored once wc_create_refund() returns; null when the row is deleted.
+	 * @param string $entry The entry point.
 	 */
-	public function test_marks_at_the_first_save_and_unmarks_a_manual_refund( string $label, string $payment_method, bool $refund_payment, string $first_save_marker, ?string $final_marker ): void {
-		unset( $label );
-		$controller = $this->createMock( ProviderGatewaysController::class );
-		$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => 'runtime_gateway' === $gateway_id );
-		$sut = new RefundRowCapture();
-		$sut->init( $controller );
+	public function test_marks_a_refund_recorded_manually( string $entry ): void {
+		$sut = $this->create_capture();
 		$sut->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$order = $this->create_order();
-		$order->set_payment_method( $payment_method );
-		$order->save();
-		$stored     = array();
-		$first_save = static function ( $refund ) use ( &$stored ): void {
-			$stored[] = $refund instanceof WC_Order_Refund ? (string) wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) : null;
-		};
-		add_action( 'woocommerce_after_order_refund_object_save', $first_save );
 
-		try {
-			$refund = wc_create_refund(
-				array(
-					'order_id'       => $order->get_id(),
-					'amount'         => 4.25,
-					'refund_payment' => $refund_payment,
-				)
-			);
-		} finally {
-			remove_action( 'woocommerce_after_order_refund_object_save', $first_save );
-			remove_action( 'woocommerce_before_order_refund_object_save', array( $sut, 'handle_before_refund_save' ) );
-			remove_action( 'woocommerce_create_refund', array( $sut, 'handle_create_refund' ) );
-		}
+		$refund_id = 'rest' === $entry ? $this->refund_through_rest( $order ) : $this->refund_through_ajax( $order );
 
-		$this->assertNotEmpty( $stored );
-		$this->assertSame( $first_save_marker, $stored[0], 'The marker stored at the first save.' );
-		if ( null === $final_marker ) {
-			$this->assertWPError( $refund );
-		} else {
-			$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-			$this->assertSame( $final_marker, wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) );
-		}
+		$this->assertGreaterThan( 0, $refund_id );
+		$this->assertSame( 'yes', wc_get_order( $refund_id )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ) );
 	}
 
 	/**
-	 * Refunds created through wc_create_refund().
+	 * WooCommerce's manual refund entry points.
 	 *
-	 * @return array<string,array{string,string,bool,string,string|null}>
+	 * @return array<string,array{string}>
 	 */
-	public function first_save_marker_data(): array {
+	public function manual_refund_entries_data(): array {
 		return array(
-			'gateway refund on a runtime order'     => array( 'gateway', 'runtime_gateway', true, 'yes', null ),
-			'manual refund on a runtime order'      => array( 'manual', 'runtime_gateway', false, 'yes', '' ),
-			'manual refund on another plugin order' => array( 'other plugin', 'other_plugin_gateway', false, '', '' ),
+			'Refund manually on the order screen' => array( 'ajax' ),
+			'a REST refund with api_refund false' => array( 'rest' ),
 		);
+	}
+
+	/**
+	 * Refund 1.00 of an order through the REST API without the gateway.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int The refund ID.
+	 */
+	private function refund_through_rest( WC_Order $order ): int {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds' );
+		$request->set_body_params(
+			array(
+				'amount'     => '1.00',
+				'api_refund' => false,
+			)
+		);
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 201, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+
+		return (int) $response->get_data()['id'];
+	}
+
+	/**
+	 * Refund 1.00 of an order with "Refund manually" on the order screen (WC_AJAX::refund_line_items()).
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int The refund ID.
+	 */
+	private function refund_through_ajax( WC_Order $order ): int {
+		$_POST['order_id']        = (string) $order->get_id();
+		$_POST['refund_amount']   = '1.00';
+		$_POST['refunded_amount'] = '0.00';
+		$_POST['api_refund']      = 'false';
+		$_REQUEST['security']     = wp_create_nonce( 'order-item' );
+		$die_handler              = static function () {
+			return static function () {
+				throw new \RuntimeException( 'ajax-die' );
+			};
+		};
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		// The handler opens a buffer of its own, which the die handler leaves open.
+		$level = ob_get_level();
+		ob_start();
+		try {
+			\WC_AJAX::refund_line_items();
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'ajax-die', $exception->getMessage() );
+		} finally {
+			$json = '';
+			while ( ob_get_level() > $level ) {
+				$json = (string) ob_get_clean() . $json;
+			}
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			unset( $_POST['order_id'], $_POST['refund_amount'], $_POST['refunded_amount'], $_POST['api_refund'], $_REQUEST['security'] );
+		}
+		$this->assertTrue( json_decode( $json, true )['success'] ?? false, 'The manual refund must succeed: ' . $json );
+		$refunds = wc_get_order( $order->get_id() )->get_refunds();
+		$this->assertCount( 1, $refunds );
+
+		return $refunds[0]->get_id();
 	}
 
 	/**
