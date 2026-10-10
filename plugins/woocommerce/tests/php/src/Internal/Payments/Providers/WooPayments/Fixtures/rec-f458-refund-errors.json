@@ -1,0 +1,615 @@
+{
+	"_meta": {
+		"recording": "F458 (b) and (c)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, one transport attempt each (no retries: only WP_Error transport failures retry); metadata.refund_attempt added to the refund POSTs on wcpay_api_request_params; native_exception is what WooPaymentsApiClient threw for the answer",
+		"sanitized": "client_secret, receipt_url, email-like keys, fingerprint and the shopper IP/UA keys replaced with REDACTED where present; response bodies are JSON-decoded and otherwise verbatim; raw_body is the error body exactly as received",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at c0f490f35e5, WooPayments plugin inactive, test mode), 2026-10-10",
+		"notes": "Step 0 of data/t62-ambiguous-refund-hold.md (row 458) in the 2026-09-03-native-payments-program-orientation session folder; transcripts in .agents/tmp/orchestrator/f458/recordings/. Every Stripe refund error reaches the store as 400 wcpay_bad_request with Stripe's message only (no type, no decline code), the idempotency error included; the list read after these requests still held the same three refunds."
+	},
+	"entries": [
+		{
+			"pair": "refund_exceeds_charge",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); a 50.00 refund under a fresh key",
+			"recorded_at": "2026-10-10T07:53:20+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_attempt": "c39399f8-d4d6-4330-93ae-9bcd418aca9c"
+					},
+					"amount": 5000,
+					"reason": "requested_by_customer"
+				}
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"code": "wcpay_bad_request",
+					"message": "Refund amount ($50.00) is greater than charge amount ($43.21)",
+					"data": {
+						"status": 400
+					}
+				},
+				"raw_body": "{\"code\":\"wcpay_bad_request\",\"message\":\"Refund amount ($50.00) is greater than charge amount ($43.21)\",\"data\":{\"status\":400}}"
+			},
+			"native_exception": {
+				"message": "Error: Refund amount ($50.00) is greater than charge amount ($43.21)",
+				"get_error_code": "wcpay_bad_request",
+				"get_http_code": 400,
+				"get_error_type": "",
+				"get_decline_code": "",
+				"get_error_data": {
+					"status": 400
+				},
+				"get_merchant_message": ""
+			}
+		},
+		{
+			"pair": "same_key_same_params_replays_failure",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); the refund_exceeds_charge request resent byte for byte under its key: Stripe replays the stored failure",
+			"recorded_at": "2026-10-10T07:53:23+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_attempt": "c39399f8-d4d6-4330-93ae-9bcd418aca9c"
+					},
+					"amount": 5000,
+					"reason": "requested_by_customer"
+				}
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"code": "wcpay_bad_request",
+					"message": "Refund amount ($50.00) is greater than charge amount ($43.21)",
+					"data": {
+						"status": 400
+					}
+				},
+				"raw_body": "{\"code\":\"wcpay_bad_request\",\"message\":\"Refund amount ($50.00) is greater than charge amount ($43.21)\",\"data\":{\"status\":400}}"
+			},
+			"native_exception": {
+				"message": "Error: Refund amount ($50.00) is greater than charge amount ($43.21)",
+				"get_error_code": "wcpay_bad_request",
+				"get_http_code": 400,
+				"get_error_type": "",
+				"get_decline_code": "",
+				"get_error_data": {
+					"status": 400
+				},
+				"get_merchant_message": ""
+			}
+		},
+		{
+			"pair": "refund_exceeds_unrefunded_remainder",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); a 20.00 refund under a fresh key, more than the 18.78 left",
+			"recorded_at": "2026-10-10T07:53:44+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "95608a10-8882-4d86-86cf-defb7ad91a32",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_attempt": "95608a10-8882-4d86-86cf-defb7ad91a32"
+					},
+					"amount": 2000,
+					"reason": "requested_by_customer"
+				}
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"code": "wcpay_bad_request",
+					"message": "Refund amount ($20.00) is greater than unrefunded amount on charge ($18.78)",
+					"data": {
+						"status": 400
+					}
+				},
+				"raw_body": "{\"code\":\"wcpay_bad_request\",\"message\":\"Refund amount ($20.00) is greater than unrefunded amount on charge ($18.78)\",\"data\":{\"status\":400}}"
+			},
+			"native_exception": {
+				"message": "Error: Refund amount ($20.00) is greater than unrefunded amount on charge ($18.78)",
+				"get_error_code": "wcpay_bad_request",
+				"get_http_code": 400,
+				"get_error_type": "",
+				"get_decline_code": "",
+				"get_error_data": {
+					"status": 400
+				},
+				"get_merchant_message": ""
+			}
+		},
+		{
+			"pair": "reused_key_different_amount",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); the 5.55 refund's key 8dfc0ff3-4161-4bde-97c7-2e909facf280 with amount 6.00: Stripe's idempotency error, its message naming sha256(key), HTML-escaped",
+			"recorded_at": "2026-10-10T07:53:47+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "F458 free-text reason",
+						"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280"
+					},
+					"amount": 600,
+					"reason": null
+				}
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"code": "wcpay_bad_request",
+					"message": "Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;74c81e2df642b558315964f72d94290bc1cb0ecdc127e1ddb74f54d84f77dbc0&#039; if you meant to execute a different request.",
+					"data": {
+						"status": 400
+					}
+				},
+				"raw_body": "{\"code\":\"wcpay_bad_request\",\"message\":\"Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;74c81e2df642b558315964f72d94290bc1cb0ecdc127e1ddb74f54d84f77dbc0&#039; if you meant to execute a different request.\",\"data\":{\"status\":400}}"
+			},
+			"native_exception": {
+				"message": "Error: Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;74c81e2df642b558315964f72d94290bc1cb0ecdc127e1ddb74f54d84f77dbc0&#039; if you meant to execute a different request.",
+				"get_error_code": "wcpay_bad_request",
+				"get_http_code": 400,
+				"get_error_type": "",
+				"get_decline_code": "",
+				"get_error_data": {
+					"status": 400
+				},
+				"get_merchant_message": ""
+			}
+		},
+		{
+			"pair": "reused_key_identical_params_replays_refund",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); the 5.55 refund's request resent byte for byte under its key: Stripe replays the original refund, no new refund is created",
+			"recorded_at": "2026-10-10T07:53:50+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "F458 free-text reason",
+						"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280"
+					},
+					"amount": 555,
+					"reason": null
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"id": "re_3UOv4vBzWlxcwgpP0Mxsx0Nk",
+					"object": "refund",
+					"amount": 555,
+					"balance_transaction": "txn_3UOv4vBzWlxcwgpP0e2eEkI2",
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"created": 1791618755,
+					"currency": "usd",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"destination_details": {
+						"card": {
+							"reference_status": "pending",
+							"reference_type": "acquirer_reference_number",
+							"type": "refund"
+						},
+						"type": "card"
+					},
+					"metadata": {
+						"merchant_refund_reason": "F458 free-text reason",
+						"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+						"refund_source": "woocommerce_native"
+					},
+					"payment_intent": {
+						"id": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+						"object": "payment_intent",
+						"allowed_payment_method_types": null,
+						"amount": 4321,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 4321,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 155,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"object": "list",
+							"data": [
+								{
+									"id": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+									"object": "charge",
+									"amount": 4321,
+									"amount_captured": 4321,
+									"amount_refunded": 2443,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1UOv4wBzWlxcwgpPUq2a1Nsp",
+									"application_fee_amount": 155,
+									"balance_transaction": "txn_3UOv4vBzWlxcwgpP0ig2c0qa",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": true,
+									"created": 1791618746,
+									"currency": "usd",
+									"customer": "cus_UsIeTbmGHPc9jY",
+									"description": "F458 refund-hold step 0 recording",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"rec": "F458"
+									},
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 50,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+									"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 4321,
+											"authorization_code": "785969",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": null,
+												"address_postal_code_check": null,
+												"cvc_check": "pass"
+											},
+											"country": "US",
+											"description": "Visa Classic",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 10,
+											"exp_year": 2027,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "REDACTED",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 4321,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": null,
+									"receipt_number": null,
+									"receipt_url": "REDACTED",
+									"refunded": false,
+									"refunds": {
+										"object": "list",
+										"data": [
+											{
+												"id": "re_3UOv4vBzWlxcwgpP0Mxsx0Nk",
+												"object": "refund",
+												"amount": 555,
+												"balance_transaction": "txn_3UOv4vBzWlxcwgpP0e2eEkI2",
+												"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+												"created": 1791618755,
+												"currency": "usd",
+												"customer": "cus_UsIeTbmGHPc9jY",
+												"customer_account": null,
+												"destination_details": {
+													"card": {
+														"reference_status": "pending",
+														"reference_type": "acquirer_reference_number",
+														"type": "refund"
+													},
+													"type": "card"
+												},
+												"metadata": {
+													"merchant_refund_reason": "F458 free-text reason",
+													"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+												"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+												"payment_method_details": {
+													"card": {
+														"acquirer_reference_number": null,
+														"acquirer_reference_number_status": "pending"
+													},
+													"type": "card"
+												},
+												"reason": null,
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											},
+											{
+												"id": "re_3UOv4vBzWlxcwgpP0AwrnrcH",
+												"object": "refund",
+												"amount": 777,
+												"balance_transaction": "txn_3UOv4vBzWlxcwgpP0NIscHKa",
+												"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+												"created": 1791618751,
+												"currency": "usd",
+												"customer": "cus_UsIeTbmGHPc9jY",
+												"customer_account": null,
+												"destination_details": {
+													"card": {
+														"reference": "6813260776934211",
+														"reference_status": "available",
+														"reference_type": "acquirer_reference_number",
+														"type": "refund"
+													},
+													"type": "card"
+												},
+												"metadata": {
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+												"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+												"payment_method_details": {
+													"card": {
+														"acquirer_reference_number": "6813260776934211",
+														"acquirer_reference_number_status": "available"
+													},
+													"type": "card"
+												},
+												"reason": null,
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											},
+											{
+												"id": "re_3UOv4vBzWlxcwgpP00h5YCby",
+												"object": "refund",
+												"amount": 1111,
+												"balance_transaction": "txn_3UOv4vBzWlxcwgpP0Yz2DDdY",
+												"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+												"created": 1791618748,
+												"currency": "usd",
+												"customer": "cus_UsIeTbmGHPc9jY",
+												"customer_account": null,
+												"destination_details": {
+													"card": {
+														"reference": "3195053601272128",
+														"reference_status": "available",
+														"reference_type": "acquirer_reference_number",
+														"type": "refund"
+													},
+													"type": "card"
+												},
+												"metadata": {
+													"merchant_refund_reason": "requested_by_customer",
+													"refund_attempt": "366fa04f-cf23-4be7-bab2-e622ae2696a5",
+													"refund_source": "woocommerce_native"
+												},
+												"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+												"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+												"payment_method_details": {
+													"card": {
+														"acquirer_reference_number": "3195053601272128",
+														"acquirer_reference_number_status": "available"
+													},
+													"type": "card"
+												},
+												"reason": "requested_by_customer",
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											}
+										],
+										"has_more": false,
+										"total_count": 3,
+										"url": "/v1/charges/ch_3UOv4vBzWlxcwgpP0ALlMGAw/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3UOv4vBzWlxcwgpP096bz0cn"
+						},
+						"client_secret": "REDACTED",
+						"confirmation_method": "automatic",
+						"created": 1791618745,
+						"currency": "usd",
+						"customer": "cus_UsIeTbmGHPc9jY",
+						"customer_account": null,
+						"description": "F458 refund-hold step 0 recording",
+						"excluded_payment_method_types": null,
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+						"level3": null,
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"rec": "F458"
+						},
+						"next_action": null,
+						"on_behalf_of": null,
+						"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": null,
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					},
+					"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+					"payment_method_details": {
+						"card": {
+							"acquirer_reference_number": null,
+							"acquirer_reference_number_status": "pending"
+						},
+						"type": "card"
+					},
+					"reason": null,
+					"receipt_number": null,
+					"source_transfer_reversal": null,
+					"status": "succeeded",
+					"transfer_reversal": null
+				}
+			}
+		},
+		{
+			"pair": "reused_failed_key_different_amount",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (43.21 USD), already refunded 11.11, 7.77 and 5.55 (rec-f458-refund-list.json); the refund_exceeds_charge key with amount 1.00: the stored failure blocks the key, so the answer is the idempotency error",
+			"recorded_at": "2026-10-10T07:53:53+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::refund_charge (source woocommerce_native), metadata.refund_attempt equal to the Idempotency-Key",
+				"method": "POST",
+				"path": "/sites/4/wcpay/refunds (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "c39399f8-d4d6-4330-93ae-9bcd418aca9c",
+				"body": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"metadata": {
+						"refund_source": "woocommerce_native",
+						"merchant_refund_reason": "requested_by_customer",
+						"refund_attempt": "c39399f8-d4d6-4330-93ae-9bcd418aca9c"
+					},
+					"amount": 100,
+					"reason": "requested_by_customer"
+				}
+			},
+			"response": {
+				"http_status": 400,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"code": "wcpay_bad_request",
+					"message": "Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;573f95f134bf83d9c09c54966e9bb63ac27698bdc2daf277dc85f80f3520edb6&#039; if you meant to execute a different request.",
+					"data": {
+						"status": 400
+					}
+				},
+				"raw_body": "{\"code\":\"wcpay_bad_request\",\"message\":\"Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;573f95f134bf83d9c09c54966e9bb63ac27698bdc2daf277dc85f80f3520edb6&#039; if you meant to execute a different request.\",\"data\":{\"status\":400}}"
+			},
+			"native_exception": {
+				"message": "Error: Keys for idempotent requests can only be used with the same parameters they were first used with. Try using a key other than &#039;573f95f134bf83d9c09c54966e9bb63ac27698bdc2daf277dc85f80f3520edb6&#039; if you meant to execute a different request.",
+				"get_error_code": "wcpay_bad_request",
+				"get_http_code": 400,
+				"get_error_type": "",
+				"get_decline_code": "",
+				"get_error_data": {
+					"status": 400
+				},
+				"get_merchant_message": ""
+			}
+		}
+	]
+}

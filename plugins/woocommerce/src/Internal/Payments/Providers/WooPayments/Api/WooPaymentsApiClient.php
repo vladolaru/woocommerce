@@ -369,7 +369,9 @@ class WooPaymentsApiClient {
 	 * @param int|null    $amount           Minor-unit amount.
 	 * @param string|null $reason           Merchant reason.
 	 * @param string      $source           Refund source identifier.
-	 * @param string      $idempotency_key  Key minted fresh for this refund call by the caller, reused across transport retries.
+	 * @param string      $idempotency_key  Key minted fresh for this refund call by the caller, reused across transport retries. It is
+	 *                                      also sent as the `refund_attempt` metadata, so the charge's refund list shows which
+	 *                                      refund the call made. An empty key lets each send mint its own and sends no marker.
 	 * @return array<string,mixed>
 	 */
 	public function refund_charge( string $charge_id, ?int $amount, ?string $reason, string $source, string $idempotency_key ): array {
@@ -395,6 +397,10 @@ class WooPaymentsApiClient {
 			// The platform caps metadata values at 500 characters and rejects the whole
 			// request beyond it; a long merchant reason must cost its tail, not the refund.
 			$params['metadata']['merchant_refund_reason'] = mb_substr( $reason, 0, self::METADATA_VALUE_MAX_LENGTH );
+		}
+
+		if ( '' !== $idempotency_key ) {
+			$params['metadata']['refund_attempt'] = $idempotency_key;
 		}
 
 		return $this->request( $params, 'refunds', 'POST' );

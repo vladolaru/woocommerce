@@ -6994,6 +6994,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'reason', $sent );
 		$this->assertSame( $expected_wire_reason, $sent['reason'], "The $pair request's enumerated reason must match the recording." );
 		$this->assertSame( $reason, $sent['metadata']['merchant_refund_reason'] ?? null, "The $pair request must carry the merchant reason as metadata." );
+		$this->assertSame( $http_client->last_headers['Idempotency-Key'] ?? '', $sent['metadata']['refund_attempt'] ?? null, "The $pair request must carry its key as the refund_attempt metadata." );
 
 		$notes = array_values(
 			array_filter(

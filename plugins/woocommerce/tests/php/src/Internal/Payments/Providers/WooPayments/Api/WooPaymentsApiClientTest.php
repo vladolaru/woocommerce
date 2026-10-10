@@ -348,6 +348,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				'metadata'  => array(
 					'refund_source'          => 'native_transport',
 					'merchant_refund_reason' => 'requested_by_customer',
+					'refund_attempt'         => 'idem_test',
 					'filtered'               => 'yes',
 				),
 				'amount'    => 250,
@@ -423,12 +424,54 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				'metadata'  => array(
 					'refund_source'          => 'merchant_dashboard',
 					'merchant_refund_reason' => 'Customer requested a full refund',
+					'refund_attempt'         => 'idem_full_refund',
 				),
 				'amount'    => null,
 				'reason'    => null,
 			),
 			json_decode( (string) $http_client->last_body, true )
 		);
+	}
+
+	/**
+	 * @testdox A refund request sends its key as the refund_attempt metadata, the exact body recorded on local WPCOM.
+	 *
+	 * Recorded in `Fixtures/rec-f458-refund-errors.json`, pair `reused_key_identical_params_replays_refund`: the request
+	 * carried `metadata.refund_attempt` equal to its Idempotency-Key, and the platform answered the identical resend with
+	 * the original refund, marker included, so the charge's refund list can show which refund a call made.
+	 */
+	public function test_refund_charge_sends_its_key_as_the_refund_attempt_metadata(): void {
+		$recorded                  = $this->load_recorded_refund_error_entry( 'reused_key_identical_params_replays_refund' );
+		$sent                      = $recorded['request']['body'];
+		list( $sut, $http_client ) = $this->make_sut( true, $recorded['response']['body'] );
+
+		$result = $sut->refund_charge( (string) $sent['charge'], (int) $sent['amount'], (string) $sent['metadata']['merchant_refund_reason'], (string) $sent['metadata']['refund_source'], (string) $recorded['request']['idempotency_key'] );
+
+		$this->assertSame( $recorded['response']['body']['id'], $result['id'] );
+		$this->assertSame( $recorded['request']['idempotency_key'], $http_client->last_headers['Idempotency-Key'] ?? null );
+		$this->assertSame( $sent, json_decode( (string) $http_client->last_body, true ), 'The body must match the recorded request, marker included.' );
+	}
+
+	/**
+	 * Load one recorded F458 (b) or (c) refund request entry by pair key.
+	 *
+	 * @param string $pair Fixture pair key.
+	 * @return array{request:array{idempotency_key:string,body:array<string,mixed>},response:array{body:array<string,mixed>}}
+	 */
+	private function load_recorded_refund_error_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/rec-f458-refund-errors.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry;
+			}
+		}
+
+		$this->fail( "REC F458 (b)/(c) fixture has no entry for pair '$pair'." );
 	}
 
 	/**
