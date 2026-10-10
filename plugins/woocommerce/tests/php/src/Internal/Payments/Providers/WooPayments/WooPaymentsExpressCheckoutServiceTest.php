@@ -635,6 +635,12 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected    Expected localized subscription state.
 	 */
 	public function test_checkout_subscription_context_uses_supported_cart_detectors( bool $initial, $renewal, $resubscribe, $switch_result, bool $expected ): void {
+		// WooCommerce Subscriptions loads its core library with its cart; the mock is reset after every test.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $initial;
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = $renewal;

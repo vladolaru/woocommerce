@@ -906,6 +906,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should flag a renewal-only cart as containing a subscription, like the extension.
 	 */
 	public function test_get_payment_fields_js_config_flags_renewal_cart_as_subscription(): void {
+		$this->report_subscriptions_loaded();
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
 

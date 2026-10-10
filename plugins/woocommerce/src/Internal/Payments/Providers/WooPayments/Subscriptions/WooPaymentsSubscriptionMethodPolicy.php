@@ -21,16 +21,20 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	/**
 	 * Tell whether the current cart contains a subscription or a subscription renewal.
 	 *
-	 * Mirrors the WooPayments extension's is_subscription_item_in_cart(): a renewal cart
-	 * pays for an existing subscription, so every surface that forces card saving for
-	 * subscription purchases must treat a renewal cart the same way.
+	 * A renewal cart pays for an existing subscription, so every surface that forces card saving for subscription
+	 * purchases treats it the same way. Neither counts unless WooCommerce Subscriptions' cart class is loaded and
+	 * subscriptions support is available, as in client 11.1.0 `is_subscription_item_in_cart()`
+	 * (trait-wc-payments-subscriptions-utilities.php:96-101).
 	 *
 	 * @return bool
 	 */
 	public static function cart_contains_subscription_or_renewal(): bool {
-		$contains_subscription = class_exists( 'WC_Subscriptions_Cart' )
-			&& is_callable( array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' ) )
-			&& (bool) \WC_Subscriptions_Cart::cart_contains_subscription();
+		if ( ! wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Cart' ) || ! self::is_subscriptions_available() ) {
+			return false;
+		}
+
+		$cart_contains_subscription = array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' );
+		$contains_subscription      = is_callable( $cart_contains_subscription ) && (bool) call_user_func( $cart_contains_subscription );
 
 		return $contains_subscription
 			|| ( function_exists( 'wcs_cart_contains_renewal' ) && (bool) wcs_cart_contains_renewal() );
