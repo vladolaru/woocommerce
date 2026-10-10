@@ -74,7 +74,7 @@ class OwnerIndependentTest extends WalletTestCase {
 			TaskLists::init_default_lists();
 		}
 		$this->remove_task();
-		$this->sut = new OwnerIndependent();
+		$this->sut = new OwnerIndependent( null, null, '__return_true' );
 	}
 
 	/**
@@ -376,6 +376,77 @@ class OwnerIndependentTest extends WalletTestCase {
 	 * @param string $context The kind of request.
 	 */
 	public function test_costs_nothing_on_a_store_without_wallet_history( string $context ): void {
+		$this->record_queries_while_in_context(
+			$context,
+			function (): void {
+				$this->run_registration_in_context();
+			}
+		);
+
+		$this->assertSame( array(), $this->queries, 'No query of any kind' );
+		$this->assertFalse( has_action( 'init', array( $this->sut, 'register_task' ) ), 'Nothing is attached' );
+		$this->assertFalse( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'No row notice' );
+		$this->assertFalse( has_action( 'wc_ajax_wc_paypal_wallet_dismiss_notice' ), 'No dismiss action' );
+		$this->assertFalse( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'No order screen notice' );
+		$this->assertFalse( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'No Plugins page notice' );
+		$this->assertNotContains( 'wc-paypal-wallet-setup', $this->extended_task_ids() );
+		$this->assertSame( array(), $this->note_ids() );
+	}
+
+	/**
+	 * @testdox Should attach neither the routes nor the card, and run no query, on a store where the wallet is not available and nothing was ever sold with it: $context.
+	 * @testWith ["admin"]
+	 *           ["rest"]
+	 *
+	 * @param string $context The kind of request.
+	 */
+	public function test_attaches_nothing_where_the_wallet_is_not_available( string $context ): void {
+		$sut = new OwnerIndependent( null, null, '__return_false' );
+
+		$this->record_queries_while_in_context(
+			$context,
+			static function () use ( $sut ): void {
+				$sut->register();
+			}
+		);
+
+		$this->assertSame( array(), $this->queries, 'No query of any kind' );
+		$this->assertFalse( has_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) ) );
+		$this->assertFalse( has_filter( 'rest_post_dispatch', array( $sut->profiler_card(), 'handle_rest_post_dispatch' ) ) );
+	}
+
+	/**
+	 * @testdox Should still attach the routes on a store with wallet history where the wallet is not available, so the panel can show the held orders.
+	 */
+	public function test_attaches_the_routes_for_history_without_availability(): void {
+		$this->set_collecting();
+		$sut = new OwnerIndependent( null, null, '__return_false' );
+		$this->simulate_admin_request( array() );
+
+		$sut->register();
+
+		$this->assertSame( 10, has_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) ) );
+	}
+
+	/**
+	 * @testdox Should treat a missing availability callable as not available.
+	 */
+	public function test_defaults_to_not_available(): void {
+		$sut = new OwnerIndependent();
+		$this->simulate_admin_request( array() );
+
+		$sut->register();
+
+		$this->assertFalse( has_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) ) );
+	}
+
+	/**
+	 * Set up a kind of request, record every query while the work runs, then put the request back.
+	 *
+	 * @param string   $context The kind of request: frontend, admin, rest, cron or ajax.
+	 * @param callable $work    The work to record.
+	 */
+	private function record_queries_while_in_context( string $context, callable $work ): void {
 		$restore_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saving test state.
 		if ( 'admin' === $context ) {
 			$this->simulate_admin_request( array() );
@@ -394,7 +465,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->record_queries();
 
 		try {
-			$this->run_registration_in_context();
+			$work();
 		} finally {
 			$this->stop_recording_queries();
 			$GLOBALS['wp_rest_server'] = $previous_server; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring test state.
@@ -404,15 +475,6 @@ class OwnerIndependentTest extends WalletTestCase {
 				$_SERVER['REQUEST_URI'] = $restore_uri; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Restoring test state.
 			}
 		}
-
-		$this->assertSame( array(), $this->queries, 'No query of any kind' );
-		$this->assertFalse( has_action( 'init', array( $this->sut, 'register_task' ) ), 'Nothing is attached' );
-		$this->assertFalse( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'No row notice' );
-		$this->assertFalse( has_action( 'wc_ajax_wc_paypal_wallet_dismiss_notice' ), 'No dismiss action' );
-		$this->assertFalse( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'No order screen notice' );
-		$this->assertFalse( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'No Plugins page notice' );
-		$this->assertNotContains( 'wc-paypal-wallet-setup', $this->extended_task_ids() );
-		$this->assertSame( array(), $this->note_ids() );
 	}
 
 	/**
@@ -436,13 +498,13 @@ class OwnerIndependentTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should hook the panel's routes and the profiler card on a REST request, wallet history or not: $history.
+	 * @testdox Should hook the panel's routes and the profiler card on a REST request where the wallet is available, wallet history or not: $history.
 	 * @testWith ["none"]
 	 *           ["collecting"]
 	 *
 	 * @param string $history What the store has.
 	 */
-	public function test_register_hooks_the_routes_and_the_profiler_card_whatever_the_history( string $history ): void {
+	public function test_register_hooks_the_routes_and_the_profiler_card_where_the_wallet_is_available_whatever_the_history( string $history ): void {
 		if ( 'collecting' === $history ) {
 			$this->set_collecting();
 		}

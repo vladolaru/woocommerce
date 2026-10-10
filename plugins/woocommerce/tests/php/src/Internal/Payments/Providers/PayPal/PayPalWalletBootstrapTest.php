@@ -1448,12 +1448,31 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * @group paypal-wallet-boot
 	 *
+	 * @testdox Should attach the panel's routes on an admin request of a store with no wallet history only when the arbiter reports native enabled: enabled $native_enabled.
+	 * @testWith [true, 1]
+	 *           [false, 0]
+	 *
+	 * @param bool $native_enabled Whether the arbiter reports native as enabled.
+	 * @param int  $expected       How many route callbacks of the registrar are attached.
+	 */
+	public function test_the_panel_routes_follow_the_arbiter_on_a_store_without_history( bool $native_enabled, int $expected ): void {
+		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, $native_enabled );
+		set_current_screen( 'dashboard' ); // is_admin() is true on a WP_Screen of the admin.
+		$before = $this->count_owner_callbacks( 'rest_api_init', OwnerIndependent::class );
+
+		$this->sut->maybe_boot();
+
+		$this->assertSame( $before + $expected, $this->count_owner_callbacks( 'rest_api_init', OwnerIndependent::class ) );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
 	 * @testdox Should read no history option and no order, notes or post table on an extension-owned store with no wallet history.
 	 */
 	public function test_an_extension_owned_store_without_history_pays_no_history_query(): void {
 		global $wpdb;
 		$this->build_sut( false, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
-		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
 		wp_load_alloptions();
 		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
 		$queries = array();
@@ -1466,13 +1485,14 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$this->sut->maybe_boot();
 
 		remove_filter( 'query', $record );
-		$needles = array( $wpdb->posts, $wpdb->prefix . 'wc_orders', $wpdb->prefix . 'wc_admin_notes', Options::FIRST_ORDER, Options::COLLECTING, Options::PLATFORM );
+		$needles = array( $wpdb->posts, $wpdb->prefix . 'wc_orders', $wpdb->prefix . 'wc_admin_notes', Options::FIRST_ORDER, Options::COLLECTING, Options::PLATFORM, PayPalWalletBootstrap::LAST_OWNER_OPTION );
 		foreach ( $queries as $sql ) {
 			foreach ( $needles as $needle ) {
 				$this->assertFalse( str_contains( $sql, $needle ), "Unexpected query for $needle: $sql" );
 			}
 		}
 		$this->assertFalse( $this->sut->is_booted() );
+		$this->assertFalse( get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ), 'No owner row is written without a platform state' );
 	}
 
 	/**
@@ -1485,7 +1505,6 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce-ppcp-data-common' );
 		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
 		$this->build_sut( true, PayPalWalletRuntimeArbiter::OWNER_NATIVE, true );
-		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
 		wp_load_alloptions();
 		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
 		$queries = array();
@@ -1503,12 +1522,13 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->sut->is_dormant() );
 		$this->assertFalse( $this->sut->is_booted() );
-		$needles = array( $wpdb->posts, $wpdb->prefix . 'wc_orders', $wpdb->prefix . 'wc_admin_notes', Options::FIRST_ORDER, Options::COLLECTING, Options::PLATFORM );
+		$needles = array( $wpdb->posts, $wpdb->prefix . 'wc_orders', $wpdb->prefix . 'wc_admin_notes', Options::FIRST_ORDER, Options::COLLECTING, Options::PLATFORM, PayPalWalletBootstrap::LAST_OWNER_OPTION );
 		foreach ( $queries as $sql ) {
 			foreach ( $needles as $needle ) {
 				$this->assertFalse( str_contains( $sql, $needle ), "Unexpected query for $needle: $sql" );
 			}
 		}
+		$this->assertFalse( get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ), 'No owner row is written without a platform state' );
 	}
 
 	/**

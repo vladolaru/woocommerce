@@ -155,14 +155,18 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 *
 	 * While the extension owned the wallet, its webhook endpoint rejected the platform apps' events, so held orders and
 	 * onboarding can be out of date. The reconcile calls PayPal for every held order, so it is queued as an async action
-	 * rather than run in this request. Only a store the platform serves has anything to reconcile. Writes the option
-	 * only when the owner changed.
+	 * rather than run in this request. Only a store the platform serves has anything to reconcile, so the option is read
+	 * and written only on a store with a platform state; {@see CollectingState::abandon()} deletes it with the state.
+	 * Writes the option only when the owner changed.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @return bool Whether this request is the first after a hand-back, and a reconcile was queued.
 	 */
 	public function track_runtime_owner(): bool {
+		if ( ! ( new ConnectionState() )->has_platform_state() ) {
+			return false;
+		}
 		$owner = $this->arbiter->get_runtime_owner();
 		$last  = get_option( self::LAST_OWNER_OPTION, false );
 		if ( $last === $owner ) {
@@ -170,7 +174,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		}
 		update_option( self::LAST_OWNER_OPTION, $owner, true );
 
-		if ( PayPalWalletRuntimeArbiter::OWNER_EXTENSION !== $last || PayPalWalletRuntimeArbiter::OWNER_NATIVE !== $owner || ! ( new ConnectionState() )->has_platform_state() ) {
+		if ( PayPalWalletRuntimeArbiter::OWNER_EXTENSION !== $last || PayPalWalletRuntimeArbiter::OWNER_NATIVE !== $owner ) {
 			return false;
 		}
 
@@ -301,7 +305,13 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 */
 	protected function owner_independent_surfaces(): OwnerIndependent {
 		if ( null === $this->surfaces ) {
-			$this->surfaces = new OwnerIndependent();
+			$this->surfaces = new OwnerIndependent(
+				null,
+				null,
+				function (): bool {
+					return $this->arbiter->is_native_enabled();
+				}
+			);
 		}
 
 		return $this->surfaces;

@@ -203,7 +203,8 @@ class HandBackTest extends WalletTestCase {
 		$this->assertFalse( $this->bootstrap( $owner )->track_runtime_owner() );
 
 		$this->assertFalse( $this->reconcile_queued() );
-		$this->assertSame( $owner, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION ) );
+		$expected = $collecting ? $owner : $last;
+		$this->assertSame( $expected, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION ), 'The owner is recorded only where the platform serves the store' );
 	}
 
 	/**
@@ -218,6 +219,52 @@ class HandBackTest extends WalletTestCase {
 
 		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION ) );
 		$this->assertFalse( $this->reconcile_queued() );
+	}
+
+	/**
+	 * @testdox Should read and write no owner row on a store the platform does not serve.
+	 */
+	public function test_tracks_nothing_without_a_platform_state(): void {
+		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+		try {
+			$this->assertFalse( $this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner() );
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertFalse( get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ) );
+		foreach ( $queries as $sql ) {
+			$this->assertStringNotContainsString( PayPalWalletBootstrap::LAST_OWNER_OPTION, $sql );
+		}
+	}
+
+	/**
+	 * @testdox Should delete the owner row when the store leaves the platform, by $reason, and keep it while held orders keep the state: $held held.
+	 * @testWith ["takeover", 0, false]
+	 *           ["disabled", 0, false]
+	 *           ["first_party", 0, false]
+	 *           ["first_party", 2, false]
+	 *           ["takeover", 2, true]
+	 *           ["disabled", 2, true]
+	 *
+	 * @param string $reason The abandon reason.
+	 * @param int    $held   How many orders are held.
+	 * @param bool   $kept   Whether the owner row stays.
+	 */
+	public function test_abandon_deletes_the_owner_row( string $reason, int $held, bool $kept ): void {
+		$this->set_collecting();
+		$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
+
+		( new CollectingState( new Options(), new FixedHeldOrders( $held ) ) )->abandon( $reason );
+
+		$this->assertSame( $kept ? PayPalWalletRuntimeArbiter::OWNER_NATIVE : false, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ) );
 	}
 
 	/**

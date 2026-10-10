@@ -26,13 +26,14 @@ use WC_Order;
  * Registers the surfaces that concern held orders, which must work whoever owns the wallet and whether or not the
  * wallet booted: the Home task, the Inbox note, the two admin emails, the notices on the Payments row, the order
  * screen and the Plugins page, and the lock on the order screen's Refund button. It leaves the collecting and platform
- * state when the merchant connects first-party. It also registers, on every store, the collecting panel's REST routes
- * and the core profiler's PayPal Wallet card, which a store with no history needs to start collecting.
+ * state when the merchant connects first-party. It also registers the collecting panel's REST routes and the core
+ * profiler's PayPal Wallet card, which a store with no history needs to start collecting, but only where the wallet is
+ * available on the store or the store has history.
  *
  * The shell calls register() before any ownership check. It needs no container: it reads the autoloaded options
  * directly and builds the held-orders query only when the task is read. On a store that has no collecting or platform
- * option and no recorded first order, register() attaches only the routes and the card, on admin and REST requests,
- * and runs no query.
+ * option and no recorded first order, and where the wallet is not available, register() attaches nothing and runs no
+ * query.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -111,38 +112,49 @@ class OwnerIndependent {
 	private ?RefundLock $refund_lock = null;
 
 	/**
+	 * Whether the wallet is available on this store: core's native wallet is enabled. Null reads as not available.
+	 *
+	 * @var callable|null
+	 */
+	private $wallet_available;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param Options|null         $options The option reader; the stored options by default.
-	 * @param LoggerInterface|null $logger  Receives a failure of a surface; WooCommerce's logger when null.
+	 * @param Options|null         $options          The option reader; the stored options by default.
+	 * @param LoggerInterface|null $logger           Receives a failure of a surface; WooCommerce's logger when null.
+	 * @param callable|null        $wallet_available Returns whether the wallet is available on the store; null reads as not available.
 	 */
-	public function __construct( ?Options $options = null, ?LoggerInterface $logger = null ) {
-		$this->options = $options ?? new Options();
-		$this->logger  = $logger;
+	public function __construct( ?Options $options = null, ?LoggerInterface $logger = null, ?callable $wallet_available = null ) {
+		$this->options          = $options ?? new Options();
+		$this->logger           = $logger;
+		$this->wallet_available = $wallet_available;
 	}
 
 	/**
-	 * Hook the panel's routes and the profiler card on admin and REST requests, then the surfaces, unless the store never
-	 * had a wallet order or a collecting or platform state.
+	 * Hook the panel's routes and the profiler card on admin and REST requests where the wallet is available or the store
+	 * has history, then the surfaces, unless the store never had a wallet order or a collecting or platform state.
 	 *
-	 * On such a store only the routes and the card are attached, on admin and REST requests, and no query runs: the three
-	 * options are autoloaded and answered from the autoloaded set. The callbacks check again, because the state can change
-	 * during the request.
+	 * A store with neither history nor an available wallet attaches nothing, and no query runs: the three options are
+	 * autoloaded and answered from the autoloaded set. The callbacks check again, because the state can change during the
+	 * request.
 	 *
 	 * The task is added on `init`: core builds the task lists on `init` at priority 4, so they exist by the default priority.
 	 *
 	 * @since 11.3.0
 	 */
 	public function register(): void {
-		// Every store, on admin and REST requests only: a store with no history starts collecting through the profiler card
-		// or the panel's routes. Hooking reads nothing, and both callbacks return at once, with no query, on any request
-		// that is not theirs. A front-end request attaches nothing.
-		if ( $this->is_admin_or_rest_request() ) {
+		$history = $this->has_wallet_history();
+
+		// A store with no history starts collecting through the profiler card or the panel's routes, so it needs them only
+		// where the wallet is available; a store with history needs the routes for its held orders whoever owns. Admin and
+		// REST requests only: a front-end request attaches nothing.
+		if ( $this->is_admin_or_rest_request() && ( $history || $this->is_wallet_available() ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
 			$this->profiler_card()->register();
 		}
 
-		if ( ! $this->has_wallet_history() ) {
+		if ( ! $history ) {
 			return;
 		}
 
@@ -387,6 +399,15 @@ class OwnerIndependent {
 		return $this->options->has_autoloaded( Options::FIRST_ORDER )
 			|| $this->options->has_autoloaded( Options::COLLECTING )
 			|| $this->options->has_autoloaded( Options::PLATFORM );
+	}
+
+	/**
+	 * Whether the wallet is available on this store.
+	 *
+	 * @return bool
+	 */
+	private function is_wallet_available(): bool {
+		return null !== $this->wallet_available && (bool) call_user_func( $this->wallet_available );
 	}
 
 	/**
