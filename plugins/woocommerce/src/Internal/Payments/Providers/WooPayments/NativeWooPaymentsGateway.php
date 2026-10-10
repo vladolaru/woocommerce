@@ -1975,12 +1975,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return new WP_Error( 'wcpay_edit_order_refund_not_found', $result->get_error_message() );
 		}
 
-		// The lock refusal made no platform attempt, so there is no failure to record.
-		// This gates by exclusion: every other WP_Error from the processing service today
-		// comes from an actual platform refund attempt. A new pre-flight refusal added
-		// inside the service must be excluded here too, or it will start recording
-		// failures for refunds that never reached the provider.
-		if ( is_wp_error( $result ) && 'order_payment_refund_locked' !== $result->get_error_code() ) {
+		// The lock refusal and the refusals of a refund whose earlier attempt is unsettled made no platform attempt, so
+		// there is no failure to record (a refused retry must not mark a recorded refund failed). This works by exclusion:
+		// every other WP_Error from the processing service today comes from an actual platform refund attempt. A new
+		// pre-flight refusal must be excluded here too, or it will start recording failures for refunds that never reached
+		// the provider.
+		$no_attempt_codes = array_merge( array( 'order_payment_refund_locked' ), WooPaymentsRefundAmbiguityService::REFUSAL_CODES );
+		if ( is_wp_error( $result ) && ! in_array( $result->get_error_code(), $no_attempt_codes, true ) ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
 		} elseif ( true === $result && ! $is_zero_refund ) {
 			WooPaymentsTracks::record_wcadmin_event( 'wcpay_edit_order_refund_success' );

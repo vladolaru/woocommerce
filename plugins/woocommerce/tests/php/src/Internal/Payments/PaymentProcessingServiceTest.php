@@ -4295,6 +4295,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_free_trial' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
 		$ambiguity_service->init( $api_client );
+		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
+		$refund_ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
 			$api_client,
@@ -4304,7 +4306,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService(),
 			new WooPaymentsOrderNoteService(),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
-			$ambiguity_service
+			$ambiguity_service,
+			$refund_ambiguity_service
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -4457,6 +4460,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_ambiguous' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
 		$ambiguity_service->init( $api_client );
+		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
+		$refund_ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
 			$api_client,
@@ -4466,7 +4471,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService(),
 			new WooPaymentsOrderNoteService(),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
-			$ambiguity_service
+			$ambiguity_service,
+			$refund_ambiguity_service
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
@@ -4512,6 +4518,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_timeout' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
 		$ambiguity_service->init( $api_client );
+		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
+		$refund_ambiguity_service->init( $api_client );
 		$adapter = new WooPaymentsProviderGatewayAdapter();
 		$adapter->init(
 			$api_client,
@@ -4521,7 +4529,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService(),
 			new WooPaymentsOrderNoteService(),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
-			$ambiguity_service
+			$ambiguity_service,
+			$refund_ambiguity_service
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(

@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -1046,7 +1047,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService(),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			$this->createMock( WooPaymentsSettingsService::class ),
-			$this->createMock( WooPaymentsChargeAmbiguityService::class )
+			$this->createMock( WooPaymentsChargeAmbiguityService::class ),
+			$this->createMock( WooPaymentsRefundAmbiguityService::class )
 		);
 
 		$provider = new WooPaymentsProvider();

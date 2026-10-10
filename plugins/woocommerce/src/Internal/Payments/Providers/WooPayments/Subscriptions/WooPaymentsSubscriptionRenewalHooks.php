@@ -143,7 +143,8 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	 * The key belongs to one order's charge. Subscriptions copies a parent order's meta to its subscription, and the
 	 * subscription's meta to every renewal, so a key kept after an ambiguous parent charge would be sent again by a
 	 * renewal with another body, which the provider refuses within 24 hours (review 37 F1). The record of that ambiguous
-	 * failure belongs to the same charge, so it stays behind with the key.
+	 * failure belongs to the same charge, so it stays behind with the key. So does the record of an ambiguous refund: on a
+	 * copy it would name another order and be deleted, but it never needs to travel.
 	 *
 	 * @internal
 	 *
@@ -152,7 +153,7 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 	 */
 	public static function exclude_charge_idempotency_key( $data ) {
 		if ( is_array( $data ) ) {
-			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ], $data[ WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META ] );
+			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ], $data[ WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META ], $data[ WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META ] );
 		}
 
 		return $data;
@@ -171,7 +172,7 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 			return $meta_query;
 		}
 
-		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META );
+		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s', '%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META );
 	}
 
 	/**
