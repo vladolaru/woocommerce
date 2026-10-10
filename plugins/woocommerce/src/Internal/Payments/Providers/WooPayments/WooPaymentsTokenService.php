@@ -343,7 +343,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return $tokens;
 		}
 
-		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_native_woopayments_gateway_id( $gateway_id ) ) ) {
+		if ( 0 >= absint( $user_id ) || ( '' !== $gateway_id && ! $this->is_token_gateway_id( $gateway_id ) ) ) {
 			return $tokens;
 		}
 
@@ -358,7 +358,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$enabled_method_ids_loaded = false;
 
 		foreach ( $tokens as $token_key => $token ) {
-			if ( ! $token instanceof WC_Payment_Token || ! $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+			if ( ! $token instanceof WC_Payment_Token || ! $this->is_token_gateway_id( $token->get_gateway_id() ) ) {
 				continue;
 			}
 
@@ -1236,7 +1236,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return true;
 		}
 
-		if ( ! $this->is_native_woopayments_gateway_id( $token->get_gateway_id() ) ) {
+		if ( ! $this->is_token_gateway_id( $token->get_gateway_id() ) ) {
 			return false;
 		}
 
@@ -1246,12 +1246,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Check if a gateway ID belongs to native WooPayments reusable tokens.
+	 * Tell whether a gateway ID is one whose payment methods are saved as WooPayments tokens.
 	 *
 	 * @param string $gateway_id Gateway ID.
 	 * @return bool
 	 */
-	private function is_native_woopayments_gateway_id( string $gateway_id ): bool {
+	private function is_token_gateway_id( string $gateway_id ): bool {
 		return in_array( $gateway_id, array_unique( array_values( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE ) ), true );
 	}
 
