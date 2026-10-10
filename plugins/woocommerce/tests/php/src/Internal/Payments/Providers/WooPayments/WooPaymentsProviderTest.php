@@ -463,28 +463,30 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Classic checkout gateway publication honors the filtered availability catalog once.
+	 * Client 11.1.0 builds a gateway for every registered definition (`includes/class-wc-payments.php:616-645`); the
+	 * availability filter only shapes the settings list (`includes/class-wc-payment-gateway-wcpay.php:4848-4879`).
+	 *
+	 * @testdox Should register the gateway of a payment method the availability filter removes, without running the filter.
 	 */
-	public function test_provider_filters_classic_checkout_gateway_publication_once(): void {
+	public function test_provider_registers_gateways_without_the_availability_filter(): void {
 		$filter_calls = 0;
 		add_filter(
 			'wcpay_upe_available_payment_methods',
 			static function ( array $payment_method_ids ) use ( &$filter_calls ): array {
 				++$filter_calls;
 
-				return array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) );
+				return array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) );
 			}
 		);
-		$provider = $this->create_provider_with_capabilities( array( 'bancontact_payments' => 'active' ) );
+		$provider = $this->create_provider_with_capabilities( array( 'sepa_debit_payments' => 'active' ) );
 
 		$gateway_ids = array_map(
 			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
 			$provider->get_payment_gateways()
 		);
-		$provider->get_payment_gateways();
 
-		$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_bancontact', $gateway_ids, 'A filtered method should not be published to classic checkout.' );
-		$this->assertSame( 1, $filter_calls, 'The request-scoped gateway map should compute availability only once.' );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $gateway_ids, 'A method the filter removes keeps its gateway.' );
+		$this->assertSame( 0, $filter_calls, 'Gateway registration does not run the availability filter.' );
 	}
 
 	/**

@@ -631,12 +631,12 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Build native gateway instances for active payment method definitions.
+	 * Build native gateway instances for the payment methods WooPayments registers on this store.
 	 *
 	 * @return array<string,NativeWooPaymentsGateway>
 	 */
 	private function build_payment_gateway_map(): array {
-		$definitions = $this->payment_method_registry->get_all();
+		$definitions = $this->payment_method_registry->get_registered( $this->account_service );
 		if ( ! empty( $definitions ) ) {
 			// Prime caches to reduce future queries.
 			wp_prime_option_caches(
@@ -654,10 +654,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$gateways = array();
 
 		foreach ( $definitions as $definition ) {
-			if ( 'amazon_pay' === $definition->get_id() && ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
-				continue;
-			}
-
 			$gateways[ $definition->get_id() ] = 'card' === $definition->get_id()
 				? wc_get_container()->get( NativeWooPaymentsGateway::class )
 				: new NativeWooPaymentsGateway( $definition );

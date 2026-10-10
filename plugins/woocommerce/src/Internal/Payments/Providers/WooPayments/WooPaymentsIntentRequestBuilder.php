@@ -642,7 +642,7 @@ class WooPaymentsIntentRequestBuilder {
 	 */
 	private function are_payment_method_types_reusable( array $payment_method_types ): bool {
 		$definitions_by_stripe_type = array();
-		foreach ( $this->payment_method_registry->get_all() as $definition ) {
+		foreach ( $this->payment_method_registry->get_registered( $this->account_service ) as $definition ) {
 			$definitions_by_stripe_type[ $definition->get_stripe_payment_method_type() ] = $definition;
 		}
 

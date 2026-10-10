@@ -758,12 +758,15 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Blocks integration publication honors the registry availability filter.
+	 * Client 11.1.0 builds a gateway for every registered definition (`includes/class-wc-payments.php:616-645`); the
+	 * availability filter only shapes the settings list (`includes/class-wc-payment-gateway-wcpay.php:4848-4879`).
+	 *
+	 * @testdox Should register the Blocks integration of a payment method the availability filter removes.
 	 */
-	public function test_get_payment_method_integrations_honors_registry_availability_filter(): void {
+	public function test_get_payment_method_integrations_ignores_the_availability_filter(): void {
 		add_filter(
 			'wcpay_upe_available_payment_methods',
-			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) )
+			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
 		);
 		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
 			->disableOriginalConstructor()
@@ -788,8 +791,8 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			$integration->get_payment_method_integrations()
 		);
 
-		$this->assertNotContains( 'woocommerce_payments_bancontact', $integration_ids, 'A filtered method should not be registered with Blocks checkout.' );
-		$this->assertContains( 'woocommerce_payments', $integration_ids, 'Unfiltered methods should remain registered with Blocks checkout.' );
+		$this->assertContains( 'woocommerce_payments_sepa_debit', $integration_ids, 'A method the filter removes keeps its Blocks integration.' );
+		$this->assertContains( 'woocommerce_payments', $integration_ids, 'The card integration stays registered.' );
 	}
 
 	/**

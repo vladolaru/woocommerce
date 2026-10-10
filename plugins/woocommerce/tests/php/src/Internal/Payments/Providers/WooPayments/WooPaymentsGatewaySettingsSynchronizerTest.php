@@ -71,6 +71,33 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 syncs the settings of every gateway in its gateway map (`includes/admin/class-wc-rest-payments-settings-controller.php:766-795`),
+	 * built from the registered definitions (`includes/class-wc-payments.php:616-645`), which the availability filter does not change.
+	 *
+	 * @testdox Should project the split settings of a payment method the availability filter removes.
+	 */
+	public function test_persist_projects_a_method_the_availability_filter_removes(): void {
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
+		);
+
+		( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit' ),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit' ),
+			),
+			get_option( 'woocommerce_woocommerce_payments_sepa_debit_settings' )
+		);
+	}
+
+	/**
 	 * @testdox Reapplying an already projected settings state is intrinsically idempotent.
 	 */
 	public function test_persist_is_intrinsically_idempotent(): void {

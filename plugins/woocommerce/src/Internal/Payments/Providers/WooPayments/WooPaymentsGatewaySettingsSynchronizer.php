@@ -373,7 +373,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			: array();
 		$method_ids         = WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS;
 
-		foreach ( $this->registry->get_all() as $definition ) {
+		foreach ( $this->registry->get_registered( wc_get_container()->get( WooPaymentsAccountService::class ) ) as $definition ) {
 			if (
 				'card' !== $definition->get_id()
 				&& ! in_array( $definition->get_id(), self::PAYMENT_REQUEST_METHOD_IDS, true )

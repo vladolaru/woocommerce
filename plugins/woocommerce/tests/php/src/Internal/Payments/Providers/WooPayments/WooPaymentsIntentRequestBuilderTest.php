@@ -479,6 +479,23 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 reads reusability from the registered payment methods (`includes/class-wc-payments.php:616-645`), which
+	 * the availability filter does not change.
+	 *
+	 * @testdox Should not request setup_future_usage for SEPA when an availability filter callback removes it.
+	 */
+	public function test_setup_future_usage_ignores_the_availability_filter(): void {
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
+		);
+
+		$sepa_request = $this->build_save_requested_charge( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit', 'pm_sepa' );
+
+		$this->assertArrayNotHasKey( 'setup_future_usage', $sepa_request );
+	}
+
+	/**
 	 * @testdox New card payments declare link in payment_method_types whenever the account folds Link into card.
 	 */
 	public function test_card_payment_method_types_include_link_when_folded(): void {
