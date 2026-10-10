@@ -37,21 +37,29 @@ const Troubleshooting = () => {
 				/>
 			</SettingsBlock>
 
-			<SettingsBlock
-				title={ __( 'Webhooks', 'woocommerce' ) }
-				description={ sprintf(
-					/* translators: %s: link to the webhook status documentation. */
-					__(
-						'The following PayPal webhooks are subscribed. More information about the webhooks is available in the <a href="%s">Webhook Status documentation</a>.',
-						'woocommerce'
-					),
-					'https://woocommerce.com/document/woocommerce-paypal-payments/#webhook-status'
-				) }
-			>
-				<HooksListBlock />
-				<ResubscribeBlock />
-				<SimulationBlock />
-			</SettingsBlock>
+			{ /* POC seam (PayPal Wallet in core): on a store the platform serves, WooCommerce manages the webhooks, so Resubscribe and the test give way to the note the server sends. */ }
+			{ window.ppcpSettings?.collecting?.webhooks_note ? (
+				<SettingsBlock
+					title={ __( 'Webhooks', 'woocommerce' ) }
+					description={ window.ppcpSettings.collecting.webhooks_note }
+				/>
+			) : (
+				<SettingsBlock
+					title={ __( 'Webhooks', 'woocommerce' ) }
+					description={ sprintf(
+						/* translators: %s: link to the webhook status documentation. */
+						__(
+							'The following PayPal webhooks are subscribed. More information about the webhooks is available in the <a href="%s">Webhook Status documentation</a>.',
+							'woocommerce'
+						),
+						'https://woocommerce.com/document/woocommerce-paypal-payments/#webhook-status'
+					) }
+				>
+					<HooksListBlock />
+					<ResubscribeBlock />
+					<SimulationBlock />
+				</SettingsBlock>
+			) }
 		</Accordion>
 	);
 };

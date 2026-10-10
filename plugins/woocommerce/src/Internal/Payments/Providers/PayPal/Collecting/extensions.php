@@ -13,7 +13,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\MerchantlessPartnersEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedOnboardingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Logging\RedactingLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\LockingRefundProcessor;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -25,6 +27,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\OnboardingRestEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\SettingsRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\WebhookSettingsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\RefundProcessor;
@@ -104,6 +108,22 @@ return array(
 			$c->get( 'settings.data.paylater-messaging-settings' ),
 			$c->get( 'collecting.state' )
 		);
+	},
+	// The settings app's settings report the capture intent while served, and a save keeps the merchant's stored intent.
+	'settings.rest.settings'                           => static function ( SettingsRestEndpoint $previous, ContainerInterface $c ): SettingsRestEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return new PlatformServedSettingsRestEndpoint( $c->get( 'settings.data.settings' ), $c->get( 'collecting.connection-state' ) );
+	},
+	// The settings app opens on its settings, not the wallet's onboarding wizard, while served; its saves write nothing.
+	'settings.rest.onboarding'                         => static function ( OnboardingRestEndpoint $previous, ContainerInterface $c ): OnboardingRestEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return new PlatformServedOnboardingRestEndpoint( $c->get( 'settings.data.onboarding' ), $c->get( 'collecting.connection-state' ) );
 	},
 	// The bearer resolves the app on every token, so a not-ready transport fails the call, as a failed token does.
 	'api.bearer'                                       => static function ( Bearer $previous, ContainerInterface $c ): Bearer {

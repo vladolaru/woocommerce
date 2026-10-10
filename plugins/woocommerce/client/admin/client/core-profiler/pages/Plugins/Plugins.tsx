@@ -212,6 +212,47 @@ export const Plugins = ( {
 				>
 					{ context.pluginsAvailable.map( ( plugin ) => {
 						const { key: pluginSlug } = plugin;
+						// POC hack (PayPal Wallet in core): an entry the server marks `is_included` ships with WooCommerce,
+						// so it shows as an "Included" card with no checkbox. The server also marks it activated, so it
+						// is never selected or installed.
+						if (
+							( plugin as Extension & { is_included?: boolean } )
+								.is_included
+						) {
+							return (
+								<div
+									key={ pluginSlug }
+									className="woocommerce-profiler-plugins-plugin-card is-installed"
+									data-slug={ pluginSlug }
+								>
+									<div className="woocommerce-profiler-plugins-plugin-card-main">
+										{ plugin.image_url ? (
+											<img
+												className="woocommerce-profiler-plugins-plugin-card-logo"
+												src={ plugin.image_url }
+												alt=""
+											/>
+										) : null }
+										<div className="woocommerce-profiler-plugins-plugin-card-content">
+											<div className="woocommerce-profiler-plugins-plugin-card-text-header installed">
+												<h3 className="woocommerce-profiler-plugins-plugin-card-title">
+													{ plugin.label }
+												</h3>
+												<span>
+													{ __(
+														'Included',
+														'woocommerce'
+													) }
+												</span>
+											</div>
+											<div className="woocommerce-profiler-plugins-plugin-card-text">
+												<p>{ plugin.description }</p>
+											</div>
+										</div>
+									</div>
+								</div>
+							);
+						}
 						return (
 							<PluginCard
 								key={ pluginSlug }

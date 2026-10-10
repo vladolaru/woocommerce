@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\StylingSettings;
 
 /**
- * The wallet's settings provider for a store the platform serves: saved PayPal and Venmo always reads as off, and the
- * merchant email is the payee's.
+ * The wallet's settings provider for a store the platform serves: saved PayPal and Venmo and authorize-only always read
+ * as off, and the merchant email is the payee's.
  *
  * Every checkout reader of the setting (buttons, block method, vault component, Subscriptions mode, SDK v6) asks the
  * provider, so vaulting stays inert. The merchant's stored setting is only read, never changed.
@@ -67,6 +67,18 @@ class PlatformServedSettingsProvider extends SettingsProvider {
 	 * @return bool Always false.
 	 */
 	public function save_paypal_and_venmo(): bool {
+		return false;
+	}
+
+	/**
+	 * Authorize-only is off while the platform serves the store, so every reader of the intent captures, including those
+	 * that do not apply the order-intent filter (the vaulted-payment capture and the orders list column).
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool Always false.
+	 */
+	public function authorize_only(): bool {
 		return false;
 	}
 

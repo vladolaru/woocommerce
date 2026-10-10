@@ -46,6 +46,29 @@ class HeldOrders implements HeldOrdersCount {
 	}
 
 	/**
+	 * The oldest held orders, oldest first, so the earliest deadline leads. Loads at most `$limit` orders.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param int $limit The most orders to load; at least one.
+	 * @return WC_Order[]
+	 */
+	public function oldest( int $limit ): array {
+		$orders = wc_get_orders(
+			array_merge(
+				$this->query_args(),
+				array(
+					'limit'   => max( 1, $limit ),
+					'orderby' => 'date',
+					'order'   => 'ASC',
+				)
+			)
+		);
+
+		return is_array( $orders ) ? array_values( $orders ) : array();
+	}
+
+	/**
 	 * The number of held orders. Runs a count query: no order is loaded.
 	 *
 	 * @since 11.3.0

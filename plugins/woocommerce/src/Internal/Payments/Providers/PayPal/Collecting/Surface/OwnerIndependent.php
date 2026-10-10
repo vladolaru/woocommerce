@@ -10,7 +10,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\S
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\FirstOrderEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\HeldPaymentReturnedEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Throwable;
@@ -19,11 +24,13 @@ use WC_Order;
 /**
  * Registers the surfaces that concern held orders, which must work whoever owns the wallet and whether or not the
  * wallet booted: the Home task, the Inbox note, the two admin emails and the notices on the Payments row, the order
- * screen and the Plugins page.
+ * screen and the Plugins page. It also registers, on every store, the collecting panel's REST routes and the core
+ * profiler's PayPal Wallet card, which a store with no history needs to start collecting.
  *
  * The shell calls register() before any ownership check. It needs no container: it reads the autoloaded options
  * directly and builds the held-orders query only when the task is read. On a store that has no collecting or platform
- * option and no recorded first order, register() attaches nothing and runs no query.
+ * option and no recorded first order, register() attaches only the routes and the card, on admin and REST requests,
+ * and runs no query.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -76,6 +83,13 @@ class OwnerIndependent {
 	private ?PluginsPageNotice $plugins_page_notice = null;
 
 	/**
+	 * The core profiler card, built once.
+	 *
+	 * @var ProfilerCard|null
+	 */
+	private ?ProfilerCard $profiler_card = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Options|null         $options The option reader; the stored options by default.
@@ -87,16 +101,26 @@ class OwnerIndependent {
 	}
 
 	/**
-	 * Hook the surfaces, unless the store never had a wallet order or a collecting or platform state.
+	 * Hook the panel's routes and the profiler card on admin and REST requests, then the surfaces, unless the store never
+	 * had a wallet order or a collecting or platform state.
 	 *
-	 * On such a store nothing is attached and no query runs: the three options are autoloaded and answered from the
-	 * autoloaded set. The callbacks check again, because the state can change during the request.
+	 * On such a store only the routes and the card are attached, on admin and REST requests, and no query runs: the three
+	 * options are autoloaded and answered from the autoloaded set. The callbacks check again, because the state can change
+	 * during the request.
 	 *
 	 * The task is added on `init`: core builds the task lists on `init` at priority 4, so they exist by the default priority.
 	 *
 	 * @since 11.3.0
 	 */
 	public function register(): void {
+		// Every store, on admin and REST requests only: a store with no history starts collecting through the profiler card
+		// or the panel's routes. Hooking reads nothing, and both callbacks return at once, with no query, on any request
+		// that is not theirs. A front-end request attaches nothing.
+		if ( $this->is_admin_or_rest_request() ) {
+			add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
+			$this->profiler_card()->register();
+		}
+
 		if ( ! $this->has_wallet_history() ) {
 			return;
 		}
@@ -122,6 +146,36 @@ class OwnerIndependent {
 			add_action( 'add_option_' . $option, array( $this, 'handle_connection_change' ), 10, 0 );
 			add_action( 'update_option_' . $option, array( $this, 'handle_connection_change' ), 10, 0 );
 		}
+	}
+
+	/**
+	 * Register the collecting panel's REST routes. Hooked to `rest_api_init`; builds the endpoint and reads nothing.
+	 *
+	 * @since 11.3.0
+	 */
+	public function register_rest_routes(): void {
+		( new CollectingRestEndpoint(
+			new CollectingState( $this->options, new HeldOrders() ),
+			new ConnectionState( $this->options ),
+			new HeldOrders(),
+			$this->options,
+			new Dismissals(),
+			array( RuntimeServices::class, 'transport' ),
+			array( RuntimeServices::class, 'reconciler' )
+		) )->register_routes();
+	}
+
+	/**
+	 * The core profiler card, built once so that a repeated register() attaches nothing new.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return ProfilerCard
+	 */
+	public function profiler_card(): ProfilerCard {
+		$this->profiler_card = $this->profiler_card ?? new ProfilerCard( $this->options );
+
+		return $this->profiler_card;
 	}
 
 	/**
@@ -270,6 +324,21 @@ class OwnerIndependent {
 		return $this->options->has_autoloaded( Options::FIRST_ORDER )
 			|| $this->options->has_autoloaded( Options::COLLECTING )
 			|| $this->options->has_autoloaded( Options::PLATFORM );
+	}
+
+	/**
+	 * Whether this is an admin or REST request, the only ones the panel's routes and the profiler card serve.
+	 *
+	 * WooCommerce's REST check reads the request URI as a string, so any other value counts as not REST.
+	 *
+	 * @return bool
+	 */
+	private function is_admin_or_rest_request(): bool {
+		if ( is_admin() ) {
+			return true;
+		}
+
+		return isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) && function_exists( 'WC' ) && WC()->is_rest_api_request(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Only its type is checked.
 	}
 
 	/**

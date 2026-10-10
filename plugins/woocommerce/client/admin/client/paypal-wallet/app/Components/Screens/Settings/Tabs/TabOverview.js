@@ -28,10 +28,17 @@ const TabOverview = () => {
 			role="region"
 			aria-label={ __( 'PayPal Overview', 'woocommerce' ) }
 		>
+			{ /* POC seam (PayPal Wallet in core): the collecting panel; the import below is hoisted. */ }
+			{ /* eslint-disable-next-line @typescript-eslint/no-use-before-define */ }
+			<CollectingPanel />
 			<Todos />
 			<Features />
 		</div>
 	);
 };
+
+// POC seam (PayPal Wallet in core): the panel renders only when `ppcpSettings.collecting` is present. The import sits
+// next to the mount so the seam stays one hunk.
+import { CollectingPanel } from '../../../../../collecting/CollectingPanel';
 
 export default TabOverview;

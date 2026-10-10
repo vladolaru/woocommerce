@@ -18,9 +18,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\PluginsPageNotice;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProfilerCard;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SetUpPayPalWalletTask;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
+use WP_REST_Request;
+use WP_REST_Response;
 
 /**
  * Tests for the registration of the surfaces that work whoever owns the wallet.
@@ -322,10 +326,14 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->sut->handle_woocommerce_paypal_wallet_first_order( null, null );
 		$this->sut->handle_connection_change();
 		$this->sut->handle_woocommerce_paypal_wallet_capture_pending( null, null );
+		// The callbacks that run whatever the history: the panel's routes on rest_api_init and the profiler card's
+		// dispatch filter on a route that is not the free extensions one.
+		$this->sut->register_rest_routes();
+		$this->sut->profiler_card()->handle_rest_post_dispatch( new WP_REST_Response( array() ), rest_get_server(), new WP_REST_Request( 'GET', '/wc/v3/orders' ) );
 	}
 
 	/**
-	 * @testdox Should attach nothing and run no query at all on a store that never had a wallet order: $context request.
+	 * @testdox Should attach no surface and run no query at all on a store that never had a wallet order: $context request.
 	 * @testWith ["frontend"]
 	 *           ["admin"]
 	 *           ["rest"]
@@ -346,12 +354,16 @@ class OwnerIndependentTest extends WalletTestCase {
 			add_filter( 'wp_doing_ajax', '__return_true' );
 		}
 		wp_load_alloptions(); // WordPress loads the autoloaded options once per request, before any plugin code.
+		$previous_server           = $GLOBALS['wp_rest_server'] ?? null;
+		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh server fires rest_api_init before the recording, as WordPress does before a route registers.
+		rest_get_server();
 		$this->record_queries();
 
 		try {
 			$this->run_registration_in_context();
 		} finally {
 			$this->stop_recording_queries();
+			$GLOBALS['wp_rest_server'] = $previous_server; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring test state.
 			if ( null === $restore_uri ) {
 				unset( $_SERVER['REQUEST_URI'] );
 			} else {
@@ -366,6 +378,97 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertFalse( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'No Plugins page notice' );
 		$this->assertNotContains( 'wc-paypal-wallet-setup', $this->extended_task_ids() );
 		$this->assertSame( array(), $this->note_ids() );
+	}
+
+	/**
+	 * Run a callback as a request to a path, then put the request URI back.
+	 *
+	 * @param string   $path     The request path.
+	 * @param callable $callback The work.
+	 */
+	private function as_request_to( string $path, callable $callback ): void {
+		$restore_uri            = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saving test state.
+		$_SERVER['REQUEST_URI'] = $path; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Simulating a request.
+		try {
+			$callback();
+		} finally {
+			if ( null === $restore_uri ) {
+				unset( $_SERVER['REQUEST_URI'] );
+			} else {
+				$_SERVER['REQUEST_URI'] = $restore_uri; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Restoring test state.
+			}
+		}
+	}
+
+	/**
+	 * @testdox Should hook the panel's routes and the profiler card on a REST request, wallet history or not: $history.
+	 * @testWith ["none"]
+	 *           ["collecting"]
+	 *
+	 * @param string $history What the store has.
+	 */
+	public function test_register_hooks_the_routes_and_the_profiler_card_whatever_the_history( string $history ): void {
+		if ( 'collecting' === $history ) {
+			$this->set_collecting();
+		}
+
+		$this->as_request_to(
+			'/' . rest_get_url_prefix() . '/wc-admin/onboarding/free-extensions',
+			function (): void {
+				$this->sut->register();
+				$this->sut->register();
+			}
+		);
+
+		$this->assertSame( 10, has_action( 'rest_api_init', array( $this->sut, 'register_rest_routes' ) ) );
+		$card = $this->sut->profiler_card();
+		$this->assertSame( 10, has_filter( 'rest_post_dispatch', array( $card, 'handle_rest_post_dispatch' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_onboarding_profile_completed', array( $card, 'handle_woocommerce_onboarding_profile_completed' ) ) );
+		$this->assertSame( $card, $this->sut->profiler_card(), 'One card, so a repeated register() hits WordPress\'s duplicate check' );
+	}
+
+	/**
+	 * @testdox Should hook the panel's routes and the profiler card on an admin request, and neither on a front-end request.
+	 */
+	public function test_hooks_the_routes_and_the_card_only_on_admin_and_rest_requests(): void {
+		$this->as_request_to(
+			'/shop/',
+			function (): void {
+				$this->sut->register();
+			}
+		);
+		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_rest_routes' ) ), 'A front-end request attaches nothing' );
+		$this->assertFalse( has_filter( 'rest_post_dispatch', array( $this->sut->profiler_card(), 'handle_rest_post_dispatch' ) ) );
+
+		$this->simulate_admin_request( array() );
+		$this->sut->register();
+
+		$this->assertSame( 10, has_action( 'rest_api_init', array( $this->sut, 'register_rest_routes' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_onboarding_profile_completed', array( $this->sut->profiler_card(), 'handle_woocommerce_onboarding_profile_completed' ) ) );
+	}
+
+	/**
+	 * @testdox Should register the panel's routes under wc/v3/paypal-wallet when the REST server starts.
+	 */
+	public function test_registers_the_panel_routes(): void {
+		$previous_server           = $GLOBALS['wp_rest_server'] ?? null;
+		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh server fires rest_api_init.
+		$routes                    = array();
+		try {
+			$this->as_request_to(
+				'/' . rest_get_url_prefix() . '/' . CollectingRestEndpoint::NAMESPACE . '/collecting',
+				function () use ( &$routes ): void {
+					$this->sut->register();
+					$routes = rest_get_server()->get_routes( CollectingRestEndpoint::NAMESPACE );
+				}
+			);
+		} finally {
+			$GLOBALS['wp_rest_server'] = $previous_server; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring test state.
+		}
+
+		foreach ( array( '/collecting', '/collecting/payee', '/collecting/check-status', '/collecting/referral', '/collecting/dismiss' ) as $route ) {
+			$this->assertArrayHasKey( '/' . CollectingRestEndpoint::NAMESPACE . $route, $routes );
+		}
 	}
 
 	/**

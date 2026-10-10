@@ -71,6 +71,8 @@ class CollectingModuleTest extends WalletTestCase {
 				'sdk-v6.buttons-available',
 				'wcgateway.settings.wc-tasks.task-config-services',
 				'settings.settings-provider',
+				'settings.rest.settings',
+				'settings.rest.onboarding',
 				'api.bearer',
 				'api.host-resolver',
 				'api.host',

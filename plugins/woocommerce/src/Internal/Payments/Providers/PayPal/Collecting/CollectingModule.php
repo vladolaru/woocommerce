@@ -15,7 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\O
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\PayeeFilters;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SettingsAppData;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExtendingModule;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ModuleClassNameIdTrait;
@@ -79,7 +83,7 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
 	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
-	 * order, the reconcile, the admin emails and the filters that name the payee.
+	 * order, the reconcile, the admin emails, the filters that name the payee and the settings app's collecting data.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -125,9 +129,41 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			add_filter( 'ppcp_create_order_request_body_data', array( $payee, 'handle_ppcp_create_order_request_body_data' ), self::GATE_PRIORITY );
 			add_filter( 'ppcp_patch_order_request_body_data', array( $payee, 'handle_ppcp_patch_order_request_body_data' ), self::GATE_PRIORITY );
 			add_filter( 'woocommerce_paypal_payments_localized_script_data', array( $payee, 'handle_woocommerce_paypal_payments_localized_script_data' ), self::GATE_PRIORITY );
+
+			// Built only on the settings page, where the wallet fires this action.
+			add_action(
+				'woocommerce_paypal_payments_settings_scripts_enqueued',
+				static function () use ( $container ): void {
+					self::settings_app_data( $container )->handle_woocommerce_paypal_payments_settings_scripts_enqueued();
+				}
+			);
 		}
 
 		return true;
+	}
+
+	/**
+	 * The settings app's collecting data, over the container's collecting services.
+	 *
+	 * @param ContainerInterface $container The service container.
+	 * @return SettingsAppData
+	 */
+	private static function settings_app_data( ContainerInterface $container ): SettingsAppData {
+		$panel = new CollectingRestEndpoint(
+			$container->get( 'collecting.state' ),
+			$container->get( 'collecting.connection-state' ),
+			$container->get( 'collecting.held-orders' ),
+			$container->get( 'collecting.options' ),
+			new Dismissals(),
+			static function () use ( $container ): PlatformTransport {
+				return $container->get( 'collecting.transport' );
+			},
+			static function () use ( $container ): Reconciler {
+				return $container->get( 'collecting.reconciler' );
+			}
+		);
+
+		return new SettingsAppData( $container->get( 'collecting.connection-state' ), $panel );
 	}
 
 	/**
