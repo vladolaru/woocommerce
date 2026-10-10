@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
@@ -473,6 +474,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 				$events[] = 'get:' . ProviderGatewaysController::class;
 				$events[] = 'provider-resolver:' . ProviderGatewaysController::class;
 				$events[] = 'register:' . ProviderGatewaysController::class;
+				$events[] = 'get:' . RefundRowCapture::class;
+				$events[] = 'register:' . RefundRowCapture::class;
 				continue;
 			}
 			$events[] = 'get:' . $class_name;

@@ -186,6 +186,7 @@ final class PaymentsBootstrap {
 		foreach ( $classes as $class_name ) {
 			if ( is_a( $class_name, PaymentGatewayProviderInterface::class, true ) ) {
 				$this->add_gateway_provider( $container, $class_name );
+				$this->register_refund_row_capture( $container );
 				if ( ! is_a( $class_name, RegisterHooksInterface::class, true ) ) {
 					continue;
 				}
@@ -221,6 +222,25 @@ final class PaymentsBootstrap {
 			fn(): bool => ( $this->should_register_gateways )( $container )
 		);
 		$gateways_controller->register();
+	}
+
+	/**
+	 * Register the refund row capture wherever a provider's gateways are listed.
+	 *
+	 * The refund runtime takes this call's own refund row from it (PaymentProcessingService::process_refund()). It loads
+	 * where the gateways do, so a store whose provider is not set up loads nothing; like the gateway list, it decides
+	 * nothing while WooCommerce loads, and a capture no gateway refund consumes is forgotten.
+	 *
+	 * @param Container|RuntimeContainer $container Runtime dependency container.
+	 */
+	private function register_refund_row_capture( $container ): void {
+		/**
+		 * Refund row capture.
+		 *
+		 * @var RefundRowCapture $capture
+		 */
+		$capture = $container->get( RefundRowCapture::class );
+		$capture->register();
 	}
 
 	/**

@@ -127,8 +127,8 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @param WC_Order                                                    $order      Order being refunded.
 	 * @param array{charge:string,amount:int,reason:string,source:string} $request    This call's refund request.
-	 * @param int                                                         $own_row_id The refund row this call links, as the runtime read it under the lock
-	 *                                                                                before the provider call; 0 when unknown, then the newest row now.
+	 * @param int                                                         $own_row_id The refund row this call links, as the runtime handed it over; 0 when
+	 *                                                                                unknown, and then no manual record or backstop is decided.
 	 * @return array{action:string,key?:string,request?:array{charge:string,amount:int,reason:string,source:string},refund?:array<string,mixed>,code?:string,message?:string} `action` (one of the ACTION_* values), with `key` and `request` for a held-key retry, `refund` for a
 	 *         link, and `code` and `message` for a refusal.
 	 */
@@ -138,10 +138,9 @@ class WooPaymentsRefundAmbiguityService {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
-		// Fixed before any request: a row saved during the lookup must never take this call's place (Codex review 201 H2).
-		$own_row_id = 0 < $own_row_id ? $own_row_id : $this->get_newest_refund_id( $order );
-
-		if ( '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record, $own_row_id ) ) {
+		// Without the row this call links (a direct wc_refund_payment() caller), the order's other rows cannot be told
+		// apart from it, so the manual-record rule and the backstop do not run (monitor ruling 2026-10-10 14:10).
+		if ( 0 < $own_row_id && '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record, $own_row_id ) ) {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
@@ -342,7 +341,7 @@ class WooPaymentsRefundAmbiguityService {
 			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
 			// own (monitor rulings 2026-10-10 13:20 and 13:35).
 			// The rows are in the order's currency, so only a refund in that currency can be one of them (Codex review 201 M4).
-			$manual_row = strtolower( (string) $order->get_currency() ) === $refund_currency
+			$manual_row = 0 < $own_row_id && strtolower( (string) $order->get_currency() ) === $refund_currency
 				? self::find_manual_record_row( $this->get_earlier_refund_rows( $order, $own_row_id ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] )
 				: null;
 			if ( null !== $manual_row ) {

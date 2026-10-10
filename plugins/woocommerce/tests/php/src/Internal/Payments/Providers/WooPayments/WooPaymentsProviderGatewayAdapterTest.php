@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -42,6 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -8254,6 +8256,162 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The refund runs on a fresh copy of the order, so the caller's unsaved changes stay on its own object.
+	 *
+	 * Codex review 202 finding 1: reading the caller's object again in place discarded its unsaved property and meta changes
+	 * for any provider. The runtime reads a copy under the lock instead, which still sees what another request saved.
+	 */
+	public function test_refund_keeps_the_callers_unsaved_changes_and_runs_on_a_fresh_copy(): void {
+		$order  = $this->create_refund_hold_order();
+		$loaded = wc_get_order( $order->get_id() );
+		$loaded->get_meta( '_charge_id' );
+		$loaded->set_customer_note( 'Unsaved note' );
+		$loaded->update_meta_data( '_f458_unsaved', 'kept' );
+		$elsewhere = wc_get_order( $order->get_id() );
+		$elsewhere->update_meta_data( '_f458_saved_elsewhere', 'seen' );
+		$elsewhere->save_meta_data();
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_f458_generic' ) ) extends RecordingProvider {
+			/**
+			 * Order object the provider was handed.
+			 *
+			 * @var WC_Order|null
+			 */
+			public ?WC_Order $seen = null;
+
+			/**
+			 * Refund row ID the provider was handed.
+			 *
+			 * @var mixed
+			 */
+			public $seen_refund_id = null;
+
+			/**
+			 * Record the order and the row, then refund.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				$this->seen           = $context->get_order();
+				$this->seen_refund_id = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
+
+				return parent::refund( $context, $idempotency_key );
+			}
+		};
+		$row      = $this->create_refund_row( $order, 2.00, 'Adjustment' );
+		self::announce_gateway_refund( $row );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+			PaymentOperationContext::for_refund( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.00, 'Adjustment' ),
+			$provider
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( 'Unsaved note', $loaded->get_customer_note(), 'The caller keeps its unsaved property.' );
+		$this->assertSame( 'kept', $loaded->get_meta( '_f458_unsaved', true ), 'The caller keeps its unsaved meta.' );
+		$this->assertInstanceOf( WC_Order::class, $provider->seen );
+		$this->assertNotSame( $loaded, $provider->seen, 'The refund runs on a copy.' );
+		$this->assertSame( 'seen', $provider->seen->get_meta( '_f458_saved_elsewhere', true ), 'The copy sees what another request saved.' );
+		$this->assertSame( 1, $provider->refund_calls );
+		$this->assertSame( $row->get_id(), $provider->seen_refund_id, 'The provider gets the row WooCommerce is refunding.' );
+	}
+
+	/**
+	 * @testdox A refund row saved by another request after this call's row and before the lock does not take this call's place: this call links its own row and sends nothing twice.
+	 *
+	 * Register row 456 and monitor ruling 2026-10-10 14:10: the runtime takes this call's row from WooCommerce's
+	 * `woocommerce_create_refund` (includes/wc-order-functions.php:672-676) instead of the newest row under the lock.
+	 * Taking the newest row made the other request's row this call's own, and this call's 5.55 row look like a manual
+	 * record of the earlier 5.55 refund, so 5.55 was sent again and linked to the other row.
+	 */
+	public function test_refund_row_saved_before_the_lock_does_not_take_this_calls_place(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$own_row                = $this->create_refund_row( $order, 5.55, 'requested_by_customer' );
+		$other_row              = $this->create_refund_row( $order, 1.00, 'Another refund in flight' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_second_555_send', 'key_f458_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		self::announce_gateway_refund( $own_row );
+
+		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
+			PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 5.55, 'requested_by_customer' ),
+			$provider
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'No refund may be sent again.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $own_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'This call links its own row.' );
+		$this->assertSame( '', wc_get_order( $other_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox With no row handed over by WooCommerce (a direct wc_refund_payment() caller), no manual record is taken: an earlier refund for another amount is refused as before.
+	 *
+	 * Monitor ruling 2026-10-10 14:10: without this call's own row, the order's other rows cannot be told apart from it.
+	 */
+	public function test_without_a_handed_over_row_no_manual_record_is_taken(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00, 'requested_by_customer', null, false );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'No manual record is taken.' );
+	}
+
+	/**
+	 * @testdox With no row handed over by WooCommerce, the remaining-refundable backstop does not clear a found hold.
+	 *
+	 * Monitor ruling 2026-10-10 14:10: without this call's own row its amount cannot be told apart from the order's other
+	 * refunds, so the backstop does not run and the found refund still decides.
+	 */
+	public function test_without_a_handed_over_row_the_backstop_does_not_clear_a_found_hold(): void {
+		$order = $this->create_refund_hold_order();
+		$hold  = $this->seed_refund_hold(
+			$order,
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->link_local_refund_row( $order, 40.00, 're_f458_other_refund' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00, 'requested_by_customer', null, false );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( $hold, self::refund_hold_of( $order ) );
+	}
+
+	/**
 	 * @testdox A manual refund saved by another request during the lookup does not make this call's own row look like a manual record.
 	 *
 	 * Codex review 201 H2: this call's row is the one the runtime read under the lock before the provider call. Taking the
@@ -8437,10 +8595,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param float               $amount   Refund amount.
 	 * @param string              $reason   Refund reason.
 	 * @param WC_Order|null       $loaded   Order object as the refunding request loaded it; read fresh when null.
+	 * @param bool                $through_core Whether the row is refunded the way wc_create_refund() does, which hands it
+	 *                                          to the runtime through `woocommerce_create_refund`; false for a direct caller.
 	 * @return array{0:true|WP_Error,1:int} The result and the refund row ID.
 	 */
-	private function run_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $reason = 'requested_by_customer', ?WC_Order $loaded = null ): array {
-		$row    = $this->create_refund_row( $order, $amount, $reason );
+	private function run_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $reason = 'requested_by_customer', ?WC_Order $loaded = null, bool $through_core = true ): array {
+		$row = $this->create_refund_row( $order, $amount, $reason );
+		if ( $through_core ) {
+			self::announce_gateway_refund( $row );
+		}
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentOperationContext::for_refund( $loaded ?? wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ),
 			$provider
@@ -8461,7 +8624,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @return array{0:bool|WP_Error,1:int} The result and the refund row ID.
 	 */
 	private function run_gateway_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount ): array {
-		$row     = $this->create_refund_row( $order, $amount, 'requested_by_customer' );
+		$row = $this->create_refund_row( $order, $amount, 'requested_by_customer' );
+		self::announce_gateway_refund( $row );
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$result = $gateway->process_refund( $order->get_id(), $amount, 'requested_by_customer' );
@@ -8470,6 +8634,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		}
 
 		return array( $result, $row->get_id() );
+	}
+
+	/**
+	 * Fire `woocommerce_create_refund` for a row as wc_create_refund() does before it refunds it through the gateway
+	 * (includes/wc-order-functions.php:672-676), with the runtime's capture listening as it does where the gateway loads.
+	 *
+	 * @param WC_Order_Refund $row Refund row.
+	 */
+	private static function announce_gateway_refund( WC_Order_Refund $row ): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as wc_create_refund() does.
+		do_action( 'woocommerce_create_refund', $row, array( 'refund_payment' => true ) );
 	}
 
 	/**

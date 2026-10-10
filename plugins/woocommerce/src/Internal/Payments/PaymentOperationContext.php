@@ -217,6 +217,18 @@ class PaymentOperationContext {
 	}
 
 	/**
+	 * Get a copy of this context for another object of the same order, such as one read again under the order payment lock.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return self
+	 */
+	public function with_order( WC_Order $order ): self {
+		return new self( $order, $this->gateway_id, $this->payment_method_id, $this->payment_data, $this->provider_data, $this->amount );
+	}
+
+	/**
 	 * Get a copy of this context with more payment data.
 	 *
 	 * @since 11.2.0

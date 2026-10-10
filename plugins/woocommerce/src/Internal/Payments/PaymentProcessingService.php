@@ -363,9 +363,11 @@ class PaymentProcessingService {
 	 * Process a refund through a provider.
 	 *
 	 * When applying a refund the provider already made fails, the refund still reports success, because WooCommerce
-	 * deletes its refund row when the gateway reports a failure. Under the lock the order is read again in place, as for a
-	 * charge, so a request that waited on the lock sees what the earlier one saved, and the provider gets the refund row
-	 * this call links in the payment data (PaymentOperationContext::PAYMENT_DATA_REFUND_ID).
+	 * deletes its refund row when the gateway reports a failure. Under the lock the refund runs on a fresh copy of the order,
+	 * so a request that waited on the lock sees what the earlier one saved, while the caller's object, unsaved changes
+	 * included, is left as it was. The row this call links is the one WooCommerce is refunding through the gateway in this
+	 * request (RefundRowCapture), handed to the provider in the payment data (PaymentOperationContext::PAYMENT_DATA_REFUND_ID);
+	 * with none, as for a direct wc_refund_payment() caller, it is the order's newest row and the provider gets no ID.
 	 *
 	 * @since 11.0.0
 	 *
@@ -378,6 +380,7 @@ class PaymentProcessingService {
 		$order                  = $context->get_order();
 		$amount                 = $context->get_amount() ?? 0.0;
 		$persistence_vocabulary = $provider->get_persistence_vocabulary();
+		$captured_refund_id     = $this->get_refund_row_capture()->consume( $order, $amount );
 
 		if ( '0.00' === sprintf( '%0.2f', $amount ) ) {
 			return true;
@@ -393,13 +396,16 @@ class PaymentProcessingService {
 		}
 
 		try {
-			// A request that waited on the lock may hold an order loaded before the earlier refund saved its state.
-			$this->lifecycle_service->reread_order_from_data_store( $order );
+			// A request that waited on the lock may hold an order loaded before the earlier refund saved its state, so the
+			// refund runs on a fresh copy; the caller's object keeps whatever it has not saved.
+			$order   = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+			$context = $context->with_order( $order );
 
-			// Read the newest row under the lock and before the provider call, so a row created after this read (a manual
-			// refund, or one the lock refuses) is never linked; a row another request saves between this call's own row and
-			// this read is.
-			$wc_refund_id = $this->get_newest_refund_id( $order );
+			// The row WooCommerce is refunding in this request, when it still belongs to the order. Otherwise the newest row,
+			// read under the lock and before the provider call, so a row created after this read (a manual refund, or one
+			// the lock refuses) is never linked; a row another request saves between this call's own row and this read is.
+			$own_row_known = null !== $captured_refund_id && in_array( $captured_refund_id, $this->get_refund_ids( $order ), true );
+			$wc_refund_id  = $own_row_known ? $captured_refund_id : $this->get_newest_refund_id( $order );
 
 			// Refuse a refund with no local row before any money moves, so a retry cannot refund twice.
 			// Client 11.1.0 sends it first and then fails (class-wc-payment-gateway-wcpay.php:3003-3007).
@@ -413,7 +419,9 @@ class PaymentProcessingService {
 				);
 			}
 
-			$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $wc_refund_id ) );
+			if ( $own_row_known ) {
+				$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $wc_refund_id ) );
+			}
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {
@@ -492,6 +500,44 @@ class PaymentProcessingService {
 		} catch ( Throwable $exception ) {
 			return false;
 		}
+	}
+
+	/**
+	 * Get the IDs of the order's refunds, read from the data store.
+	 *
+	 * @param WC_Order $order Parent order.
+	 * @return int[]
+	 */
+	private function get_refund_ids( WC_Order $order ): array {
+		try {
+			$ids = wc_get_orders(
+				array(
+					'type'   => 'shop_order_refund',
+					'parent' => $order->get_id(),
+					'limit'  => -1,
+					'return' => 'ids',
+				)
+			);
+		} catch ( Throwable $exception ) {
+			return array();
+		}
+
+		$refund_ids = array();
+		foreach ( is_array( $ids ) ? $ids : array() as $id ) {
+			// 'return' => 'ids' yields IDs, whatever the declared return type says.
+			$refund_ids[] = is_object( $id ) ? (int) $id->get_id() : (int) $id;
+		}
+
+		return $refund_ids;
+	}
+
+	/**
+	 * Get the request's refund row capture.
+	 *
+	 * @return RefundRowCapture
+	 */
+	private function get_refund_row_capture(): RefundRowCapture {
+		return wc_get_container()->get( RefundRowCapture::class );
 	}
 
 	/**
