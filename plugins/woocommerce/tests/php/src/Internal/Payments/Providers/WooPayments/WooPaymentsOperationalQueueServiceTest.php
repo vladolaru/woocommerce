@@ -1480,6 +1480,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'can_process_payments' )->willReturn( $can_process_payments );
 		$account_service->method( 'has_test_account' )->willReturn( $test_account );
 		$account_service->method( 'is_payment_request_enabled' )->willReturn( true );
+		// Gateway settings are read through the real get_gateway_setting(), which needs the proxy.
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
 
 		return $account_service;
 	}

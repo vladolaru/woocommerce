@@ -399,8 +399,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_currency_codes(): array {
-		$settings    = $this->get_gateway_settings();
-		$enabled_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array();
+		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array() );
+		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array();
 		$registry    = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
 		$country     = $this->account_service->get_account_country();
 		$codes       = array();
