@@ -2073,6 +2073,36 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should offer no order-pay express checkout, and publish no order, for a pay link without the pay_for_order flag.
+	 *
+	 * Core then renders the order receipt, not the pay form (class-wc-shortcode-checkout.php:88, :233). Client 11.1.0 publishes the
+	 * order-pay params only when the flag is present (class-wc-payments-express-checkout-button-display-handler.php:195) and
+	 * treats the page as order-pay only then (class-wc-payments-express-checkout-button-helper.php:267).
+	 */
+	public function test_pay_link_without_the_pay_for_order_flag_offers_no_order_pay_express_checkout(): void {
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_billing_email( 'order@example.test' );
+		$order->save();
+		$_GET['key'] = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+		Constants::set_constant( 'DONOTCACHEPAGE', true );
+
+		try {
+			$service = $this->create_service();
+			$shown   = $service->should_show_payment_request_button( 'pay_for_order' );
+			$params  = $service->get_express_checkout_params( 'pay_for_order' );
+		} finally {
+			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
+		}
+
+		$this->assertFalse( $shown );
+		$this->assertArrayNotHasKey( 'order_id', $params );
+		$this->assertArrayNotHasKey( 'key', $params );
+		$this->assertArrayNotHasKey( 'billing_email', $params );
+	}
+
+	/**
 	 * @testdox Order-pay offers the express buttons only when the Store API order states the order's total (store $store_currency, active $active_currency at $decimals decimals, order $order_currency).
 	 *
 	 * On order-pay the classic script builds the sheet from GET /wc/store/v1/order/{id} (woopayments-express-checkout.js

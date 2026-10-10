@@ -311,9 +311,10 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether the current order-pay surface can show ECE.
 	 *
-	 * The sheet's amount and currency come from the Store API order, so the order must be stated there as it is charged
-	 * (WooPaymentsOrderPayAccess::store_api_states_order_total()). Decided once per request: multi-currency switches the
-	 * active currency to the order's inside the pay form, after the config is built, and the button there follows it.
+	 * Only with the order-pay params the button needs (WooPaymentsOrderPayAccess::get_pay_for_order_page_params()), as the
+	 * WooPay button does. The sheet's amount and currency come from the Store API order, so the order must be stated there as
+	 * it is charged (WooPaymentsOrderPayAccess::store_api_states_order_total()). Decided once per request: multi-currency
+	 * switches the active currency to the order's inside the pay form, after the config is built, and the button follows it.
 	 *
 	 * @return bool
 	 */
@@ -323,7 +324,7 @@ class WooPaymentsExpressCheckoutService {
 
 			$this->pay_for_order_supported = $order instanceof \WC_Order
 				&& $order->needs_payment()
-				&& WooPaymentsOrderPayAccess::can_pay_with_key( $order, WooPaymentsOrderPayAccess::get_request_order_key() )
+				&& array() !== $this->get_pay_for_order_params()
 				&& WooPaymentsOrderPayAccess::store_api_states_order_total( $order );
 		}
 
@@ -995,24 +996,14 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Get pay-for-order params for the frontend.
 	 *
-	 * The billing email authorizes the Store API order requests, so only a visitor allowed to see the order gets the
-	 * order's own email (see WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor()), and only on a page that
-	 * no page cache serves to another visitor (WooPaymentsOrderPayAccess::may_put_shopper_email_in_page()).
+	 * The shared order-pay rule: only for a pay link with the pay_for_order flag and the order's key, as client 11.1.0 needs
+	 * the flag (class-wc-payments-express-checkout-button-display-handler.php:195); the billing email follows the visitor and
+	 * the page-cache guard (WooPaymentsOrderPayAccess::get_pay_for_order_page_params()).
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_pay_for_order_params(): array {
-		$order = $this->get_pay_for_order_order();
-		if ( ! $order instanceof \WC_Order ) {
-			return array();
-		}
-
-		return array(
-			'order_id'      => $order->get_id(),
-			'pay_for_order' => $this->get_pay_for_order_flag(),
-			'key'           => WooPaymentsOrderPayAccess::get_request_order_key(),
-			'billing_email' => WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ? WooPaymentsOrderPayAccess::get_billing_email_for_current_visitor( $order ) : '',
-		);
+		return WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
 	}
 
 	/**
@@ -1044,19 +1035,6 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return 0;
-	}
-
-	/**
-	 * Get the current pay-for-order flag value.
-	 *
-	 * @return string
-	 */
-	private function get_pay_for_order_flag(): string {
-		if ( ! isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return '';
-		}
-
-		return sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	}
 
 	/**
