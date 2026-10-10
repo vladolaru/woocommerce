@@ -9003,18 +9003,15 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An unmarked refund row created before the failure counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 * @testdox Another request's unmarked, unlinked gateway row created before the failure and still in flight does not count as refunded: the found hold stays and no refund is sent.
 	 *
-	 * Orchestrator ruling on Codex review 205 R1 (2026-10-10): a row older than the ambiguous attempt cannot be one of its
-	 * in-flight rows, so it counts whatever its mark. Without it, a store's manual refund recorded before the mark existed
-	 * made the backstop overstate what the order can still refund, and the hold asked for an amount WooCommerce rejects.
+	 * Codex review 206 F1: wc_create_refund() saves its row before the gateway call (includes/wc-order-functions.php:657,676),
+	 * so a row older than the hold's failure can belong to a request paused before its gateway call. Counted, its 40.00
+	 * cleared the 5.55 hold with no lookup; when that request then failed, a 5.55 retry refunded the earlier refund twice.
 	 */
-	public function test_unmarked_row_from_before_the_failure_counts_for_the_backstop(): void {
-		$order = $this->create_woopayments_order( '50.00' );
-		$order->set_currency( 'USD' );
-		$order->update_meta_data( '_charge_id', self::F458_CHARGE );
-		$order->save();
-		$this->seed_refund_hold(
+	public function test_older_in_flight_row_does_not_count_for_the_backstop(): void {
+		$order = $this->create_refund_hold_order();
+		$hold  = $this->seed_refund_hold(
 			$order,
 			array(
 				'failed_at'       => time() - 1000,
@@ -9023,9 +9020,42 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				'found_amount'    => 555,
 			)
 		);
-		$this->create_unmarked_row( $order, 45.00, time() - 2000 );
+		$this->create_unmarked_row( $order, 40.00, time() - 2000 );
 		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_old_row_200', 'key_f458_not_read', 200 ) ) );
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_older_in_flight_200', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'The hold is looked up and no refund is sent.' );
+		$this->assertSame( $hold, self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox An unmarked row linked to a provider refund counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 *
+	 * Orchestrator ruling on Codex review 206 F1: a row linked by `_wcpay_refund_id` records a provider refund, money that
+	 * has moved, so rows a refund webhook linked before the manual record mark existed keep counting.
+	 */
+	public function test_linked_row_counts_for_the_backstop(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$linked = $this->create_unmarked_row( $order, 40.00, time() );
+		$linked->update_meta_data( '_wcpay_refund_id', 're_f458_linked_before_the_mark' );
+		$linked->save_meta_data();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_linked_200', 'key_f458_not_read', 200 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
 
 		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
@@ -9034,7 +9064,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result );
 		$this->assertCount( 1, $trail, 'The backstop clears the hold with no lookup.' );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
-		$this->assertSame( 're_f458_old_row_200', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 're_f458_after_linked_200', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
 	}
 
@@ -9376,7 +9406,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$row->set_parent_id( $order->get_id() );
 		$row->set_amount( (string) $amount );
 		$row->set_total( -1 * $amount );
-		$row->set_reason( 'Recorded before the manual record mark existed' );
+		$row->set_reason( 'Saved without woocommerce_create_refund' );
 		$row->set_date_created( $created_at );
 		$row->save();
 

@@ -557,20 +557,14 @@ class WooPaymentsRefundAmbiguityService {
 		$found_id    = (string) $record['found_refund_id'];
 		$found_minor = (int) $record['found_amount'];
 
-		// Another request's gateway refund may still be running and fail; only the rows already settled count, which can
-		// only keep the hold: a manual record, a refund through the gateway (monitor rulings 2026-10-10 15:05, 17:40), or a
-		// row created before the failure, which cannot be in flight for it, so rows recorded before the manual mark existed
-		// still count (orchestrator ruling on Codex review 205 R1).
-		$failed_at    = (int) $record['failed_at'];
+		// Another request's gateway refund may still be running and fail, whenever its row was created; only the rows already
+		// settled count, which can only keep the hold: a manual record, a refund through the gateway, or a row linked to a
+		// provider refund, money that has moved (monitor rulings 2026-10-10 15:05, 17:40; Codex review 206 F1).
 		$settled_rows = array_filter(
 			$rows,
-			static function ( WC_Order_Refund $refund ) use ( $failed_at ): bool {
-				$created = $refund->get_date_created();
-
-				return self::is_manual_record_row( $refund )
-					|| $refund->get_refunded_payment()
-					|| ( null !== $created && $created->getTimestamp() < $failed_at );
-			}
+			static fn( WC_Order_Refund $refund ): bool => self::is_manual_record_row( $refund )
+				|| $refund->get_refunded_payment()
+				|| '' !== (string) $refund->get_meta( '_wcpay_refund_id', true )
 		);
 		$other_minor  = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $settled_rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
