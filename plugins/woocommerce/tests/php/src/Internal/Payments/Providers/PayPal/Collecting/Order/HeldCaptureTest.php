@@ -196,6 +196,40 @@ class HeldCaptureTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should record the payee the capture was paid to on the held order, so a later entry of the collecting state can tell whose orders are held.
+	 */
+	public function test_a_held_capture_records_its_payee(): void {
+		$this->set_collecting();
+		$this->boot();
+		$order = $this->wallet_order();
+
+		do_action( 'woocommerce_paypal_wallet_capture_pending', $order, $this->capture( CaptureStatus::PENDING, 'UNILATERAL' ) );
+
+		$this->assertSame( 'payee@example.com', wc_get_order( $order->get_id() )->get_meta( HeldCapture::PAYEE_META_KEY, true ) );
+	}
+
+	/**
+	 * @testdox Should record the payee lowercase, so the comparison does not depend on the database collation.
+	 */
+	public function test_a_held_capture_records_its_payee_lowercase(): void {
+		$this->set_wallet_option(
+			Options::COLLECTING,
+			array(
+				'payee_email' => 'Payee@Example.com',
+				'tracking_id' => 'abc',
+				'environment' => 'sandbox',
+				'payee_bound' => false,
+			)
+		);
+		$this->boot();
+		$order = $this->wallet_order();
+
+		do_action( 'woocommerce_paypal_wallet_capture_pending', $order, $this->capture( CaptureStatus::PENDING, 'UNILATERAL' ) );
+
+		$this->assertSame( 'payee@example.com', wc_get_order( $order->get_id() )->get_meta( HeldCapture::PAYEE_META_KEY, true ) );
+	}
+
+	/**
 	 * @testdox Should record a held capture with the held-at time it is given, and refuse one that is not held.
 	 */
 	public function test_record_uses_the_given_held_at(): void {

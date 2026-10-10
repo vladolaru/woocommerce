@@ -171,24 +171,25 @@ class CollectingState {
 	}
 
 	/**
-	 * Enter the collecting state with a fresh payee and tracking ID.
+	 * Enter the collecting state with a fresh payee and tracking ID, and turn the wallet gateway on.
 	 *
-	 * A platform-connected store is refused: it already has a merchant ID. A bound payee has been paid, so a different
-	 * payee, or the same one in another environment, is refused; entering the same payee again only turns the gateway
-	 * back on, so a store whose merchant turned it off resumes collecting (K8), and writes nothing to the collecting
-	 * option. Entering the same unbound payee in the same environment keeps its tracking ID, so a referral the merchant
-	 * already opened still matches. Entering turns the wallet gateway on, through its own settings, so the store takes
-	 * PayPal payments; turning it off stays the merchant's.
+	 * Entering binds the payee when orders are held, because they were paid to it. The same unbound payee in the same
+	 * environment keeps its tracking ID, so a referral already opened still matches. The same bound payee only turns the
+	 * gateway back on and writes nothing to the collecting option. A store that was not collecting also resets the Inbox
+	 * note state, so a note actioned by an earlier connection comes back.
+	 *
+	 * Refused, with nothing written: a platform-connected store; a different payee, or the same one in another
+	 * environment, once bound; and a payee other than the one orders are held for.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @param string $payee_email  The payee buyers pay.
 	 * @param string $environment  `sandbox` or `production`.
 	 *
-	 * @throws InvalidArgumentException When the email or the environment is not valid.
-	 * @throws RuntimeException         When the store is platform connected, a different payee (or the same one in
-	 *                                  another environment) is already bound, or the gateway cannot be turned on; nothing
-	 *                                  is written then.
+	 * @throws InvalidArgumentException       When the email or the environment is not valid.
+	 * @throws HeldForAnotherPayeeException   When a held order records another payee.
+	 * @throws RuntimeException               When the store is platform connected, a different payee (or the same one in
+	 *                                        another environment) is already bound, or the gateway cannot be turned on.
 	 */
 	public function enter( string $payee_email, string $environment ): void {
 		$payee_email = $this->valid_email( $payee_email );
@@ -208,7 +209,14 @@ class CollectingState {
 			throw new RuntimeException( 'The payee is already bound; it cannot be replaced or moved to another environment.' );
 		}
 
-		$tracking_id = $same ? $this->string_value( $current, 'tracking_id' ) : '';
+		// A first-party connection deletes the state but not the held orders. They were paid to a payee, so it binds.
+		$bound = $this->held_orders->count() > 0;
+		if ( $bound && $this->held_orders->count_for_other_payee( $payee_email ) > 0 ) {
+			throw new HeldForAnotherPayeeException();
+		}
+
+		$tracking_id    = $same ? $this->string_value( $current, 'tracking_id' ) : '';
+		$was_collecting = $this->is_collecting();
 
 		// The gateway first: when it cannot be turned on, the store is left as it was, not collecting with PayPal off.
 		$this->gateway->turn_on();
@@ -218,10 +226,14 @@ class CollectingState {
 				'payee_email' => $payee_email,
 				'tracking_id' => '' !== $tracking_id ? $tracking_id : bin2hex( random_bytes( 16 ) ),
 				'environment' => $environment,
-				'payee_bound' => false,
+				'payee_bound' => $bound,
 			),
 			true
 		);
+		if ( ! $was_collecting ) {
+			// A store entering afresh may have had its setup note actioned by an earlier connection; let the note return.
+			delete_option( Options::NOTE_STATE );
+		}
 	}
 
 	/**

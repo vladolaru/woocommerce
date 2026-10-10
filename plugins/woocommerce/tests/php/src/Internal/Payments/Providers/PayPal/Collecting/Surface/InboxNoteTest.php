@@ -72,6 +72,26 @@ class InboxNoteTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should bring an actioned note back, and record it as waiting, when the store collects again with no note state.
+	 */
+	public function test_an_actioned_note_comes_back_when_the_store_collects_again(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		InboxNote::possibly_add();
+		$this->set_platform_connected();
+		InboxNote::possibly_action();
+		$this->assertSame( Note::E_WC_ADMIN_NOTE_ACTIONED, Notes::get_note_by_name( InboxNote::NOTE_NAME )->get_status() );
+		delete_option( Options::PLATFORM );
+		delete_option( Options::NOTE_STATE );
+
+		InboxNote::possibly_add();
+
+		$this->assertSame( Note::E_WC_ADMIN_NOTE_UNACTIONED, Notes::get_note_by_name( InboxNote::NOTE_NAME )->get_status() );
+		$this->assertSame( Options::NOTE_ADDED, ( new Options() )->note_state() );
+		$this->assertCount( 1, $this->note_ids(), 'No second note' );
+	}
+
+	/**
 	 * @testdox Should not add the note without a first order, or for a first-party connected store.
 	 * @testWith ["no_first_order"]
 	 *           ["first_party"]

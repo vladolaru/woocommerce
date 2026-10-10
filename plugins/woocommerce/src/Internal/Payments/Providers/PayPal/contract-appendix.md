@@ -452,6 +452,7 @@ Names held in constants (options, transient and lock-row prefixes, order and use
 - `_wc_paypal_wallet_capture_id`
 - `_wc_paypal_wallet_held_at`
 - `_wc_paypal_wallet_held_capture`
+- `_wc_paypal_wallet_held_payee`
 - `_wc_paypal_wallet_held_returned`
 - `_wc_paypal_wallet_order_app`
 - `wc_paypal_wallet_dismiss_notice`

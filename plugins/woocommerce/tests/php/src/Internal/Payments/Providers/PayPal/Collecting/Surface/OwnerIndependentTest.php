@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\FirstOrderEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\HeldPaymentReturnedEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
@@ -23,6 +24,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SetUpPayPalWalletTask;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\EmailTriggers;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Amount;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Capture;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\CaptureStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\CaptureStatusDetails;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Money;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -742,6 +750,66 @@ class OwnerIndependentTest extends WalletTestCase {
 			}
 		);
 		$this->assertSame( array(), array_values( $touching ), 'A later save finds no state to leave and reads nothing' );
+	}
+
+	/**
+	 * @testdox Should bind the payee and bring the setup note back when the store collects again for the payee a held order was paid to, after a first-party connection deleted the state.
+	 */
+	public function test_collecting_again_after_a_first_party_connection_binds_the_payee_and_restores_the_note(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$order = $this->held_order();
+		$order->update_meta_data( HeldCapture::PAYEE_META_KEY, 'payee@example.com' );
+		$order->save();
+		$this->sut->register();
+		$this->sut->sync_note();
+		$this->set_first_party_connected();
+		$this->sut->sync_note();
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The first-party connection deleted the state' );
+		$this->assertSame( Options::NOTE_ACTIONED, ( new Options() )->note_state() );
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$state = new CollectingState( new Options(), new HeldOrders() );
+		$fired = 0;
+		$mails = 0;
+		add_action(
+			'woocommerce_paypal_wallet_first_order',
+			static function () use ( &$fired ): void {
+				++$fired;
+			}
+		);
+		add_action( 'woocommerce_paypal_wallet_first_order', array( new EmailTriggers(), 'handle_woocommerce_paypal_wallet_first_order' ), 10, 2 );
+		WC()->mailer()->init(); // Build the mailer again, so it holds the first-order email this surface registers.
+		add_filter(
+			'pre_wp_mail',
+			static function () use ( &$mails ) {
+				++$mails;
+
+				return true;
+			}
+		);
+
+		$state->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->sync_note();
+		$this->sut->sync_note();
+
+		// A new wallet order is held by PayPal through the real path that claims the first order on a fresh store.
+		$new_order = wc_create_order();
+		$new_order->set_payment_method( PayPalGateway::ID );
+		$new_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-NEW-ORDER' );
+		$new_order->save();
+		$capture = new Capture( 'CAPTURE-NEW', new CaptureStatus( CaptureStatus::PENDING, new CaptureStatusDetails( 'PAYEE_SETUP_PENDING' ) ), new Amount( new Money( 10.0, 'USD' ) ), true, '', '', '', null, null );
+		( new HeldCapture( $state ) )->handle_woocommerce_paypal_wallet_capture_pending( $new_order, $capture );
+
+		$this->assertNotEmpty( wc_get_order( $new_order->get_id() )->get_meta( RefundLock::HELD_CAPTURE_META_KEY, true ), 'The new order was held through the real path' );
+		$this->assertSame( 7, ( new Options() )->first_order_id(), 'The first-order record survived the connect and is still the first order' );
+		$this->assertSame( 0, $fired, 'The first-order action does not fire again' );
+		$this->assertSame( 0, $mails, 'No first-order email is sent again' );
+
+		$this->assertTrue( get_option( Options::COLLECTING )['payee_bound'], 'The payee is bound' );
+		$this->assertFalse( $state->can_change_payee_email() );
+		$this->assertSame( Note::E_WC_ADMIN_NOTE_UNACTIONED, Notes::get_note_by_name( InboxNote::NOTE_NAME )->get_status() );
+		$this->assertSame( Options::NOTE_ADDED, ( new Options() )->note_state() );
+		$this->assertCount( 1, $this->note_ids() );
 	}
 
 	/**

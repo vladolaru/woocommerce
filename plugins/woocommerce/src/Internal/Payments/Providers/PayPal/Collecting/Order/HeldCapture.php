@@ -44,6 +44,13 @@ final class HeldCapture {
 	public const CAPTURE_ID_META_KEY = '_wc_paypal_wallet_capture_id';
 
 	/**
+	 * The order meta that holds the payee email the capture was paid to, in lowercase. Orders held before this meta existed carry none.
+	 *
+	 * @since 11.3.0
+	 */
+	public const PAYEE_META_KEY = '_wc_paypal_wallet_held_payee';
+
+	/**
 	 * The status-details reason PayPal gives when the payee has no PayPal account to receive the capture.
 	 *
 	 * @since 11.3.0
@@ -136,6 +143,10 @@ final class HeldCapture {
 		$wc_order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, $details->reason() );
 		$wc_order->update_meta_data( self::HELD_AT_META_KEY, (string) $held_at );
 		$wc_order->update_meta_data( self::CAPTURE_ID_META_KEY, $capture->id() );
+		$payee = strtolower( $this->state->payee_email() );
+		if ( '' !== $payee ) {
+			$wc_order->update_meta_data( self::PAYEE_META_KEY, $payee );
+		}
 		$wc_order->save();
 
 		$deadline = new WC_DateTime( '@' . ( $held_at + HeldOrders::HOLD_PERIOD ) );

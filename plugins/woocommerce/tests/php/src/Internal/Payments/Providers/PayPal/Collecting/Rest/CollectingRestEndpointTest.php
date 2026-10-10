@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Rest;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
@@ -329,6 +330,29 @@ class CollectingRestEndpointTest extends WalletTestCase {
 		$this->assertStringContainsString( 'transport is not configured', $response->get_data()['message'] );
 		$this->assertFalse( get_option( Options::COLLECTING ), 'The store does not start collecting' );
 		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_ppcp-gateway_settings' ), 'The gateway is not turned on' );
+	}
+
+	/**
+	 * @testdox Should refuse a different payee from a dormant store with a 409, a distinct code and a message that says what to do, and write nothing, while orders are held for another payee.
+	 */
+	public function test_payee_refuses_another_payee_while_orders_are_held_for_one(): void {
+		$order = $this->held_order();
+		$order->update_meta_data( HeldCapture::PAYEE_META_KEY, 'held@example.com' );
+		$order->save();
+		$this->set_wallet_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'no' ) );
+
+		$response = $this->dispatch( 'POST', '/collecting/payee', array( 'email' => 'other@example.com' ) );
+
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'wc_paypal_wallet_payee_held', $response->get_data()['code'] );
+		$this->assertSame( 'PayPal is holding payments for another email on this store. Wait until they are released or returned before changing the PayPal email.', $response->get_data()['message'] );
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The store does not start collecting' );
+		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_ppcp-gateway_settings' ), 'The gateway is not turned on' );
+
+		$allowed = $this->dispatch( 'POST', '/collecting/payee', array( 'email' => 'held@example.com' ) );
+
+		$this->assertSame( 200, $allowed->get_status(), 'The payee the orders were paid to can start collecting again' );
+		$this->assertTrue( get_option( Options::COLLECTING )['payee_bound'] );
 	}
 
 	/**

@@ -71,7 +71,8 @@ class InboxNote {
 	 * Add the note, once, when it applies.
 	 *
 	 * The note-state option records that the note was added, so a later call runs no query. Until it is set, the notes
-	 * table is asked once whether a note of that name already exists.
+	 * table is asked once whether a note of that name already exists; one left actioned by an earlier connection is
+	 * brought back, because the note applies only to a store that is not connected.
 	 *
 	 * @since 11.3.0
 	 */
@@ -82,17 +83,18 @@ class InboxNote {
 
 		try {
 			$existing = Notes::get_note_by_name( self::NOTE_NAME );
-			if ( $existing instanceof Note ) {
-				$state = Note::E_WC_ADMIN_NOTE_ACTIONED === $existing->get_status() ? Options::NOTE_ACTIONED : Options::NOTE_ADDED;
-			} else {
+			if ( ! $existing instanceof Note ) {
 				self::possibly_add_note();
-				$state = Options::NOTE_ADDED;
+			} elseif ( Note::E_WC_ADMIN_NOTE_ACTIONED === $existing->get_status() ) {
+				// The note applies, so the store is not connected: an actioned note is left from an earlier connection.
+				$existing->set_status( Note::E_WC_ADMIN_NOTE_UNACTIONED );
+				$existing->save();
 			}
 		} catch ( NotesUnavailableException $exception ) {
 			return;
 		}
 
-		update_option( Options::NOTE_STATE, $state, true );
+		update_option( Options::NOTE_STATE, Options::NOTE_ADDED, true );
 	}
 
 	/**

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\R
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldForAnotherPayeeException;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
@@ -298,6 +299,8 @@ class CollectingRestEndpoint {
 			}
 		} catch ( InvalidArgumentException $invalid ) {
 			return new WP_Error( 'wc_paypal_wallet_invalid_payee', $invalid->getMessage(), array( 'status' => 400 ) );
+		} catch ( HeldForAnotherPayeeException $held ) {
+			return new WP_Error( 'wc_paypal_wallet_payee_held', __( 'PayPal is holding payments for another email on this store. Wait until they are released or returned before changing the PayPal email.', 'woocommerce' ), array( 'status' => 409 ) );
 		} catch ( RuntimeException $refused ) {
 			$code = ConnectionState::COLLECTING === $state ? 'wc_paypal_wallet_payee_bound' : 'wc_paypal_wallet_enter_failed';
 

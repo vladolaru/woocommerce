@@ -99,7 +99,9 @@ class CollectCommand {
 	 *
 	 * @throws InvalidArgumentException When the email is not valid.
 	 * @throws RuntimeException         When the environment does not match the transport's, the store is platform
-	 *                                  connected, or a payee is already bound (another one, or in another environment).
+	 *                                  connected, a payee is already bound (another one, or in another environment), or
+	 *                                  orders are held for another payee (a HeldForAnotherPayeeException, whose message
+	 *                                  says what to do).
 	 */
 	public function enter_collecting( string $email, ?bool $sandbox ): array {
 		$this->require_valid_email( $email );

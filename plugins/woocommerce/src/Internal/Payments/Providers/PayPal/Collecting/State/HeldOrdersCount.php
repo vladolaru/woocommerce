@@ -25,4 +25,19 @@ interface HeldOrdersCount {
 	 * @return int
 	 */
 	public function count(): int;
+
+	/**
+	 * The number of held orders that record a payee other than the given one, compared in lowercase.
+	 *
+	 * A held order that records no payee, because it was held before the payee was recorded, is not counted: it is taken
+	 * to belong to whichever payee the store collects for. An implementation that queries the orders must keep that: join
+	 * the payee meta rather than test for its absence.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param string $payee_email The payee.
+	 *
+	 * @return int
+	 */
+	public function count_for_other_payee( string $payee_email ): int;
 }

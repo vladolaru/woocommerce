@@ -4,9 +4,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\State;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\GatewaySwitch;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldForAnotherPayeeException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException as WalletRuntimeException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Error;
@@ -255,6 +260,100 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should bind the payee on enter when held orders exist for it, so a state a first-party connection deleted comes back bound.
+	 */
+	public function test_enter_binds_the_payee_when_orders_are_held_for_it(): void {
+		$sut = $this->state_with_held_orders( 2 );
+
+		$sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertTrue( get_option( Options::COLLECTING )['payee_bound'], 'The payee is bound' );
+		$this->assertFalse( $sut->can_change_payee_email(), 'A bound payee cannot change' );
+		$this->assertTrue( $sut->is_collecting() );
+		$this->assertSame( array( 'payee_email', 'tracking_id', 'environment', 'payee_bound' ), array_keys( get_option( Options::COLLECTING ) ) );
+	}
+
+	/**
+	 * @testdox Should leave the payee unbound on enter when no order is held, as before.
+	 */
+	public function test_enter_leaves_the_payee_unbound_when_no_order_is_held(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertFalse( get_option( Options::COLLECTING )['payee_bound'] );
+		$this->assertTrue( $this->sut->can_change_payee_email() );
+	}
+
+	/**
+	 * @testdox Should refuse to enter a payee when held orders record another payee, ask about the sanitized new payee, and write nothing: the held orders would be stranded.
+	 */
+	public function test_enter_refuses_a_payee_when_orders_are_held_for_another(): void {
+		$held = new FixedHeldOrders( 1, 1 );
+		$sut  = new CollectingState( new Options(), $held );
+		$this->turn_the_gateway_off();
+		$settings = get_option( self::GATEWAY_SETTINGS );
+
+		try {
+			$sut->enter( ' Other@Example.com ', 'sandbox' );
+			$this->fail( 'A payee other than the one orders are held for must be refused' );
+		} catch ( HeldForAnotherPayeeException $exception ) {
+			$this->assertSame( 'Other@Example.com', $held->asked_payee, 'The refusal asks about the new payee, sanitized' );
+			$this->assertFalse( get_option( Options::COLLECTING ), 'Nothing is written to the collecting option' );
+			$this->assertSame( $settings, get_option( self::GATEWAY_SETTINGS ), 'The gateway stays as it was' );
+		}
+	}
+
+	/**
+	 * A held wallet order that records the payee it was paid to.
+	 *
+	 * @param string $payee The payee email the order records.
+	 */
+	private function held_order_for( string $payee ): void {
+		$order = wc_create_order();
+		$order->set_payment_method( PayPalGateway::ID );
+		$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
+		$order->update_meta_data( HeldCapture::PAYEE_META_KEY, $payee );
+		$order->set_status( 'on-hold' );
+		$order->save();
+	}
+
+	/**
+	 * @testdox Should refuse a different payee through enter() with real held orders and write nothing, and bind the same payee whatever its case.
+	 */
+	public function test_enter_with_real_held_orders_refuses_another_payee_and_binds_the_same_one(): void {
+		$this->held_order_for( 'payee@example.com' );
+		$sut = new CollectingState( new Options(), new HeldOrders() );
+
+		try {
+			$sut->enter( 'other@example.com', 'sandbox' );
+			$this->fail( 'Another payee must be refused while orders are held for payee@example.com' );
+		} catch ( HeldForAnotherPayeeException $exception ) {
+			$this->assertSame( HeldForAnotherPayeeException::MESSAGE, $exception->getMessage() );
+			$this->assertFalse( get_option( Options::COLLECTING ), 'Nothing is written' );
+		}
+
+		$sut->enter( 'Payee@Example.com', 'sandbox' );
+
+		$this->assertTrue( get_option( Options::COLLECTING )['payee_bound'], 'The same payee in another case binds' );
+		$this->assertFalse( $sut->can_change_payee_email() );
+	}
+
+	/**
+	 * @testdox Should reset the note state when a store enters the collecting state afresh, so the setup note comes back, and keep it when the same unbound payee enters again.
+	 */
+	public function test_enter_resets_the_note_state_on_a_fresh_entry_only(): void {
+		update_option( Options::NOTE_STATE, Options::NOTE_ACTIONED, true );
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertFalse( get_option( Options::NOTE_STATE ), 'A fresh entry resets the note state' );
+
+		update_option( Options::NOTE_STATE, Options::NOTE_ADDED, true );
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertSame( Options::NOTE_ADDED, get_option( Options::NOTE_STATE ), 'Entering the same unbound payee again keeps it' );
+	}
+
+	/**
 	 * @testdox Should write nothing to the collecting option when entering the same payee again after it is bound.
 	 */
 	public function test_enter_with_the_same_bound_payee_keeps_the_collecting_option(): void {
@@ -270,7 +369,7 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should turn a disabled gateway back on, keeping its other settings, when entering the same bound payee again (K8).
+	 * @testdox Should turn a disabled gateway back on, keeping its other settings, when entering the same bound payee again.
 	 */
 	public function test_enter_with_the_same_bound_payee_turns_the_gateway_back_on(): void {
 		$held = $this->state_with_held_orders( 1 );

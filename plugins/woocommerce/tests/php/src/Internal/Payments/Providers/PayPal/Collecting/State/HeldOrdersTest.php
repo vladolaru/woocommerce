@@ -23,9 +23,10 @@ class HeldOrdersTest extends WalletTestCase {
 	 * @param string   $status         The order status, without the prefix.
 	 * @param string   $payment_method The payment method.
 	 * @param int|null $held_at        The held-at timestamp, or null for an order that is not held.
+	 * @param string   $payee          The payee email the held order records; empty for none.
 	 * @return WC_Order
 	 */
-	private function order( string $status, string $payment_method, ?int $held_at ): WC_Order {
+	private function order( string $status, string $payment_method, ?int $held_at, string $payee = '' ): WC_Order {
 		$order = wc_create_order();
 		$order->set_payment_method( $payment_method );
 		if ( null !== $held_at ) {
@@ -34,6 +35,9 @@ class HeldOrdersTest extends WalletTestCase {
 			$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
 			$order->update_meta_data( HeldCapture::HELD_AT_META_KEY, $held_at );
 			$order->update_meta_data( HeldCapture::CAPTURE_ID_META_KEY, 'CAPTURE-' . $order->get_id() );
+			if ( '' !== $payee ) {
+				$order->update_meta_data( HeldCapture::PAYEE_META_KEY, $payee );
+			}
 		}
 		$order->set_status( $status );
 		$order->save();
@@ -183,7 +187,7 @@ class HeldOrdersTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should release an order by deleting the three held metas and saving, so it leaves the held list.
+	 * @testdox Should release an order by deleting the held metas and saving, so it leaves the held list.
 	 */
 	public function test_release(): void {
 		$order = $this->order( 'on-hold', 'ppcp-gateway', 1000 );
@@ -195,7 +199,28 @@ class HeldOrdersTest extends WalletTestCase {
 		$this->assertSame( '', $saved->get_meta( RefundLock::HELD_CAPTURE_META_KEY, true ) );
 		$this->assertSame( '', $saved->get_meta( HeldCapture::HELD_AT_META_KEY, true ) );
 		$this->assertSame( '', $saved->get_meta( HeldCapture::CAPTURE_ID_META_KEY, true ) );
+		$this->assertSame( '', $saved->get_meta( HeldCapture::PAYEE_META_KEY, true ) );
 		$this->assertSame( 0, $sut->count() );
 		$this->assertFalse( $sut->is_held( $saved ) );
+	}
+
+	/**
+	 * @testdox Should count the held orders that record a payee other than the one asked about, and not those that record the same payee, record none, or are not held.
+	 */
+	public function test_counts_the_orders_held_for_another_payee(): void {
+		$this->order( 'on-hold', 'ppcp-gateway', 1000, 'payee@example.com' );
+		$this->order( 'on-hold', 'ppcp-gateway', 1100, 'payee@example.com' );
+		$this->order( 'on-hold', 'ppcp-gateway', 1200 );
+		$this->order( 'on-hold', 'ppcp-gateway', null );
+		$this->order( 'on-hold', 'bacs', 1300 );
+		$sut = new HeldOrders();
+
+		$this->assertSame( 0, $sut->count_for_other_payee( 'payee@example.com' ), 'The same payee, an order that records none and orders that are not held are not another payee' );
+		$this->assertSame( 0, $sut->count_for_other_payee( 'Payee@Example.COM' ), 'The lookup ignores case, whatever the collation' );
+		$this->assertSame( 2, $sut->count_for_other_payee( 'other@example.com' ) );
+
+		$this->order( 'cancelled', 'ppcp-gateway', 1400, 'other@example.com' );
+		$this->assertSame( 2, $sut->count_for_other_payee( 'other@example.com' ), 'A held order of the asked payee is not counted' );
+		$this->assertSame( 3, $sut->count_for_other_payee( 'third@example.com' ) );
 	}
 }

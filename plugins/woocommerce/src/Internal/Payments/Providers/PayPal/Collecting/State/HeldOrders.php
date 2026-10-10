@@ -116,6 +116,39 @@ class HeldOrders implements HeldOrdersCount {
 	}
 
 	/**
+	 * The number of held orders that record a payee other than the given one. Runs a count query: no order is loaded.
+	 *
+	 * The payee is compared in lowercase, as the order records it. An order that records no payee is not counted: the meta
+	 * query joins the payee meta, so only orders that carry it can differ.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param string $payee_email The payee.
+	 *
+	 * @return int
+	 */
+	public function count_for_other_payee( string $payee_email ): int {
+		$args                 = $this->query_args();
+		$args['meta_query'][] = array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Narrows the held orders to those paid to another payee; a one-off check when the collecting state is entered.
+			'key'     => HeldCapture::PAYEE_META_KEY,
+			'value'   => strtolower( $payee_email ),
+			'compare' => '!=',
+		);
+		$result               = wc_get_orders(
+			array_merge(
+				$args,
+				array(
+					'limit'    => 1,
+					'paginate' => true,
+					'return'   => 'ids',
+				)
+			)
+		);
+
+		return is_object( $result ) && isset( $result->total ) ? (int) $result->total : 0;
+	}
+
+	/**
 	 * The earliest deadline across the held orders, or null when none is held.
 	 *
 	 * Loads one order, not all of them: the oldest held order, because an order is held from the moment its payment is
@@ -189,6 +222,7 @@ class HeldOrders implements HeldOrdersCount {
 		$order->delete_meta_data( RefundLock::HELD_CAPTURE_META_KEY );
 		$order->delete_meta_data( HeldCapture::HELD_AT_META_KEY );
 		$order->delete_meta_data( HeldCapture::CAPTURE_ID_META_KEY );
+		$order->delete_meta_data( HeldCapture::PAYEE_META_KEY );
 		$order->save();
 	}
 
