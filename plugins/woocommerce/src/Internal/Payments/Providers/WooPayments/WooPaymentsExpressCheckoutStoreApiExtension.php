@@ -205,7 +205,8 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 			$methods[] = WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_PAYMENT_REQUEST;
 		}
 
-		if ( $this->express_checkout_service->can_use_amazon_pay( (string) get_woocommerce_currency() ) ) {
+		// Client 11.1.0 `extend_cart_data()` asks the location-blind `can_use_amazon_pay()` (store-api-extension :88, button helper :362-388).
+		if ( $this->express_checkout_service->is_amazon_pay_usable( 'checkout', (string) get_woocommerce_currency() ) ) {
 			$methods[] = WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY;
 		}
 

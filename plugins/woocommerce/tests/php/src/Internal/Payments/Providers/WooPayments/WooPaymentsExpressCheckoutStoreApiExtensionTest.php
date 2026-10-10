@@ -192,6 +192,38 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Should list Amazon Pay in the Store API cart data while no express checkout location lists it (client 11.1.0 `extend_cart_data()`, class-wc-payments-express-checkout-store-api-extension.php:88, asks the location-blind `can_use_amazon_pay()`, button helper :362-388).
+	 */
+	public function test_get_cart_extension_data_lists_amazon_pay_whatever_its_locations(): void {
+		$service = $this->create_real_service(
+			array(
+				'enabled'                           => 'yes',
+				'payment_request'                   => 'no',
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+				'express_checkout_product_methods'  => array( 'payment_request' ),
+				'express_checkout_cart_methods'     => array( 'payment_request' ),
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			),
+			// Account fields as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
+			array(
+				'account_id'                       => 'acct_store_api_test',
+				'status'                           => 'complete',
+				'payments_enabled'                 => true,
+				'country'                          => 'US',
+				'capabilities'                     => array( 'amazon_pay_payments' => 'active' ),
+				'ece_confirmation_tokens_disabled' => false,
+			)
+		);
+		$this->sut = new WooPaymentsExpressCheckoutStoreApiExtension();
+		$this->sut->init( new StaticWooPaymentsRuntimeArbiter( true ), $service );
+
+		$this->assertSame(
+			array( 'express_checkout_methods' => array( 'amazon_pay' ) ),
+			$this->sut->get_cart_extension_data()
+		);
+	}
+
+	/**
 	 * @testdox Should expose the reference-compatible Store API extension schema.
 	 */
 	public function test_get_cart_extension_schema_returns_express_checkout_methods_schema(): void {
@@ -495,14 +527,15 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	private function create_extension( bool $native_register, bool $payment_request = true, bool $amazon_pay = false, bool $available = true, string $currency = 'USD' ): WooPaymentsExpressCheckoutStoreApiExtension {
 		$express_checkout_service = $this->getMockBuilder( WooPaymentsExpressCheckoutService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_payment_request_enabled', 'can_use_amazon_pay', 'is_express_checkout_available' ) )
+			->onlyMethods( array( 'is_payment_request_enabled', 'is_amazon_pay_usable', 'is_express_checkout_available' ) )
 			->getMock();
 		$express_checkout_service->method( 'is_payment_request_enabled' )->willReturn( $payment_request );
 		$express_checkout_service->method( 'is_express_checkout_available' )->willReturn( $available );
 		$express_checkout_service
-			->method( 'can_use_amazon_pay' )
+			->method( 'is_amazon_pay_usable' )
 			->willReturnCallback(
-				function ( string $requested_currency = '' ) use ( $amazon_pay, $currency ): bool {
+				function ( string $context = 'checkout', string $requested_currency = '' ) use ( $amazon_pay, $currency ): bool {
+					$this->assertSame( 'checkout', $context );
 					$this->assertSame( $currency, $requested_currency );
 
 					return $amazon_pay;
