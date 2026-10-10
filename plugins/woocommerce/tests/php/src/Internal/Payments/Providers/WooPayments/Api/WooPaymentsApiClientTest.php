@@ -414,6 +414,339 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A wcpay_api_request_params callback cannot change a locked key on a $_dataName request; its other changes reach the body and one warning names the keys.
+	 * @dataProvider locked_money_request_data
+	 *
+	 * The keys are the ones WooPayments 11.1.0 kept from its request filters (includes/core/server/class-request.php:528-569)
+	 * plus the values the refund hold and the kept charge key read back.
+	 *
+	 * @param callable            $send          Sends the request through the client.
+	 * @param callable            $callback      wcpay_api_request_params callback.
+	 * @param string              $path          API path sent.
+	 * @param array<int,string>   $changed_keys  Locked keys the callback changes, in lock order.
+	 * @param string|null         $caller_key    Idempotency key the caller passed; null when the client mints one.
+	 * @param array<string,mixed> $mutable       Mutable key and the value the callback gave it.
+	 * @param array<int,string>   $callback_values Values the callback set, which the warning must not show.
+	 */
+	public function test_a_request_params_callback_cannot_change_a_locked_key( callable $send, callable $callback, string $path, array $changed_keys, ?string $caller_key, array $mutable, array $callback_values ): void {
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_test' ) );
+		$send( $sut );
+		$logger = RecordingWcLogger::install();
+		add_filter( 'wcpay_api_request_params', $callback, 10, 3 );
+
+		$send( $sut );
+
+		$built = json_decode( (string) $http_client->requests[0]['body'], true );
+		$sent  = json_decode( (string) $http_client->requests[1]['body'], true );
+		$this->assertSame( '/sites/123/wcpay/' . $path, $http_client->requests[1]['path'] );
+		foreach ( $changed_keys as $key ) {
+			$this->assertSame( self::param_at( $built, $key ), self::param_at( $sent, $key ), "The locked key {$key} must reach the body as the store built it." );
+		}
+		$this->assertSame( array( true, $mutable['value'] ), self::param_at( $sent, $mutable['key'] ), 'A key the lock does not hold must keep the callback\'s value.' );
+
+		$sent_key = $http_client->requests[1]['headers']['Idempotency-Key'] ?? '';
+		if ( null !== $caller_key ) {
+			$this->assertSame( $caller_key, $sent_key, 'The caller\'s idempotency key must be sent.' );
+		} else {
+			$this->assertTrue( wp_is_uuid( $sent_key, 4 ), 'A request without a caller key must send a minted UUID.' );
+		}
+
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) );
+		$this->assertCount( 1, $warnings, 'One warning per request.' );
+		$this->assertSame(
+			'A callback changed values the store locks on the WooPayments POST ' . $path . ' request (wcpay_api_request_params changed ' . implode( ', ', $changed_keys ) . '). The values the store built were sent instead.',
+			$warnings[0][1]
+		);
+		foreach ( $callback_values as $value ) {
+			$this->assertStringNotContainsString( $value, $warnings[0][1], 'The warning names keys, never values.' );
+		}
+	}
+
+	/**
+	 * Locked money requests, each with a callback that changes every locked key it can and one mutable key.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function locked_money_request_data(): array {
+		$order_metadata = array(
+			'order_id'     => 12,
+			'order_number' => '12',
+			'order_key'    => 'wc_order_built',
+		);
+
+		return array(
+			'charge'            => array(
+				static function ( WooPaymentsApiClient $sut ) use ( $order_metadata ): void {
+					$sut->create_and_confirm_payment_intention(
+						array(
+							'amount'                     => 1000,
+							'currency'                   => 'usd',
+							'customer'                   => 'cus_built',
+							'payment_method'             => 'pm_built',
+							'payment_method_types'       => array( 'card' ),
+							'payment_method_update_data' => array( 'billing_details' => array( 'name' => 'Built Name' ) ),
+							'return_url'                 => 'https://example.org/built-return',
+							'metadata'                   => $order_metadata,
+						),
+						'idem_charge'
+					);
+				},
+				static function ( array $params ): array {
+					$params['amount']                     = 1;
+					$params['currency']                   = 'eur';
+					$params['customer']                   = 'cus_callback';
+					$params['payment_method']             = 'pm_callback';
+					$params['confirmation_token']         = 'ctoken_callback';
+					$params['payment_method_update_data'] = array( 'billing_details' => array( 'name' => 'Callback Name' ) );
+					$params['return_url']                 = 'https://example.org/callback-return';
+					$params['metadata']['order_id']       = 99;
+					$params['idempotency_key']            = 'idem_callback';
+					$params['description']                = 'Callback description';
+					unset( $params['metadata']['order_key'] );
+					return $params;
+				},
+				'intentions',
+				array( 'amount', 'currency', 'payment_method', 'confirmation_token', 'payment_method_update_data', 'return_url', 'customer', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+				'idem_charge',
+				array(
+					'key'   => 'description',
+					'value' => 'Callback description',
+				),
+				array( 'cus_callback', 'pm_callback', 'ctoken_callback', 'Callback Name', 'callback-return', 'idem_callback' ),
+			),
+			'capture'           => array(
+				static function ( WooPaymentsApiClient $sut ) use ( $order_metadata ): void {
+					$sut->capture_intention( 'pi_built', 500, $order_metadata );
+				},
+				static function ( array $params ): array {
+					$params['amount_to_capture']     = 1;
+					$params['metadata']['order_id']  = 99;
+					$params['metadata']['order_key'] = 'wc_order_callback';
+					$params['idempotency_key']       = 'idem_callback';
+					$params['level3']                = array( 'merchant_reference' => 'callback' );
+					return $params;
+				},
+				'intentions/pi_built/capture',
+				array( 'amount_to_capture', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+				null,
+				array(
+					'key'   => 'level3',
+					'value' => array( 'merchant_reference' => 'callback' ),
+				),
+				array( 'wc_order_callback', 'idem_callback' ),
+			),
+			'refund'            => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->refund_charge( 'ch_built', 250, 'requested_by_customer', 'merchant_dashboard', 'idem_refund' );
+				},
+				static function ( array $params ): array {
+					$params['charge']          = 'ch_callback';
+					$params['amount']          = 999;
+					$params['metadata']        = array( 'replaced' => 'yes' );
+					$params['idempotency_key'] = 'idem_callback';
+					return $params;
+				},
+				'refunds',
+				array( 'charge', 'amount', 'metadata.refund_attempt', 'idempotency_key' ),
+				'idem_refund',
+				array(
+					'key'   => 'metadata.replaced',
+					'value' => 'yes',
+				),
+				array( 'ch_callback', '999', 'idem_callback' ),
+			),
+			'keyless refund'    => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->refund_charge( 'ch_built', 250, 'requested_by_customer', 'transaction_details_no_order', '' );
+				},
+				static function ( array $params ): array {
+					$params['metadata']['refund_attempt'] = 'attempt_callback';
+					$params['idempotency_key']            = 'idem_callback';
+					$params['reason']                     = 'duplicate';
+					return $params;
+				},
+				'refunds',
+				array( 'metadata.refund_attempt', 'idempotency_key' ),
+				null,
+				array(
+					'key'   => 'reason',
+					'value' => 'duplicate',
+				),
+				array( 'attempt_callback', 'idem_callback' ),
+			),
+			'confirmed setup'   => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->create_and_confirm_setup_intention(
+						array(
+							'customer'             => 'cus_built',
+							'payment_method'       => 'pm_built',
+							'payment_method_types' => array( 'card' ),
+						),
+						'idem_setup'
+					);
+				},
+				static function ( array $params ): array {
+					$params['customer']       = 'cus_callback';
+					$params['confirm']        = 'false';
+					$params['payment_method'] = 'pm_callback';
+					unset( $params['idempotency_key'] );
+					return $params;
+				},
+				'setup_intents',
+				array( 'customer', 'confirm', 'idempotency_key' ),
+				'idem_setup',
+				array(
+					'key'   => 'payment_method',
+					'value' => 'pm_callback',
+				),
+				array( 'cus_callback' ),
+			),
+			'unconfirmed setup' => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->create_setup_intention(
+						array(
+							'customer'             => 'cus_built',
+							'payment_method_types' => array( 'card' ),
+						)
+					);
+				},
+				static function ( array $params ): array {
+					$params['confirm']         = 'true';
+					$params['idempotency_key'] = 'idem_callback';
+					$params['description']     = 'Callback description';
+					return $params;
+				},
+				'setup_intents',
+				array( 'confirm', 'idempotency_key' ),
+				null,
+				array(
+					'key'   => 'description',
+					'value' => 'Callback description',
+				),
+				array( 'idem_callback' ),
+			),
+		);
+	}
+
+	/**
+	 * @testdox A wcpay_api_request_headers callback cannot change the Idempotency-Key the store set on a $_dataName request, nor add another-case copy.
+	 * @dataProvider idempotency_header_request_data
+	 *
+	 * @param callable $send            Sends the request through the client.
+	 * @param string   $path            API path sent.
+	 * @param bool     $replace_header  Whether the callback replaces the header, besides adding a lowercase copy.
+	 */
+	public function test_a_request_headers_callback_cannot_change_the_idempotency_key( callable $send, string $path, bool $replace_header ): void {
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_test' ) );
+		$logger                    = RecordingWcLogger::install();
+		$built_key                 = null;
+		$callback                  = static function ( array $headers ) use ( &$built_key, $replace_header ): array {
+			$built_key = $headers['Idempotency-Key'] ?? null;
+			if ( $replace_header ) {
+				$headers['Idempotency-Key'] = 'idem_callback';
+			}
+			$headers['idempotency-key'] = 'idem_callback_lowercase';
+			return $headers;
+		};
+		add_filter( 'wcpay_api_request_headers', $callback );
+
+		$send( $sut );
+
+		$headers = $http_client->last_headers;
+		$this->assertIsString( $built_key, 'The store sets an idempotency key on every POST.' );
+		$this->assertSame( $built_key, $headers['Idempotency-Key'] ?? null, 'The key the store set must be sent.' );
+		$copies = array_filter( array_keys( $headers ), static fn( $name ): bool => 0 === strcasecmp( (string) $name, 'Idempotency-Key' ) );
+		$this->assertSame( array( 'Idempotency-Key' ), array_values( $copies ), 'Header names are case-insensitive, so another-case copy must not be sent.' );
+
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) );
+		$this->assertCount( 1, $warnings, 'One warning per request.' );
+		$this->assertSame( 'A callback changed values the store locks on the WooPayments POST ' . $path . ' request (wcpay_api_request_headers changed Idempotency-Key). The values the store built were sent instead.', $warnings[0][1] );
+	}
+
+	/**
+	 * POST requests whose Idempotency-Key the store sets: a caller key, a minted key on a money request, and a minted key elsewhere.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function idempotency_header_request_data(): array {
+		$refund = static function ( WooPaymentsApiClient $sut ): void {
+			$sut->refund_charge( 'ch_built', 250, 'requested_by_customer', 'merchant_dashboard', 'idem_refund' );
+		};
+
+		return array(
+			'refund with a caller key'          => array( $refund, 'refunds', true ),
+			'capture with a minted key'         => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->capture_intention( 'pi_built', 500 );
+				},
+				'intentions/pi_built/capture',
+				true,
+			),
+			'customer update'                   => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->update_customer( 'cus_built', array( 'description' => 'Built' ) );
+				},
+				'customers/cus_built',
+				true,
+			),
+			'refund with only a lowercase copy' => array( $refund, 'refunds', false ),
+		);
+	}
+
+	/**
+	 * @testdox A wcpay_api_request_params callback that limits a charge to cards still reaches the body, with no warning.
+	 *
+	 * The callback is the one Megurio Subscriptions for WooCommerce 1.1.0 (wordpress.org) hooks at priority 20:
+	 * includes/class-megurio-subscriptions-for-woocommerce.php:159, callback :2061-2070.
+	 */
+	public function test_a_payment_method_types_callback_still_reaches_the_charge_body(): void {
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'pi_test' ) );
+		$logger                    = RecordingWcLogger::install();
+		$callback                  = static function ( $params ) {
+			$params['payment_method_types'] = array( 'card' );
+			unset( $params['automatic_payment_methods'] );
+			return $params;
+		};
+		add_filter( 'wcpay_api_request_params', $callback, 20, 3 );
+
+		$sut->create_and_confirm_payment_intention(
+			array(
+				'amount'               => 1000,
+				'currency'             => 'usd',
+				'customer'             => 'cus_built',
+				'payment_method'       => 'pm_built',
+				'payment_method_types' => array( 'card', 'link' ),
+				'metadata'             => array( 'order_id' => 12 ),
+			),
+			'idem_charge'
+		);
+
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertSame( array( 'card' ), $body['payment_method_types'] ?? null );
+		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ), 'A mutable key changes nothing the lock holds.' );
+	}
+
+	/**
+	 * Read a request param, a dot naming a key one level down.
+	 *
+	 * @param array<int|string,mixed> $params Request params.
+	 * @param string                  $key    Param name.
+	 * @return array{0:bool,1:mixed} Whether the param is present, and its value.
+	 */
+	private static function param_at( array $params, string $key ): array {
+		$path   = explode( '.', $key, 2 );
+		$parent = $path[0];
+		if ( ! array_key_exists( $parent, $params ) ) {
+			return array( false, null );
+		}
+		if ( ! isset( $path[1] ) ) {
+			return array( true, $params[ $parent ] );
+		}
+
+		return is_array( $params[ $parent ] ) && array_key_exists( $path[1], $params[ $parent ] ) ? array( true, $params[ $parent ][ $path[1] ] ) : array( false, null );
+	}
+
+	/**
 	 * Load one recorded F458 (b) or (c) refund request entry by pair key.
 	 *
 	 * @param string $pair Fixture pair key.

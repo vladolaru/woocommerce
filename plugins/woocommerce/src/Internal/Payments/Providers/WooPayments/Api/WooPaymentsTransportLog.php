@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Logging is on in dev mode or with the gateway's `enable_logging` setting, the one gate every WooPayments log line
  * uses (WooPaymentsLogger::can_log()). Lines are written through WooPaymentsLogger, so they carry its request context
  * and source, and a line that fails to write is dropped. Redaction runs only when a line is written; info() takes a
- * context its caller already passed through redact().
+ * context its caller already passed through redact(). warning() is the one line written whatever the setting.
  *
  * @since 11.2.0
  * @internal
@@ -194,6 +194,17 @@ class WooPaymentsTransportLog {
 	}
 
 	/**
+	 * Write a warning line whatever the logging setting, for a request a callback tried to change on the money path.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $message Line text; it names keys, never their values.
+	 */
+	public function warning( string $message ): void {
+		$this->write( 'warning', $message, array(), true );
+	}
+
+	/**
 	 * Write a line through the WooPayments logger, which adds the request context and the source.
 	 *
 	 * A line that fails to write, from a throwing log handler or a hook the request context runs, is dropped without
@@ -202,10 +213,15 @@ class WooPaymentsTransportLog {
 	 * @param string              $level   Log level.
 	 * @param string              $message Line text.
 	 * @param array<string,mixed> $context Context, already redacted.
+	 * @param bool                $always  Whether to write whatever the logging setting.
 	 */
-	private function write( string $level, string $message, array $context = array() ): void {
+	private function write( string $level, string $message, array $context = array(), bool $always = false ): void {
 		try {
-			$this->logger->log( $message, $level, $context );
+			if ( $always ) {
+				$this->logger->log_always( $message, $level, $context );
+			} else {
+				$this->logger->log( $message, $level, $context );
+			}
 		} catch ( Throwable $exception ) {
 			unset( $exception );
 		}

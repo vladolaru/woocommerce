@@ -47,6 +47,27 @@ class WooPaymentsApiClient {
 	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
 
 	/**
+	 * Params a wcpay_api_request_params callback cannot change on the POSTs that move money, by API path ({id}: one segment).
+	 *
+	 * Each list is the IMMUTABLE_PARAMS of the WooPayments 11.1.0 request class that sends the same POST, which its
+	 * Request::apply_filters() kept from callbacks (includes/core/server/class-request.php:528-569), plus every value the
+	 * store's own protections read back, named beside each list. A dot names a key inside metadata. Every other param stays
+	 * open to callbacks.
+	 */
+	private const LOCKED_REQUEST_PARAMS = array(
+		// Create_And_Confirm_Intention and Create_Intention; terminal intents share the path. Read back by the kept charge
+		// key (the idempotency key) and WooPaymentsChargeAmbiguityService (customer, metadata.order_id and order_key).
+		'intentions'              => array( 'amount', 'currency', 'payment_method', 'confirmation_token', 'payment_method_update_data', 'return_url', 'customer', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+		// Capture_Intention. The capture writes the metadata onto the intent, where WooPaymentsEventOrderResolver reads
+		// metadata.order_id and order_key.
+		'intentions/{id}/capture' => array( 'amount_to_capture', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+		// Refund_Charge. Read back by WooPaymentsRefundAmbiguityService: the key, amount and metadata.refund_attempt.
+		'refunds'                 => array( 'charge', 'amount', 'metadata.refund_attempt', 'idempotency_key' ),
+		// Create_Setup_Intention and Create_And_Confirm_Setup_Intention, plus the idempotency key.
+		'setup_intents'           => array( 'customer', 'confirm', 'idempotency_key' ),
+	);
+
+	/**
 	 * Route ID pattern for resource IDs: letters, digits, underscores and hyphens.
 	 */
 	private const ROUTE_ID_PATTERN = '/^[\w-]+$/';
@@ -2238,6 +2259,119 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * Get the params a request filter callback cannot change on this request.
+	 *
+	 * @param string $api    API path.
+	 * @param string $method HTTP method.
+	 * @return array<int,string> Locked param names; empty when the request is not a locked money POST.
+	 */
+	private static function get_locked_request_params( string $api, string $method ): array {
+		if ( 'POST' !== $method ) {
+			return array();
+		}
+
+		foreach ( self::LOCKED_REQUEST_PARAMS as $path => $keys ) {
+			if ( 1 === preg_match( '#^' . str_replace( '\{id\}', '[^/]+', preg_quote( $path, '#' ) ) . '$#', $api ) ) {
+				return $keys;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Set each locked param back to the value the store built, removing it where the store sent none.
+	 *
+	 * @param array<int|string,mixed> $built    Params before the request filter.
+	 * @param array<int|string,mixed> $filtered Params the filter returned.
+	 * @param array<int,string>       $keys     Locked param names; a dot names a key one level down.
+	 * @return array{0:array<int|string,mixed>,1:array<int,string>} The params to send, and the names a callback had changed.
+	 */
+	private static function restore_locked_params( array $built, array $filtered, array $keys ): array {
+		$changed = array();
+		foreach ( $keys as $key ) {
+			$path   = explode( '.', $key, 2 );
+			$parent = $path[0];
+			$child  = $path[1] ?? null;
+			$had    = null === $child ? array_key_exists( $parent, $built ) : isset( $built[ $parent ] ) && is_array( $built[ $parent ] ) && array_key_exists( $child, $built[ $parent ] );
+			$has    = null === $child ? array_key_exists( $parent, $filtered ) : isset( $filtered[ $parent ] ) && is_array( $filtered[ $parent ] ) && array_key_exists( $child, $filtered[ $parent ] );
+			if ( $had === $has && ( ! $had || ( null === $child ? $built[ $parent ] === $filtered[ $parent ] : $built[ $parent ][ $child ] === $filtered[ $parent ][ $child ] ) ) ) {
+				continue;
+			}
+
+			$changed[] = $key;
+			if ( null === $child ) {
+				if ( $had ) {
+					$filtered[ $parent ] = $built[ $parent ];
+				} else {
+					unset( $filtered[ $parent ] );
+				}
+			} elseif ( $had ) {
+				if ( ! isset( $filtered[ $parent ] ) || ! is_array( $filtered[ $parent ] ) ) {
+					$filtered[ $parent ] = array();
+				}
+				$filtered[ $parent ][ $child ] = $built[ $parent ][ $child ];
+			} else {
+				unset( $filtered[ $parent ][ $child ] );
+			}
+		}
+
+		return array( $filtered, $changed );
+	}
+
+	/**
+	 * Set the Idempotency-Key header back to the key the store set, dropping any copy under another case.
+	 *
+	 * @param array<int|string,mixed> $built    Headers before the request filter.
+	 * @param array<int|string,mixed> $filtered Headers the filter returned.
+	 * @return array{0:array<int|string,mixed>,1:bool} The headers to send, and whether a callback had changed the key.
+	 */
+	private static function restore_idempotency_header( array $built, array $filtered ): array {
+		if ( ! isset( $built['Idempotency-Key'] ) ) {
+			return array( $filtered, false );
+		}
+
+		$changed = false;
+		foreach ( array_keys( $filtered ) as $name ) {
+			// Header names are case-insensitive, so a second copy would be sent beside the store's key.
+			if ( 'Idempotency-Key' !== $name && 0 === strcasecmp( (string) $name, 'Idempotency-Key' ) ) {
+				unset( $filtered[ $name ] );
+				$changed = true;
+			}
+		}
+
+		if ( ( $filtered['Idempotency-Key'] ?? null ) !== $built['Idempotency-Key'] ) {
+			$filtered['Idempotency-Key'] = $built['Idempotency-Key'];
+			$changed                     = true;
+		}
+
+		return array( $filtered, $changed );
+	}
+
+	/**
+	 * Log one warning when a request filter callback changed values the store locks, naming the keys, never the values.
+	 *
+	 * @param string            $method         HTTP method.
+	 * @param string            $api            API path.
+	 * @param array<int,string> $changed_params Locked params a wcpay_api_request_params callback had changed.
+	 * @param bool              $changed_header Whether a wcpay_api_request_headers callback had changed the Idempotency-Key.
+	 */
+	private function warn_of_restored_values( string $method, string $api, array $changed_params, bool $changed_header ): void {
+		$changes = array();
+		if ( array() !== $changed_params ) {
+			$changes[] = 'wcpay_api_request_params changed ' . implode( ', ', $changed_params );
+		}
+		if ( $changed_header ) {
+			$changes[] = 'wcpay_api_request_headers changed Idempotency-Key';
+		}
+		if ( array() === $changes ) {
+			return;
+		}
+
+		$this->transport_log->warning( sprintf( 'A callback changed values the store locks on the WooPayments %1$s %2$s request (%3$s). The values the store built were sent instead.', $method, $api, implode( '; ', $changes ) ) );
+	}
+
+	/**
 	 * Send a request through the provider transport.
 	 *
 	 * @param array<int|string,mixed> $params        Request params.
@@ -2291,6 +2425,10 @@ class WooPaymentsApiClient {
 		/**
 		 * Filters the WooPayments native request parameters before transport dispatch.
 		 *
+		 * On the POSTs that move money, the store sets the money and identity params back after this filter (charge amount,
+		 * currency, payment method, customer, order id and key; refund charge, amount and attempt; capture amount; setup
+		 * customer and confirm; the idempotency key) and logs a warning. Every other param stays open.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<int|string,mixed> $params Request parameters.
@@ -2299,7 +2437,7 @@ class WooPaymentsApiClient {
 		 */
 		$filtered_params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
 		// A callback that returns something other than an array is ignored, so it cannot turn every platform call into a fatal.
-		$params = is_array( $filtered_params ) ? $filtered_params : $params;
+		list( $params, $changed_params ) = self::restore_locked_params( $params, is_array( $filtered_params ) ? $filtered_params : $params, self::get_locked_request_params( $api, $method ) );
 
 		$headers = array(
 			'Content-Type' => 'application/json; charset=utf-8',
@@ -2323,12 +2461,17 @@ class WooPaymentsApiClient {
 		/**
 		 * Filters the WooPayments native request headers before transport dispatch.
 		 *
+		 * The Idempotency-Key the store set is restored after this filter, and a warning is logged when a callback changed it.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<string,string> $headers Request headers.
 		 */
-		$filtered_headers   = apply_filters( 'wcpay_api_request_headers', $headers );
-		$headers            = is_array( $filtered_headers ) ? $filtered_headers : $headers;
+		$filtered_headers = apply_filters( 'wcpay_api_request_headers', $headers );
+		// A callback cannot change the key the store set above (caller key or minted), which Stripe replays by and transport retries resend.
+		list( $headers, $changed_header ) = self::restore_idempotency_header( $headers, is_array( $filtered_headers ) ? $filtered_headers : $headers );
+		$this->warn_of_restored_values( $method, $api, $changed_params, $changed_header );
+
 		$site_id            = $this->http_client->get_blog_id();
 		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
 		$path               = $is_site_scoped
