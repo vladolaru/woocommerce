@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjecti
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -149,7 +150,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback( fn( string $key ) => 'enable_logging' === $key ? 'yes' : '' );
 
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $this->http_client, $account_service );
+		$api_client->init( $this->http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$api = new StripeBillingApi();
 		$api->init( $api_client );
 		$logger = new WooPaymentsLogger();

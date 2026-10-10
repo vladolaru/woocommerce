@@ -362,16 +362,25 @@ class WooPaymentsApiClient {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Transport log.
+	 *
+	 * @var WooPaymentsTransportLog
+	 */
+	private WooPaymentsTransportLog $transport_log;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsHttpClient     $http_client     Native WPCOM transport.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsTransportLog   $transport_log   Transport log.
 	 */
-	final public function init( WooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, WooPaymentsTransportLog $transport_log ): void {
 		$this->http_client     = $http_client;
 		$this->account_service = $account_service;
+		$this->transport_log   = $transport_log;
 	}
 
 	/**
@@ -2419,7 +2428,7 @@ class WooPaymentsApiClient {
 		}
 
 		// Redaction cleans every string value, so it runs only when the gated transport log is written.
-		$log_transport   = $this->can_log_transport();
+		$log_transport   = $this->transport_log->is_enabled();
 		$redacted_params = $log_transport ? $this->redact_for_log( $params ) : array();
 
 		/**
@@ -2462,7 +2471,7 @@ class WooPaymentsApiClient {
 			$headers['X-Request-Initiated'] = (string) microtime( true );
 
 			$log_request_id = uniqid();
-			$this->log_transport_info(
+			$this->transport_log->info(
 				sprintf( 'API REQUEST (%s): %s %s', $log_request_id, $method, $redacted_path ),
 				null !== $body ? array( 'body' => $redacted_params ) : array()
 			);
@@ -2533,7 +2542,7 @@ class WooPaymentsApiClient {
 		$decoded_body        = json_decode( $response_body, true );
 
 		if ( $log_transport ) {
-			$this->log_transport_info(
+			$this->transport_log->info(
 				sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
 				array( 'body' => $this->redact_for_log( is_array( $decoded_body ) ? $decoded_body : $response_body ) )
 			);
@@ -2860,34 +2869,14 @@ class WooPaymentsApiClient {
 	 */
 	public function log_redacted_payload( string $label, array $payload ): void {
 		try {
-			if ( ! $this->can_log_transport() ) {
+			if ( ! $this->transport_log->is_enabled() ) {
 				return;
 			}
 
-			wc_get_logger()->debug(
-				$label,
-				array(
-					'body'   => $this->redact_for_log( $payload ),
-					'source' => 'woopayments',
-				)
-			);
+			$this->transport_log->debug( $label, array( 'body' => $this->redact_for_log( $payload ) ) );
 		} catch ( Throwable $exception ) {
 			unset( $exception );
 		}
-	}
-
-	/**
-	 * Log a transport info event when transport logging is enabled.
-	 *
-	 * @param string              $message Log message.
-	 * @param array<string,mixed> $context Log context; values must already be redacted.
-	 */
-	private function log_transport_info( string $message, array $context = array() ): void {
-		if ( ! $this->can_log_transport() ) {
-			return;
-		}
-
-		wc_get_logger()->info( $message, array_merge( $context, array( 'source' => 'woopayments' ) ) );
 	}
 
 	/**
@@ -2899,33 +2888,11 @@ class WooPaymentsApiClient {
 	 * @param string $error_code    Platform error code.
 	 */
 	private function log_transport_error( string $error_message, string $error_code ): void {
-		if ( ! $this->can_log_transport() ) {
+		if ( ! $this->transport_log->is_enabled() ) {
 			return;
 		}
 
-		wc_get_logger()->error(
-			sprintf( '%s (%s)', (string) $this->redact_for_log( $error_message ), (string) $this->redact_for_log( $error_code ) ),
-			array( 'source' => 'woopayments' )
-		);
-	}
-
-	/**
-	 * Tell whether transport logging is enabled.
-	 *
-	 * Mirrors the plugin's gate: dev mode always logs; otherwise the gateway's
-	 * enable_logging setting must be on, read raw from the settings option so
-	 * no gateway needs to be initialized.
-	 *
-	 * @return bool
-	 */
-	private function can_log_transport(): bool {
-		if ( isset( $this->account_service ) && $this->account_service->is_dev_mode_enabled() ) {
-			return true;
-		}
-
-		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
-
-		return is_array( $settings ) && 'yes' === ( $settings['enable_logging'] ?? '' );
+		$this->transport_log->error( sprintf( '%s (%s)', (string) $this->redact_for_log( $error_message ), (string) $this->redact_for_log( $error_code ) ) );
 	}
 
 	/**

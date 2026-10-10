@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -112,7 +113,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false );
@@ -156,7 +157,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$sut = $this->create_intent_confirmation_service( $api_client, null, $account_service );
 
 		$sut->confirm_intent_for_order( $order, (string) $recorded['body']['id'], false, $is_payment_method_change );
@@ -195,7 +196,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->get_update_order_status_response(
 			array(
@@ -1822,7 +1823,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$sut      = $this->create_controller( $api_client, null, null, $account_service );
 		$response = $sut->get_update_order_status_response(
 			array(
@@ -1882,7 +1883,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$recorded_payment_method_id = (string) $recorded['body']['payment_method'];
 		$recorded_charge            = $recorded['body']['charges']['data'][0];
 		$token_service              = $this->create_token_service(
@@ -2036,7 +2037,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$payment_method_id = (string) $intent['payment_method'];
 		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
 		$token_service     = $this->create_token_service(
@@ -2987,7 +2988,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				'body'     => wp_json_encode( $recorded['body'] ),
 			);
 			$api_client            = new WooPaymentsApiClient();
-			$api_client->init( $http_client, $this->create_account_service( false ) );
+			$api_client->init( $http_client, $this->create_account_service( false ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 			$expected_data = array(
 				'id'            => (string) $recorded['body']['id'],
 				'status'        => (string) $recorded['body']['status'],
@@ -3110,7 +3111,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		);
 		$account_service              = $this->create_account_service( false );
 		$api_client                   = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()

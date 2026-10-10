@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
@@ -623,7 +624,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$session_service  = new WooPaymentsSessionService();
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, $session_service );

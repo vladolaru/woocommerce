@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocat
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -744,7 +745,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		);
 		// `is_available()` (called by fraud-prevention gating ahead of the probed filter) is not
 		// stubbed, so it still needs its real collaborators initialized.
-		$api_client->init( $this->fake_http_client(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$api_client->init( $this->fake_http_client(), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$customer_service = $this->createStub( WooPaymentsCustomerService::class );
 		$customer_service->method( 'get_customer_id_by_user_id' )->willReturn( 'cus_hook_shape' );

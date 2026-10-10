@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -661,7 +662,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_conflict' );
 		$sut    = $this->create_adapter( $api_client, $customer_service, null, $account_service );
@@ -763,7 +764,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_kept_key' );
 		$sut = $this->create_adapter( $api_client, $customer_service, null, $account_service );
@@ -2279,7 +2280,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		if ( null === $customer_service ) {
 			$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 			$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( $customer_id );
@@ -4536,7 +4537,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -5586,7 +5587,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -5663,7 +5664,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -6221,7 +6222,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
 		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$guard = new WooPaymentsDuplicatePaymentPreventionService();
 		$guard->init(
 			$api_client,
@@ -6332,7 +6333,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -6640,7 +6641,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		);
 		$account_service       = $this->create_account_service( false );
 		$api_client            = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
@@ -9315,7 +9316,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				unset( $backoff_microseconds );
 			}
 		};
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$provider                = new class() extends WooPaymentsProvider {
 			/**
@@ -10114,7 +10115,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	private function create_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsOrderEffectApplier $order_effect_applier = null ): WooPaymentsProvider {
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service );
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$adapter = $this->create_adapter( $api_client, $customer_service, $token_service, $account_service );
 

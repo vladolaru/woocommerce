@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
@@ -74,7 +75,7 @@ class WooPaymentsPaginatedListRequestTest extends WC_Unit_Test_Case {
 		);
 
 		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $this->create_account_service( false ) );
+		$api_client->init( $http_client, $this->create_account_service( false ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 
 		$rest_request = new WP_REST_Request();

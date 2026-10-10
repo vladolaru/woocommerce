@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
@@ -98,7 +99,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_account_link(
 			array(
@@ -136,7 +137,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, false ) );
+		$sut->init( $http_client, $this->create_account_service( true, false ), $this->transport_log() );
 
 		$result = $sut->create_login_link( home_url( '/overview' ) );
 
@@ -292,7 +293,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false, $test_mode_onboarding ) );
+		$sut->init( $http_client, $this->create_account_service( false, $test_mode_onboarding ), $this->transport_log() );
 
 		return array( $sut, $http_client );
 	}
@@ -322,7 +323,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			return $params;
 		};
 
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_api_request_params', $filter, 10, 3 );
 
 		try {
@@ -378,7 +379,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
 		);
 		$sut                   = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		$filter = static fn() => null;
 		add_filter( $filter_name, $filter );
 
@@ -410,7 +411,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		$result = $sut->refund_charge( 'ch_test', null, 'Customer requested a full refund', 'merchant_dashboard', 'idem_full_refund' );
 
 		$this->assertSame( 're_full', $result['id'] );
@@ -489,7 +490,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$long_reason = str_repeat( 'r', 620 );
 		$sut->refund_charge( 'ch_test', 250, $long_reason, 'native_transport', 'idem_test' );
@@ -520,7 +521,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->capture_intention(
 			'pi_test',
@@ -581,7 +582,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		$sut->capture_intention( 'pi_test', 975, array(), array() );
 
 		$this->assertSame(
@@ -615,7 +616,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->cancel_intention( 'pi_test' );
 
@@ -643,7 +644,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_customer(
 			array(
@@ -680,7 +681,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$filter = static function ( array $params ): array {
 			$params['idempotency_key'] = 'ignored_for_get';
@@ -720,7 +721,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_customer(
 			array(
@@ -772,7 +773,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				$this->retry_backoffs[] = $backoff_microseconds;
 			}
 		};
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->create_customer(
@@ -813,7 +814,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->create_customer(
@@ -850,7 +851,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->get_payment_method( 'pm_test' );
@@ -876,7 +877,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->create_customer(
 			array(
@@ -923,7 +924,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
@@ -969,7 +970,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Test instrumentation verifies malformed metadata emits no warnings.
 		set_error_handler( $error_handler );
 
@@ -1007,7 +1008,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
@@ -1370,7 +1371,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->refund_charge( 'ch_test', 250, 'shopper emailed john@example.com', 'native_transport', 'idem_test' );
@@ -1414,7 +1415,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->update_woopay( array( 'webhook_secret' => 'woopay_webhook_signing_secret_value' ) );
@@ -1450,7 +1451,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			return $params;
 		};
 
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_api_request_params', $filter, 10, 3 );
 
 		try {
@@ -1521,7 +1522,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
@@ -1580,7 +1581,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				return parent::redact_for_log( $input );
 			}
 		};
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		$send = static function () use ( $sut ): void {
 			try {
 				$sut->send_site_request( array( 'note' => 'https://shop.example.test/?key=wc_order_1' ), 'subscriptions', 'POST' );
@@ -1626,7 +1627,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
@@ -1757,7 +1758,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut         = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->send_site_request( array( 'note' => 'signed' ), 'subscriptions', 'POST' );
@@ -1851,7 +1852,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			),
 		);
 		$sut                   = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, false ) );
+		$sut->init( $http_client, $this->create_account_service( true, false ), $this->transport_log() );
 
 		try {
 			$result = $sut->create_login_link( home_url( '/overview' ) );
@@ -1969,7 +1970,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( $response_body ),
 		);
 		$sut                   = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->send_site_request( $params, 'subscriptions', $method );
@@ -2025,7 +2026,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_api_request_response', $filter, 10, 4 );
 
 		try {
@@ -2063,7 +2064,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_embedded_account_session();
 
@@ -2099,7 +2100,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->create_embedded_account_session();
@@ -2124,7 +2125,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$customer_id = $sut->create_customer(
 			array(
@@ -2155,7 +2156,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$sut->update_customer(
 			'cus_test',
@@ -2196,7 +2197,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_and_confirm_payment_intention(
 			array(
@@ -2257,7 +2258,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_and_confirm_setup_intention(
 			array(
@@ -2297,7 +2298,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function test_create_and_confirm_setup_intention_requires_explicit_payment_method_types(): void {
 		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->create_and_confirm_setup_intention(
@@ -2334,7 +2335,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_setup_intention(
 			array(
@@ -2372,7 +2373,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function test_create_setup_intention_requires_explicit_payment_method_types(): void {
 		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->create_setup_intention(
@@ -2411,7 +2412,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_payment_method( 'pm_test' );
 
@@ -2443,7 +2444,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->get_payment_methods( 'cus_test', 'card' );
 
@@ -2509,7 +2510,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	public function test_list_payment_intentions_rejects_invalid_customer_id(): void {
 		$http_client = new FakeWooPaymentsHttpClient();
 		$sut         = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->list_payment_intentions( 'cus&customer=cus_other' );
@@ -2623,7 +2624,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ),
 		);
 		$sut                    = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->list_charge_refunds( 'ch_3UOv4vBzWlxcwgpP0ALlMGAw' );
@@ -2641,7 +2642,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	public function test_list_charge_refunds_rejects_invalid_charge_id(): void {
 		$http_client = new FakeWooPaymentsHttpClient();
 		$sut         = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->list_charge_refunds( 'ch_a&charge=ch_b' );
@@ -2679,7 +2680,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_methods_rejects_invalid_customer_id(): void {
 		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->get_payment_methods( 'cus-test', 'card' );
@@ -2731,7 +2732,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->track_order(
 			array(
@@ -2766,7 +2767,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->update_payment_method(
 			'pm_test',
@@ -2800,7 +2801,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->detach_payment_method( 'pm_test' );
 
@@ -2834,7 +2835,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_timeline( 'pi_test' );
 
@@ -2858,7 +2859,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->create_account_service( false, true );
 		$sut             = new WooPaymentsApiClient();
-		$sut->init( $http_client, $account_service );
+		$sut->init( $http_client, $account_service, $this->transport_log() );
 
 		$result = $sut->send_store_setup(
 			array(
@@ -2892,7 +2893,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->update_compatibility_data(
 			array(
@@ -2929,7 +2930,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'get_woopay_compatibility' ), 'WooPaymentsApiClient should expose get_woopay_compatibility().' );
 
@@ -3081,7 +3082,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->get_onboarding_fields_data( 'en_US' );
 
@@ -3110,7 +3111,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ) );
+		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ), $this->transport_log() );
 
 		$result = $sut->initialize_onboarding(
 			false,
@@ -3176,7 +3177,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wc_payments_get_onboarding_data_args', $filter );
 
 		try {
@@ -3225,7 +3226,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ) );
+		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ), $this->transport_log() );
 
 		$result = $sut->initialize_onboarding_embedded_kyc(
 			true,
@@ -3269,7 +3270,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wc_payments_get_onboarding_data_args', $filter );
 
 		try {
@@ -3309,7 +3310,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->finalize_onboarding_embedded_kyc( 'en_US', 'wcadmin-settings-page', array( 'wcpay-promo-test' ) );
 
@@ -3343,7 +3344,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->delete_account( true );
 
@@ -3370,7 +3371,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->update_account(
 			array(
@@ -3403,7 +3404,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'add_account_tos_agreement' ), 'WooPaymentsApiClient should expose add_account_tos_agreement().' );
 
@@ -3433,7 +3434,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->request_capability( 'link_payments', true );
 		$body   = json_decode( (string) $http_client->last_body, true );
@@ -3479,7 +3480,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$result = $sut->upload_file( $request );
@@ -3537,7 +3538,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->upload_file( $request );
@@ -3569,7 +3570,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$file  = $sut->get_file( 'file_logo', false );
 		$query = array();
@@ -3617,7 +3618,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->save_fraud_ruleset(
 			array(
@@ -3658,7 +3659,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_latest_fraud_ruleset();
 
@@ -3694,7 +3695,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false, true ) );
+		$sut->init( $http_client, $this->create_account_service( false, true ), $this->transport_log() );
 
 		$result = $sut->get_account( 'store_123' );
 
@@ -3733,7 +3734,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->get_failed_webhook_events();
 		$body   = json_decode( (string) $http_client->last_body, true );
@@ -3763,7 +3764,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->create_terminal_connection_token();
 		$body   = json_decode( (string) $http_client->last_body, true );
@@ -3792,7 +3793,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'get_address_autocomplete_token' ), 'WooPaymentsApiClient should expose get_address_autocomplete_token().' );
 
@@ -3824,7 +3825,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->create_terminal_payment_intention(
 			array(
@@ -3866,7 +3867,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->prepare_terminal_payment( 'pi_terminal', 42 );
 		$body   = json_decode( (string) $http_client->last_body, true );
@@ -3895,7 +3896,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$sut->register_terminal_reader( 'tml_test', 'code_123', 'Counter', array( 'channel' => 'pos' ) );
 		$reader_body = json_decode( (string) $http_client->last_body, true );
@@ -4006,7 +4007,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$sut->update_terminal_location( 'tml_test', 'Updated', array( 'line1' => '456 Market' ) );
 		$update_body = json_decode( (string) $http_client->last_body, true );
@@ -4036,7 +4037,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->delete_terminal_location( 'tml_test' );
 
@@ -4063,7 +4064,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$result = $sut->get_dispute_summary( 'du_test' );
 
@@ -4086,7 +4087,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -4106,7 +4107,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_charge( 'ch_abc-123' );
 
@@ -4128,7 +4129,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -4230,7 +4231,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_deposit( 'po_test' );
 
@@ -4324,7 +4325,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'get_authorizations' ), 'WooPaymentsApiClient should expose get_authorizations().' );
 
@@ -4376,7 +4377,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'get_authorization' ), 'WooPaymentsApiClient should expose get_authorization().' );
 
@@ -4424,7 +4425,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wc_pay_get_authorizations_summary', $filter );
 
 		try {
@@ -4462,7 +4463,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->get_capital_active_loan_summary();
 
@@ -4494,7 +4495,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'create_capital_link' ), 'WooPaymentsApiClient should expose create_capital_link().' );
 
@@ -4550,7 +4551,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wcpay_get_active_loan_summary_request', $summary_filter );
 		add_filter( 'wcpay_get_loans_request', $loans_filter );
 
@@ -4603,7 +4604,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$this->assertTrue( method_exists( $sut, 'create_capital_link' ), 'WooPaymentsApiClient should expose create_capital_link().' );
 
@@ -4660,7 +4661,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wcpay_get_active_loan_summary_request', $summary_filter );
 		add_filter( 'wcpay_get_loans_request', $loans_filter );
 
@@ -4984,7 +4985,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( $recorded['body'] ),
 		);
 		$sut                   = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->close_dispute( 'du_1UJbToBzWlxcwgpP9bUeBTQY' );
 
@@ -5025,7 +5026,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			),
 		);
 		$sut                    = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->update_dispute(
 			'du_1UJbTtBzWlxcwgpPSQwkqPRE',
@@ -5090,7 +5091,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			),
 		);
 		$sut                    = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ) );
+		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 
 		$sut->update_dispute(
 			'du_1UJbTtBzWlxcwgpPSQwkqPRE',
@@ -5186,7 +5187,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5206,7 +5207,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5226,7 +5227,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5246,7 +5247,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5266,7 +5267,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$sut->get_dispute_status_counts();
 
@@ -5313,7 +5314,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_get_dispute_status_counts', $dispute_filter );
 		add_filter( 'wc_pay_get_authorizations_summary', $authorization_filter );
 
@@ -5368,7 +5369,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_pm_promotions(
 			array(
@@ -5411,7 +5412,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => '{"promotions":',
 		);
 		$sut                   = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 		$this->expectExceptionMessage( 'Unable to decode response from WooPayments.' );
@@ -5432,7 +5433,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->activate_pm_promotion( 'klarna-promo__spotlight' );
 
@@ -5472,7 +5473,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_get_pm_promotions_request', $get_filter );
 		add_filter( 'wcpay_activate_pm_promotion_request', $activate_filter );
 
@@ -5524,7 +5525,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_get_pm_promotions_request', $get_filter );
 		add_filter( 'wcpay_activate_pm_promotion_request', $activate_filter );
 
@@ -5566,7 +5567,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_list_documents_request', $filter );
 
 		try {
@@ -5612,7 +5613,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_documents_summary(
 			array(
@@ -5656,7 +5657,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->get_document( 'vat_invoice-123' );
 
@@ -5669,7 +5670,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_document_rejects_invalid_route_identifier(): void {
 		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ) );
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5698,7 +5699,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_validate_vat_request', $filter );
 
 		try {
@@ -5725,7 +5726,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		// The REST controller hands validate_vat() a decoded value, so a space or
 		// slash must be encoded exactly once before path interpolation.
@@ -5750,7 +5751,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$result = $sut->save_vat_details( 'RO123456', 'ACME SRL', '1 Market Street' );
 
@@ -5778,7 +5779,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		$this->expectException( WooPaymentsApiException::class );
 
@@ -5808,7 +5809,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		};
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_get_reporting_balance_summary_request', $filter );
 
 		try {
@@ -5845,7 +5846,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$http_client->blog_id = 123;
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->get_reporting_balance_summary(
@@ -5937,7 +5938,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$http_client->blog_id = 123;
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ) );
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
 			$sut->get_currency_rates( '' );
@@ -5948,6 +5949,15 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( '', $http_client->last_path );
+	}
+
+	/**
+	 * Get the container's transport log, gated by the store's real WooPayments logging setting.
+	 *
+	 * @return WooPaymentsTransportLog
+	 */
+	private function transport_log(): WooPaymentsTransportLog {
+		return wc_get_container()->get( WooPaymentsTransportLog::class );
 	}
 
 	/**
@@ -6006,7 +6016,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( $test_mode ) );
+		$sut->init( $http_client, $this->create_account_service( $test_mode ), $this->transport_log() );
 
 		return array( $sut, $http_client );
 	}
@@ -6030,7 +6040,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
 		$original_token           = $fraud_prevention_service->get_token();
 
-		$client       = new WooPaymentsApiClient();
+		$client = new WooPaymentsApiClient();
+		$client->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
 		$throw_method = new \ReflectionMethod( $client, 'throw_api_error' );
 		$throw_method->setAccessible( true );
 
