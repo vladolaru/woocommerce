@@ -393,6 +393,59 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave a method that cannot be saved unavailable on the My Account add-payment-method page, while card stays available (client 11.1.0 class-wc-payment-gateway-wcpay.php:915-917).
+	 */
+	public function test_non_reusable_gateway_is_unavailable_on_the_add_payment_method_page(): void {
+		global $wp;
+
+		$this->activate_builtin_tier();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'BE',
+				'capabilities' => array(
+					'card_payments'       => 'active',
+					'bancontact_payments' => 'active',
+				),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$settings_filter    = static fn(): array => array( 'enabled' => 'yes' );
+		$currency_filter    = static fn(): string => 'EUR';
+		$my_account_page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$original_page_id   = get_option( 'woocommerce_myaccount_page_id' );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+			$card_gateway = new NativeWooPaymentsGateway();
+			$card_gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+			$this->assertTrue( $gateway->is_available(), 'Bancontact is offered at checkout.' );
+
+			update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
+			$this->go_to( get_permalink( $my_account_page_id ) );
+			$wp->query_vars['add-payment-method'] = '';
+			$this->assertTrue( is_add_payment_method_page() );
+
+			$this->assertFalse( $gateway->is_available() );
+			$this->assertTrue( $card_gateway->is_available(), 'Card can be saved, so it stays available.' );
+		} finally {
+			unset( $wp->query_vars['add-payment-method'] );
+			update_option( 'woocommerce_myaccount_page_id', $original_page_id );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should recalculate availability when the checkout currency and payment method definition change.
 	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
 	 */

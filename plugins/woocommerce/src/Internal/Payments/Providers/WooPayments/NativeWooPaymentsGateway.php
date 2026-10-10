@@ -574,6 +574,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( ! $this->get_provider()->can_process_payments() || ! $this->get_account_service()->is_capability_active( $this->payment_method_definition->get_account_capability_key() ) ) {
 			return false;
 		}
+		// A method that cannot be saved has nothing to add on the My Account add-payment-method page (client 11.1.0
+		// `includes/class-wc-payment-gateway-wcpay.php:915-917`).
+		if ( ! $this->payment_method_supports( self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION ) && is_add_payment_method_page() ) {
+			return false;
+		}
 
 		// An express method is offered as a list gateway only when it is among the methods enabled at checkout, which the Apple Pay and
 		// Google Pay toggles never write, and outside admin only with list placement on (client 11.1.0
