@@ -1032,19 +1032,22 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 offers its card gateway only while card is among the methods enabled at checkout (class-wc-payment-gateway-wcpay.php:941),
-	 * read from the gateway's own settings with card as the default when no list is stored (:4682-4689).
+	 * read from the gateway's own settings with card as the default when no list is stored, and as the empty value WC_Settings_API
+	 * puts in place of a stored '' (:4682-4689; abstract-wc-settings-api.php:310-312). '' is what WC_Settings_API's multiselect
+	 * validation saves for an empty selection.
 	 *
 	 * @testdox Should offer the card gateway only while the stored enabled methods include card: $scenario.
 	 * @testWith ["no stored list", null, true]
 	 *           ["card listed", ["card", "ideal"], true]
 	 *           ["card not listed", ["ideal"], false]
 	 *           ["empty list", [], false]
+	 *           ["stored empty string", "", true]
 	 *
-	 * @param string        $scenario        Scenario name.
-	 * @param string[]|null $enabled_methods Stored enabled payment method IDs, or null for none stored.
-	 * @param bool          $expected        Whether the card gateway should be offered.
+	 * @param string               $scenario        Scenario name.
+	 * @param string[]|string|null $enabled_methods Stored enabled payment method IDs, '' as stored by an empty selection, or null for none stored.
+	 * @param bool                 $expected        Whether the card gateway should be offered.
 	 */
-	public function test_card_gateway_availability_requires_card_among_the_enabled_methods( string $scenario, ?array $enabled_methods, bool $expected ): void {
+	public function test_card_gateway_availability_requires_card_among_the_enabled_methods( string $scenario, $enabled_methods, bool $expected ): void {
 		unset( $scenario );
 		$this->activate_builtin_tier();
 		$canonical_settings = null === $enabled_methods ? array() : array( 'upe_enabled_payment_method_ids' => $enabled_methods );

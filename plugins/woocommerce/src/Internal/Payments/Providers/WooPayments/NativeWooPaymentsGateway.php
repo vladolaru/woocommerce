@@ -569,13 +569,13 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		) {
 			return false;
 		}
-		// The card gateway is offered only while card is among the methods enabled at checkout, card by default when no list is stored
-		// (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:941`, `:4682-4689`, on the card gateway's own settings).
-		if (
-			'card' === $this->get_payment_method_id()
-			&& ! in_array( 'card', (array) $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) ), true )
-		) {
-			return false;
+		// The card gateway is offered only while card is among the methods enabled at checkout, card when no list is stored or the
+		// stored list is '' (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:941`, `:4682-4689`, on the card gateway's own settings).
+		if ( 'card' === $this->get_payment_method_id() ) {
+			$enabled_method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+			if ( ! in_array( 'card', '' === $enabled_method_ids ? array( 'card' ) : (array) $enabled_method_ids, true ) ) {
+				return false;
+			}
 		}
 		if ( $this->needs_https_setup() || ! $this->is_available_for_current_currency() || ! $this->is_available_for_current_subscription_context() || ! $this->is_bnpl_order_pay_available() ) {
 			return false;
