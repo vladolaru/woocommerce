@@ -34,6 +34,8 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Metadata construction preserves the legacy payment type and three-argument filter shape.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_metadata_hook_preserves_legacy_payment_type_and_three_argument_shape(): void {
 		$order           = wc_create_order();

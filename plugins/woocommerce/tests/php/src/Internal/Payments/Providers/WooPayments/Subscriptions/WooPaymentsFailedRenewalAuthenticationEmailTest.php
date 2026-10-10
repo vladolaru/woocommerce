@@ -217,6 +217,8 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 
 	/**
 	 * @testdox Should make the retry rule's admin email class resolvable by its extension-era global name.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_set_store_owner_custom_email_makes_named_class_resolvable(): void {
 		// The retry flow runs with the mailer initialized; the email parent classes load with it.

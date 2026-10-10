@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 
 /**
- * Registers the WooPayments extension's class names as aliases of the classes that answer for them.
+ * Registers two WooPayments extension class names as aliases of the classes that answer for them.
  *
- * Each alias is declared on first use, where the class is about to reach a hook or WooCommerce Subscriptions,
- * and never when the name is already declared. Removed in WooCommerce 12.0.0, together with its call sites (see README.md).
+ * Each alias is declared on first use, where the class is about to reach a hook or WooCommerce Subscriptions, and only
+ * when no loaded or autoloadable class already has the name. Removed in WooCommerce 12.0.0, together with its call sites
+ * (see README.md).
  *
  * @since 11.2.0
  * @internal
@@ -22,44 +23,25 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 final class WooPaymentsCompatClassAliases {
 
 	/**
-	 * Extension class names each class declares, with the class each name aliases, in declaration order.
-	 *
-	 * A class also declares the names of its listed parent classes, first.
+	 * The extension class name each native class declares.
 	 */
 	private const ALIASES = array(
-		WooPaymentsPaymentType::class                    => array(
-			'WCPay\Constants\Payment_Type' => WooPaymentsPaymentType::class,
-		),
-		WooPaymentsFailedAuthenticationRetryEmail::class => array(
-			'WC_Payments_Email_Failed_Authentication_Retry' => WooPaymentsFailedAuthenticationRetryEmail::class,
-		),
+		WooPaymentsPaymentType::class                    => 'WCPay\Constants\Payment_Type',
+		WooPaymentsFailedAuthenticationRetryEmail::class => 'WC_Payments_Email_Failed_Authentication_Retry',
 	);
 
 	/**
-	 * Extension class names checked with autoloading before they are declared, so a class an autoloader can load is
-	 * left to it; every other name is checked without autoloading.
-	 */
-	private const AUTOLOADED_NAMES = array(
-		'WCPay\Constants\Payment_Type',
-		'WC_Payments_Email_Failed_Authentication_Retry',
-	);
-
-	/**
-	 * Declare the extension class names of a class and of its listed parent classes, parents first.
+	 * Declare the extension class name of a class, unless a class with that name is loaded or an autoloader can load it.
 	 *
-	 * @param class-string $class_name Class whose extension names are declared.
+	 * The check autoloads, so an active WooPayments extension's own class keeps the name.
+	 *
+	 * @param class-string $class_name Class whose extension name is declared.
 	 */
 	public static function register( string $class_name ): void {
-		$parents = class_parents( $class_name );
-		$classes = false === $parents ? array() : array_reverse( array_values( $parents ) );
-		array_push( $classes, $class_name );
+		$alias = self::ALIASES[ $class_name ] ?? null;
 
-		foreach ( $classes as $class ) {
-			foreach ( self::ALIASES[ $class ] ?? array() as $alias => $original ) {
-				if ( ! class_exists( $alias, in_array( $alias, self::AUTOLOADED_NAMES, true ) ) ) {
-					class_alias( $original, $alias );
-				}
-			}
+		if ( null !== $alias && ! class_exists( $alias, true ) ) {
+			class_alias( $class_name, $alias );
 		}
 	}
 }
