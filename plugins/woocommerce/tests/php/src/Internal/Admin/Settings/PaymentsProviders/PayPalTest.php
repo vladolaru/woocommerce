@@ -646,9 +646,9 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should run no query on the wallet options when the store has no wallet history.
+	 * @testdox Should run no query on the wallet options when the store has no wallet history, for every field of the row details.
 	 */
-	public function test_account_connected_runs_no_option_query_without_wallet_history(): void {
+	public function test_the_row_details_run_no_option_query_without_wallet_history(): void {
 		$this->pin_native_ownership();
 		$gateway  = $this->fake_ppcp_gateway();
 		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( true, true ) );
@@ -661,13 +661,13 @@ class PayPalTest extends WC_Unit_Test_Case {
 		add_filter( 'query', $recorder );
 
 		try {
-			$connected = $this->sut->is_account_connected( $gateway );
+			$details = $this->sut->get_details( $gateway );
 		} finally {
 			remove_filter( 'query', $recorder );
 			$this->swap_wallet_container( $previous );
 		}
 
-		$this->assertTrue( $connected );
+		$this->assertTrue( $details['state']['account_connected'] );
 		foreach ( $queries as $sql ) {
 			$this->assertStringNotContainsString( 'woocommerce_paypal_wallet', $sql, 'No query for the collecting or platform option' );
 		}

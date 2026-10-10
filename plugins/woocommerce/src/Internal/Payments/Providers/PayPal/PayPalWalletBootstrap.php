@@ -192,7 +192,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * Queue one hand-back reconcile, unless one is already queued.
 	 *
 	 * The run carries its own arguments, so the daily recurring action (no arguments) does not count as a queued one:
-	 * Action Scheduler's unique check compares hook, group and arguments (K7).
+	 * Action Scheduler's unique check compares hook, group and arguments (K7). The check holds while a hand-back run is
+	 * pending or running; a later hand-back, after it completed, queues a new run, which is right.
 	 *
 	 * @internal
 	 * @since 11.3.0

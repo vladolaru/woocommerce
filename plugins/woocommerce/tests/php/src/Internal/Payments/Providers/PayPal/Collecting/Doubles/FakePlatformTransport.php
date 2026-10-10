@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 /**
  * A platform transport that answers canned values tagged by app and records every call.
  *
- * Options: `ready` (default true), `pick` (the app pick_order_app() answers, default `merchant_app`), `environment`
+ * Options: `ready` (default true), `pick` (the app pick_order_app() answers; default null, which derives it from the platform option as the direct transport does: the platform app once the option holds a `merchant_id`, else the merchant app; a test about something other than the pick passes it explicitly), `environment`
  * (default `sandbox`), `partner_merchant_id` (default `PARTNER-FAKE`), `seller_status` (a SellerStatus, default an
  * incomplete one, or a RuntimeException to throw), `webhooks` (the subscription map, default empty), `verify` (default
  * true; a bool for every app, or a map of bools by app, where a missing app does not verify). The assertion header is
@@ -51,7 +51,7 @@ final class FakePlatformTransport implements PlatformTransport {
 	public function __construct( array $options = array() ) {
 		$this->options = $options + array(
 			'ready'               => true,
-			'pick'                => self::APP_MERCHANT_APP,
+			'pick'                => null,
 			'environment'         => 'sandbox',
 			'partner_merchant_id' => 'PARTNER-FAKE',
 			'seller_status'       => new SellerStatus( '', false, false, false ),
@@ -93,7 +93,11 @@ final class FakePlatformTransport implements PlatformTransport {
 	 */
 	public function pick_order_app( string $payee_email ): string {
 		$this->record( __FUNCTION__, $payee_email );
-		return $this->options['pick'];
+		if ( null !== $this->options['pick'] ) {
+			return $this->options['pick'];
+		}
+
+		return '' !== (string) ( ( new Options() )->platform()['merchant_id'] ?? '' ) ? self::APP_PLATFORM : self::APP_MERCHANT_APP;
 	}
 
 	/**

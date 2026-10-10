@@ -3,10 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Transport;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Surface\HoldsWalletState;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use InvalidArgumentException;
 
@@ -16,6 +18,8 @@ use InvalidArgumentException;
  * @group paypal-wallet
  */
 class OrderAppContextTest extends WalletTestCase {
+
+	use HoldsWalletState;
 
 	/**
 	 * The System Under Test.
@@ -141,5 +145,26 @@ class OrderAppContextTest extends WalletTestCase {
 		$this->expectException( RuntimeException::class );
 
 		$this->sut->for_call( $transport, 'payee@example.com' );
+	}
+
+	/**
+	 * @testdox Should keep an order on the app that created it after the store becomes platform connected, while a new call picks the platform app.
+	 */
+	public function test_pin_survives_the_platform_connection(): void {
+		$transport = new FakePlatformTransport();
+		$this->set_collecting();
+		$picked = $this->sut->for_call( $transport, 'payee@example.com' );
+		$this->assertSame( PlatformTransport::APP_MERCHANT_APP, $picked, 'A collecting store picks the merchant app' );
+		$order = wc_create_order();
+		OrderPin::record( $order, $picked );
+		$order->save();
+		$this->sut->reset();
+
+		$this->set_platform_connected();
+
+		$this->assertSame( PlatformTransport::APP_PLATFORM, $this->sut->for_call( $transport, 'payee@example.com' ), 'A new call picks the platform app' );
+		$this->sut->reset();
+		$this->sut->enter_for_order( wc_get_order( $order->get_id() ) );
+		$this->assertSame( PlatformTransport::APP_MERCHANT_APP, $this->sut->current(), 'The pinned order keeps its app' );
 	}
 }

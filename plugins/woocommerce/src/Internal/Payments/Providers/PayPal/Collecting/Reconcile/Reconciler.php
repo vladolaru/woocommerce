@@ -51,6 +51,9 @@ final class Reconciler {
 	 * onboarding. They differ from the daily action's (none) and from every continuation's (which carry `true`), so the
 	 * hand-back run is not suppressed by the recurring action under a unique enqueue, and two hand-back runs are one.
 	 *
+	 * The positions are `offset` 0 and `continuation` false. The uniqueness holds while a hand-back run is pending or
+	 * running; a later hand-back, after that run completed, queues a new run, which is right.
+	 *
 	 * @since 11.3.0
 	 */
 	public const HAND_BACK_ARGS = array( 0, false );

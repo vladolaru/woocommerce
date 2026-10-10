@@ -169,18 +169,32 @@ class HandBackTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a queued continuation alone and still queue the hand-back reconcile, and the reverse.
+	 * @testdox Should keep the hand-back run and a queued continuation apart, whichever is queued first.
+	 * @testWith ["continuation-first"]
+	 *           ["hand-back-first"]
+	 *
+	 * @param string $order Which of the two is queued first.
 	 */
-	public function test_hand_back_run_and_continuation_do_not_collide(): void {
+	public function test_hand_back_run_and_continuation_do_not_collide( string $order ): void {
 		$this->set_collecting();
-		as_enqueue_async_action( Reconciler::HOOK, array( 25, true ), Reconciler::GROUP );
-		$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+		$hand_back = function (): void {
+			$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+			$this->assertTrue( $this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner() );
+		};
+		$continue  = static function (): void {
+			as_enqueue_async_action( Reconciler::HOOK, array( 25, true ), Reconciler::GROUP );
+		};
 
-		$this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner();
+		if ( 'continuation-first' === $order ) {
+			$continue();
+			$hand_back();
+		} else {
+			$hand_back();
+			$continue();
+		}
 
-		$this->assertCount( 1, $this->pending_reconciles( Reconciler::HAND_BACK_ARGS ) );
-		$this->assertCount( 1, $this->pending_reconciles( array( 25, true ) ) );
-		$this->assertNotSame( Reconciler::HAND_BACK_ARGS, array( 0, true ), 'A continuation is never read as the hand-back run' );
+		$this->assertCount( 1, $this->pending_reconciles( Reconciler::HAND_BACK_ARGS ), 'One hand-back run is pending' );
+		$this->assertCount( 1, $this->pending_reconciles( array( 25, true ) ), 'The continuation is left alone' );
 	}
 
 	/**

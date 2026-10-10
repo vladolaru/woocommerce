@@ -64,6 +64,7 @@ class HeldCaptureCompletedTest extends WalletTestCase {
 		$this->assertSame( 'processing', $fresh->get_status() );
 		$this->assertFalse( $this->has_held_meta( $order ) );
 		$this->assertSame( 1, $this->count_notes( $order, self::CAPTURED_NOTE ) );
+		$this->assertNotNull( $fresh->get_date_paid(), 'The fork\'s completion handler marks the order paid' );
 	}
 
 	/**
