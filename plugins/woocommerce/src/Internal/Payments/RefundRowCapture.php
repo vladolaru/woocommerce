@@ -45,9 +45,9 @@ class RefundRowCapture implements RegisterHooksInterface {
 
 	/**
 	 * The refunds this request is refunding through a gateway, one per wc_create_refund() call not yet handed over,
-	 * innermost call last.
+	 * innermost call last, each with the site it was created on.
 	 *
-	 * @var WC_Order_Refund[]
+	 * @var array<int,array{refund:WC_Order_Refund,blog_id:int}>
 	 */
 	private array $refunds = array();
 
@@ -115,7 +115,10 @@ class RefundRowCapture implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->refunds[] = $refund;
+		$this->refunds[] = array(
+			'refund'  => $refund,
+			'blog_id' => get_current_blog_id(),
+		);
 		if ( '' === $refund->get_meta( self::GATEWAY_REFUND_META, true ) ) {
 			$this->mark_if_runtime_gateway_refund( $refund );
 		}
@@ -141,20 +144,26 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * Take the row ID of the refund kept for the innermost wc_create_refund() call still running, once.
 	 *
 	 * A gateway refund call belongs to that innermost call: WooCommerce refunds through the gateway before it returns.
-	 * Only a saved refund of this order, for this call's amount, is handed over; the innermost refund is forgotten either
-	 * way, and those kept for outer calls stay.
+	 * Only a saved refund of this order on this site, for this call's amount, is handed over; the innermost refund is
+	 * forgotten either way, and those kept for outer calls stay. Amounts compare at the rounding precision, not the
+	 * display one, so two amounts that only display the same never match (Codex review 204 F4).
 	 *
 	 * @param WC_Order $order  Order being refunded.
 	 * @param float    $amount Refund amount of the call.
 	 * @return int|null The row ID, or null when nothing applies.
 	 */
 	public function consume( WC_Order $order, float $amount ): ?int {
-		$refund = array_pop( $this->refunds );
+		$kept = array_pop( $this->refunds );
+		if ( null === $kept || get_current_blog_id() !== $kept['blog_id'] ) {
+			return null;
+		}
+
+		$refund    = $kept['refund'];
+		$precision = wc_get_rounding_precision();
 		if (
-			null === $refund
-			|| 0 >= $refund->get_id()
+			0 >= $refund->get_id()
 			|| $order->get_id() !== $refund->get_parent_id()
-			|| wc_format_decimal( $amount, wc_get_price_decimals() ) !== wc_format_decimal( (float) $refund->get_amount(), wc_get_price_decimals() )
+			|| wc_format_decimal( $amount, $precision ) !== wc_format_decimal( (float) $refund->get_amount(), $precision )
 		) {
 			return null;
 		}

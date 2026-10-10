@@ -109,6 +109,65 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With prices shown without decimals, a kept 4.25 refund is handed to a refund call of $amount: $handed_over.
+	 * @dataProvider undisplayed_decimals_data
+	 *
+	 * Codex review 204 F4: the amounts were compared at the display precision, so 4.25 and 4.00 both read "4" and a
+	 * call for another amount took the row.
+	 *
+	 * @param float $amount      The refund call's amount.
+	 * @param bool  $handed_over Whether the kept refund is handed over.
+	 */
+	public function test_compares_amounts_past_the_display_precision( float $amount, bool $handed_over ): void {
+		add_filter( 'wc_get_price_decimals', static fn(): int => 0 );
+		$order  = $this->create_order();
+		$refund = $this->create_refund( $order, '4.25' );
+		$sut    = new RefundRowCapture();
+
+		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
+
+		$this->assertSame( $handed_over ? $refund->get_id() : null, $sut->consume( $order, $amount ) );
+	}
+
+	/**
+	 * Refund call amounts against a kept 4.25 refund.
+	 *
+	 * @return array<string,array{float,bool}>
+	 */
+	public function undisplayed_decimals_data(): array {
+		return array(
+			'the same amount'                  => array( 4.25, true ),
+			'an amount that displays the same' => array( 4.00, false ),
+		);
+	}
+
+	/**
+	 * @testdox A refund kept on one site is never handed to a refund call on another site of the network.
+	 *
+	 * Codex review 204 F4: order and refund IDs can repeat across a network's sites, so a call after switch_to_blog()
+	 * could take another site's row. The site is simulated through the global get_current_blog_id() reads, since the test
+	 * suite runs single-site.
+	 */
+	public function test_hands_nothing_over_on_another_site(): void {
+		$order  = $this->create_order();
+		$refund = $this->create_refund( $order, '4.25' );
+		$sut    = new RefundRowCapture();
+		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
+		$blog_id = $GLOBALS['blog_id'];
+
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Simulates switch_to_blog(), unavailable single-site.
+		$GLOBALS['blog_id'] = (int) $blog_id + 1;
+		try {
+			$handed_over = $sut->consume( $order, 4.25 );
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the simulated switch.
+			$GLOBALS['blog_id'] = $blog_id;
+		}
+
+		$this->assertNull( $handed_over );
+	}
+
+	/**
 	 * @testdox A refund through one of the runtime's gateways is marked as a gateway refund before it is saved; a refund through another plugin's gateway is left untouched.
 	 *
 	 * Monitor ruling 2026-10-10 15:05 (R1b): the marker keeps another request's in-flight gateway row from passing for the
