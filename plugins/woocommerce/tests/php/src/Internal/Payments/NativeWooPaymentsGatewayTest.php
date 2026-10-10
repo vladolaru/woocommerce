@@ -560,6 +560,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			);
 
 			$this->assertSame( $keeps_entry, array_key_exists( 'payment-methods', wc_get_account_menu_items() ), $history );
+			// The client adds both features together on a gateway whose own setting is on (class-wc-payment-gateway-wcpay.php:338-340).
+			$this->assertSame( $keeps_entry, $ideal_gateway->supports( PaymentGatewayFeature::TOKENIZATION ), $history );
+			$this->assertSame( $keeps_entry, $ideal_gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ), $history );
 
 			add_filter( 'woocommerce_is_checkout', '__return_true' );
 			ob_start();
