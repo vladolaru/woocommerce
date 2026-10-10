@@ -397,20 +397,9 @@ class WooPaymentsSettingsService {
 			'stripe' => array(
 				'publishableKey' => $this->account_service->get_publishable_key(),
 				'accountId'      => $this->account_service->get_account_id(),
-				'locale'         => $this->get_stripe_locale(),
+				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
 			),
 		);
-	}
-
-	/**
-	 * Get a Stripe-supported locale for the current request.
-	 *
-	 * @return string
-	 */
-	private function get_stripe_locale(): string {
-		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
-
-		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}
 
 	/**

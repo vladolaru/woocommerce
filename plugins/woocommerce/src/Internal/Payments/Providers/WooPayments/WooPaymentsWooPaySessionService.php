@@ -1305,7 +1305,7 @@ class WooPaymentsWooPaySessionService {
 			'stripe'             => array(
 				'publishableKey' => $this->get_account_service()->get_publishable_key(),
 				'accountId'      => $this->get_account_service()->get_account_id(),
-				'locale'         => $this->get_stripe_locale(),
+				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
 			),
 			'flags'              => array(
 				'isEceUsingConfirmationTokens' => false,
@@ -2261,17 +2261,6 @@ class WooPaymentsWooPaySessionService {
 		$country = strtoupper( $country );
 
 		return '' !== $country ? $country : 'US';
-	}
-
-	/**
-	 * Get a Stripe-supported locale for the current request.
-	 *
-	 * @return string
-	 */
-	private function get_stripe_locale(): string {
-		$locale = function_exists( 'determine_locale' ) ? determine_locale() : get_locale();
-
-		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}
 
 	/**

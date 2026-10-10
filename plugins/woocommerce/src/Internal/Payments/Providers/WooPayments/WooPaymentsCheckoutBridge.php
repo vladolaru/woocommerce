@@ -523,7 +523,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		$config                             = array(
 			'publishableKey'                           => $this->get_account_service()->get_publishable_key(),
 			'accountId'                                => $this->get_account_service()->get_account_id(),
-			'locale'                                   => $this->get_stripe_locale(),
+			'locale'                                   => WooPaymentsLocaleUtils::get_stripe_locale(),
 			'gatewayId'                                => '',
 			'ajaxUrl'                                  => admin_url( 'admin-ajax.php' ),
 			'wcAjaxUrl'                                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
@@ -1676,17 +1676,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return $enabled_fields;
-	}
-
-	/**
-	 * Get a Stripe-supported locale for the current request.
-	 *
-	 * @return string
-	 */
-	private function get_stripe_locale(): string {
-		$locale = determine_locale();
-
-		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}
 
 	/**

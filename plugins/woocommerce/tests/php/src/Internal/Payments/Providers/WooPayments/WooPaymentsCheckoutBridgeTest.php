@@ -1684,6 +1684,20 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should give Stripe the site locale, not the admin user's, in the checkout config.
+	 */
+	public function test_get_payment_fields_js_config_uses_the_site_locale(): void {
+		$account_service = $this->create_account_service_for_bridge( true );
+		$bridge          = new WooPaymentsCheckoutBridge();
+		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $this->in_admin_with_french_user_locale( static fn() => $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS ) );
+
+		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/class-wc-payments-checkout.php:195).
+		$this->assertSame( 'en', $config['locale'] );
+	}
+
+	/**
 	 * @testdox Should show the US test card, not the store country's, when the account data has no country.
 	 */
 	public function test_get_payment_fields_js_config_uses_the_us_test_card_without_an_account_country(): void {
@@ -3084,5 +3098,31 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Run a callback in wp-admin for a user whose locale is French while the site stays English, so determine_locale()
+	 * gives fr_FR and get_locale() gives en_US.
+	 *
+	 * @param callable $callback Callback.
+	 * @return mixed The callback's result.
+	 */
+	private function in_admin_with_french_user_locale( callable $callback ) {
+		wp_set_current_user(
+			self::factory()->user->create(
+				array(
+					'role'   => 'administrator',
+					'locale' => 'fr_FR',
+				)
+			)
+		);
+		set_current_screen( 'dashboard' );
+
+		try {
+			return $callback();
+		} finally {
+			set_current_screen( 'front' );
+			wp_set_current_user( 0 );
+		}
 	}
 }

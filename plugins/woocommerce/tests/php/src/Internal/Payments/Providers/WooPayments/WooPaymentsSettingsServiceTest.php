@@ -322,7 +322,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'stripe' => array(
 					'publishableKey' => 'pk_test_native',
 					'accountId'      => 'acct_native_test',
-					'locale'         => WooPaymentsLocaleUtils::convert_to_stripe_locale( determine_locale() ),
+					'locale'         => WooPaymentsLocaleUtils::convert_to_stripe_locale( get_locale() ),
 				),
 			),
 			$settings['express_checkout_preview']
@@ -376,6 +376,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$settings = $this->sut->get_settings();
 
 		$this->assertTrue( $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
+	 * @testdox Should give the express checkout preview the site locale, not the admin user's.
+	 */
+	public function test_get_settings_express_checkout_preview_uses_the_site_locale(): void {
+		$settings = $this->in_admin_with_french_user_locale( fn() => $this->sut->get_settings() );
+
+		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/admin/class-wc-payments-admin.php:697).
+		$this->assertSame( 'en', $settings['express_checkout_preview']['stripe']['locale'] );
 	}
 
 	/**
@@ -3543,5 +3553,31 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'express_checkout_checkout_methods',
 			'express_checkout_preview',
 		);
+	}
+
+	/**
+	 * Run a callback in wp-admin for a user whose locale is French while the site stays English, so determine_locale()
+	 * gives fr_FR and get_locale() gives en_US.
+	 *
+	 * @param callable $callback Callback.
+	 * @return mixed The callback's result.
+	 */
+	private function in_admin_with_french_user_locale( callable $callback ) {
+		wp_set_current_user(
+			self::factory()->user->create(
+				array(
+					'role'   => 'administrator',
+					'locale' => 'fr_FR',
+				)
+			)
+		);
+		set_current_screen( 'dashboard' );
+
+		try {
+			return $callback();
+		} finally {
+			set_current_screen( 'front' );
+			wp_set_current_user( 0 );
+		}
 	}
 }

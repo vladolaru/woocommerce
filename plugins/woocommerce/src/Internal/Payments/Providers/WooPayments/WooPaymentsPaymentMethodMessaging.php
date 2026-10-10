@@ -291,7 +291,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'productId'            => 'base_product',
 			'productVariations'    => $product_variations,
 			'country'              => $country,
-			'locale'               => WooPaymentsLocaleUtils::convert_to_stripe_locale( get_locale() ),
+			'locale'               => WooPaymentsLocaleUtils::get_stripe_locale(),
 			'accountId'            => $this->account_service->get_account_id(),
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),

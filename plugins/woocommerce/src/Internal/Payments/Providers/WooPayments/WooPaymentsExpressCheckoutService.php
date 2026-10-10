@@ -164,7 +164,7 @@ class WooPaymentsExpressCheckoutService {
 			'stripe'                      => array(
 				'publishableKey' => $this->account_service->get_publishable_key(),
 				'accountId'      => $this->account_service->get_account_id(),
-				'locale'         => $this->get_stripe_locale(),
+				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
 				// Drives the Link autofill beta on the express Stripe instances,
 				// matching the reference client's shared connected-account instance.
 				'linkEnabled'    => WooPaymentsFeaturePolicy::is_link_folded_into_card(
@@ -1116,16 +1116,5 @@ class WooPaymentsExpressCheckoutService {
 		$country = strtoupper( $country );
 
 		return '' !== $country ? $country : 'US';
-	}
-
-	/**
-	 * Get a Stripe-supported locale for the current request.
-	 *
-	 * @return string
-	 */
-	private function get_stripe_locale(): string {
-		$locale = determine_locale();
-
-		return WooPaymentsLocaleUtils::convert_to_stripe_locale( (string) $locale );
 	}
 }

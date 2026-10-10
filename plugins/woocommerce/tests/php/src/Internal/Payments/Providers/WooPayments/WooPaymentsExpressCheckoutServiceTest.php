@@ -1307,6 +1307,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should give Stripe the site locale, not the admin user's, in the express checkout params.
+	 */
+	public function test_express_checkout_params_use_the_site_locale(): void {
+		$sut    = $this->create_service();
+		$params = $this->in_admin_with_french_user_locale( static fn() => $sut->get_express_checkout_params( 'checkout' ) );
+
+		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:274).
+		$this->assertSame( 'en', $params['stripe']['locale'] );
+	}
+
+	/**
 	 * @testdox Should build reference-shaped ECE params for Apple Pay and Google Pay.
 	 */
 	public function test_builds_payment_request_express_checkout_params(): void {
@@ -2530,5 +2541,31 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		unset( $GLOBALS['wp_query'], $GLOBALS['wp_the_query'] );
 		$GLOBALS['wp_the_query'] = new \WP_Query(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Reset main-query globals to simulate pre-request resolution.
 		$GLOBALS['wp_query']     = $GLOBALS['wp_the_query']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Reset main-query globals to simulate pre-request resolution.
+	}
+
+	/**
+	 * Run a callback in wp-admin for a user whose locale is French while the site stays English, so determine_locale()
+	 * gives fr_FR and get_locale() gives en_US.
+	 *
+	 * @param callable $callback Callback.
+	 * @return mixed The callback's result.
+	 */
+	private function in_admin_with_french_user_locale( callable $callback ) {
+		wp_set_current_user(
+			self::factory()->user->create(
+				array(
+					'role'   => 'administrator',
+					'locale' => 'fr_FR',
+				)
+			)
+		);
+		set_current_screen( 'dashboard' );
+
+		try {
+			return $callback();
+		} finally {
+			set_current_screen( 'front' );
+			wp_set_current_user( 0 );
+		}
 	}
 }

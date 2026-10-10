@@ -16,6 +16,21 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 final class WooPaymentsLocaleUtils {
 
 	/**
+	 * Get the Stripe.js locale for the site locale.
+	 *
+	 * Client 11.1.0 reads get_locale(), not the visitor's locale (`includes/class-wc-payments-checkout.php:195`,
+	 * `includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:274`, `includes/admin/class-wc-payments-admin.php:697`,
+	 * `includes/class-wc-payments-payment-method-messaging-element.php:150`).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string Closest Stripe-supported locale, or 'auto' when none matches.
+	 */
+	public static function get_stripe_locale(): string {
+		return self::convert_to_stripe_locale( get_locale() );
+	}
+
+	/**
 	 * Convert a WordPress locale to the closest Stripe.js-supported locale.
 	 *
 	 * Stripe.js supports only a subset of IETF language tags; when a country-specific
