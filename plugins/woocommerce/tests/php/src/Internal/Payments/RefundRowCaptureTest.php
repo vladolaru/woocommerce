@@ -35,8 +35,10 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Nothing is handed over for $refund_kind.
+	 * @testdox Nothing is handed over for $refund_kind, and nothing to a matching call after that.
 	 * @dataProvider refunds_not_handed_over_data
+	 *
+	 * Codex review 204 F5: a refund call that does not match the kept refund forgets it, so a later call cannot take it.
 	 *
 	 * @param string $refund_kind    What differs.
 	 * @param bool   $refund_payment Whether the refund goes through the gateway.
@@ -55,6 +57,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => $refund_payment ) );
 
 		$this->assertNull( $sut->consume( $order, $amount ) );
+		$this->assertNull( $sut->consume( wc_get_order( $refund->get_parent_id() ), 4.25 ), 'The rejected refund is forgotten.' );
 	}
 
 	/**
