@@ -109,6 +109,47 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should promote only payment methods the store offers: $scenario (client 11.1.0 `get_valid_payment_method_ids()` is `get_upe_available_payment_methods()`, `class-wc-payments-pm-promotions-service.php:686-697`).
+	 * @testWith ["a method the availability filter removes", "klarna", "1", true]
+	 *           ["Amazon Pay while its feature is off", "amazon_pay", "0", false]
+	 *           ["JCB, which is not a registered payment method", "jcb", "1", false]
+	 *
+	 * @param string $scenario          Scenario description.
+	 * @param string $payment_method_id Payment method the promotion is for, which has account fees.
+	 * @param string $amazon_pay_flag   Amazon Pay feature flag option value.
+	 * @param bool   $filter_it_out     Whether the availability filter removes the method.
+	 */
+	public function test_get_visible_promotions_skips_methods_the_store_does_not_offer( string $scenario, string $payment_method_id, string $amazon_pay_flag, bool $filter_it_out ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		update_option( '_wcpay_feature_amazon_pay', $amazon_pay_flag );
+		$filter = static fn( array $ids ): array => array_values( array_diff( $ids, array( $payment_method_id ) ) );
+		if ( $filter_it_out ) {
+			add_filter( 'wcpay_upe_available_payment_methods', $filter );
+		}
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'             => array(),
+				'bancontact'       => array(),
+				$payment_method_id => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'bancontact-promo__spotlight', 'bancontact-promo', 'bancontact', 'spotlight' ),
+			$this->promotion_fixture( 'other-promo__spotlight', 'other-promo', $payment_method_id, 'spotlight' ),
+		);
+
+		try {
+			$promotions = $this->sut->get_visible_promotions();
+		} finally {
+			remove_filter( 'wcpay_upe_available_payment_methods', $filter );
+			delete_option( '_wcpay_feature_amazon_pay' );
+		}
+
+		$this->assertSame( array( 'bancontact-promo__spotlight' ), array_column( (array) $promotions, 'id' ) );
+	}
+
+	/**
 	 * The platform's cache-for header sets the promotions cache lifetime, and 0 drops the cache, as in client 11.1.0
 	 * (includes/class-wc-payments-pm-promotions-service.php:224-254).
 	 *

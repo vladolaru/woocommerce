@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
  * Provider-level business rules for native WooPayments payment method promotions.
@@ -711,24 +712,18 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get payment method IDs available to the connected account.
+	 * Get the payment method IDs WooPayments offers on this store, the only ones it promotes, as client 11.1.0
+	 * `get_valid_payment_method_ids()` (class-wc-payments-pm-promotions-service.php:686-697).
 	 *
 	 * @return string[]
 	 */
 	private function get_available_payment_method_ids(): array {
-		// Availability comes from the account's live fee structures only, mirroring the settings service: a method the account has no fees for can no longer be enabled, so it must not be promoted either.
-		$account_fees = $this->get_account_fees();
-		if ( empty( $account_fees ) ) {
+		$account_service = $this->get_account_service();
+		if ( null === $account_service ) {
 			return array();
 		}
 
-		$available_ids = $this->sanitize_payment_method_ids( array_keys( $account_fees ) );
-		if ( in_array( 'card', $available_ids, true ) ) {
-			$available_ids[] = 'apple_pay';
-			$available_ids[] = 'google_pay';
-		}
-
-		return array_values( array_unique( $available_ids ) );
+		return wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_for_account( $account_service );
 	}
 
 	/**
