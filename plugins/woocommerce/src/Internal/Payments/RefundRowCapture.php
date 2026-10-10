@@ -44,8 +44,8 @@ class RefundRowCapture implements RegisterHooksInterface {
 	private ProviderGatewaysController $gateways_controller;
 
 	/**
-	 * The refunds this request is refunding through a gateway, one per wc_create_refund() call not yet handed over,
-	 * innermost call last, each with the site it was created on.
+	 * The refunds this request is refunding through one of the runtime's gateways, one per wc_create_refund() call
+	 * not yet handed over or ended, innermost call last, each with the site it was created on.
 	 *
 	 * @var array<int,array{refund:WC_Order_Refund,blog_id:int}>
 	 */
@@ -63,7 +63,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the hook, once.
+	 * Register the hooks, once.
 	 *
 	 * @internal
 	 */
@@ -73,6 +73,11 @@ class RefundRowCapture implements RegisterHooksInterface {
 		}
 		if ( false === has_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ) ) ) {
 			add_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ), 10, 2 );
+		}
+		foreach ( array( 'woocommerce_refund_created', 'woocommerce_delete_order_refund' ) as $hook ) {
+			if ( false === has_action( $hook, array( $this, 'forget_refund' ) ) ) {
+				add_action( $hook, array( $this, 'forget_refund' ), 10, 1 );
+			}
 		}
 	}
 
@@ -87,18 +92,19 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * @param mixed $refund Refund about to be saved.
 	 */
 	public function handle_before_refund_save( $refund ): void {
-		if ( $refund instanceof WC_Order_Refund && 0 === $refund->get_id() ) {
-			$this->mark_if_runtime_gateway_refund( $refund );
+		if ( $refund instanceof WC_Order_Refund && 0 === $refund->get_id() && $this->is_runtime_gateway_refund( $refund ) ) {
+			$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
 		}
 	}
 
 	/**
-	 * Keep a refund WooCommerce is about to refund through a gateway, on top of those kept for calls still running.
+	 * Keep a refund WooCommerce is about to refund through one of the runtime's gateways, next to those kept for calls
+	 * still running.
 	 *
 	 * A refund that does not go through the gateway leaves what was kept alone, so a manual refund a callback creates
 	 * inside a gateway refund's call never takes that call's row away (Codex review 204 F3). It loses the marker its first
-	 * save gave it; the save that follows this hook stores the removal. Refunds through other plugins' gateways are never
-	 * marked.
+	 * save gave it; the save that follows this hook stores the removal. Refunds through other plugins' gateways are neither
+	 * marked nor kept: no refund call of the runtime takes them (Codex review 205 R2).
 	 *
 	 * @internal
 	 *
@@ -115,59 +121,96 @@ class RefundRowCapture implements RegisterHooksInterface {
 			return;
 		}
 
+		if ( ! $this->is_runtime_gateway_refund( $refund ) ) {
+			return;
+		}
+
+		$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
 		$this->refunds[] = array(
 			'refund'  => $refund,
 			'blog_id' => get_current_blog_id(),
 		);
-		if ( '' === $refund->get_meta( self::GATEWAY_REFUND_META, true ) ) {
-			$this->mark_if_runtime_gateway_refund( $refund );
-		}
 	}
 
 	/**
-	 * Mark a refund with GATEWAY_REFUND_META when its order was paid through one of the runtime's gateways.
+	 * Forget a kept refund once its wc_create_refund() call has ended: WooCommerce created it, or it was deleted.
+	 *
+	 * Its gateway call can no longer come (Codex review 205 R2, monitor ruling 2026-10-10 17:25).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $refund_id ID of the refund created or deleted.
+	 */
+	public function forget_refund( $refund_id ): void {
+		$refund_id = absint( $refund_id );
+		$blog_id   = get_current_blog_id();
+		foreach ( $this->refunds as $index => $kept ) {
+			if ( $blog_id === $kept['blog_id'] && $refund_id === $kept['refund']->get_id() ) {
+				unset( $this->refunds[ $index ] );
+			}
+		}
+		$this->refunds = array_values( $this->refunds );
+	}
+
+	/**
+	 * Forget the refund kept for a refund call that returns before the refund runs.
+	 *
+	 * For a gateway that refuses before the processing service takes the row, so no later call takes it (Codex review
+	 * 205 R2).
+	 *
+	 * @param WC_Order $order  Order being refunded.
+	 * @param float    $amount Refund amount of the call.
+	 */
+	public function forget_for_call( WC_Order $order, float $amount ): void {
+		$this->consume( $order, $amount );
+	}
+
+	/**
+	 * Whether a refund's order was paid through one of the runtime's gateways.
 	 *
 	 * @param WC_Order_Refund $refund Refund.
+	 * @return bool
 	 */
-	private function mark_if_runtime_gateway_refund( WC_Order_Refund $refund ): void {
+	private function is_runtime_gateway_refund( WC_Order_Refund $refund ): bool {
 		if ( ! isset( $this->gateways_controller ) || 0 >= $refund->get_parent_id() ) {
-			return;
+			return false;
 		}
 
 		$order = wc_get_order( $refund->get_parent_id() );
-		if ( $order instanceof WC_Order && $this->gateways_controller->owns_gateway( (string) $order->get_payment_method() ) ) {
-			$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
-		}
+
+		return $order instanceof WC_Order && $this->gateways_controller->owns_gateway( (string) $order->get_payment_method() );
 	}
 
 	/**
-	 * Take the row ID of the refund kept for the innermost wc_create_refund() call still running, once.
+	 * Take the row ID of the refund kept for this refund call, once.
 	 *
-	 * A gateway refund call belongs to that innermost call: WooCommerce refunds through the gateway before it returns.
-	 * Only a saved refund of this order on this site, for this call's amount, is handed over; the innermost refund is
-	 * forgotten either way, and those kept for outer calls stay. Amounts compare at the rounding precision, not the
-	 * display one, so two amounts that only display the same never match (Codex review 204 F4).
+	 * The call's refund is the innermost kept one that is a saved refund of this order on this site, for this call's
+	 * amount (Codex review 205 R2, monitor ruling 2026-10-10 17:25); the others stay kept for their own calls. Amounts
+	 * compare at the rounding precision, not the display one, so two amounts that only display the same never match
+	 * (Codex review 204 F4).
 	 *
 	 * @param WC_Order $order  Order being refunded.
 	 * @param float    $amount Refund amount of the call.
 	 * @return int|null The row ID, or null when nothing applies.
 	 */
 	public function consume( WC_Order $order, float $amount ): ?int {
-		$kept = array_pop( $this->refunds );
-		if ( null === $kept || get_current_blog_id() !== $kept['blog_id'] ) {
-			return null;
-		}
-
-		$refund    = $kept['refund'];
+		$blog_id   = get_current_blog_id();
 		$precision = wc_get_rounding_precision();
-		if (
-			0 >= $refund->get_id()
-			|| $order->get_id() !== $refund->get_parent_id()
-			|| wc_format_decimal( $amount, $precision ) !== wc_format_decimal( (float) $refund->get_amount(), $precision )
-		) {
-			return null;
+		$call      = wc_format_decimal( $amount, $precision );
+		for ( $index = count( $this->refunds ) - 1; $index >= 0; $index-- ) {
+			$refund = $this->refunds[ $index ]['refund'];
+			if (
+				$blog_id === $this->refunds[ $index ]['blog_id']
+				&& 0 < $refund->get_id()
+				&& $order->get_id() === $refund->get_parent_id()
+				&& wc_format_decimal( (float) $refund->get_amount(), $precision ) === $call
+			) {
+				array_splice( $this->refunds, $index, 1 );
+
+				return $refund->get_id();
+			}
 		}
 
-		return $refund->get_id();
+		return null;
 	}
 }

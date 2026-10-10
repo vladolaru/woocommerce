@@ -8757,6 +8757,114 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox After an inner refund through $inner_kind ends without its refund running, a manual row on the outer order still leaves the outer gateway refund its own row.
+	 * @dataProvider unconsumed_inner_refund_data
+	 *
+	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the inner call's refund stayed kept on top after its call
+	 * returned, so the outer call took it, rejected it and fell back to the newest row, the manual one.
+	 *
+	 * @param string $inner_kind Which gateway the inner refund goes through.
+	 */
+	public function test_inner_call_that_ends_unconsumed_leaves_the_outer_call_its_own_row( string $inner_kind ): void {
+		$order                  = $this->create_refund_hold_order();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_r2_outer_200', 'key_f458_not_read', 200 ) ) );
+		$handed_over            = null;
+		$provider               = $this->create_refund_hold_provider(
+			$http_client,
+			static function ( PaymentOperationContext $context ) use ( &$handed_over ): void {
+				$handed_over = $context->get_payment_data()[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? null;
+			}
+		);
+		if ( 'built-in' === $inner_kind ) {
+			$inner_order = $this->create_refund_hold_order();
+			$inner_order->update_meta_data( '_intention_status', 'requires_capture' );
+		} else {
+			$inner_order = wc_create_order();
+			$inner_order->set_payment_method( 'other_plugin_gateway' );
+			$inner_order->set_total( '10.00' );
+		}
+		$inner_order->save();
+		$inner_result = null;
+		$manual_row   = null;
+		$nested       = function ( $refund, $args ) use ( &$nested, &$inner_result, &$manual_row, $order, $inner_order ): void {
+			if ( ! $refund instanceof WC_Order_Refund || $order->get_id() !== $refund->get_parent_id() || ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
+				return;
+			}
+			remove_action( 'woocommerce_create_refund', $nested, 20 );
+			$inner_result = wc_create_refund(
+				array(
+					'order_id'       => $inner_order->get_id(),
+					'amount'         => 3.00,
+					'refund_payment' => true,
+				)
+			);
+			$manual_row   = $this->create_refund_row( $order, 1.00, 'Recorded by a callback' );
+		};
+		add_action( 'woocommerce_create_refund', $nested, 20, 2 );
+
+		$refund = $this->create_refund_through_the_gateway( $provider, $order, 2.00 );
+		remove_action( 'woocommerce_create_refund', $nested, 20 );
+
+		$this->assertWPError( $inner_result, 'The inner refund ends without its refund running.' );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertInstanceOf( WC_Order_Refund::class, $manual_row );
+		$this->assertSame( $refund->get_id(), $handed_over, 'The provider gets the outer refund\'s own row.' );
+		$this->assertSame( 're_f458_r2_outer_200', wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row is not linked.' );
+	}
+
+	/**
+	 * Inner refunds whose calls return without the refund running.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function unconsumed_inner_refund_data(): array {
+		return array(
+			'another plugin\'s gateway (missing here)' => array( 'another plugin' ),
+			'the built-in gateway, refused before the refund runs' => array( 'built-in' ),
+		);
+	}
+
+	/**
+	 * @testdox A refund the built-in gateway refuses before the refund runs ($refusal) forgets its kept row.
+	 * @dataProvider refusals_before_the_refund_runs_data
+	 *
+	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the gateway returns before PaymentProcessingService
+	 * takes the row (NativeWooPaymentsGateway::process_refund()), so the row must not stay for a later call.
+	 *
+	 * @param string $refusal Why the gateway refuses.
+	 */
+	public function test_refund_refused_before_it_runs_forgets_its_row( string $refusal ): void {
+		$order = 'uncaptured' === $refusal ? $this->create_refund_hold_order() : $this->create_woopayments_order( '43.21' );
+		if ( 'uncaptured' === $refusal ) {
+			$order->update_meta_data( '_intention_status', 'requires_capture' );
+			$order->save();
+		}
+		$row = $this->create_refund_row( $order, 2.00, 'requested_by_customer' );
+		$this->announce_gateway_refund( $row );
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_refund_hold_provider( new FakeWooPaymentsHttpClient() ) );
+
+		$result = $gateway->process_refund( $order->get_id(), 2.00, 'requested_by_customer' );
+
+		$this->assertWPError( $result );
+		$this->assertNull( $this->use_runtime_refund_capture()->consume( wc_get_order( $order->get_id() ), 2.00 ), 'No later call takes the row.' );
+	}
+
+	/**
+	 * Refusals the built-in gateway makes before the refund runs.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function refusals_before_the_refund_runs_data(): array {
+		return array(
+			'an uncaptured payment' => array( 'uncaptured' ),
+			'no charge to refund'   => array( 'no charge' ),
+		);
+	}
+
+	/**
 	 * @testdox Another request's gateway refund row still in flight does not count as refunded, so the backstop keeps a found hold.
 	 *
 	 * Monitor ruling 2026-10-10 15:05 (R1b): the in-flight refund may still fail; counting it could only clear the hold early.

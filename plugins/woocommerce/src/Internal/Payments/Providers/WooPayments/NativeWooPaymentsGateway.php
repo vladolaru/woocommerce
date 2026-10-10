@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -1945,6 +1946,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// An authorized-but-uncaptured payment has nothing to refund yet; refunding the
 		// charge would race the capture. Point the merchant at the order actions instead.
 		if ( 'requires_capture' === (string) $order->get_meta( '_intention_status', true ) ) {
+			$this->forget_refund_row( $order, $amount );
 			return new WP_Error(
 				'uncaptured-payment',
 				/* translators: an error message which will appear if a user tries to refund an order which has been authorized but not yet charged. */
@@ -1956,10 +1958,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$is_zero_refund = '0.00' === sprintf( '%0.2f', $refund_amount );
 
 		if ( ! $is_zero_refund && ( $refund_amount < 0 || $refund_amount > (float) $order->get_total() ) ) {
+			$this->forget_refund_row( $order, $amount );
 			return new WP_Error( 'invalid-amount', __( 'The refund amount is not valid.', 'woocommerce' ) );
 		}
 
 		if ( ! $is_zero_refund && ! $this->can_refund_order( $order ) ) {
+			$this->forget_refund_row( $order, $amount );
 			return new WP_Error( 'order_payment_refund_missing_charge', __( 'This order does not have a WooPayments charge to refund.', 'woocommerce' ) );
 		}
 
@@ -1988,6 +1992,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Forget the refund row WooCommerce kept for this refund call when the gateway refuses before the refund runs, so no
+	 * later call takes it (Codex review 205 R2).
+	 *
+	 * @param WC_Order   $order  Order being refunded.
+	 * @param float|null $amount Refund amount.
+	 */
+	private function forget_refund_row( WC_Order $order, $amount ): void {
+		wc_get_container()->get( RefundRowCapture::class )->forget_for_call( $order, null === $amount ? 0.0 : (float) $amount );
 	}
 
 	/**

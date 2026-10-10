@@ -25,7 +25,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$refund = new WC_Order_Refund();
 		$refund->set_parent_id( $order->get_id() );
 		$refund->set_amount( '4.25' );
-		$sut = new RefundRowCapture();
+		$sut = $this->create_capture();
 
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
 		$refund->save();
@@ -35,10 +35,12 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Nothing is handed over for $refund_kind, and nothing to a matching call after that.
+	 * @testdox Nothing is handed over for $refund_kind; a gateway refund stays kept for its own call.
 	 * @dataProvider refunds_not_handed_over_data
 	 *
-	 * Codex review 204 F5: a refund call that does not match the kept refund forgets it, so a later call cannot take it.
+	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: a call takes only the refund kept for it, so a call that
+	 * does not match leaves the kept refund for the call it belongs to (this replaces the forgetting that review 204 F5
+	 * pinned while a call took the innermost refund regardless).
 	 *
 	 * @param string $refund_kind    What differs.
 	 * @param bool   $refund_payment Whether the refund goes through the gateway.
@@ -52,12 +54,12 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$refund->set_parent_id( $other_order ? $this->create_order()->get_id() : $order->get_id() );
 		$refund->set_amount( '4.25' );
 		$refund->save();
-		$sut = new RefundRowCapture();
+		$sut = $this->create_capture();
 
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => $refund_payment ) );
 
 		$this->assertNull( $sut->consume( $order, $amount ) );
-		$this->assertNull( $sut->consume( wc_get_order( $refund->get_parent_id() ), 4.25 ), 'The rejected refund is forgotten.' );
+		$this->assertSame( $refund_payment ? $refund->get_id() : null, $sut->consume( wc_get_order( $refund->get_parent_id() ), 4.25 ), 'A gateway refund stays kept for its own call.' );
 	}
 
 	/**
@@ -82,7 +84,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	public function test_a_manual_refund_leaves_the_kept_gateway_refund(): void {
 		$order   = $this->create_order();
 		$gateway = $this->create_refund( $order, '4.25' );
-		$sut     = new RefundRowCapture();
+		$sut     = $this->create_capture();
 
 		$sut->handle_create_refund( $gateway, array( 'refund_payment' => true ) );
 		$sut->handle_create_refund( $this->create_refund( $order, '1.00' ), array( 'refund_payment' => false ) );
@@ -101,7 +103,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$inner_order = $this->create_order();
 		$outer       = $this->create_refund( $outer_order, '4.25' );
 		$inner       = $this->create_refund( $inner_order, '3.00' );
-		$sut         = new RefundRowCapture();
+		$sut         = $this->create_capture();
 
 		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
 		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
@@ -109,6 +111,102 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The inner call takes its own refund.' );
 		$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
 		$this->assertNull( $sut->consume( $outer_order, 4.25 ) );
+	}
+
+	/**
+	 * @testdox A refund call takes its own refund past a newer one kept for a call that has not consumed it.
+	 *
+	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: a call takes the refund whose order and amount match it,
+	 * not the innermost one regardless.
+	 */
+	public function test_a_call_takes_its_own_refund_past_a_newer_one(): void {
+		$outer_order = $this->create_order();
+		$inner_order = $this->create_order();
+		$outer       = $this->create_refund( $outer_order, '4.25' );
+		$inner       = $this->create_refund( $inner_order, '3.00' );
+		$sut         = $this->create_capture();
+
+		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
+		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
+
+		$this->assertSame( $outer->get_id(), $sut->consume( $outer_order, 4.25 ), 'The outer call takes its own refund.' );
+		$this->assertSame( $inner->get_id(), $sut->consume( $inner_order, 3.00 ), 'The newer refund stays kept for its own call.' );
+	}
+
+	/**
+	 * @testdox Of two kept refunds of the same order and amount, a call takes the newer one first: the inner call's.
+	 *
+	 * Codex review 205 R2: WooCommerce refunds through the gateway before its call returns, so an inner call's refund
+	 * call comes before the outer one's.
+	 */
+	public function test_a_call_takes_the_newest_matching_refund(): void {
+		$order = $this->create_order();
+		$outer = $this->create_refund( $order, '4.25' );
+		$inner = $this->create_refund( $order, '4.25' );
+		$sut   = $this->create_capture();
+
+		$sut->handle_create_refund( $outer, array( 'refund_payment' => true ) );
+		$sut->handle_create_refund( $inner, array( 'refund_payment' => true ) );
+
+		$this->assertSame( $inner->get_id(), $sut->consume( $order, 4.25 ) );
+		$this->assertSame( $outer->get_id(), $sut->consume( $order, 4.25 ) );
+	}
+
+	/**
+	 * @testdox A refund through another plugin's gateway is not kept.
+	 *
+	 * Codex review 205 R2: no refund call of the runtime ever takes it, so keeping it only left it in the way.
+	 */
+	public function test_keeps_only_refunds_through_the_runtime_gateways(): void {
+		$order = $this->create_order();
+		$order->set_payment_method( 'other_plugin_gateway' );
+		$order->save();
+		$refund = $this->create_refund( $order, '4.25' );
+		$sut    = $this->create_capture();
+
+		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
+
+		$this->assertNull( $sut->consume( $order, 4.25 ) );
+	}
+
+	/**
+	 * @testdox A kept refund is forgotten once WooCommerce $event it, so no later call takes it.
+	 * @dataProvider refund_lifetime_end_data
+	 *
+	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the refund's wc_create_refund() call has returned, so its
+	 * gateway call can no longer come.
+	 *
+	 * @param string $event How the refund's call ended.
+	 */
+	public function test_forgets_a_refund_whose_call_has_ended( string $event ): void {
+		$order  = $this->create_order();
+		$refund = $this->create_refund( $order, '4.25' );
+		$sut    = $this->create_capture();
+		$sut->register();
+		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
+		$refund_id = $refund->get_id();
+
+		if ( 'created' === $event ) {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as wc_create_refund() does.
+			do_action( 'woocommerce_refund_created', $refund_id, array( 'refund_payment' => true ) );
+		} else {
+			// Through another object, as code deleting a row by its ID does; the kept object keeps its ID.
+			wc_get_order( $refund_id )->delete( true );
+		}
+
+		$this->assertNull( $sut->consume( $order, 4.25 ) );
+	}
+
+	/**
+	 * How a refund's wc_create_refund() call ends.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function refund_lifetime_end_data(): array {
+		return array(
+			'created' => array( 'created' ),
+			'deleted' => array( 'deleted' ),
+		);
 	}
 
 	/**
@@ -125,7 +223,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		add_filter( 'wc_get_price_decimals', static fn(): int => 0 );
 		$order  = $this->create_order();
 		$refund = $this->create_refund( $order, '4.25' );
-		$sut    = new RefundRowCapture();
+		$sut    = $this->create_capture();
 
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
 
@@ -154,7 +252,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	public function test_hands_nothing_over_on_another_site(): void {
 		$order  = $this->create_order();
 		$refund = $this->create_refund( $order, '4.25' );
-		$sut    = new RefundRowCapture();
+		$sut    = $this->create_capture();
 		$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
 		$blog_id = $GLOBALS['blog_id'];
 
@@ -271,6 +369,20 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Create a capture whose controller owns the `runtime_gateway` gateway the test orders are paid with.
+	 *
+	 * @return RefundRowCapture
+	 */
+	private function create_capture(): RefundRowCapture {
+		$controller = $this->createMock( ProviderGatewaysController::class );
+		$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => 'runtime_gateway' === $gateway_id );
+		$capture = new RefundRowCapture();
+		$capture->init( $controller );
+
+		return $capture;
+	}
+
+	/**
 	 * Create a saved refund of an order.
 	 *
 	 * @param WC_Order $order  Parent order.
@@ -293,6 +405,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	 */
 	private function create_order(): WC_Order {
 		$order = wc_create_order();
+		$order->set_payment_method( 'runtime_gateway' );
 		$order->set_total( '10.00' );
 		$order->save();
 
