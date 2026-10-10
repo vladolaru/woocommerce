@@ -243,11 +243,12 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund kept on one site is never handed to a refund call on another site of the network.
+	 * @testdox A refund kept on one site is never handed to a refund call on another site of the network, and stays kept for its own call on its site.
 	 *
 	 * Codex review 204 F4: order and refund IDs can repeat across a network's sites, so a call after switch_to_blog()
 	 * could take another site's row. The site is simulated through the global get_current_blog_id() reads, since the test
-	 * suite runs single-site.
+	 * suite runs single-site. Codex review 205 R3 asked to pin the other site's call as forgetting the refund; R2 (monitor
+	 * ruling 2026-10-10 17:25) supersedes that premise: a call that does not match leaves the refund for its own call.
 	 */
 	public function test_hands_nothing_over_on_another_site(): void {
 		$order  = $this->create_order();
@@ -266,6 +267,7 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertNull( $handed_over );
+		$this->assertSame( $refund->get_id(), $sut->consume( $order, 4.25 ), 'Back on its site, the refund is still kept for its own call.' );
 	}
 
 	/**
