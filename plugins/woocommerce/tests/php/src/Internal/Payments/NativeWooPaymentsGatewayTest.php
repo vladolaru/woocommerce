@@ -555,6 +555,52 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hide a method that cannot be reused from a subscription or renewal cart (client 11.1.0 `class-upe-payment-method.php:218-236`).
+	 * @testWith ["subscription", false]
+	 *           ["renewal", false]
+	 *           ["ordinary", true]
+	 *
+	 * @param string $cart     Cart the shopper checks out: a subscription, a renewal or neither.
+	 * @param bool   $expected Whether Bancontact is offered.
+	 */
+	public function test_gateway_availability_hides_a_non_reusable_method_from_subscription_carts( string $cart, bool $expected ): void {
+		$this->activate_builtin_tier();
+		// WooCommerce Subscriptions loads its core library with its cart; the mock is reset after every test.
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = 'subscription' === $cart;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = 'renewal' === $cart ? array( 'subscription_renewal' => array() ) : false;
+
+		$settings_filter = static function (): array {
+			return array( 'enabled' => 'yes' );
+		};
+		$currency_filter = static function (): string {
+			return 'EUR';
+		};
+		$settings_option = 'pre_option_woocommerce_woocommerce_payments_bancontact_settings';
+		$previous_cart   = WC()->cart;
+		WC()->cart       = new \WC_Cart();
+		WC()->cart->set_total( '0' );
+		add_filter( $settings_option, $settings_filter );
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'bancontact_payments', true ) );
+
+			$this->assertSame( $expected, $gateway->is_available() );
+		} finally {
+			remove_filter( $settings_option, $settings_filter );
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			WC()->cart = $previous_cart;
+		}
+	}
+
+	/**
 	 * Data provider for merchant and shopper country availability scenarios.
 	 *
 	 * @return array<string,array{string,string,string,string,string[]}>
