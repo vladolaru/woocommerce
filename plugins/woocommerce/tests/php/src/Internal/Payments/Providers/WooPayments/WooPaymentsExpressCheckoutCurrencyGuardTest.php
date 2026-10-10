@@ -157,6 +157,28 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should keep a currency header with a trailing line break out of the log line.
+	 *
+	 * In PCRE, `$` also matches before a final line break, so the code check must end at the very end of the string.
+	 */
+	public function test_keeps_a_currency_header_with_a_trailing_line_break_out_of_the_log(): void {
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+
+		$request = $this->create_request( $this->ece_headers( "usd\n" ) );
+
+		try {
+			$this->sut->assert_currency_matches_element( $order, $request );
+			$this->fail( 'Expected a RouteException for the currency mismatch.' );
+		} catch ( RouteException $exception ) {
+			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
+		}
+		$this->assertSame( 1, $this->count_payment_info_errors() );
+		$this->assertStringContainsString( 'element currency: (not a currency code), order currency: eur', $this->log_lines[0]['message'] );
+		$this->assertStringNotContainsString( "\n", $this->log_lines[0]['message'] );
+	}
+
+	/**
 	 * @testdox Should allow order placement when the element and order currencies agree regardless of case.
 	 */
 	public function test_allows_matching_currency(): void {

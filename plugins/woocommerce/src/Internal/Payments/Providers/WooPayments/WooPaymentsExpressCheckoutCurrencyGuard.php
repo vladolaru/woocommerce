@@ -90,7 +90,7 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 			sprintf(
 				'Express checkout currency mismatch at order placement. Order: %d, element currency: %s, order currency: %s.',
 				$order->get_id(),
-				1 === preg_match( '/^[a-z]{3}$/', $expected ) ? $expected : '(not a currency code)',
+				1 === preg_match( '/^[a-z]{3}\z/', $expected ) ? $expected : '(not a currency code)',
 				$actual
 			),
 			array( 'source' => 'payment-info' )
