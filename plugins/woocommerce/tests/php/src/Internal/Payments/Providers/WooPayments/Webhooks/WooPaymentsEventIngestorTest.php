@@ -316,6 +316,40 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The received line carries the request context of every WooPayments line, with the request path only and no referrer.
+	 *
+	 * Client 11.1.0 writes it through its gated logger (includes/class-wc-payments-webhook-processing-service.php:155-160,
+	 * includes/class-logger.php:150-153), which merges Logger_Context::get_context() into every line
+	 * (src/Internal/Logger.php:64-69). Native leaves out the referrer and the query string, as on its other lines.
+	 */
+	public function test_received_line_carries_the_request_context(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_woopayments_order();
+		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'id' => 'evt_received_context' ) );
+
+		$server                  = $_SERVER;
+		$_SERVER['REQUEST_URI']  = '/wp-json/wc/v3/payments/webhook?trace=1';
+		$_SERVER['HTTP_REFERER'] = 'https://shop.example.test/?key=wc_order_context';
+
+		try {
+			$this->sut->process( $event );
+		} finally {
+			$_SERVER = $server;
+		}
+
+		$received = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'WEBHOOK RECEIVED: payment_intent.succeeded evt_received_context' === $line[1] ) );
+		$this->assertCount( 1, $received );
+		$context = $logger->contexts[ $received[0] ];
+		$this->assertSame( 'debug', $logger->lines[ $received[0] ][0] );
+		$this->assertSame( '/wp-json/wc/v3/payments/webhook', $context['REQUEST_URI'] ?? null );
+		$this->assertArrayHasKey( 'WOOPAYMENTS_MODE', $context );
+		$this->assertArrayHasKey( 'WP_USER', $context );
+		$this->assertArrayNotHasKey( 'HTTP_REFERER', $context );
+		$this->assertSame( 'woopayments', $context['source'] );
+	}
+
+	/**
 	 * @testdox The received line redacts the personal data a recorded invoice event carries.
 	 */
 	public function test_received_line_redacts_personal_data_of_a_recorded_invoice_event(): void {

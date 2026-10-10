@@ -16,8 +16,9 @@ defined( 'ABSPATH' ) || exit;
  * Writes redacted platform requests and responses to the WooPayments log when debug logging is on.
  *
  * Logging is on in dev mode or with the gateway's `enable_logging` setting, the one gate every WooPayments log line
- * uses (WooPaymentsLogger::can_log()), and lines go to the WooPayments log source. Redaction runs only when a line is
- * written; info() takes a context its caller already passed through redact().
+ * uses (WooPaymentsLogger::can_log()). Lines are written through WooPaymentsLogger, so they carry its request context
+ * and source, and a line that fails to write is dropped. Redaction runs only when a line is written; info() takes a
+ * context its caller already passed through redact().
  *
  * @since 11.2.0
  * @internal
@@ -149,7 +150,7 @@ class WooPaymentsTransportLog {
 			return;
 		}
 
-		wc_get_logger()->info( $message, array_merge( $context, array( 'source' => WooPaymentsLogger::SOURCE ) ) );
+		$this->write( 'info', $message, $context );
 	}
 
 	/**
@@ -170,13 +171,7 @@ class WooPaymentsTransportLog {
 				return;
 			}
 
-			wc_get_logger()->debug(
-				$label,
-				array(
-					'body'   => $this->redact( $payload ),
-					'source' => WooPaymentsLogger::SOURCE,
-				)
-			);
+			$this->write( 'debug', $label, array( 'body' => $this->redact( $payload ) ) );
 		} catch ( Throwable $exception ) {
 			unset( $exception );
 		}
@@ -195,10 +190,25 @@ class WooPaymentsTransportLog {
 			return;
 		}
 
-		wc_get_logger()->error(
-			sprintf( '%s (%s)', (string) $this->redact( $error_message ), (string) $this->redact( $error_code ) ),
-			array( 'source' => WooPaymentsLogger::SOURCE )
-		);
+		$this->write( 'error', sprintf( '%s (%s)', (string) $this->redact( $error_message ), (string) $this->redact( $error_code ) ) );
+	}
+
+	/**
+	 * Write a line through the WooPayments logger, which adds the request context and the source.
+	 *
+	 * A line that fails to write, from a throwing log handler or a hook the request context runs, is dropped without
+	 * another logger call: it must never reach a platform request, where it would make an answered request look failed.
+	 *
+	 * @param string              $level   Log level.
+	 * @param string              $message Line text.
+	 * @param array<string,mixed> $context Context, already redacted.
+	 */
+	private function write( string $level, string $message, array $context = array() ): void {
+		try {
+			$this->logger->log( $message, $level, $context );
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+		}
 	}
 
 	/**

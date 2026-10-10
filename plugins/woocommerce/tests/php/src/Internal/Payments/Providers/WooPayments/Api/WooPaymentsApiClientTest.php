@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WCPay\Core\Server\Request\Get_Reporting_Balance_Summary;
 use WCPay\Core\Server\Request\List_Authorizations;
 use WCPay\Core\Server\Request\List_Documents;
@@ -1908,6 +1909,107 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $params['at_bound'], $body['at_bound'] );
 		$this->assertSame( '(redacted)', $body['beyond_bound'] );
+	}
+
+	/**
+	 * @testdox Transport lines carry the request context of every WooPayments line, with the request path only and no referrer.
+	 *
+	 * Client 11.1.0 writes the request, response and error lines through its gated logger
+	 * (includes/wc-payment-api/class-wc-payments-api-client.php:2731-2737, :2779-2784, :2912; includes/class-logger.php:40-41,
+	 * :89-91, :140-153), which merges Logger_Context::get_context() into every line (src/Internal/Logger.php:64-69, fields at
+	 * src/Internal/LoggerContext.php:140-164). Native leaves out the referrer and the query string, as on its other lines.
+	 */
+	public function test_transport_lines_carry_the_request_context(): void {
+		$server                  = $_SERVER;
+		$_SERVER['REQUEST_URI']  = '/checkout/order-pay/123/?pay_for_order=true&key=wc_order_context';
+		$_SERVER['HTTP_REFERER'] = 'https://shop.example.test/checkout/order-pay/123/?key=wc_order_context';
+
+		try {
+			$logger = $this->log_transport_request(
+				array( 'note' => 'context' ),
+				array(
+					'error' => array(
+						'code'    => 'resource_missing',
+						'message' => 'No such subscription.',
+						'type'    => 'invalid_request_error',
+					),
+				),
+				404
+			);
+		} finally {
+			$_SERVER = $server;
+		}
+
+		$error_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
+		$this->assertCount( 1, $error_entries, 'The platform error line is written.' );
+		$entries = array(
+			'request'  => $this->get_transport_entry( $logger, 'API REQUEST (' ),
+			'response' => $this->get_transport_entry( $logger, 'API RESPONSE (' ),
+			'error'    => $error_entries[0],
+		);
+		foreach ( $entries as $line => $entry ) {
+			$this->assertSame( '/checkout/order-pay/123/', $entry['context']['REQUEST_URI'] ?? null, 'The ' . $line . ' line carries the request path without its query.' );
+			$this->assertArrayHasKey( 'WOOPAYMENTS_MODE', $entry['context'], 'The ' . $line . ' line carries the mode.' );
+			$this->assertArrayHasKey( 'WP_USER', $entry['context'], 'The ' . $line . ' line carries the user.' );
+			$this->assertArrayHasKey( 'DOING_CRON', $entry['context'], 'The ' . $line . ' line carries the request type.' );
+			$this->assertArrayNotHasKey( 'HTTP_REFERER', $entry['context'], 'The ' . $line . ' line leaves out the referrer.' );
+			$this->assertSame( 'woopayments', $entry['context']['source'] );
+		}
+		$this->assertSame( 'info', $entries['request']['level'] );
+		$this->assertSame( 'info', $entries['response']['level'] );
+		$this->assertSame( 'No such subscription. (resource_missing)', $entries['error']['message'] );
+	}
+
+	/**
+	 * @testdox A log handler that throws on the response line never turns the platform's answer into a failure.
+	 *
+	 * The throw comes after the platform answered: a logging failure there must not make a completed request look failed.
+	 */
+	public function test_failing_log_handler_never_fails_a_request_the_platform_answered(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = new class() extends RecordingWcLogger {
+			/**
+			 * Throw on the response line, record every other line.
+			 *
+			 * @param string              $level   Level.
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 * @throws \RuntimeException On the response line.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				if ( 0 === strpos( (string) $message, 'API RESPONSE (' ) ) {
+					throw new \RuntimeException( 'Log handler failed.' );
+				}
+
+				parent::log( $level, $message, $context );
+			}
+		};
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ) {
+				return $logger;
+			}
+		);
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 'sub_answered' ) ),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$result = $sut->send_site_request( array( 'note' => 'answered' ), 'subscriptions', 'POST' );
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertSame( array( 'id' => 'sub_answered' ), $result );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'API REQUEST (' ) ), 'The request line before the failure is written.' );
 	}
 
 	/**
