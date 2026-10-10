@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -167,6 +168,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
 				\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 			}
+			$this->reset_container_replacements();
 		} finally {
 			parent::tearDown();
 		}
@@ -424,7 +426,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A manual subscription renewed by hand gets a Stripe subscription only when it has payment tokens and none yet (client creation-logic tests, `class-wc-payments-subscription-service.php:800-817`).
+	 * @testdox A manual subscription renewed by hand gets a Stripe subscription, not backdated, only when it has payment tokens and none yet (client creation-logic tests, `class-wc-payments-subscription-service.php:800-817`).
+	 *
+	 * The client creates it through the same create_subscription(), with the switch flag false in a request of its own (`:108`, `:848`).
 	 * @testWith [true, true, "", 1]
 	 *           [true, false, "", 0]
 	 *           [false, true, "", 0]
@@ -453,6 +457,10 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $expected_requests, $this->http_client->request_count );
 		$this->assertSame( $expected_requests ? self::MAIN_SUBSCRIPTION_ID : $wcpay_subscription_id, wc_get_order( $subscription->get_id() )->get_meta( '_wcpay_subscription_id', true ) );
+		if ( $expected_requests ) {
+			$this->assertArrayNotHasKey( 'backdate_start_date', $this->get_requests()[0][2], 'Only a switch to WooPayments keeps the billing dates.' );
+			$this->assertArrayNotHasKey( 'billing_cycle_anchor', $this->get_requests()[0][2] );
+		}
 	}
 
 	/**
@@ -610,16 +618,19 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The on-hold suspension line names the code that changed the status, through the status hooks, without call arguments.
+	 * @testdox The on-hold suspension line names the code that changed the status, through the module's status hook, without call arguments.
 	 *
 	 * Client 11.1.0 appends `getTraceAsString()` to the message (`class-wc-payments-subscription-service.php:552-565`).
+	 * The status change reaches the service through the module's hook callback, as in production. WooCommerce Subscriptions
+	 * fires the status hook two frames deeper than the subscription double, from `save()` and `status_transition()`
+	 * (`class-wc-subscription.php:606`, `:640-653`; core `class-wc-order.php:286`), so the 20 frames the line writes keep a margin.
 	 */
 	public function test_suspension_log_traces_the_status_change_without_call_arguments(): void {
 		$this->queue_entry( $this->get_entry( 'update_subscription' ) );
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 		$subscription->set_status( 'active' );
 		$subscription->save();
-		add_action( 'woocommerce_subscription_status_on-hold', array( $this->sut, 'handle_subscription_status_on_hold' ) );
+		$this->register_stripe_billing_module();
 		$this->logging_enabled = true;
 		$logger                = RecordingWcLogger::install();
 
@@ -1156,6 +1167,29 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][] = $subscription->get_id();
 
 		return wc_get_order( $subscription->get_id() );
+	}
+
+	/**
+	 * Load the Stripe Billing module with WooCommerce Subscriptions active and native owning payments, its hook callbacks
+	 * resolving this test's subscription service.
+	 */
+	private function register_stripe_billing_module(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->sut );
+
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+
+		$module = new WooPaymentsStripeBillingModule();
+		$module->init( $arbiter );
+		$module->register();
 	}
 
 	/**
