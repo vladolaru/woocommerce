@@ -7304,13 +7304,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the earlier attempt's refund failed, the hold is cleared and the call sends under a fresh key.
+	 * @testdox When the earlier attempt's refund is $status, the hold is cleared and the call sends under a fresh key.
+	 *
+	 * @dataProvider unsuccessful_earlier_refund_data
+	 *
+	 * @param string              $status    Refund status Stripe reports for the earlier attempt.
+	 * @param array<string,mixed> $overrides Hold fields: a hold that found its refund reaches the refund by its ID too.
 	 */
-	public function test_refund_whose_earlier_attempt_failed_clears_the_hold_and_sends(): void {
+	public function test_refund_whose_earlier_attempt_failed_clears_the_hold_and_sends( string $status, array $overrides ): void {
 		$order = $this->create_refund_hold_order();
-		$this->seed_refund_hold( $order );
+		$this->seed_refund_hold( $order, $overrides );
 		$list                      = $this->recorded_refund_list();
-		$list['data'][0]['status'] = 'failed';
+		$list['data'][0]['status'] = $status;
 		$http_client               = new FakeWooPaymentsHttpClient();
 		$http_client->responses    = array(
 			self::http_json( 200, $list ),
@@ -7326,6 +7331,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
 		$this->assertNotSame( 'POST refunds ' . self::F458_KEY_555, $trail[1] );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Earlier attempts whose refund moved no money: failed, and canceled after the hold found it.
+	 *
+	 * @return array<string,array{string,array<string,mixed>}>
+	 */
+	public function unsuccessful_earlier_refund_data(): array {
+		return array(
+			'failed'          => array( 'failed', array() ),
+			'canceled, found' => array(
+				'canceled',
+				array(
+					'found_refund_id' => self::F458_REFUND_555,
+					'found_amount'    => 555,
+				),
+			),
+		);
 	}
 
 	/**
@@ -7477,6 +7500,194 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::refund_list_trail(), $trail[0] );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[1] ?? '' );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox After the order was told to refund the found amount, a same-amount call whose refund the webhook recorded meanwhile is refused at any time, once, and the next call sends.
+	 *
+	 * Opus review F1 and monitor ruling 2026-10-10 13:20: the row 4 note told the merchant no money is sent for that
+	 * refund, so the late webhook row must not turn it into a second refund after the 15-minute window.
+	 */
+	public function test_found_refund_recorded_by_a_late_webhook_refuses_the_same_amount_once_whatever_the_time(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'       => time() - 1000,
+				'last_failed_at'  => time() - 1000,
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_f1', 'key_f458_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $refused ) = $this->run_refund( $provider, $order, 5.55 );
+		$hold_after      = self::refund_hold_of( $order );
+
+		list( $next, $next_row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                   = self::request_trail( $http_client );
+
+		$this->assertWPError( $refused );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_ALREADY_RECORDED, $refused->get_error_code() );
+		$this->assertSame( '', $hold_after, 'The refusal is made once: it clears the hold.' );
+		$this->assertTrue( $next );
+		$this->assertCount( 2, $trail );
+		$this->assertSame( self::refund_list_trail(), $trail[0], 'The refused call sends no refund.' );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertSame( 're_f458_after_f1', wc_get_order( $next_row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A hold whose found amount is more than the order can still refund is cleared with a warning, and the call sends with no lookup.
+	 *
+	 * Opus review F2: the merchant recorded the earlier refund some other way, so refunding the found amount is no longer
+	 * possible and the hold would block every later refund.
+	 */
+	public function test_found_refund_above_the_remaining_refundable_amount_clears_the_hold(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->link_local_refund_row( $order, 40.00, 're_f458_other_refund' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_f2', 'key_f458_not_read', 200 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$logger                 = RecordingWcLogger::install();
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $trail );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_f458_after_f2', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+		$this->assertNotEmpty( array_filter( self::warning_lines( $logger ), static fn( string $line ): bool => false !== strpos( $line, 'can no longer refund' ) ) );
+	}
+
+	/**
+	 * @testdox A manual refund of the found amount recorded after the failure is linked to the found refund and clears the hold, so a same-amount refund then sends fresh.
+	 *
+	 * Monitor ruling 2026-10-10 13:20: the manual row is the merchant recording the found refund, so a deliberate second
+	 * refund of that amount through WooPayments moves money and the books match it.
+	 */
+	public function test_manual_refund_of_the_found_amount_records_the_found_refund(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'       => time() - 1000,
+				'last_failed_at'  => time() - 1000,
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_second_555', 'key_f458_not_read', 555 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row records the found refund.' );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $trail );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_f458_second_555', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A local row that is not the merchant recording the found refund leaves the hold, and the call is refused as row 4: $row_kind.
+	 *
+	 * Monitor ruling 2026-10-10 13:20: only a manual row (not refunded through the gateway, with no provider refund ID)
+	 * of exactly the found amount, created after the failure, records the found refund.
+	 *
+	 * @dataProvider rows_that_do_not_record_the_found_refund_data
+	 *
+	 * @param string $row_kind      Which row.
+	 * @param float  $amount        Row amount.
+	 * @param int    $age           Seconds before the failure the row was created, or 0 for after it.
+	 * @param string $provider_link `_wcpay_refund_id` on the row, as a webhook row carries it.
+	 */
+	public function test_rows_that_do_not_record_the_found_refund_leave_the_hold( string $row_kind, float $amount, int $age, string $provider_link ): void {
+		unset( $row_kind );
+		$failed_at = time() - 1000;
+		$order     = $this->create_refund_hold_order();
+		$hold      = $this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'       => $failed_at,
+				'last_failed_at'  => $failed_at,
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$row       = $this->create_refund_row( $order, $amount, 'Recorded locally' );
+		if ( 0 < $age ) {
+			$row->set_date_created( $failed_at - $age );
+		}
+		if ( '' !== $provider_link ) {
+			$row->update_meta_data( '_wcpay_refund_id', $provider_link );
+		}
+		$row->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( $hold, self::refund_hold_of( $order ) );
+		$this->assertSame( $provider_link, wc_get_order( $row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The row must keep its provider link, or none.' );
+	}
+
+	/**
+	 * Local rows that do not record the found refund.
+	 *
+	 * @return array<string,array{string,float,int,string}>
+	 */
+	public function rows_that_do_not_record_the_found_refund_data(): array {
+		return array(
+			'manual row of another amount'       => array( 'manual row of another amount', 4.00, 0, '' ),
+			'manual row from before the failure' => array( 'manual row from before the failure', 5.55, 100, '' ),
+			'webhook row of the found amount'    => array( 'webhook row of the found amount', 5.55, 0, 're_f458_webhook_row' ),
+		);
+	}
+
+	/**
+	 * @testdox An unrecorded earlier refund in another currency than the order's is not taken for this call's amount.
+	 *
+	 * The same-amount check compares the currency too: 5.55 USD is not 5.55 EUR, so the call is refused as row 4 instead
+	 * of being answered with the earlier refund.
+	 */
+	public function test_earlier_refund_in_another_currency_is_not_linked(): void {
+		$order = $this->create_refund_hold_order();
+		$order->set_currency( 'EUR' );
+		$order->save();
+		$this->seed_refund_hold( $order );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
 	}
 
 	/**

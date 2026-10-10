@@ -143,6 +143,10 @@ class WooPaymentsRefundAmbiguityService {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
+		if ( '' !== $record['found_refund_id'] && $this->settle_found_refund_on_order( $order, $record ) ) {
+			return array( 'action' => self::ACTION_SEND );
+		}
+
 		try {
 			$list = $this->api_client->list_charge_refunds( $request['charge'], self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
@@ -347,7 +351,9 @@ class WooPaymentsRefundAmbiguityService {
 			return $this->refuse_earlier_found( $order, $record, $refund, $refund_id, $refund_amount );
 		}
 
-		if ( $is_same_amount && time() - $record['last_failed_at'] <= self::ALREADY_RECORDED_WINDOW_SECONDS ) {
+		// After row 4 told the merchant to refund the found amount, its webhook row may have recorded it meanwhile: that
+		// refund is refused at any time, once, since the hold is cleared with it.
+		if ( $is_same_amount && ( '' !== $record['found_refund_id'] || time() - $record['last_failed_at'] <= self::ALREADY_RECORDED_WINDOW_SECONDS ) ) {
 			$this->clear_record( $order );
 
 			return $this->refuse(
@@ -359,7 +365,7 @@ class WooPaymentsRefundAmbiguityService {
 					__( 'The earlier refund of %s went through and is recorded on the order. No new refund was sent. Reload the order to see it.', 'woocommerce' ),
 					self::format_refund_amount( $refund, $order )
 				),
-				sprintf( 'its refund %s is already recorded on the order, and this same-amount call came soon after the failure', $refund_id )
+				sprintf( 'its refund %s is already recorded on the order, and this same-amount call came soon after the failure or after the order was told to refund that amount', $refund_id )
 			);
 		}
 
@@ -391,7 +397,7 @@ class WooPaymentsRefundAmbiguityService {
 			$order->add_order_note(
 				sprintf(
 					/* translators: %1$s: refund amount, %2$s: provider refund ID. */
-					__( 'An earlier WooPayments refund of %1$s (%2$s) went through after its answer was lost, and is not yet recorded on this order. Refund %1$s to record it; no money is sent for that step.', 'woocommerce' ),
+					__( 'An earlier WooPayments refund of %1$s (%2$s) went through after its answer was lost, and is not yet recorded on this order. To record it, refund %1$s through WooPayments (no money is sent for that step), or record it with Refund manually.', 'woocommerce' ),
 					WooPaymentsCurrencyUtils::format_explicit_order_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, (string) ( $refund['currency'] ?? '' ) ), (string) ( $refund['currency'] ?? '' ), $order ),
 					$refund_id
 				)
@@ -519,6 +525,64 @@ class WooPaymentsRefundAmbiguityService {
 			if ( $refund_id === (string) $refund->get_meta( '_wcpay_refund_id', true ) ) {
 				return true;
 			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Settle a hold that found its refund from the order's own refunds, before reading the charge's refunds.
+	 *
+	 * A manual refund row the merchant created after the failure, for exactly the found amount, records the found refund:
+	 * it is linked to it and the hold cleared (monitor ruling 2026-10-10 13:20). Otherwise, when the order can no longer
+	 * refund the found amount, the hold protects nothing and is cleared with a warning. This call's own row, the newest,
+	 * counts for neither.
+	 *
+	 * @param WC_Order            $order  Order being refunded.
+	 * @param array<string,mixed> $record The order's record, holding a found refund.
+	 * @return bool Whether the hold was cleared, so this call sends under its own key.
+	 */
+	private function settle_found_refund_on_order( WC_Order $order, array $record ): bool {
+		$refunds     = $this->get_fresh_refunds( $order );
+		$own_row_id  = array() === $refunds ? 0 : max( array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $refunds ) );
+		$currency    = (string) $order->get_currency();
+		$found_id    = (string) $record['found_refund_id'];
+		$found_minor = (int) $record['found_amount'];
+		$other_minor = 0;
+		$manual_row  = null;
+		foreach ( $refunds as $refund ) {
+			if ( $own_row_id === $refund->get_id() ) {
+				continue;
+			}
+
+			$amount_minor = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency );
+			$other_minor += $amount_minor;
+			$created      = $refund->get_date_created();
+			if (
+				null === $manual_row
+				&& ! $refund->get_refunded_payment()
+				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
+				&& null !== $created && $created->getTimestamp() >= (int) $record['failed_at']
+				&& $found_minor === $amount_minor
+			) {
+				$manual_row = $refund;
+			}
+		}
+
+		if ( null !== $manual_row ) {
+			$manual_row->update_meta_data( '_wcpay_refund_id', $found_id );
+			$manual_row->save_meta_data();
+			$this->clear_record( $order );
+			$this->log_cleared( $order, $record, sprintf( 'the manual refund #%1$d the merchant recorded after the failure is for the found refund %2$s, so it is linked to it and this call sends under its own key', $manual_row->get_id(), $found_id ) );
+
+			return true;
+		}
+
+		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
+			$this->clear_record( $order );
+			$this->log_cleared( $order, $record, sprintf( 'the order can no longer refund the %1$d %2$s of the found refund %3$s, so the hold protects nothing and this call sends under its own key', $found_minor, strtolower( $currency ), $found_id ) );
+
+			return true;
 		}
 
 		return false;
