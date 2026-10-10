@@ -777,6 +777,57 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 offers its card gateway only while card is among the methods enabled at checkout (class-wc-payment-gateway-wcpay.php:941),
+	 * read from the gateway's own settings with card as the default when no list is stored (:4682-4689).
+	 *
+	 * @testdox Should offer the card gateway only while the stored enabled methods include card: $scenario.
+	 * @testWith ["no stored list", null, true]
+	 *           ["card listed", ["card", "ideal"], true]
+	 *           ["card not listed", ["ideal"], false]
+	 *           ["empty list", [], false]
+	 *
+	 * @param string        $scenario        Scenario name.
+	 * @param string[]|null $enabled_methods Stored enabled payment method IDs, or null for none stored.
+	 * @param bool          $expected        Whether the card gateway should be offered.
+	 */
+	public function test_card_gateway_availability_requires_card_among_the_enabled_methods( string $scenario, ?array $enabled_methods, bool $expected ): void {
+		unset( $scenario );
+		$this->activate_builtin_tier();
+		$canonical_settings = null === $enabled_methods ? array() : array( 'upe_enabled_payment_method_ids' => $enabled_methods );
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'      => 'US',
+				'capabilities' => array( 'card_payments' => 'active' ),
+			)
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => array_key_exists( $key, $canonical_settings ) ? $canonical_settings[ $key ] : $fallback
+		);
+		$currency_filter = static fn(): string => 'USD';
+		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+
+		try {
+			$this->with_gateway_settings(
+				array( 'enabled' => 'yes' ),
+				function () use ( $account_service, $expected ): void {
+					$gateway = new NativeWooPaymentsGateway();
+					$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+
+					$this->assertSame( $expected, $gateway->is_available() );
+				}
+			);
+		} finally {
+			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should hide an internal payment method that is not placed as a checkout gateway.
 	 */
 	public function test_gateway_availability_requires_checkout_gateway_placement(): void {
