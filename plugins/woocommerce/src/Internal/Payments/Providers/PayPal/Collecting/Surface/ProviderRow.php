@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Connect
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
-use WC_AJAX;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -21,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * The provider class asks the core-owned filter `woocommerce_paypal_wallet_provider_notice` for the notice, and this class
  * answers it. The row's NOX list item renders the notice (the POC slot) and its dismiss button calls the `wc_ajax`
- * action below.
+ * action of Dismissals.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -34,13 +33,6 @@ class ProviderRow {
 	 * @since 11.3.0
 	 */
 	public const SURFACE = 'row-notice';
-
-	/**
-	 * The `wc_ajax` action that stores a dismissal, and the action of its nonce.
-	 *
-	 * @since 11.3.0
-	 */
-	public const AJAX_ACTION = 'wc_paypal_wallet_dismiss_notice';
 
 	/**
 	 * The gateway row the notice belongs to.
@@ -82,13 +74,12 @@ class ProviderRow {
 	}
 
 	/**
-	 * Hook the notice and its dismissal.
+	 * Hook the notice. Dismissals hooks its dismissal.
 	 *
 	 * @since 11.3.0
 	 */
 	public function register(): void {
 		add_filter( 'woocommerce_paypal_wallet_provider_notice', array( $this, 'handle_woocommerce_paypal_wallet_provider_notice' ), 10, 2 );
-		add_action( 'wc_ajax_' . self::AJAX_ACTION, array( $this, 'handle_wc_ajax_wc_paypal_wallet_dismiss_notice' ) );
 	}
 
 	/**
@@ -126,40 +117,7 @@ class ProviderRow {
 			'action_label' => __( 'Complete setup', 'woocommerce' ),
 			'action_url'   => PayPalWalletBootstrap::get_settings_url(),
 			'dismissible'  => true,
-			'dismiss_url'  => add_query_arg( '_wpnonce', wp_create_nonce( self::AJAX_ACTION ), WC_AJAX::get_endpoint( self::AJAX_ACTION ) ),
+			'dismiss_url'  => $this->dismissals->dismiss_url( self::SURFACE ),
 		);
-	}
-
-	/**
-	 * Store the dismissal for the current user and answer the request.
-	 *
-	 * Hooked to `wc_ajax_wc_paypal_wallet_dismiss_notice`.
-	 *
-	 * @since 11.3.0
-	 */
-	public function handle_wc_ajax_wc_paypal_wallet_dismiss_notice(): void {
-		// The nonce is checked in dismiss_from_request().
-		if ( $this->dismiss_from_request( $_REQUEST ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			wp_send_json_success();
-		}
-
-		wp_send_json_error( null, 403 );
-	}
-
-	/**
-	 * Store the dismissal for the current user when the request carries a valid nonce and the user can manage WooCommerce.
-	 *
-	 * @since 11.3.0
-	 *
-	 * @param array $request The request parameters.
-	 * @return bool Whether the dismissal is stored.
-	 */
-	public function dismiss_from_request( array $request ): bool {
-		$nonce = isset( $request['_wpnonce'] ) && is_string( $request['_wpnonce'] ) ? $request['_wpnonce'] : '';
-		if ( ! current_user_can( 'manage_woocommerce' ) || ! wp_verify_nonce( $nonce, self::AJAX_ACTION ) ) {
-			return false;
-		}
-
-		return $this->dismissals->dismiss( self::SURFACE, get_current_user_id() );
 	}
 }

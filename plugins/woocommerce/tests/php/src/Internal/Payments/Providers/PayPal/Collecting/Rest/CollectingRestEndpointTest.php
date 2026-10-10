@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\C
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\SellerStatus;
@@ -520,7 +521,7 @@ class CollectingRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should store the dismissal of an allowed surface for the current user.
+	 * @testdox Should store the dismissal of an allowed surface for the current user: the row notice at the first order, the order notice at the given order.
 	 */
 	public function test_dismiss_stores_the_dismissal(): void {
 		$this->set_first_order( 42 );
@@ -530,6 +531,37 @@ class CollectingRestEndpointTest extends WalletTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'dismissed' => true ), $response->get_data() );
 		$this->assertTrue( ( new Dismissals() )->is_dismissed( ProviderRow::SURFACE, get_current_user_id(), 42 ) );
+
+		$response = $this->dispatch(
+			'POST',
+			'/collecting/dismiss',
+			array(
+				'surface'  => OrderScreen::SURFACE,
+				'order_id' => 57,
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'dismissed' => true ), $response->get_data() );
+		$this->assertSame( '57', get_user_meta( get_current_user_id(), Dismissals::META_PREFIX . OrderScreen::SURFACE, true ) );
+	}
+
+	/**
+	 * @testdox Should accept the surfaces the dismiss request accepts.
+	 */
+	public function test_dismissible_surfaces_are_the_dismiss_request_ones(): void {
+		$this->assertSame( Dismissals::SURFACES, CollectingRestEndpoint::DISMISSIBLE_SURFACES );
+	}
+
+	/**
+	 * @testdox Should refuse to dismiss the order notice without an order ID with a 400 and store nothing.
+	 */
+	public function test_dismiss_of_the_order_notice_needs_an_order_id(): void {
+		$response = $this->dispatch( 'POST', '/collecting/dismiss', array( 'surface' => OrderScreen::SURFACE ) );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertSame( '', get_user_meta( get_current_user_id(), Dismissals::META_PREFIX . OrderScreen::SURFACE, true ) );
 	}
 
 	/**

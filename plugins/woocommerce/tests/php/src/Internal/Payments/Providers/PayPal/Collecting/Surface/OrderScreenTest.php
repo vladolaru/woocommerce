@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -51,6 +52,17 @@ class OrderScreenTest extends WalletTestCase {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		add_filter( 'locale', array( $this, 'pinned_locale' ) );
 		$this->sut = new OrderScreen();
+	}
+
+	/**
+	 * Forget the user the test signed in.
+	 */
+	public function tearDown(): void {
+		try {
+			wp_set_current_user( 0 );
+		} finally {
+			parent::tearDown();
+		}
 	}
 
 	/**
@@ -256,11 +268,80 @@ class OrderScreenTest extends WalletTestCase {
 
 		set_current_screen( wc_get_page_screen_id( 'shop-order' ) );
 		$this->sut->handle_admin_enqueue_scripts();
-		$this->assertSame( array( '#order_data .wc-paypal-wallet-order-notice p { color: inherit; }' ), wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ) );
+		$this->assertSame( array( '#order_data .wc-paypal-wallet-order-notice p { color: inherit; } .wc-paypal-wallet-order-notice--dismissible { position: relative; padding-right: 38px; }' ), wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ) );
 
 		set_current_screen( 'front' );
 		wp_dequeue_style( 'woocommerce_admin_styles' );
 		wp_deregister_style( 'woocommerce_admin_styles' );
+	}
+
+	/**
+	 * @testdox Should render a dismiss button that carries the nonced wc_ajax URL for this order.
+	 */
+	public function test_notice_has_a_dismiss_button(): void {
+		$this->set_collecting();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$order = $this->held_order();
+
+		$html = $this->printed( $order );
+
+		$this->assertStringContainsString( 'wc-paypal-wallet-order-notice--dismissible', $html );
+		$this->assertStringContainsString( '<button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button></div>', $html, 'The last child of the notice' );
+		$this->assertStringNotContainsString( 'is-dismissible', $html, 'WordPress must not add a second button' );
+		$this->assertMatchesRegularExpression( '/data-dismiss-url="[^"]*wc-ajax=wc_paypal_wallet_dismiss_notice[^"]*"/', $html );
+		$this->assertMatchesRegularExpression( '/data-dismiss-url="[^"]*surface=order-notice[^"]*order_id=' . $order->get_id() . '[^"]*"/', $html );
+	}
+
+	/**
+	 * @testdox Should hide the notice for the user who dismissed it on this or a later order, keep it for another user, and show it again on a newer order.
+	 */
+	public function test_dismissed_notice_stays_hidden_until_a_newer_order(): void {
+		$this->set_collecting();
+		$user_id = self::factory()->user->create( array( 'role' => 'shop_manager' ) );
+		wp_set_current_user( $user_id );
+		$older = $this->held_order();
+		$order = $this->held_order();
+		( new Dismissals() )->dismiss( OrderScreen::SURFACE, $user_id, $order->get_id() );
+
+		$this->assertSame( '', $this->printed( $order ), 'Dismissed on this order' );
+		$this->assertSame( '', $this->printed( $older ), 'An older order is covered' );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$this->assertStringContainsString( self::D1, $this->printed( $order ), 'Another user still sees it' );
+
+		wp_set_current_user( $user_id );
+		$this->assertStringContainsString( self::D1, $this->printed( $this->held_order() ), 'A newer held order brings it back' );
+	}
+
+	/**
+	 * @testdox Should add the dismiss script to the order meta boxes script on the order edit screen, with the two messages.
+	 */
+	public function test_dismiss_script_on_the_order_edit_screen(): void {
+		wp_register_script( 'wc-admin-order-meta-boxes', 'meta-boxes-order.js', array( 'wp-a11y' ), '1', true );
+		wp_enqueue_script( 'wc-admin-order-meta-boxes' );
+
+		set_current_screen( 'edit-post' );
+		$this->sut->handle_admin_enqueue_scripts();
+		$this->assertFalse( wp_scripts()->get_data( 'wc-admin-order-meta-boxes', 'after' ), 'Not on another screen' );
+
+		set_current_screen( wc_get_page_screen_id( 'shop-order' ) );
+		$this->sut->handle_admin_enqueue_scripts();
+		$after = wp_scripts()->get_data( 'wc-admin-order-meta-boxes', 'after' );
+
+		set_current_screen( 'front' );
+		wp_dequeue_script( 'wc-admin-order-meta-boxes' );
+		wp_deregister_script( 'wc-admin-order-meta-boxes' );
+
+		// add_inline_script() starts the list from (array) false, so the list holds a false before the script.
+		$this->assertIsArray( $after );
+		$scripts = array_values( array_filter( $after, 'is_string' ) );
+		$this->assertCount( 1, $scripts, 'One script, added once' );
+		$script = $scripts[0];
+		$this->assertStringContainsString( 'wc-paypal-wallet-order-notice--dismissible', $script );
+		$this->assertStringContainsString( '"Notice dismissed."', $script );
+		$this->assertStringContainsString( '"The notice could not be dismissed."', $script );
+		$this->assertStringContainsString( 'order_status', $script, 'Focus moves to the Status field' );
+		$this->assertStringContainsString( 'credentials: "same-origin"', $script );
 	}
 
 	/**

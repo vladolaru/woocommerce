@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\D
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\InboxNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
@@ -182,7 +183,8 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( 10, has_action( 'woocommerce_paypal_wallet_first_order', array( $this->sut, 'handle_woocommerce_paypal_wallet_first_order' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_email_classes', array( $this->sut, 'register_emails' ) ) );
 		$this->assertTrue( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'The Payments row notice' );
-		$this->assertTrue( $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ), 'The row notice dismissal' );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'wc_ajax_wc_paypal_wallet_dismiss_notice', Dismissals::class ), 'The notice dismissal, once' );
+		$this->assertFalse( $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ), 'The row no longer hooks it' );
 		$this->assertTrue( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'The order screen notice' );
 		$this->assertTrue( $this->has_surface_callback( 'admin_enqueue_scripts', OrderScreen::class ), 'The order screen notice style' );
 		$this->assertTrue( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'The Plugins page notice' );
@@ -227,7 +229,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->sut->register();
 
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ) );
-		$this->assertSame( 1, $this->count_surface_callbacks( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'wc_ajax_wc_paypal_wallet_dismiss_notice', Dismissals::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'admin_enqueue_scripts', OrderScreen::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'load-plugins.php', PluginsPageNotice::class ) );
@@ -279,7 +281,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( $attached, (bool) has_action( 'woocommerce_paypal_wallet_first_order', array( $this->sut, 'handle_woocommerce_paypal_wallet_first_order' ) ) );
 		$this->assertSame( $attached, (bool) has_filter( 'woocommerce_email_classes', array( $this->sut, 'register_emails' ) ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ) );
-		$this->assertSame( $attached, $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', Dismissals::class ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_paypal_wallet_refund_locked', RefundLock::class ) );
@@ -406,6 +408,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( array(), $this->queries, 'No query of any kind' );
 		$this->assertFalse( has_action( 'init', array( $this->sut, 'register_task' ) ), 'Nothing is attached' );
 		$this->assertFalse( $this->has_surface_callback( 'woocommerce_paypal_wallet_provider_notice', ProviderRow::class ), 'No row notice' );
+		$this->assertFalse( has_action( 'wc_ajax_wc_paypal_wallet_dismiss_notice' ), 'No dismiss action' );
 		$this->assertFalse( $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ), 'No order screen notice' );
 		$this->assertFalse( $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ), 'No Plugins page notice' );
 		$this->assertNotContains( 'wc-paypal-wallet-setup', $this->extended_task_ids() );

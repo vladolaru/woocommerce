@@ -76,6 +76,13 @@ class OwnerIndependent {
 	private ?ProviderRow $provider_row = null;
 
 	/**
+	 * The notice dismissals and their `wc_ajax` action, built once.
+	 *
+	 * @var Dismissals|null
+	 */
+	private ?Dismissals $dismissals = null;
+
+	/**
 	 * The order screen notice, built once.
 	 *
 	 * @var OrderScreen|null
@@ -146,10 +153,12 @@ class OwnerIndependent {
 		add_filter( 'woocommerce_email_classes', array( $this, 'register_emails' ) );
 
 		// The notices on the Payments row, the order screen and the Plugins page read only the options and the orders.
-		// The same three objects every time: a repeated register() must hit WordPress's duplicate check.
-		$this->provider_row        = $this->provider_row ?? new ProviderRow( $this->options );
-		$this->order_screen        = $this->order_screen ?? new OrderScreen( $this->options );
+		// The same objects every time, the dismissals shared: a repeated register() must hit WordPress's duplicate check.
+		$this->dismissals          = $this->dismissals ?? new Dismissals();
+		$this->provider_row        = $this->provider_row ?? new ProviderRow( $this->options, $this->dismissals );
+		$this->order_screen        = $this->order_screen ?? new OrderScreen( $this->options, null, $this->dismissals );
 		$this->plugins_page_notice = $this->plugins_page_notice ?? new PluginsPageNotice( $this->options );
+		$this->dismissals->register();
 		$this->provider_row->register();
 		add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->order_screen, 'handle_woocommerce_admin_order_data_after_payment_info' ) );
 		add_action( 'admin_enqueue_scripts', array( $this->order_screen, 'handle_admin_enqueue_scripts' ), 20 );

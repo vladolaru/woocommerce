@@ -73,6 +73,7 @@ class ProviderRowTest extends WalletTestCase {
 		$this->assertTrue( $notice['dismissible'] );
 		$this->assertStringContainsString( 'wc-ajax=wc_paypal_wallet_dismiss_notice', $notice['dismiss_url'] );
 		$this->assertStringContainsString( '_wpnonce=', $notice['dismiss_url'] );
+		$this->assertStringContainsString( 'surface=row-notice', $notice['dismiss_url'] );
 		$this->assertSame( array( 'title', 'text', 'action_label', 'action_url', 'dismissible', 'dismiss_url' ), array_keys( $notice ) );
 	}
 
@@ -153,25 +154,26 @@ class ProviderRowTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should store the dismissal for a signed-in shop manager with a valid nonce, and refuse a bad nonce, a missing nonce or a user without the capability.
+	 * @testdox Should store the row dismissal for a signed-in user with a valid nonce, and refuse a bad nonce, a missing nonce or a user without the capability.
 	 */
 	public function test_dismiss_from_request(): void {
 		$this->set_collecting();
 		$this->set_first_order( 7 );
-		$user_id = $this->sign_in_admin();
-		$this->assertFalse( $this->sut->dismiss_from_request( array( '_wpnonce' => 'bad' ) ), 'Bad nonce' );
-		$this->assertFalse( $this->sut->dismiss_from_request( array() ), 'No nonce' );
-		$this->assertFalse( ( new Dismissals() )->is_dismissed( ProviderRow::SURFACE, $user_id, 7 ) );
+		$user_id    = $this->sign_in_admin();
+		$dismissals = new Dismissals();
+		$this->assertSame( 403, $dismissals->dismiss_from_request( array( '_wpnonce' => 'bad' ) ), 'Bad nonce' );
+		$this->assertSame( 403, $dismissals->dismiss_from_request( array() ), 'No nonce' );
+		$this->assertFalse( $dismissals->is_dismissed( ProviderRow::SURFACE, $user_id, 7 ) );
 
 		// The nonce belongs to the user it was created for.
-		$nonce = wp_create_nonce( ProviderRow::AJAX_ACTION );
-		$this->assertTrue( $this->sut->dismiss_from_request( array( '_wpnonce' => $nonce ) ) );
-		$this->assertTrue( ( new Dismissals() )->is_dismissed( ProviderRow::SURFACE, $user_id, 7 ) );
+		$nonce = wp_create_nonce( Dismissals::AJAX_ACTION );
+		$this->assertSame( 200, $dismissals->dismiss_from_request( array( '_wpnonce' => $nonce ) ) );
+		$this->assertTrue( $dismissals->is_dismissed( ProviderRow::SURFACE, $user_id, 7 ) );
 
 		$customer = self::factory()->user->create( array( 'role' => 'customer' ) );
 		wp_set_current_user( $customer );
-		$this->assertFalse( $this->sut->dismiss_from_request( array( '_wpnonce' => wp_create_nonce( ProviderRow::AJAX_ACTION ) ) ), 'No manage_woocommerce capability' );
-		$this->assertFalse( ( new Dismissals() )->is_dismissed( ProviderRow::SURFACE, $customer, 7 ) );
+		$this->assertSame( 403, $dismissals->dismiss_from_request( array( '_wpnonce' => wp_create_nonce( Dismissals::AJAX_ACTION ) ) ), 'No manage_woocommerce capability' );
+		$this->assertFalse( $dismissals->is_dismissed( ProviderRow::SURFACE, $customer, 7 ) );
 	}
 
 	/**

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
@@ -79,7 +79,7 @@ class CollectingRestEndpoint {
 	 *
 	 * @since 11.3.0
 	 */
-	public const DISMISSIBLE_SURFACES = array( ProviderRow::SURFACE );
+	public const DISMISSIBLE_SURFACES = Dismissals::SURFACES;
 
 	/**
 	 * The most held orders the panel lists; the count covers the rest.
@@ -230,13 +230,18 @@ class CollectingRestEndpoint {
 				'callback'            => array( $this, 'dismiss' ),
 				'permission_callback' => $permission,
 				'args'                => array(
-					'surface' => array(
+					'surface'  => array(
 						'description'       => __( 'The notice to dismiss.', 'woocommerce' ),
 						'type'              => 'string',
 						'required'          => true,
 						'enum'              => self::DISMISSIBLE_SURFACES,
 						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'sanitize_key',
+					),
+					'order_id' => array(
+						'type'     => 'integer',
+						'required' => false,
+						'minimum'  => 1,
 					),
 				),
 			)
@@ -370,18 +375,24 @@ class CollectingRestEndpoint {
 	}
 
 	/**
-	 * Store the current user's dismissal of a notice.
+	 * Store the current user's dismissal of a notice. Only the order notice reads the order ID, and needs it, as the AJAX
+	 * request does.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
-	 * @return WP_REST_Response
+	 * @return WP_REST_Response|WP_Error
 	 */
-	public function dismiss( WP_REST_Request $request ): WP_REST_Response {
-		$surface = (string) $request->get_param( 'surface' );
+	public function dismiss( WP_REST_Request $request ) {
+		$surface  = (string) $request->get_param( 'surface' );
+		$order_id = OrderScreen::SURFACE === $surface ? (int) $request->get_param( 'order_id' ) : 0;
+		if ( OrderScreen::SURFACE === $surface && $order_id <= 0 ) {
+			/* translators: %s: List of invalid parameters. */
+			return new WP_Error( 'rest_invalid_param', sprintf( __( 'Invalid parameter(s): %s', 'woocommerce' ), 'order_id' ), array( 'status' => 400 ) );
+		}
 
-		return rest_ensure_response( array( 'dismissed' => $this->dismissals->dismiss( $surface, get_current_user_id() ) ) );
+		return rest_ensure_response( array( 'dismissed' => $this->dismissals->dismiss( $surface, get_current_user_id(), $order_id ) ) );
 	}
 
 	/**
