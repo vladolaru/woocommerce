@@ -1219,6 +1219,70 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * @group paypal-wallet-boot
 	 *
+	 * @testdox Should drop its modules filter callback once core has built its own module list (K6).
+	 */
+	public function test_removes_the_collecting_filter_after_the_boot(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut( true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertTrue( $this->sut->is_booted() );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules', array( $this->sut, 'append_collecting_module' ) ), 'The callback must not outlive core\'s own apply_filters()' );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_modules' ), 'Nothing is left on the modules filter' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should hand the extension its own module list back unchanged when it applies the modules filter after core booted (K6).
+	 */
+	public function test_leaves_an_extension_shaped_module_list_unchanged_after_the_boot(): void {
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ) );
+		$this->build_sut( true );
+		$this->sut->maybe_boot();
+
+		// What the extension's bootstrap.php does when it is activated in the same request: modules of its own Modularity namespace.
+		$extension_module = new class() {
+			/**
+			 * Shaped like a module of the extension's (unprefixed) Modularity.
+			 *
+			 * @return string
+			 */
+			public function id(): string {
+				return 'extension-module';
+			}
+		};
+		$modules          = array( $extension_module, new \stdClass() );
+
+		$result = apply_filters( 'woocommerce_paypal_payments_modules', $modules ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment -- The extension's filter.
+
+		$this->assertSame( $modules, $result );
+		$this->assertNotContains( CollectingModule::class, array_map( 'get_class', $result ) );
+	}
+
+	/**
+	 * @testdox Should append the collecting module only to a list that holds the fork's modules (K6).
+	 */
+	public function test_append_collecting_module_appends_only_to_the_forks_module_list(): void {
+		$this->build_sut( true );
+		$fork_modules = ( require WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/modules.php' )();
+
+		$with_fork = $this->sut->append_collecting_module( $fork_modules );
+		$this->assertCount( count( $fork_modules ) + 1, $with_fork );
+		$this->assertInstanceOf( CollectingModule::class, end( $with_fork ), 'The fork list gets the collecting module last' );
+
+		$mixed = $this->sut->append_collecting_module( array_merge( array( new \stdClass() ), $fork_modules ) );
+		$this->assertInstanceOf( CollectingModule::class, end( $mixed ), 'A foreign element added by another callback does not stop core\'s own list from getting the module' );
+
+		foreach ( array( array(), array( new \stdClass() ), array( 'not-a-module' ) ) as $foreign ) {
+			$this->assertSame( $foreign, $this->sut->append_collecting_module( $foreign ), 'A list with none of the fork\'s modules comes back unchanged' );
+		}
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
 	 * @testdox Should boot a collecting store as connected, with webhooks counted as registered and the SDK v6 buttons off.
 	 */
 	public function test_boots_a_collecting_store_as_connected(): void {

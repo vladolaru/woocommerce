@@ -241,21 +241,40 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	/**
 	 * Append the collecting module after the wallet's own modules, so its extensions wrap theirs.
 	 *
-	 * Hooked to `woocommerce_paypal_payments_modules` at priority 10, only for a store the platform serves.
+	 * Hooked to `woocommerce_paypal_payments_modules` at priority 10, only for a store the platform serves, and
+	 * removed again once core has built its own list. The PayPal Payments extension applies the same filter to its
+	 * own modules, so a list that holds none of the fork's modules is left alone (K6).
 	 *
 	 * @since 11.3.0
 	 *
 	 * @param mixed $modules The module list.
 	 *
-	 * @return mixed The list with the collecting module last, or the value unchanged when it is not an array.
+	 * @return mixed The list with the collecting module last, or the value unchanged when it is not core's module list.
 	 */
 	public function append_collecting_module( $modules ) {
-		if ( ! is_array( $modules ) ) {
+		if ( ! is_array( $modules ) || ! $this->holds_fork_modules( $modules ) ) {
 			return $modules;
 		}
 		$modules[] = new CollectingModule();
 
 		return $modules;
+	}
+
+	/**
+	 * Whether a module list holds at least one module of the fork's (prefixed) Modularity.
+	 *
+	 * @param array $modules The module list.
+	 *
+	 * @return bool
+	 */
+	private function holds_fork_modules( array $modules ): bool {
+		foreach ( $modules as $module ) {
+			if ( $module instanceof Module ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -358,6 +377,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		$modules = ( require __DIR__ . '/Wallet/modules.php' )();
 		/** This filter is documented in the extension's bootstrap.php. */
 		$modules = apply_filters( 'woocommerce_paypal_payments_modules', $modules ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
+		// Only core's own list may receive the collecting module: the extension applies this filter too when it is activated in this request.
+		remove_filter( 'woocommerce_paypal_payments_modules', array( $this, 'append_collecting_module' ), 10 );
 		// Any callback can return anything; Package::addModule() throws a TypeError on a non-module, so keep only real modules.
 		$modules = is_array( $modules ) ? array_values(
 			array_filter(
