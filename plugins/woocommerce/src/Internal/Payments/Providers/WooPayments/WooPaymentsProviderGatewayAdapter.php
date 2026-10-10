@@ -252,7 +252,7 @@ class WooPaymentsProviderGatewayAdapter {
 		} catch ( WooPaymentsApiException $exception ) {
 			// A definitive answer leaves any kept record as it was: after a held-key retry, a 400 can be Stripe's refusal of a
 			// key still in use or the replay of a stored failure, neither of which settles the earlier attempt.
-			if ( $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+			if ( $exception->has_ambiguous_outcome() ) {
 				$this->refund_ambiguity_service->record_ambiguous_answer( $order, $key, $request, $own_row_id );
 			}
 
@@ -489,7 +489,7 @@ class WooPaymentsProviderGatewayAdapter {
 				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key );
 			}
 
-			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $exception->has_ambiguous_outcome() ) {
 				$this->log_kept_charge_key_refused( $order, $sent_key );
 			}
 
@@ -533,7 +533,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
-			&& ! $this->api_client->is_ambiguous_request_failure( $exception )
+			&& ! $exception->has_ambiguous_outcome()
 			&& null !== $this->get_charge_ambiguity_record( $order )
 			&& ! self::is_scheduled_renewal( $context );
 	}
@@ -981,7 +981,7 @@ class WooPaymentsProviderGatewayAdapter {
 	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
-		if ( $is_payment_intent_dispatch && $this->api_client->is_ambiguous_request_failure( $exception ) ) {
+		if ( $is_payment_intent_dispatch && $exception->has_ambiguous_outcome() ) {
 			$this->record_charge_ambiguity( $order, $customer_id );
 		} elseif ( $is_payment_intent_dispatch && ! $this->is_unsettling_answer_under_kept_ambiguous_key( $order, $exception, $is_scheduled_renewal ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;

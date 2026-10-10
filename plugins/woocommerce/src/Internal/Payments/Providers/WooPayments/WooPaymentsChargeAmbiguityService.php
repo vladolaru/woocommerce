@@ -114,7 +114,7 @@ class WooPaymentsChargeAmbiguityService {
 		try {
 			$list = $this->api_client->list_payment_intentions( (string) reset( $customer_ids ), self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_client->is_ambiguous_request_failure( $exception )
+			return $exception->has_ambiguous_outcome()
 				? self::lookup( self::LOOKUP_FAILED )
 				: $this->find_order_intents_created_around_failures( $order, $failed_at, $last_failed_at );
 		}
@@ -142,7 +142,7 @@ class WooPaymentsChargeAmbiguityService {
 		try {
 			$list = $this->api_client->list_payment_intentions_created_between( $created_since, $last_failed_at + self::ACCOUNT_LOOKAHEAD_SECONDS, self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
-			return self::lookup( $this->api_client->is_ambiguous_request_failure( $exception ) ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
+			return self::lookup( $exception->has_ambiguous_outcome() ? self::LOOKUP_FAILED : self::LOOKUP_CANNOT_CHECK );
 		}
 
 		$order_intents = $this->get_order_intents_from_list( $list, $order, $created_since );

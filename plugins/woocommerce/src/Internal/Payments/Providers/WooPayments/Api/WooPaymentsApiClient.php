@@ -28,28 +28,6 @@ use WP_REST_Request;
 class WooPaymentsApiClient {
 
 	/**
-	 * Tell whether a failed request has an ambiguous provider outcome.
-	 *
-	 * Transport failures keep the original `WP_Error` code in the `transport_error_code` error data. Every 5xx counts,
-	 * with a readable body or not: the platform passes Stripe's status and error body through unchanged, Stripe treats a
-	 * 500 as indeterminate, and the platform can fail after its Stripe call. Stripe's `idempotency_key_in_use` (409)
-	 * counts too: a request sent under the same key is still running.
-	 *
-	 * @param WooPaymentsApiException $exception Request failure.
-	 * @return bool
-	 *
-	 * @since 11.2.0
-	 */
-	public function is_ambiguous_request_failure( WooPaymentsApiException $exception ): bool {
-		$transport_error_code = $exception->get_error_data()['transport_error_code'] ?? $exception->get_error_code();
-		if ( in_array( $transport_error_code, array( 'http_request_failed', 'http_request_not_executed' ), true ) ) {
-			return true;
-		}
-
-		return 500 <= $exception->get_http_code() || 'idempotency_key_in_use' === $exception->get_error_code();
-	}
-
-	/**
 	 * Request timeout.
 	 */
 	private const REQUEST_TIMEOUT_SECONDS = 70;
