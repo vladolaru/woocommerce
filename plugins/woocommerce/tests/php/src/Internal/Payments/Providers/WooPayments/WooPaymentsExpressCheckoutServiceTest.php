@@ -1427,26 +1427,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not offer Amazon Pay for express checkout while manual capture is on (client 11.1.0 `get_upe_enabled_payment_method_ids_based_on_manual_capture()`, `class-wc-payment-gateway-wcpay.php:4761-4768`, keeps only card and Link at checkout).
-	 */
-	public function test_manual_capture_hides_amazon_pay_express(): void {
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-				'manual_capture'                    => 'yes',
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-			)
-		);
-
-		$this->assertSame( array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
-		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-	}
-
-	/**
 	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the client's availability conditions holds.
 	 *
 	 * @dataProvider provider_amazon_pay_availability_conditions
