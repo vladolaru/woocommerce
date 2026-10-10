@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -1031,8 +1032,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'tracking_enabled'            => class_exists( '\WC_Site_Tracking' ) ? \WC_Site_Tracking::is_tracking_enabled() : false,
 				'registered_payment_gateways' => $this->get_store_registered_gateway_ids(),
 				'enabled_payment_gateways'    => $this->get_store_enabled_gateway_ids(),
-				'wc_subscriptions_active'     => $this->is_plugin_active( 'woocommerce-subscriptions/woocommerce-subscriptions.php' ),
-				'wc_subscriptions_version'    => $this->get_plugin_version( 'woocommerce-subscriptions/woocommerce-subscriptions.php' ),
+				'wc_subscriptions_active'     => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
+				'wc_subscriptions_version'    => $this->get_subscriptions_version(),
 			),
 		);
 	}
@@ -1262,31 +1263,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a plugin file is active.
+	 * Get the version of the WooCommerce Subscriptions code loaded in this request, or null when it is not loaded.
 	 *
-	 * @param string $plugin_file Plugin basename.
-	 * @return bool
-	 */
-	private function is_plugin_active( string $plugin_file ): bool {
-		$active_plugins = get_option( 'active_plugins', array() );
-
-		return is_array( $active_plugins ) && in_array( $plugin_file, $active_plugins, true );
-	}
-
-	/**
-	 * Get a plugin version from the installed plugins list.
+	 * Client 11.1.0 `get_subscriptions_plugin_version()` (trait-wc-payments-subscriptions-utilities.php:129-131): an installed
+	 * but inactive plugin reports no version.
 	 *
-	 * @param string $plugin_file Plugin basename.
-	 * @return string
+	 * @return string|null
 	 */
-	private function get_plugin_version( string $plugin_file ): string {
-		if ( ! function_exists( 'get_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-
-		$plugins = get_plugins();
-
-		return isset( $plugins[ $plugin_file ]['Version'] ) ? (string) $plugins[ $plugin_file ]['Version'] : '';
+	private function get_subscriptions_version(): ?string {
+		return class_exists( 'WC_Subscriptions' ) ? \WC_Subscriptions::$version : null;
 	}
 
 	/**

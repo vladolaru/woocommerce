@@ -492,6 +492,77 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report WooCommerce Subscriptions as active when its class is loaded, whatever folder holds it (client 11.1.0 `class-wc-payments-account.php:3001`).
+	 */
+	public function test_store_setup_sync_reports_subscriptions_active_by_its_loaded_class(): void {
+		// WooCommerce Subscriptions as WooCommerce.com installs it, outside the woocommerce-subscriptions folder.
+		update_option( 'active_plugins', array( 'woocommerce-com-woocommerce-subscriptions/woocommerce-subscriptions.php' ) );
+		wc_get_container()->get( LegacyProxy::class )->register_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+
+		$snapshot = $this->send_store_setup_snapshot();
+
+		$this->assertTrue( $snapshot['wc_setup']['wc_subscriptions_active'] );
+	}
+
+	/**
+	 * @testdox Should report no WooCommerce Subscriptions version while the plugin is installed but not loaded (client 11.1.0 `class-wc-payments-account.php:3002`).
+	 */
+	public function test_store_setup_sync_reports_no_subscriptions_version_while_not_loaded(): void {
+		update_option( 'active_plugins', array() );
+		// get_plugins() answers from this cache, so the installed plugin needs no file on disk.
+		wp_cache_set(
+			'plugins',
+			array(
+				'' => array(
+					'woocommerce-subscriptions/woocommerce-subscriptions.php' => array(
+						'Name'    => 'WooCommerce Subscriptions',
+						'Version' => '7.1.0',
+					),
+				),
+			),
+			'plugins'
+		);
+
+		try {
+			$snapshot = $this->send_store_setup_snapshot();
+		} finally {
+			wp_cache_delete( 'plugins', 'plugins' );
+		}
+
+		$this->assertFalse( $snapshot['wc_setup']['wc_subscriptions_active'] );
+		$this->assertNull( $snapshot['wc_setup']['wc_subscriptions_version'] );
+	}
+
+	/**
+	 * Run the store setup sync and return the one snapshot it sends to the platform.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function send_store_setup_snapshot(): array {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+
+		$snapshots  = array();
+		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->method( 'send_store_setup' )->willReturnCallback(
+			static function ( array $snapshot ) use ( &$snapshots ): array {
+				$snapshots[] = $snapshot;
+				return array( 'result' => 'success' );
+			}
+		);
+
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+
+		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
+
+		return $snapshots[0];
+	}
+
+	/**
 	 * @testdox Should report Multi-Currency as enabled by default when the flag option was never written, matching the plugin.
 	 */
 	public function test_store_setup_sync_defaults_multi_currency_flag_to_enabled(): void {
