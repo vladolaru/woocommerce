@@ -79,25 +79,38 @@ class WooPaymentsPaymentMethodRegistry {
 	}
 
 	/**
+	 * Get the definitions WooPayments registers on this store, keyed by payment method ID in WooPayments' display order.
+	 *
+	 * Every definition, with Amazon Pay only while its feature is on. The availability filter does not apply here: it
+	 * decides only which of these methods the account is offered (get_available_payment_method_ids_for_account()).
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return array<string,WooPaymentsPaymentMethodDefinition>
+	 */
+	public function get_registered( WooPaymentsAccountService $account_service ): array {
+		$this->initialize_definitions();
+
+		$definitions = $this->definitions;
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
+			unset( $definitions['amazon_pay'] );
+		}
+
+		return $definitions;
+	}
+
+	/**
 	 * Get the payment methods WooPayments offers on this store: the available methods the account has fees for.
 	 *
 	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Client 11.1.0
 	 * `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879) runs the availability filter
-	 * over a registry that holds Amazon Pay only while its feature is on (PaymentMethodDefinitionRegistry.php:97-105),
-	 * then reads the account's fees. The filter has the final say, so a callback may add Amazon Pay back.
+	 * over the registered methods (PaymentMethodDefinitionRegistry.php:97-106), then reads the account's fees. The filter
+	 * has the final say, so a callback may add Amazon Pay back while its feature is off.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return string[]
 	 */
 	public function get_available_payment_method_ids_for_account( WooPaymentsAccountService $account_service ): array {
-		$this->initialize_definitions();
-
-		$catalog = array_keys( $this->definitions );
-		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
-			$catalog = array_values( array_diff( $catalog, array( 'amazon_pay' ) ) );
-		}
-
-		$available_ids = $this->filter_available_payment_method_ids( $catalog );
+		$available_ids = $this->filter_available_payment_method_ids( array_keys( $this->get_registered( $account_service ) ) );
 		$account_data  = $account_service->get_cached_account_data();
 		$fee_ids       = is_array( $account_data['fees'] ?? null ) ? array_map( 'strval', array_keys( $account_data['fees'] ) ) : array();
 

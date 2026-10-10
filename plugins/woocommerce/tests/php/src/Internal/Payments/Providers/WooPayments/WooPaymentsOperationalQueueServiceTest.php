@@ -835,6 +835,54 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 adds the currencies of the methods in its payment method map (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-70,96-135`),
+	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 *
+	 * @testdox Should auto-enable Amazon Pay's currencies only while its feature is on.
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *
+	 * @param string $flag  The Amazon Pay feature flag option value.
+	 * @param bool   $added Whether Amazon Pay's EUR requirement should be enabled.
+	 */
+	public function test_settings_save_auto_adds_amazon_pay_currencies_only_while_its_feature_is_on( string $flag, bool $added ): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		$this->register_unavailable_rate_provider();
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array( 'eur' => 0.9 ),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+
+		// A GB account: Amazon Pay's supported currencies there include EUR (client 11.1.0
+		// `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
+		$account_service = $this->create_account_service(
+			array(
+				'account_id'       => 'acct_native_test',
+				'country'          => 'GB',
+				'store_currencies' => array( 'default' => 'gbp' ),
+			)
+		);
+		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service->register();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ) ) );
+
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$this->assertSame( $added, is_array( $enabled_currencies ) && in_array( 'EUR', $enabled_currencies, true ) );
+	}
+
+	/**
 	 * Register an unavailable automatic-rate provider so the test exercises the production cache-fallback path.
 	 */
 	private function register_unavailable_rate_provider(): void {

@@ -112,6 +112,31 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 builds the map from the payment method map (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-70`),
+	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 *
+	 * @testdox Should map Amazon Pay's currencies only while its feature is on, even when it is in the stored enabled list.
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *
+	 * @param string $flag   The Amazon Pay feature flag option value.
+	 * @param bool   $mapped Whether Amazon Pay should appear in the map.
+	 */
+	public function test_maps_amazon_pay_only_while_its_feature_is_on( string $flag, bool $mapped ): void {
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		$this->enable_methods( array( 'card', 'ideal', 'amazon_pay' ) );
+
+		$map            = $this->create_sut( true, 'GB' )->get_currency_payment_methods_map();
+		$amazon_pay_map = array_filter(
+			$map,
+			static fn( array $methods ): bool => isset( $methods['amazon_pay'] )
+		);
+
+		$this->assertSame( $mapped, array() !== $amazon_pay_map );
+		$this->assertArrayHasKey( 'ideal', $map['EUR'] ?? array(), 'Other enabled methods stay mapped.' );
+	}
+
+	/**
 	 * @testdox Should print the map on the Multi-Currency settings page only.
 	 */
 	public function test_prints_the_map_on_the_multi_currency_settings_page(): void {

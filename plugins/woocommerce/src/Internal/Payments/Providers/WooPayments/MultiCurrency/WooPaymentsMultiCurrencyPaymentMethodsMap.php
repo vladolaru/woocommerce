@@ -155,7 +155,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the definitions of the enabled methods other than card, card_present and link, in registry order.
+	 * Get the definitions of the registered methods that are enabled, other than card, card_present and link, in display order.
 	 *
 	 * @return WooPaymentsPaymentMethodDefinition[]
 	 */
@@ -168,7 +168,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 
 		return array_values(
 			array_filter(
-				wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_all(),
+				wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_registered( $this->get_account_service() ),
 				static function ( WooPaymentsPaymentMethodDefinition $definition ) use ( $enabled_ids ): bool {
 					return in_array( $definition->get_id(), $enabled_ids, true )
 						&& ! in_array( $definition->get_id(), self::METHODS_WITHOUT_CURRENCY_NEEDS, true );

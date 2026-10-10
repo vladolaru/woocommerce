@@ -392,7 +392,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the currency codes the enabled payment methods are restricted to.
+	 * Get the currency codes the enabled payment methods are restricted to, among the methods WooPayments registers on this store.
 	 *
 	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's default currency, like the plugin's per-method currency resolution.
 	 *
@@ -401,7 +401,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private function get_enabled_payment_method_currency_codes(): array {
 		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array() );
 		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array();
-		$registry    = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
+		$registered  = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_registered( $this->account_service );
 		$country     = $this->account_service->get_account_country();
 		$codes       = array();
 
@@ -410,7 +410,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				continue;
 			}
 
-			$definition = $registry->get( $payment_method_id );
+			$definition = $registered[ strtolower( $payment_method_id ) ] ?? null;
 			if ( null === $definition ) {
 				continue;
 			}
