@@ -232,6 +232,28 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The platform's payment method availability service decides which methods new accounts are offered (wpcom
+	 * wp-content/rest-api-plugins/endpoints/wcpay/service/class-payment-method-availability-service.php): P24 is on its list
+	 * of methods kept for existing accounts (:22-35) and its config turns P24 off for everyone else (:100-109). SEPA is
+	 * configured the same way (:164-169) but is not on that list, so it stays unmarked here.
+	 *
+	 * @testdox Should offer every payment method to new accounts except P24.
+	 */
+	public function test_only_p24_is_not_offered_to_new_accounts(): void {
+		$not_offered = array();
+		foreach ( self::EXPECTED_DEFINITION_IDS as $payment_method_id ) {
+			$definition = $this->registry->get( $payment_method_id );
+			$this->assertNotNull( $definition, "{$payment_method_id} should have a definition." );
+
+			if ( ! $definition->is_offered_to_new_accounts() ) {
+				$not_offered[] = $payment_method_id;
+			}
+		}
+
+		$this->assertSame( array( 'p24' ), $not_offered );
+	}
+
+	/**
 	 * @testdox Country-specific definition values preserve extension behavior.
 	 */
 	public function test_country_specific_definition_values_preserve_extension_behavior(): void {

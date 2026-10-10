@@ -567,8 +567,7 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'p24',
-				// WooPayments no longer offers P24 to new accounts; accounts that already hold it keep using it.
-				'legacy'                     => true,
+				'offered_to_new_accounts'    => false,
 				'keywords'                   => array( 'p24', 'przelewy24' ),
 				'stripe_id'                  => 'p24_payments',
 				'stripe_payment_method_type' => 'p24',

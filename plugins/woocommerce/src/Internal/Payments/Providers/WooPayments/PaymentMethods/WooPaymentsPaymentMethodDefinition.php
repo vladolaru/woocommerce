@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
 /**
- * A WooPayments payment method: capability, countries, currencies and limits.
+ * A WooPayments payment method: capability, countries, currencies, limits, and whether new accounts are offered it.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native WooPayments settings runtime.
@@ -74,12 +74,14 @@ final class WooPaymentsPaymentMethodDefinition {
 	}
 
 	/**
-	 * Tell whether this method is retired: no longer offered to new accounts, still processed for accounts that hold it.
+	 * Tell whether new accounts are offered this method.
+	 *
+	 * A method not offered to new accounts is still processed for accounts whose capability for it is active.
 	 *
 	 * @return bool
 	 */
-	public function is_legacy(): bool {
-		return true === ( $this->config['legacy'] ?? false );
+	public function is_offered_to_new_accounts(): bool {
+		return false !== ( $this->config['offered_to_new_accounts'] ?? true );
 	}
 
 	/**

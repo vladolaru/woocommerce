@@ -909,7 +909,7 @@ class WooPaymentsSettingsService {
 
 	/**
 	 * Get payment method IDs available to the connected account: the registry's available methods with account fees, of
-	 * which a retired method stays only while the account still holds its capability.
+	 * which a method not offered to new accounts stays only while the account still holds its capability.
 	 *
 	 * @return string[]
 	 */
@@ -926,7 +926,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Tell whether a payment method with account fees may be listed: a retired method only while its capability is active.
+	 * Tell whether a payment method with account fees may be listed: a method not offered to new accounts only while its
+	 * capability is active.
 	 *
 	 * @param string $payment_method_id Payment method ID.
 	 * @return bool
@@ -935,7 +936,7 @@ class WooPaymentsSettingsService {
 		$definition = $this->get_payment_method_registry()->get( $payment_method_id );
 
 		return null === $definition
-			|| ! $definition->is_legacy()
+			|| $definition->is_offered_to_new_accounts()
 			|| $this->account_service->is_capability_active( $definition->get_account_capability_key() );
 	}
 
