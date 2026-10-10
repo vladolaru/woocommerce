@@ -42,7 +42,7 @@ defined( 'ABSPATH' ) || exit;
  *   split Apple Pay / Google Pay settings and removes the obsolete card switch.
  * - class-multi-currency-cache-autodetect-existing-install.php: PORT. Marks existing
  *   installs as already auto-detected so cutover does not change rendering mode.
- * - class-payment-method-deprecation-settings-update.php: PORT. Deprecated
+ * - class-payment-method-deprecation-settings-update.php: PORT. Discontinued
  *   giropay/sofort IDs are removed and any existing split gateways are disabled.
  * - class-update-service-data-from-server.php: OBSOLETE. Live account refreshes
  *   belong to native account services, not first-request option normalization.
@@ -279,8 +279,8 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			);
 		}
 		$settings = $projection['settings'];
-		if ( ! empty( $projection['removed_deprecated_method_ids'] ) ) {
-			$changes[] = 'deprecated_payment_methods';
+		if ( ! empty( $projection['removed_discontinued_method_ids'] ) ) {
+			$changes[] = 'discontinued_payment_methods';
 		}
 		if ( ! empty( $projection['updated_split_options'] ) ) {
 			$changes[] = 'split_gateway_settings';

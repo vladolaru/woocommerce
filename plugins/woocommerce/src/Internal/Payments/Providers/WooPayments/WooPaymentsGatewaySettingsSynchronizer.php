@@ -20,8 +20,6 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
-	private const DEPRECATED_PAYMENT_METHOD_IDS = array( 'giropay', 'sofort' );
-
 	private const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
 
 	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
@@ -74,7 +72,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 *
 	 * @param array<string,mixed> $settings                Canonical gateway settings.
 	 * @param bool|null           $payment_request_enabled Optional explicit wallet enablement.
-	 * @return array{settings:array<string,mixed>,updated_split_options:string[],removed_deprecated_method_ids:string[],persisted:bool,failed_option_names:string[]}
+	 * @return array{settings:array<string,mixed>,updated_split_options:string[],removed_discontinued_method_ids:string[],persisted:bool,failed_option_names:string[]}
 	 */
 	public function persist( array $settings, ?bool $payment_request_enabled = null ): array {
 		$missing_marker                  = new \stdClass();
@@ -100,11 +98,11 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		$canonical_projection_is_stable = is_array( $stored_canonical_settings ) && $stored_canonical_settings === $settings;
 		if ( $missing_marker !== $pending_payment_request_setting && ! $has_pending_payment_request ) {
 			return array(
-				'settings'                      => $settings,
-				'updated_split_options'         => array(),
-				'removed_deprecated_method_ids' => $normalization['removed_deprecated_method_ids'],
-				'persisted'                     => false,
-				'failed_option_names'           => array( self::PAYMENT_REQUEST_PENDING_OPTION ),
+				'settings'                        => $settings,
+				'updated_split_options'           => array(),
+				'removed_discontinued_method_ids' => $normalization['removed_discontinued_method_ids'],
+				'persisted'                       => false,
+				'failed_option_names'             => array( self::PAYMENT_REQUEST_PENDING_OPTION ),
 			);
 		}
 		if (
@@ -115,21 +113,21 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			)
 		) {
 			return array(
-				'settings'                      => $settings,
-				'updated_split_options'         => array(),
-				'removed_deprecated_method_ids' => $normalization['removed_deprecated_method_ids'],
-				'persisted'                     => false,
-				'failed_option_names'           => array( self::PAYMENT_REQUEST_PENDING_OPTION ),
+				'settings'                        => $settings,
+				'updated_split_options'           => array(),
+				'removed_discontinued_method_ids' => $normalization['removed_discontinued_method_ids'],
+				'persisted'                       => false,
+				'failed_option_names'             => array( self::PAYMENT_REQUEST_PENDING_OPTION ),
 			);
 		}
 
 		if ( ! $this->write_option_and_verify( self::SETTINGS_OPTION, $settings ) ) {
 			return array(
-				'settings'                      => $settings,
-				'updated_split_options'         => array(),
-				'removed_deprecated_method_ids' => $normalization['removed_deprecated_method_ids'],
-				'persisted'                     => false,
-				'failed_option_names'           => array( self::SETTINGS_OPTION ),
+				'settings'                        => $settings,
+				'updated_split_options'           => array(),
+				'removed_discontinued_method_ids' => $normalization['removed_discontinued_method_ids'],
+				'persisted'                       => false,
+				'failed_option_names'             => array( self::SETTINGS_OPTION ),
 			);
 		}
 		$this->sync_setup_tier( $settings );
@@ -160,11 +158,11 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		);
 
 		return array(
-			'settings'                      => $settings,
-			'updated_split_options'         => $updated_split_options,
-			'removed_deprecated_method_ids' => $normalization['removed_deprecated_method_ids'],
-			'persisted'                     => empty( $failed_option_names ),
-			'failed_option_names'           => $failed_option_names,
+			'settings'                        => $settings,
+			'updated_split_options'           => $updated_split_options,
+			'removed_discontinued_method_ids' => $normalization['removed_discontinued_method_ids'],
+			'persisted'                       => empty( $failed_option_names ),
+			'failed_option_names'             => $failed_option_names,
 		);
 	}
 
@@ -338,10 +336,10 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Remove deprecated method IDs from canonical method lists.
+	 * Remove discontinued method IDs from canonical method lists.
 	 *
 	 * @param array<string,mixed> $settings Canonical gateway settings.
-	 * @return array{settings:array<string,mixed>,removed_deprecated_method_ids:string[]}
+	 * @return array{settings:array<string,mixed>,removed_discontinued_method_ids:string[]}
 	 */
 	private function normalize_settings( array $settings ): array {
 		$removed = array();
@@ -351,14 +349,14 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			}
 
 			$previous                 = $this->normalize_string_list( $settings[ $setting_key ] );
-			$filtered                 = array_values( array_diff( $previous, self::DEPRECATED_PAYMENT_METHOD_IDS ) );
-			$removed                  = array_merge( $removed, array_intersect( $previous, self::DEPRECATED_PAYMENT_METHOD_IDS ) );
+			$filtered                 = array_values( array_diff( $previous, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
+			$removed                  = array_merge( $removed, array_intersect( $previous, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS ) );
 			$settings[ $setting_key ] = $filtered;
 		}
 
 		return array(
-			'settings'                      => $settings,
-			'removed_deprecated_method_ids' => array_values( array_unique( $removed ) ),
+			'settings'                        => $settings,
+			'removed_discontinued_method_ids' => array_values( array_unique( $removed ) ),
 		);
 	}
 
@@ -373,7 +371,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		$enabled_method_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_string_list( $settings['upe_enabled_payment_method_ids'] )
 			: array();
-		$method_ids         = self::DEPRECATED_PAYMENT_METHOD_IDS;
+		$method_ids         = WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS;
 
 		foreach ( $this->registry->get_all() as $definition ) {
 			if (
@@ -392,7 +390,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		foreach ( array_values( array_unique( $method_ids ) ) as $method_id ) {
 			$option_name       = $this->get_split_option_name( $method_id );
 			$existing          = get_option( $option_name, $missing_marker );
-			$should_be_enabled = in_array( $method_id, $enabled_method_ids, true ) && ! in_array( $method_id, self::DEPRECATED_PAYMENT_METHOD_IDS, true );
+			$should_be_enabled = in_array( $method_id, $enabled_method_ids, true ) && ! in_array( $method_id, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS, true );
 
 			if ( $missing_marker === $existing && ! $should_be_enabled ) {
 				continue;

@@ -189,9 +189,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reruns only deprecated method cleanup for the previous completed marker.
+	 * @testdox Reruns only discontinued method cleanup for the previous completed marker.
 	 */
-	public function test_run_reruns_deprecated_method_cleanup_from_previous_completed_marker(): void {
+	public function test_run_reruns_discontinued_method_cleanup_from_previous_completed_marker(): void {
 		update_option( self::NORMALIZED_OPTION, '3' );
 		update_option( self::VERSION_OPTION, '10.4.0' );
 		update_option(
@@ -216,7 +216,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$stored  = get_option( self::SETTINGS_OPTION );
 
 		$this->assertTrue( $summary['ran'] );
-		$this->assertSame( array( 'deprecated_payment_methods', 'split_gateway_settings' ), $summary['changes'] );
+		$this->assertSame( array( 'discontinued_payment_methods', 'split_gateway_settings' ), $summary['changes'] );
 		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
 		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_available_payment_methods'] );
 		$this->assertSame( array( 'payment_request' ), $stored['express_checkout_product_methods'] );
@@ -240,9 +240,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Retains the previous marker when a deprecated split gateway update fails and retries it.
+	 * @testdox Retains the previous marker when a discontinued split gateway update fails and retries it.
 	 */
-	public function test_run_retries_deprecated_method_cleanup_after_split_gateway_write_failure(): void {
+	public function test_run_retries_discontinued_method_cleanup_after_split_gateway_write_failure(): void {
 		$option_name = 'woocommerce_woocommerce_payments_sofort_settings';
 		update_option( self::NORMALIZED_OPTION, '3' );
 		update_option(
@@ -452,9 +452,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover removes deprecated method IDs and projects canonical split gateway availability.
+	 * @testdox Cutover removes discontinued method IDs and projects canonical split gateway availability.
 	 */
-	public function test_run_projects_split_gateway_settings_and_removes_deprecated_methods(): void {
+	public function test_run_projects_split_gateway_settings_and_removes_discontinued_methods(): void {
 		update_option( self::VERSION_OPTION, '7.3.0' );
 		update_option(
 			self::SETTINGS_OPTION,
@@ -471,7 +471,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsArray( $stored );
 		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
-		$this->assertContains( 'deprecated_payment_methods', $summary['changes'] );
+		$this->assertContains( 'discontinued_payment_methods', $summary['changes'] );
 		$this->assertContains( 'split_gateway_settings', $summary['changes'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_giropay_settings' )['enabled'] );

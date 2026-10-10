@@ -27,9 +27,9 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Canonical method IDs project into split gateway settings and remove deprecated methods.
+	 * @testdox Canonical method IDs project into split gateway settings and remove discontinued methods.
 	 */
-	public function test_persist_projects_canonical_settings_and_removes_deprecated_methods(): void {
+	public function test_persist_projects_canonical_settings_and_removes_discontinued_methods(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_ideal_settings',
 			array(

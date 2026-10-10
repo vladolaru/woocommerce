@@ -72,12 +72,13 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registry exposes the non-deprecated extension payment method definition order.
+	 * @testdox Registry exposes the payment method definitions in display order, without the discontinued methods.
 	 */
-	public function test_registry_exposes_non_deprecated_extension_definition_order(): void {
+	public function test_registry_exposes_definition_order_without_discontinued_methods(): void {
 		$this->assertSame( self::EXPECTED_DEFINITION_IDS, array_keys( $this->registry->get_all() ) );
-		$this->assertNull( $this->registry->get( 'giropay' ), 'giropay is deprecated and should not be registered natively.' );
-		$this->assertNull( $this->registry->get( 'sofort' ), 'Sofort is deprecated and should not be registered natively.' );
+		foreach ( array( 'giropay', 'sofort' ) as $payment_method_id ) {
+			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is discontinued and should have no definition." );
+		}
 		$this->assertNull( $this->registry->get( 'jcb' ), 'The standalone extension has no JCB payment method definition.' );
 	}
 
