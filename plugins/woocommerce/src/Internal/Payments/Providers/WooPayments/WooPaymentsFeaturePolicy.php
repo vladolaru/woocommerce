@@ -28,7 +28,8 @@ final class WooPaymentsFeaturePolicy {
 	private static $amazon_pay_enabled;
 
 	/**
-	 * Tell whether ECE confirmation tokens are enabled for the connected account.
+	 * Tell whether ECE confirmation tokens are enabled: an account is cached and does not turn them off, as client 11.1.0
+	 * `WC_Payments_Features::is_ece_confirmation_tokens_enabled()` (class-wc-payments-features.php:438-442).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return bool
@@ -36,7 +37,7 @@ final class WooPaymentsFeaturePolicy {
 	public static function is_ece_confirmation_tokens_enabled( WooPaymentsAccountService $account_service ): bool {
 		$account_data = $account_service->get_cached_account_data();
 
-		return empty( $account_data['ece_confirmation_tokens_disabled'] );
+		return array() !== $account_data && empty( $account_data['ece_confirmation_tokens_disabled'] );
 	}
 
 	/**

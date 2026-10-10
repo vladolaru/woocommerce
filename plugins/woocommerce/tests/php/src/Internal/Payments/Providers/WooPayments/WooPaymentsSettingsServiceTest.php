@@ -564,6 +564,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report ECE confirmation tokens and Amazon Pay as off while no account is cached (client 11.1.0 `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`, `class-wc-payments-features.php:438-442`).
+	 */
+	public function test_get_settings_reports_ece_confirmation_tokens_off_without_a_cached_account(): void {
+		delete_option( 'wcpay_account_data' );
+
+		$feature_flags = $this->sut->get_settings()['feature_flags'];
+
+		$this->assertFalse( $feature_flags['isEceUsingConfirmationTokens'] );
+		$this->assertFalse( $feature_flags['amazonPay'], 'Amazon Pay needs ECE confirmation tokens.' );
+	}
+
+	/**
 	 * @testdox Should list Amazon Pay as available on the settings screen only while its feature is on (client 11.1.0 `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
 	 * @testWith ["1", true]
 	 *           ["0", false]

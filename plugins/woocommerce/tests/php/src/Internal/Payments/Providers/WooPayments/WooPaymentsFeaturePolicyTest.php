@@ -13,6 +13,14 @@ use WC_Unit_Test_Case;
 class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Cached account data of a connected account that keeps ECE confirmation tokens on.
+	 */
+	private const ACCOUNT_WITH_TOKENS = array(
+		'account_id'                       => 'acct_policy_test',
+		'ece_confirmation_tokens_disabled' => false,
+	);
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -30,7 +38,7 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
-		$account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( self::ACCOUNT_WITH_TOKENS );
 
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
@@ -43,7 +51,7 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
-		$account_service->expects( $this->exactly( 2 ) )->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->expects( $this->exactly( 2 ) )->method( 'get_cached_account_data' )->willReturn( self::ACCOUNT_WITH_TOKENS );
 
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
 		WooPaymentsFeaturePolicy::reset_cache();
@@ -119,7 +127,7 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
-		$account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( self::ACCOUNT_WITH_TOKENS );
 
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
 		$this->assertTrue( update_option( 'woocommerce_feature_policy_unrelated', 'changed' ) );
@@ -143,12 +151,12 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
-		$first_account_service->expects( $this->exactly( 2 ) )->method( 'get_cached_account_data' )->willReturn( array() );
+		$first_account_service->expects( $this->exactly( 2 ) )->method( 'get_cached_account_data' )->willReturn( self::ACCOUNT_WITH_TOKENS );
 		$second_account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
-		$second_account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( array() );
+		$second_account_service->expects( $this->once() )->method( 'get_cached_account_data' )->willReturn( self::ACCOUNT_WITH_TOKENS );
 
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $first_account_service ) );
 		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $second_account_service ) );
@@ -219,9 +227,9 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing account data preserves feature identity until readiness is evaluated separately.
+	 * @testdox Without a cached account, ECE confirmation tokens and Amazon Pay are off (client 11.1.0 `class-wc-payments-features.php:438-442`).
 	 */
-	public function test_empty_account_data_does_not_disable_confirmation_token_features(): void {
+	public function test_no_cached_account_turns_confirmation_token_features_off(): void {
 		update_option( '_wcpay_feature_amazon_pay', '1' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -229,8 +237,8 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
 
-		$this->assertTrue( WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $account_service ) );
-		$this->assertTrue( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
+		$this->assertFalse( WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $account_service ) );
+		$this->assertFalse( WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) );
 	}
 
 	/**
