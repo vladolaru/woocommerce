@@ -115,6 +115,8 @@ class WooPaymentsPaymentMethodRegistry {
 	/**
 	 * Run the availability filter over a payment method catalog.
 	 *
+	 * A filter return that is not a list of payment method IDs is ignored, and the catalog is used as it is.
+	 *
 	 * @param string[] $catalog Payment method IDs.
 	 * @return string[]
 	 */
@@ -127,6 +129,10 @@ class WooPaymentsPaymentMethodRegistry {
 		 * @since 11.0.0
 		 */
 		$payment_method_ids = apply_filters( 'wcpay_upe_available_payment_methods', $catalog );
+
+		if ( ! is_array( $payment_method_ids ) || count( array_filter( $payment_method_ids, 'is_string' ) ) !== count( $payment_method_ids ) ) {
+			return $catalog;
+		}
 
 		return array_values( $payment_method_ids );
 	}

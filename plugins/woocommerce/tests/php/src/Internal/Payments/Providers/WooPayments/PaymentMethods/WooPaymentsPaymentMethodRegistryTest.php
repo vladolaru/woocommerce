@@ -114,17 +114,23 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Availability filter preserves the oracle TypeError for a non-array return.
+	 * @testdox Should ignore an availability filter return that is not a list of payment method IDs and use the whole catalog.
+	 * @testWith [null]
+	 *           [false]
+	 *           ["card"]
+	 *           [["card", 3]]
+	 *           [{"first": "card", "second": ["ideal"]}]
+	 *
+	 * @param mixed $filter_return What the availability filter callback returns.
 	 */
-	public function test_availability_filter_rejects_non_array_return_like_oracle(): void {
+	public function test_availability_filter_falls_back_to_the_catalog_for_an_invalid_return( $filter_return ): void {
 		add_filter(
 			'wcpay_upe_available_payment_methods',
-			static fn() => false
+			static fn() => $filter_return
 		);
 
-		$this->expectException( \TypeError::class );
-
-		$this->registry->get_all();
+		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $this->registry->get_available_payment_method_ids() );
+		$this->assertSame( self::EXPECTED_DEFINITION_IDS, array_keys( $this->registry->get_all() ) );
 	}
 
 	/**

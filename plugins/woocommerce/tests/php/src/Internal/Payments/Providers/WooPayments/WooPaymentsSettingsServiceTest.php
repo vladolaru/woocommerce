@@ -646,6 +646,23 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should list the fee-backed payment methods on the settings screen when an availability filter callback returns null.
+	 */
+	public function test_get_settings_ignores_an_availability_filter_that_returns_null(): void {
+		$this->set_card_and_ideal_account_data();
+		$return_null = static fn() => null;
+		add_filter( 'wcpay_upe_available_payment_methods', $return_null );
+
+		try {
+			$available = $this->sut->get_settings()['available_payment_method_ids'];
+		} finally {
+			remove_filter( 'wcpay_upe_available_payment_methods', $return_null );
+		}
+
+		$this->assertSame( array( 'card', 'ideal', 'apple_pay', 'google_pay' ), $available );
+	}
+
+	/**
 	 * @testdox Public settings filters the registry catalog before deriving fee-backed availability.
 	 */
 	public function test_get_settings_filters_catalog_before_reading_fee_backed_availability(): void {
