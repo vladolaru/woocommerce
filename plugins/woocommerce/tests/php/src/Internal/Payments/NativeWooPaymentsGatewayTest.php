@@ -777,6 +777,23 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should tell WooCommerce Subscriptions active exactly while its class is loaded: $loaded (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:120-122`).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $loaded Whether the WC_Subscriptions class is loaded.
+	 */
+	public function test_subscriptions_plugin_active_follows_the_loaded_class( bool $loaded ): void {
+		wc_get_container()->get( LegacyProxy::class )->register_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name ? $loaded : class_exists( $class_name, ...$args ),
+			)
+		);
+
+		$this->assertSame( $loaded, ( new NativeWooPaymentsGateway() )->is_subscriptions_plugin_active() );
+	}
+
+	/**
 	 * Client 11.1.0 offers its card gateway only while card is among the methods enabled at checkout (class-wc-payment-gateway-wcpay.php:941),
 	 * read from the gateway's own settings with card as the default when no list is stored (:4682-4689).
 	 *

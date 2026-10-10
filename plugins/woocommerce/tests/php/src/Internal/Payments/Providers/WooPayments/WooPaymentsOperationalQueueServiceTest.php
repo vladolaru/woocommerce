@@ -546,6 +546,22 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the loaded WooCommerce Subscriptions class's version (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:129-131`, sent at `class-wc-payments-account.php:3002`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_store_setup_sync_reports_the_loaded_subscriptions_version(): void {
+		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+
+		$snapshot = $this->send_store_setup_snapshot();
+
+		$this->assertTrue( $snapshot['wc_setup']['wc_subscriptions_active'] );
+		$this->assertSame( Fixtures\LateLoadedSubscriptions::$version, $snapshot['wc_setup']['wc_subscriptions_version'] );
+	}
+
+	/**
 	 * @testdox Should report the available payment methods as the registered methods the account has fees for (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
 	 */
 	public function test_store_setup_sync_reports_available_methods_from_account_fees(): void {
