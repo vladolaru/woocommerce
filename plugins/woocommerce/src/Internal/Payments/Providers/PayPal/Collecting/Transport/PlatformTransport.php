@@ -121,16 +121,17 @@ interface PlatformTransport {
 	public function partner_merchant_id(): string;
 
 	/**
-	 * The onboarding link for the merchant behind a tracking ID.
+	 * The onboarding link for the merchant behind a tracking ID, with PayPal's sign-up prefilled with the payee email.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @param string $tracking_id The tracking ID.
 	 * @param string $return_url  Where PayPal sends the merchant back to.
+	 * @param string $email       The payee email PayPal prefills the sign-up with; none when empty.
 	 * @return string
 	 * @throws RuntimeException When the call fails.
 	 */
-	public function referral_link( string $tracking_id, string $return_url ): string;
+	public function referral_link( string $tracking_id, string $return_url, string $email = '' ): string;
 
 	/**
 	 * The onboarding status of the seller behind a tracking ID.

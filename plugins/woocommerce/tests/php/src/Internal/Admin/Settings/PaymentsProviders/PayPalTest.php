@@ -660,4 +660,147 @@ class PayPalTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $before, $collecting );
 	}
+
+	/**
+	 * Get the row details of the core-provided gateway with the wallet's own connection state and the given stored options.
+	 *
+	 * @param bool  $wallet_connected Whether the wallet's first-party connection state says connected.
+	 * @param bool  $wallet_sandbox   Whether the wallet's first-party connection state says sandbox.
+	 * @param array $options          The options to store for the call, by name; each is deleted afterwards.
+	 *
+	 * @return array The provider details.
+	 */
+	private function details_with_wallet_options( bool $wallet_connected, bool $wallet_sandbox, array $options ): array {
+		$this->pin_native_ownership();
+		$gateway  = $this->fake_ppcp_gateway();
+		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( $wallet_connected, $wallet_sandbox ) );
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value, true );
+		}
+
+		try {
+			return $this->sut->get_details( $gateway );
+		} finally {
+			foreach ( array_keys( $options ) as $name ) {
+				delete_option( $name );
+			}
+			$this->swap_wallet_container( $previous );
+		}
+	}
+
+	/**
+	 * @testdox Should read a platform-connected store as a connected, onboarded account in the platform's environment, although the wallet's first-party connection is empty.
+	 * @testWith ["sandbox", true]
+	 *           ["production", false]
+	 *
+	 * @param string $environment The platform connection's environment.
+	 * @param bool   $sandbox     Whether the row reads as sandbox.
+	 */
+	public function test_platform_connected_row_reads_as_a_connected_account( string $environment, bool $sandbox ): void {
+		$details = $this->details_with_wallet_options(
+			false,
+			! $sandbox,
+			array(
+				'woocommerce_paypal_wallet_platform' => array(
+					'merchant_id' => 'M2',
+					'payee_email' => 'payee@example.com',
+					'environment' => $environment,
+				),
+			)
+		);
+
+		$this->assertTrue( $details['state']['account_connected'] );
+		$this->assertFalse( $details['state']['needs_setup'] );
+		$this->assertTrue( $details['onboarding']['state']['started'] );
+		$this->assertTrue( $details['onboarding']['state']['completed'] );
+		$this->assertSame( $sandbox, $details['state']['test_mode'] );
+		$this->assertSame( $sandbox, $details['state']['dev_mode'] );
+		$this->assertSame( $sandbox, $details['onboarding']['state']['test_mode'] );
+	}
+
+	/**
+	 * @testdox Should read a collecting store as not connected and not onboarded, whatever the wallet says.
+	 */
+	public function test_collecting_row_reads_as_not_connected(): void {
+		$details = $this->details_with_wallet_options( true, true, array( 'woocommerce_paypal_wallet_collecting' => array( 'payee_email' => 'payee@example.com' ) ) );
+
+		$this->assertFalse( $details['state']['account_connected'] );
+		$this->assertTrue( $details['state']['needs_setup'] );
+		$this->assertFalse( $details['onboarding']['state']['started'] );
+		$this->assertFalse( $details['onboarding']['state']['completed'] );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's own first-party answers when first-party credentials exist beside a platform connection.
+	 */
+	public function test_first_party_connection_wins_over_the_platform_connection(): void {
+		$details = $this->details_with_wallet_options(
+			false,
+			false,
+			array(
+				'woocommerce-ppcp-data-common'       => array(
+					'merchant_connected' => true,
+					'sandbox_merchant'   => false,
+					'merchant_id'        => 'FIRSTPARTY',
+					'merchant_email'     => 'merchant@example.com',
+					'client_id'          => 'client-id',
+					'client_secret'      => 'client-secret',
+				),
+				'woocommerce_paypal_wallet_platform' => array(
+					'merchant_id' => 'M2',
+					'payee_email' => 'payee@example.com',
+					'environment' => 'sandbox',
+				),
+			)
+		);
+
+		$this->assertFalse( $details['state']['account_connected'], 'The wallet container\'s answer, not the platform\'s' );
+		$this->assertFalse( $details['onboarding']['state']['completed'] );
+		$this->assertFalse( $details['state']['test_mode'], 'The first-party environment, not the platform\'s sandbox' );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's own answers for a store with no collecting or platform option.
+	 * @testWith [true, true]
+	 *           [false, false]
+	 *
+	 * @param bool $connected The wallet's connected answer.
+	 * @param bool $sandbox   The wallet's sandbox answer.
+	 */
+	public function test_dormant_row_keeps_the_wallet_answers( bool $connected, bool $sandbox ): void {
+		$details = $this->details_with_wallet_options( $connected, $sandbox, array() );
+
+		$this->assertSame( $connected, $details['state']['account_connected'] );
+		$this->assertSame( $connected, $details['onboarding']['state']['completed'] );
+		$this->assertSame( $sandbox, $details['state']['test_mode'] );
+	}
+
+	/**
+	 * @testdox Should leave a platform-connected store's row alone when the gateway is not core provided.
+	 */
+	public function test_platform_connected_is_unchanged_for_a_gateway_core_does_not_provide(): void {
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_false' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+		$gateway = $this->fake_ppcp_gateway();
+		$before  = $this->sut->get_details( $gateway );
+		update_option(
+			'woocommerce_paypal_wallet_platform',
+			array(
+				'merchant_id' => 'M2',
+				'environment' => 'sandbox',
+			),
+			true
+		);
+
+		try {
+			$platform = $this->sut->get_details( $gateway );
+		} finally {
+			delete_option( 'woocommerce_paypal_wallet_platform' );
+		}
+
+		foreach ( array( 'account_connected', 'needs_setup', 'test_mode', 'dev_mode' ) as $key ) {
+			$this->assertSame( $before['state'][ $key ], $platform['state'][ $key ], $key );
+		}
+		$this->assertSame( $before['onboarding']['state'], $platform['onboarding']['state'] );
+	}
 }

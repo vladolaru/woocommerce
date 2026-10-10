@@ -282,19 +282,23 @@ final class DirectPlatformTransport implements PlatformTransport {
 	 * {@inheritDoc}
 	 *
 	 * A third-party referral for the platform's products with no vaulting, so the merchant grants the platform a
-	 * payments permission and nothing more.
+	 * payments permission and nothing more. The payee email goes in the referral's top-level `email`, which PayPal
+	 * prefills the sign-up form with.
 	 *
 	 * @param string $tracking_id The tracking ID.
 	 * @param string $return_url  Where PayPal sends the merchant back to.
+	 * @param string $email       The payee email; left out of the referral when empty.
 	 *
 	 * @throws RuntimeException When the request fails or the answer has no action link.
 	 */
-	public function referral_link( string $tracking_id, string $return_url ): string {
+	public function referral_link( string $tracking_id, string $return_url, string $email = '' ): string {
+		$prefill = '' !== $email ? array( 'email' => $email ) : array();
+
 		list( , $json ) = $this->call(
 			self::APP_PLATFORM,
 			'POST',
 			'v2/customer/partner-referrals',
-			array(
+			$prefill + array(
 				'tracking_id'             => $tracking_id,
 				'partner_config_override' => array( 'return_url' => $return_url ),
 				'operations'              => array(

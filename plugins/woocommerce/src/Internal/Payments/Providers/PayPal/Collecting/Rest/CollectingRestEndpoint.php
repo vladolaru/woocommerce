@@ -336,7 +336,8 @@ class CollectingRestEndpoint {
 	}
 
 	/**
-	 * Answer the THIRD_PARTY onboarding link for the store's tracking ID, returning to the wallet's settings.
+	 * Answer the THIRD_PARTY onboarding link for the store's tracking ID, prefilled with the payee email and returning to
+	 * the wallet's settings.
 	 *
 	 * @since 11.3.0
 	 *
@@ -352,7 +353,7 @@ class CollectingRestEndpoint {
 		}
 
 		try {
-			$url = $transport->referral_link( $this->state->tracking_id(), PayPalWalletBootstrap::get_settings_url() );
+			$url = $transport->referral_link( $this->state->tracking_id(), PayPalWalletBootstrap::get_settings_url(), $this->state->payee_email() );
 		} catch ( Throwable $failure ) {
 			wc_get_logger()->warning(
 				sprintf( 'PayPal wallet referral failed: %1$s: %2$s', get_class( $failure ), $failure->getMessage() ),

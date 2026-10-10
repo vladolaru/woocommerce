@@ -306,7 +306,7 @@ class DirectPlatformTransportTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should post a third-party referral for the tracking ID with no vaulting, signed by the platform, and return the action link.
+	 * @testdox Should post a third-party referral for the tracking ID and the payee email with no vaulting, signed by the platform, and return the action link.
 	 */
 	public function test_referral_link(): void {
 		$this->stub_api(
@@ -315,7 +315,7 @@ class DirectPlatformTransportTest extends WalletTestCase {
 			)
 		);
 
-		$link = $this->sut->referral_link( 'track-1', 'https://shop.example.com/return' );
+		$link = $this->sut->referral_link( 'track-1', 'https://shop.example.com/return', 'payee@example.com' );
 
 		$this->assertSame( 'https://example.com/onboard', $link );
 		$requests = $this->api_requests();
@@ -324,6 +324,7 @@ class DirectPlatformTransportTest extends WalletTestCase {
 		$this->assertSame( 'Bearer token-platform-1', $requests[0]['request']['headers']['Authorization'] );
 		$body = json_decode( $requests[0]['request']['body'], true );
 		$this->assertSame( 'track-1', $body['tracking_id'] );
+		$this->assertSame( 'payee@example.com', $body['email'], 'PayPal prefills the sign-up with it' );
 		$this->assertSame( array( 'EXPRESS_CHECKOUT' ), $body['products'] );
 		$this->assertSame( 'https://shop.example.com/return', $body['partner_config_override']['return_url'] );
 		$this->assertSame( 'API_INTEGRATION', $body['operations'][0]['operation'] );
@@ -333,6 +334,19 @@ class DirectPlatformTransportTest extends WalletTestCase {
 		$this->assertSame( array( 'PAYMENT', 'REFUND', 'PARTNER_FEE', 'DELAY_FUNDS_DISBURSEMENT' ), $integration['third_party_details']['features'] );
 		$this->assertStringNotContainsString( 'VAULT', $requests[0]['request']['body'], 'No vaulting product, capability or feature' );
 		$this->assertArrayNotHasKey( 'PayPal-Auth-Assertion', $requests[0]['request']['headers'] );
+	}
+
+	/**
+	 * @testdox Should leave the email out of the referral when no payee email is given, and keep the rest of the body.
+	 */
+	public function test_referral_link_without_an_email(): void {
+		$this->stub_api( array( 'POST /v2/customer/partner-referrals' => $this->http_response( 201, '{"links":[{"rel":"action_url","href":"https://example.com/onboard"}]}' ) ) );
+
+		$this->sut->referral_link( 'track-1', 'https://shop.example.com/return' );
+
+		$body = json_decode( $this->api_requests()[0]['request']['body'], true );
+		$this->assertArrayNotHasKey( 'email', $body );
+		$this->assertSame( array( 'tracking_id', 'partner_config_override', 'operations', 'products', 'legal_consents' ), array_keys( $body ) );
 	}
 
 	/**

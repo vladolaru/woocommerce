@@ -13,6 +13,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\MerchantlessPartnersEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedAuthenticationRestEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedCommonRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedOnboardingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedSettingsRestEndpoint;
@@ -27,6 +29,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\PartnersEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Helper\ApiHostResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\AuthenticationRestEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\CommonRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\OnboardingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\SettingsRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\WebhookSettingsEndpoint;
@@ -126,6 +130,34 @@ return array(
 		}
 
 		return new PlatformServedOnboardingRestEndpoint( $c->get( 'settings.data.onboarding' ), $c->get( 'collecting.connection-state' ) );
+	},
+	// The settings app's "Connection status" block names the platform merchant once platform connected, not the empty
+	// first-party connection.
+	'settings.rest.common'                             => static function ( CommonRestEndpoint $previous, ContainerInterface $c ): CommonRestEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return new PlatformServedCommonRestEndpoint(
+			$c->get( 'settings.data.general' ),
+			$c->get( 'api.endpoint.partners' ),
+			$c->get( 'settings.service.onboarding-notices' ),
+			$c->get( 'collecting.connection-state' ),
+			$c->get( 'collecting.state' )
+		);
+	},
+	// The settings app always shows Disconnect; while served it writes nothing, so no woocommerce-ppcp-* data is deleted.
+	'settings.rest.authentication'                     => static function ( AuthenticationRestEndpoint $previous, ContainerInterface $c ): AuthenticationRestEndpoint {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return new PlatformServedAuthenticationRestEndpoint(
+			$c->get( 'settings.service.authentication_manager' ),
+			$c->get( 'settings.service.data-manager' ),
+			$c->get( 'collecting.connection-state' ),
+			$c->get( 'woocommerce.logger.woocommerce' )
+		);
 	},
 	// The bearer resolves the app on every token, so a not-ready transport fails the call, as a failed token does.
 	'api.bearer'                                       => static function ( Bearer $previous, ContainerInterface $c ): Bearer {

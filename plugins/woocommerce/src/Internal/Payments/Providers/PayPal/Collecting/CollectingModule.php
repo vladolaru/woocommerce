@@ -61,6 +61,12 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	private const LEAVE_CONTEXT_PRIORITY = 1000;
 
 	/**
+	 * The priority that enters the edited order's app on the order screen: before the wallet's void button fetches the
+	 * PayPal order at 10.
+	 */
+	private const ORDER_SCREEN_CONTEXT_PRIORITY = 9;
+
+	/**
 	 * The priority that checks the reconcile schedule when a capture is held: after the held capture is recorded at 10.
 	 */
 	private const SCHEDULE_PRIORITY = 20;
@@ -119,6 +125,9 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			add_action( 'woocommerce_paypal_wallet_order_context', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );
 			add_action( 'woocommerce_paypal_wallet_paypal_order_created', array( $listeners, 'handle_woocommerce_paypal_wallet_paypal_order_created' ) );
 			add_action( 'woocommerce_paypal_payments_after_order_processor', array( $listeners, 'handle_woocommerce_paypal_payments_after_order_processor' ), self::LEAVE_CONTEXT_PRIORITY, 0 );
+
+			// The order screen's void button reads the PayPal order, which only the order's app can do.
+			add_action( 'admin_enqueue_scripts', array( $listeners, 'handle_admin_enqueue_scripts' ), self::ORDER_SCREEN_CONTEXT_PRIORITY, 0 );
 
 			// The wallet's capture-completed handler reads the PayPal order, which only the order's app can do.
 			add_action( 'woocommerce_paypal_payments_payment_capture_completed_webhook_handler', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );

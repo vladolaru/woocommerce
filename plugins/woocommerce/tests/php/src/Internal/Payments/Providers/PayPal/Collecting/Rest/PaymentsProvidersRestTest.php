@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PayPal;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\ProviderRow;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Surface\HoldsWalletState;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
@@ -161,6 +162,41 @@ class PaymentsProvidersRestTest extends WalletTestCase {
 		$this->assertArrayHasKey( 'ppcp-gateway', $providers );
 		$this->assertArrayNotHasKey( '_notice', $providers['ppcp-gateway'] );
 		$this->assertArrayNotHasKey( '_notice', $providers['other-gateway'] );
+	}
+
+	/**
+	 * @testdox Should give the PayPal row a connected, onboarded sandbox account once the platform connected the merchant, and a not connected one while collecting.
+	 * @testWith ["platform_connected", true]
+	 *           ["collecting", false]
+	 *
+	 * @param string $state     The wallet state to put the store in.
+	 * @param bool   $connected Whether the row reads as connected.
+	 */
+	public function test_the_route_carries_the_connection_state_of_a_served_store( string $state, bool $connected ): void {
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_true' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+		if ( 'platform_connected' === $state ) {
+			$this->set_platform_connected();
+		} else {
+			$this->set_collecting();
+		}
+		$this->serve_providers();
+
+		try {
+			$providers = $this->get_providers_by_id();
+		} finally {
+			remove_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, '__return_true' );
+			wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+		}
+
+		$row = $providers['ppcp-gateway'];
+		$this->assertSame( $connected, $row['state']['account_connected'] );
+		$this->assertSame( ! $connected, $row['state']['needs_setup'] );
+		$this->assertSame( $connected, $row['onboarding']['state']['started'] );
+		$this->assertSame( $connected, $row['onboarding']['state']['completed'] );
+		if ( $connected ) {
+			$this->assertTrue( $row['onboarding']['state']['test_mode'], 'The platform connection is a sandbox one' );
+		}
 	}
 
 	/**

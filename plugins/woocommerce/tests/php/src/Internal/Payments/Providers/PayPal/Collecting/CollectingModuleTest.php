@@ -75,6 +75,8 @@ class CollectingModuleTest extends WalletTestCase {
 				'settings.settings-provider',
 				'settings.rest.settings',
 				'settings.rest.onboarding',
+				'settings.rest.common',
+				'settings.rest.authentication',
 				'api.bearer',
 				'api.host-resolver',
 				'api.host',

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Order;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -90,5 +91,95 @@ class OrderListenersTest extends WalletTestCase {
 		do_action( 'woocommerce_paypal_payments_after_order_processor', $wc_order, new Order( 'PP-OLD', array(), new OrderStatus( OrderStatus::COMPLETED ) ) );
 
 		$this->assertFalse( $context->is_entered() );
+	}
+
+	/**
+	 * Make the order screen's PayPal order fetch, as the wallet's void button makes it on `admin_enqueue_scripts`, for a
+	 * platform-connected store and an order pinned to the merchant app.
+	 *
+	 * @param bool $run_listener Whether to run the module's `admin_enqueue_scripts` callback before the fetch.
+	 * @return array{0: string[], 1: int|null} The Authorization headers, and the priority of the module's callback.
+	 */
+	private function order_screen_fetch( bool $run_listener ): array {
+		global $theorder;
+		$this->set_wallet_option(
+			Options::PLATFORM,
+			array(
+				'merchant_id' => 'M2',
+				'tracking_id' => 'abc',
+				'payee_email' => 'payee@example.com',
+				'environment' => 'sandbox',
+			)
+		);
+		$container = $this->boot_container( array( new TransportBindingModule( new FakePlatformTransport( array( 'pick' => PlatformTransport::APP_PLATFORM ) ) ) ) );
+		$wc_order  = $this->wallet_order( PlatformTransport::APP_MERCHANT_APP );
+		$wc_order->set_total( '10.00' );
+		$wc_order->save();
+		$authorizations = array();
+		$this->stub_http(
+			function ( $request, $url ) use ( &$authorizations ) {
+				if ( false !== strpos( (string) $url, 'v2/checkout/orders/PP-OLD' ) ) {
+					$authorizations[] = $request['headers']['Authorization'] ?? '';
+				}
+				return $this->http_response( 404, '' );
+			}
+		);
+
+		$priority = null;
+		$listener = null;
+		foreach ( $GLOBALS['wp_filter']['admin_enqueue_scripts']->callbacks ?? array() as $hook_priority => $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof OrderListeners ) {
+					$priority = (int) $hook_priority;
+					$listener = $callback['function'];
+				}
+			}
+		}
+
+		$saved_gateways  = WC()->payment_gateways()->payment_gateways;
+		$previous_order  = $theorder;
+		$previous_screen = $GLOBALS['current_screen'] ?? null;
+
+		WC()->payment_gateways()->payment_gateways = array( PayPalGateway::ID => $container->get( 'wcgateway.paypal-gateway' ) );
+
+		$theorder = wc_get_order( $wc_order->get_id() ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The order screen's global, as WooCommerce sets it.
+		set_current_screen( 'shop_order' );
+		try {
+			if ( $run_listener && is_callable( $listener ) ) {
+				$listener();
+			}
+			$container->get( 'wcgateway.void-button.assets' )->should_register();
+		} finally {
+			WC()->payment_gateways()->payment_gateways = $saved_gateways;
+
+			$theorder = $previous_order; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring test state.
+			if ( null === $previous_screen ) {
+				unset( $GLOBALS['current_screen'] );
+			} else {
+				set_current_screen( $previous_screen );
+			}
+		}
+
+		return array( $authorizations, $priority );
+	}
+
+	/**
+	 * @testdox Should fetch a pinned order's PayPal order on the order screen through the pinned app once platform connected.
+	 */
+	public function test_order_screen_fetch_uses_the_pinned_app(): void {
+		list( $authorizations, $priority ) = $this->order_screen_fetch( true );
+
+		$this->assertNotNull( $priority, 'The module listens on admin_enqueue_scripts' );
+		$this->assertLessThan( 10, $priority, 'Before the wallet\'s void button callback at 10' );
+		$this->assertSame( array( 'Bearer token-' . PlatformTransport::APP_MERCHANT_APP ), $authorizations );
+	}
+
+	/**
+	 * @testdox Should fetch through the platform app's pick when the order context is not entered, which the platform app cannot see.
+	 */
+	public function test_order_screen_fetch_without_the_context_uses_the_pick(): void {
+		list( $authorizations ) = $this->order_screen_fetch( false );
+
+		$this->assertSame( array( 'Bearer token-' . PlatformTransport::APP_PLATFORM ), $authorizations );
 	}
 }

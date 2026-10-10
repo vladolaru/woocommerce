@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
@@ -55,20 +56,26 @@ class PayPal extends PaymentGateway {
 	}
 
 	/**
-	 * Whether the store sells with PayPal Wallet in the collecting state.
+	 * The PayPal Wallet state of the store when core provides the gateway: collecting, platform connected, connected or dormant.
 	 *
 	 * Reads the state only when a collecting or platform option exists in the autoloaded set, so a store with no wallet
-	 * history runs no added query.
+	 * history runs no added query. A gateway core does not provide reads as dormant, so its answers stay its own.
 	 *
-	 * @return bool
+	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
+	 *
+	 * @return string One of the ConnectionState constants.
 	 */
-	private function is_collecting_wallet(): bool {
-		$options = new Options();
-		if ( ! $options->has_autoloaded( Options::COLLECTING ) && ! $options->has_autoloaded( Options::PLATFORM ) ) {
-			return false;
+	private function get_wallet_state( WC_Payment_Gateway $payment_gateway ): string {
+		if ( ! $this->is_core_provided( $payment_gateway ) ) {
+			return ConnectionState::DORMANT;
 		}
 
-		return ConnectionState::COLLECTING === ( new ConnectionState( $options ) )->resolve();
+		$options = new Options();
+		if ( ! $options->has_autoloaded( Options::COLLECTING ) && ! $options->has_autoloaded( Options::PLATFORM ) ) {
+			return ConnectionState::DORMANT;
+		}
+
+		return ( new ConnectionState( $options ) )->resolve();
 	}
 
 	/**
@@ -275,11 +282,6 @@ class PayPal extends PaymentGateway {
 	 *              If the payment gateway does not provide the information, it will return true.
 	 */
 	public function is_account_connected( WC_Payment_Gateway $payment_gateway ): bool {
-		// A store that sells with PayPal Wallet before it has a PayPal account is not connected, so the row reads "Action needed" from the first request.
-		if ( $this->is_core_provided( $payment_gateway ) && $this->is_collecting_wallet() ) {
-			return false;
-		}
-
 		return $this->is_paypal_onboarded( $payment_gateway ) ?? parent::is_account_connected( $payment_gateway );
 	}
 
@@ -321,6 +323,11 @@ class PayPal extends PaymentGateway {
 	 *               Null if the environment could not be determined.
 	 */
 	private function is_paypal_in_sandbox_mode( WC_Payment_Gateway $payment_gateway ): ?bool {
+		// A platform-connected store has no first-party connection for the wallet to read: its environment is the platform connection's.
+		if ( ConnectionState::PLATFORM_CONNECTED === $this->get_wallet_state( $payment_gateway ) ) {
+			return CollectingState::ENVIRONMENT_SANDBOX === ( ( new Options() )->platform()['environment'] ?? '' );
+		}
+
 		$container = $this->get_paypal_container( $payment_gateway );
 		if ( null !== $container ) {
 			try {
@@ -369,6 +376,13 @@ class PayPal extends PaymentGateway {
 	 *               Null if we failed to determine the onboarding status.
 	 */
 	private function is_paypal_onboarded( WC_Payment_Gateway $payment_gateway ): ?bool {
+		// A store that sells with PayPal Wallet before it has a PayPal account is not onboarded, so the row reads "Action needed" from the first request.
+		// Once the platform connects the merchant it is, although the wallet's first-party connection stays empty.
+		$wallet_state = $this->get_wallet_state( $payment_gateway );
+		if ( ConnectionState::COLLECTING === $wallet_state || ConnectionState::PLATFORM_CONNECTED === $wallet_state ) {
+			return ConnectionState::PLATFORM_CONNECTED === $wallet_state;
+		}
+
 		$container = $this->get_paypal_container( $payment_gateway );
 		if ( null !== $container ) {
 			try {

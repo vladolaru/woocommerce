@@ -104,6 +104,23 @@ final class OrderListeners {
 	}
 
 	/**
+	 * Enter the edited order's pinned app on the order screen, before the wallet's void button fetches its PayPal order.
+	 *
+	 * The fetch runs on `admin_enqueue_scripts` with no order context of its own, so once the store is platform connected
+	 * it would go through the platform app, which cannot see an order the merchant app created.
+	 *
+	 * @since 11.3.0
+	 */
+	public function handle_admin_enqueue_scripts(): void {
+		global $theorder;
+		if ( ! is_admin() || wp_doing_ajax() || ! isset( $theorder ) ) {
+			return;
+		}
+
+		$this->handle_woocommerce_paypal_wallet_order_context( $theorder );
+	}
+
+	/**
 	 * Pin the order to the app that signs the request's calls, the one that created the PayPal order.
 	 *
 	 * @since 11.3.0

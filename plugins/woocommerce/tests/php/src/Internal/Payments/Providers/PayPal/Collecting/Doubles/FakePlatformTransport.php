@@ -185,9 +185,10 @@ final class FakePlatformTransport implements PlatformTransport {
 	 *
 	 * @param string $tracking_id The tracking ID.
 	 * @param string $return_url  The return URL.
+	 * @param string $email       The payee email.
 	 */
-	public function referral_link( string $tracking_id, string $return_url ): string {
-		$this->record( __FUNCTION__, $tracking_id, $return_url );
+	public function referral_link( string $tracking_id, string $return_url, string $email = '' ): string {
+		$this->record( __FUNCTION__, $tracking_id, $return_url, $email );
 		return 'https://www.sandbox.paypal.com/fake-referral?tracking_id=' . rawurlencode( $tracking_id );
 	}
 

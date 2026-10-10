@@ -359,7 +359,7 @@ class CollectingRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should ask the transport for the THIRD_PARTY referral of the store's tracking ID, returning to the wallet settings.
+	 * @testdox Should ask the transport for the THIRD_PARTY referral of the store's tracking ID and payee email, returning to the wallet settings.
 	 */
 	public function test_referral_answers_the_transport_link(): void {
 		$this->set_collecting_unbound();
@@ -367,7 +367,7 @@ class CollectingRestEndpointTest extends WalletTestCase {
 		$response = $this->dispatch( 'POST', '/collecting/referral' );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( array( 'TRACK-1', PayPalWalletBootstrap::get_settings_url() ) ), $this->transport->calls_to( 'referral_link' ) );
+		$this->assertSame( array( array( 'TRACK-1', PayPalWalletBootstrap::get_settings_url(), 'payee@example.com' ) ), $this->transport->calls_to( 'referral_link' ) );
 		$this->assertSame( array( 'url' => 'https://www.sandbox.paypal.com/fake-referral?tracking_id=TRACK-1' ), $response->get_data() );
 	}
 
