@@ -1588,6 +1588,31 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should hide the card save option on a renewal-only cart (client 11.1.0 `class-wc-payments-checkout.php:616`).
+	 *
+	 * The client shows the save option only when the cart has no subscription item, and its is_subscription_item_in_cart()
+	 * counts a renewal (trait-wc-payments-subscriptions-utilities.php:96-101).
+	 */
+	public function test_get_payment_fields_js_config_hides_card_save_option_on_a_renewal_only_cart(): void {
+		$this->report_subscriptions_loaded();
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array( 'country' => 'RO' ),
+			array( 'saved_cards' => 'yes' )
+		);
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertTrue( $config['isSavedCardsEnabled'] );
+		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
+	}
+
+	/**
 	 * @testdox Should expose Cartes Bancaires card branding for France merchants.
 	 */
 	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_france_merchants(): void {
