@@ -32,10 +32,12 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Give the handler and the expectations one clock, so a run that crosses midnight UTC still sees one date.
 	 *
-	 * The clock is a day behind, so a handler that reads the real date instead of the proxied one fails every run.
+	 * The clock is a day behind, so a handler that reads the real date instead of the proxied one fails every run. Migration
+	 * log files other tests left behind (the migrator writes real ones) are removed first, so each test counts only its own.
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		$this->delete_log_files();
 		$this->now = time() - DAY_IN_SECONDS;
 		$now       = $this->now;
 		$this->register_legacy_proxy_function_mocks(
@@ -52,10 +54,7 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		try {
-			foreach ( $this->get_log_files() as $log_file ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
-				unlink( $log_file );
-			}
+			$this->delete_log_files();
 			$wpdb->query(
 				$wpdb->prepare(
 					"DELETE FROM {$wpdb->prefix}woocommerce_log WHERE source IN ( %s, %s )",
@@ -174,6 +173,16 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 		}
 
 		return $log_files;
+	}
+
+	/**
+	 * Delete the log files of the migration log and of these tests.
+	 */
+	private function delete_log_files(): void {
+		foreach ( $this->get_log_files() as $log_file ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+			unlink( $log_file );
+		}
 	}
 
 	/**
