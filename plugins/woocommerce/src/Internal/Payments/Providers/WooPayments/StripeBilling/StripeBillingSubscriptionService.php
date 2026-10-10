@@ -118,13 +118,6 @@ class StripeBillingSubscriptionService {
 	private array $feature_support_exceptions = array();
 
 	/**
-	 * Whether the subscription being created comes from a customer switching to WooPayments, so it keeps its billing dates.
-	 *
-	 * @var bool
-	 */
-	private bool $is_creating_subscription_from_update_payment_method = false;
-
-	/**
 	 * Whether subscription status changes are kept from reaching Stripe, while a callback passed to `run_without_stripe_sync()` runs.
 	 *
 	 * @var bool
@@ -422,6 +415,17 @@ class StripeBillingSubscriptionService {
 	 * @throws \Exception With the message to show at checkout when the Stripe subscription cannot be created.
 	 */
 	public function create_subscription( $subscription ): void {
+		$this->create_stripe_subscription( $subscription, false );
+	}
+
+	/**
+	 * Create the Stripe subscription of a subscription paid with WooPayments.
+	 *
+	 * @param mixed $subscription       Subscription.
+	 * @param bool  $keep_billing_dates Whether the Stripe subscription keeps the subscription's billing dates, as on a switch to WooPayments.
+	 * @throws \Exception With the message to show the customer when the Stripe subscription cannot be created.
+	 */
+	private function create_stripe_subscription( $subscription, bool $keep_billing_dates ): void {
 		// Another gateway, or a free subscription bought without payment details, is not billed at Stripe.
 		if ( ! $subscription instanceof WC_Order || WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $subscription->get_payment_method() ) {
 			return;
@@ -437,7 +441,7 @@ class StripeBillingSubscriptionService {
 		}
 
 		try {
-			$subscription_data = $this->prepare_wcpay_subscription_data( $wcpay_customer_id, $subscription );
+			$subscription_data = $this->prepare_wcpay_subscription_data( $wcpay_customer_id, $subscription, $keep_billing_dates );
 			$this->validate_subscription_data( $subscription_data );
 
 			// The module only loads with WooCommerce Subscriptions active.
@@ -506,9 +510,7 @@ class StripeBillingSubscriptionService {
 			return;
 		}
 
-		$this->is_creating_subscription_from_update_payment_method = true;
-
-		$this->create_subscription( $subscription );
+		$this->create_stripe_subscription( $subscription, true );
 	}
 
 	/**
@@ -1005,13 +1007,14 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Build the data to create a Stripe subscription with.
 	 *
-	 * @param string   $wcpay_customer_id Stripe customer ID.
-	 * @param WC_Order $subscription      Subscription.
+	 * @param string   $wcpay_customer_id  Stripe customer ID.
+	 * @param WC_Order $subscription       Subscription.
+	 * @param bool     $keep_billing_dates Whether to backdate the start and anchor billing on the next payment, for a switch to WooPayments.
 	 * @return array<string,mixed>
 	 * @throws StripeBillingException When the product of a subscription item no longer exists.
 	 * @throws WooPaymentsApiException When a Stripe product cannot be created.
 	 */
-	private function prepare_wcpay_subscription_data( string $wcpay_customer_id, WC_Order $subscription ): array {
+	private function prepare_wcpay_subscription_data( string $wcpay_customer_id, WC_Order $subscription, bool $keep_billing_dates ): array {
 		$recurring_items = $this->get_recurring_item_data_for_subscription( $subscription );
 		$one_time_items  = $this->get_one_time_item_data_for_subscription( $subscription );
 		$discount_items  = $this->get_discount_item_data_for_subscription( $subscription );
@@ -1032,7 +1035,7 @@ class StripeBillingSubscriptionService {
 			$data['discounts'] = $discount_items;
 		}
 
-		if ( $this->is_creating_subscription_from_update_payment_method ) {
+		if ( $keep_billing_dates ) {
 			$data['backdate_start_date']  = max( $this->get_time( $subscription, 'start' ), $this->get_time( $subscription, 'last_order_date_created' ), $this->get_time( $subscription, 'last_order_date_paid' ) );
 			$data['billing_cycle_anchor'] = $this->get_time( $subscription, 'next_payment' );
 		}

@@ -495,6 +495,30 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout subscription created after a switch to WooPayments in the same process keeps its own billing dates.
+	 *
+	 * Client 11.1.0 sets the switch's backdating flag on its subscription service singleton and never clears it
+	 * (`class-wc-payments-subscription-service.php:108`, `:506`, `:848`).
+	 */
+	public function test_a_checkout_subscription_after_a_switch_is_not_backdated(): void {
+		$this->queue_entry( $this->get_entry( 'create_subscription' ) );
+		$this->queue_entry( $this->get_entry( 'create_subscription' ) );
+		$switched = $this->create_subscription( array( '_schedule_next_payment' => gmdate( 'Y-m-d H:i:s', time() + 29 * DAY_IN_SECONDS ) ) );
+		$checkout = $this->create_subscription();
+		add_action( 'woocommerce_subscription_payment_method_updated', array( $this->sut, 'maybe_create_subscription_from_update_payment_method' ), 10, 2 );
+		add_action( 'woocommerce_checkout_subscription_created', array( $this->sut, 'create_subscription' ) );
+
+		do_action( 'woocommerce_subscription_payment_method_updated', wc_get_order( $switched->get_id() ), 'woocommerce_payments', 'stripe' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'woocommerce_checkout_subscription_created', wc_get_order( $checkout->get_id() ) ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+
+		$creates = array_values( array_filter( $this->get_requests(), static fn( array $request ): bool => 'POST' === $request[0] && 1 === preg_match( '#/wcpay/subscriptions$#', $request[1] ) ) );
+		$this->assertCount( 2, $creates );
+		$this->assertArrayHasKey( 'billing_cycle_anchor', $creates[0][2], 'The switched subscription keeps its billing dates.' );
+		$this->assertArrayNotHasKey( 'backdate_start_date', $creates[1][2] );
+		$this->assertArrayNotHasKey( 'billing_cycle_anchor', $creates[1][2] );
+	}
+
+	/**
 	 * @testdox Switching to another gateway, or a subscription that already has a Stripe subscription, creates nothing (client `class-wc-payments-subscription-service.php:496-504`).
 	 * @testWith ["stripe", ""]
 	 *           ["woocommerce_payments", "sub_1UM1VrBzWlxcwgpP6A3GwGLe"]
