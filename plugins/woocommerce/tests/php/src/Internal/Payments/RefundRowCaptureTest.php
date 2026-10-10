@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use WC_Order;
 use WC_Order_Refund;
@@ -83,6 +84,37 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 		$sut->handle_create_refund( new WC_Order_Refund(), array( 'refund_payment' => false ) );
 
 		$this->assertNull( $sut->consume( $order, 4.25 ) );
+	}
+
+	/**
+	 * @testdox A refund through one of the runtime's gateways is marked as a gateway refund before it is saved; a refund through another plugin's gateway is left untouched.
+	 *
+	 * Monitor ruling 2026-10-10 15:05 (R1b): the marker keeps another request's in-flight gateway row from passing for the
+	 * merchant's manual record.
+	 */
+	public function test_marks_only_refunds_through_the_runtime_gateways(): void {
+		$controller = $this->createMock( ProviderGatewaysController::class );
+		$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => 'runtime_gateway' === $gateway_id );
+		$sut = new RefundRowCapture();
+		$sut->init( $controller );
+		$marked = array();
+
+		foreach ( array( 'runtime_gateway', 'other_plugin_gateway' ) as $payment_method ) {
+			$order = $this->create_order();
+			$order->set_payment_method( $payment_method );
+			$order->save();
+			$refund = new WC_Order_Refund();
+			$refund->set_parent_id( $order->get_id() );
+			$refund->set_amount( '4.25' );
+
+			$sut->handle_create_refund( $refund, array( 'refund_payment' => true ) );
+			$refund->save();
+
+			$marked[ $payment_method ] = wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true );
+		}
+
+		$this->assertSame( 'yes', $marked['runtime_gateway'] );
+		$this->assertSame( '', $marked['other_plugin_gateway'] );
 	}
 
 	/**

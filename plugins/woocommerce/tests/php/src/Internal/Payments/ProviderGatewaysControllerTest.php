@@ -180,6 +180,30 @@ class ProviderGatewaysControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The controller owns a gateway ID only while its provider's check passes and the provider lists that gateway.
+	 */
+	public function test_owns_only_its_providers_gateways_while_the_check_passes(): void {
+		$gateway = $this->create_gateway( 'woocommerce_payments' );
+		$passes  = true;
+		$sut     = new ProviderGatewaysController();
+		$sut->set_provider(
+			static fn(): PaymentGatewayProviderInterface => new StaticProvider( true, array( $gateway ) ),
+			static function () use ( &$passes ): bool {
+				return $passes;
+			}
+		);
+
+		$owned       = $sut->owns_gateway( 'woocommerce_payments' );
+		$other       = $sut->owns_gateway( 'cod' );
+		$passes      = false;
+		$after_check = $sut->owns_gateway( 'woocommerce_payments' );
+
+		$this->assertTrue( $owned );
+		$this->assertFalse( $other );
+		$this->assertFalse( $after_check );
+	}
+
+	/**
 	 * Apply the payment gateways filter.
 	 *
 	 * @param array<int,mixed> $gateways Registered payment gateways.

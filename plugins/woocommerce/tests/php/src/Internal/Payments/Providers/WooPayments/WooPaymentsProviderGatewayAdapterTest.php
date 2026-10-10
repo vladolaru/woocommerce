@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -89,6 +90,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	private string $original_currency;
 
 	/**
+	 * Whether this test put a runtime refund row capture in the container.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $runtime_capture_installed = null;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -105,6 +113,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_tax_based_on' );
 		delete_option( 'woocommerce_calc_taxes' );
 		update_option( 'woocommerce_currency', $this->original_currency );
+		$this->reset_container_replacements();
 		unset( $GLOBALS['wcpay_test_renewal_order_ids'], $GLOBALS['wcpay_test_subscription_ids'], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		// Guest customer creation stores the customer in the shared session; leave none for later classes.
 		if ( WC()->session ) {
@@ -8361,7 +8370,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			}
 		};
 		$row      = $this->create_refund_row( $order, 2.00, 'Adjustment' );
-		self::announce_gateway_refund( $row );
+		$this->announce_gateway_refund( $row );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentOperationContext::for_refund( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.00, 'Adjustment' ),
@@ -8403,7 +8412,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			self::http_json( 200, $this->recorded_refund_answer( 're_f458_second_555_send', 'key_f458_not_read', 555 ) ),
 		);
 		$provider               = $this->create_refund_hold_provider( $http_client );
-		self::announce_gateway_refund( $own_row );
+		$this->announce_gateway_refund( $own_row );
 
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 5.55, 'requested_by_customer' ),
@@ -8543,6 +8552,84 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertFalse( wc_get_order( $row ), 'WooCommerce deletes the row of a failed refund.' );
 		$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds() );
 		$this->assertNotContains( wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ), array( 'pending', 'successful' ) );
+	}
+
+	/**
+	 * @testdox Another request's gateway refund row of the earlier amount, still in flight, is never taken for the merchant's manual record: this call links the earlier refund and sends nothing.
+	 *
+	 * Monitor ruling 2026-10-10 15:05 (R1b): the runtime marks a row created to be refunded through its gateways, and the
+	 * manual-record search skips marked rows. Without the marker the in-flight 5.55 row passed for a manual record of the
+	 * earlier 5.55 refund, and this call sent 5.55 again.
+	 */
+	public function test_in_flight_gateway_row_is_never_taken_for_a_manual_record(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$in_flight              = $this->create_in_flight_gateway_row( $order, 5.55 );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_r1b_again', 'key_f458_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'No refund may be sent again.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $in_flight->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The in-flight row is not a manual record.' );
+	}
+
+	/**
+	 * @testdox Another request's gateway refund row still in flight does not count as refunded, so the backstop keeps a found hold.
+	 *
+	 * Monitor ruling 2026-10-10 15:05 (R1b): the in-flight refund may still fail; counting it could only clear the hold early.
+	 */
+	public function test_in_flight_gateway_row_does_not_count_for_the_backstop(): void {
+		$order = $this->create_refund_hold_order();
+		$hold  = $this->seed_refund_hold(
+			$order,
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+			)
+		);
+		$this->create_in_flight_gateway_row( $order, 40.00 );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( $hold, self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Create another request's gateway refund row as wc_create_refund() saves it before that request's gateway call returns.
+	 *
+	 * @param WC_Order $order  Parent order.
+	 * @param float    $amount Amount.
+	 * @return WC_Order_Refund
+	 */
+	private function create_in_flight_gateway_row( WC_Order $order, float $amount ): WC_Order_Refund {
+		$row = new WC_Order_Refund();
+		$row->set_parent_id( $order->get_id() );
+		$row->set_amount( (string) $amount );
+		$row->set_total( -1 * $amount );
+		$row->set_reason( 'Another refund in flight' );
+		$this->use_runtime_refund_capture()->handle_create_refund( $row, array( 'refund_payment' => true ) );
+		$row->save();
+
+		return $row;
 	}
 
 	/**
@@ -8788,7 +8875,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	private function run_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $reason = 'requested_by_customer', ?WC_Order $loaded = null, bool $through_core = true ): array {
 		$row = $this->create_refund_row( $order, $amount, $reason );
 		if ( $through_core ) {
-			self::announce_gateway_refund( $row );
+			$this->announce_gateway_refund( $row );
 		}
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
 			PaymentOperationContext::for_refund( $loaded ?? wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ),
@@ -8811,7 +8898,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	private function run_gateway_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount ): array {
 		$row = $this->create_refund_row( $order, $amount, 'requested_by_customer' );
-		self::announce_gateway_refund( $row );
+		$this->announce_gateway_refund( $row );
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$result = $gateway->process_refund( $order->get_id(), $amount, 'requested_by_customer' );
@@ -8828,10 +8915,29 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * @param WC_Order_Refund $row Refund row.
 	 */
-	private static function announce_gateway_refund( WC_Order_Refund $row ): void {
-		wc_get_container()->get( RefundRowCapture::class )->register();
+	private function announce_gateway_refund( WC_Order_Refund $row ): void {
+		$this->use_runtime_refund_capture()->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fired as wc_create_refund() does.
 		do_action( 'woocommerce_create_refund', $row, array( 'refund_payment' => true ) );
+	}
+
+	/**
+	 * Put a refund row capture in the container whose provider owns the WooPayments card gateway, as on an active store.
+	 *
+	 * @return RefundRowCapture
+	 */
+	private function use_runtime_refund_capture(): RefundRowCapture {
+		$capture = wc_get_container()->get( RefundRowCapture::class );
+		if ( ! isset( $this->runtime_capture_installed ) ) {
+			$controller = $this->createMock( ProviderGatewaysController::class );
+			$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id );
+			$capture = new RefundRowCapture();
+			$capture->init( $controller );
+			wc_get_container()->replace( RefundRowCapture::class, $capture );
+			$this->runtime_capture_installed = true;
+		}
+
+		return $capture;
 	}
 
 	/**

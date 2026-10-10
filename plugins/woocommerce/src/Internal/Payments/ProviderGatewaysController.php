@@ -109,6 +109,33 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Tell whether a gateway ID is one of the provider's gateways, while its check passes.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $gateway_id Gateway ID.
+	 * @return bool
+	 */
+	public function owns_gateway( string $gateway_id ): bool {
+		if ( '' === $gateway_id || ! $this->provider_check_passes() ) {
+			return false;
+		}
+
+		$provider = $this->resolve_provider();
+		if ( null === $provider ) {
+			return false;
+		}
+
+		foreach ( $provider->get_payment_gateways() as $gateway ) {
+			if ( $gateway instanceof WC_Payment_Gateway && $gateway_id === $gateway->id ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Resolve the provider on first use. A resolver that returns no provider leaves no provider set.
 	 *
 	 * @return PaymentGatewayProviderInterface|null

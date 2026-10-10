@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Throwable;
@@ -556,7 +557,10 @@ class WooPaymentsRefundAmbiguityService {
 		$found_id    = (string) $record['found_refund_id'];
 		$found_minor = (int) $record['found_amount'];
 
-		$other_minor = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $rows ) );
+		// Another request's gateway refund may still be running and fail; only the rows already settled count, which can
+		// only keep the hold (monitor ruling 2026-10-10 15:05).
+		$settled_rows = array_filter( $rows, static fn( WC_Order_Refund $refund ): bool => ! self::is_gateway_refund_row( $refund ) || $refund->get_refunded_payment() );
+		$other_minor  = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $settled_rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
 			$manual_row = strtolower( $currency ) === (string) ( $record['found_currency'] ?? '' ) && ! $this->is_recorded_on_order( $order, $found_id )
 				? self::find_manual_record_row( $rows, $currency, $found_minor, (int) $record['failed_at'] )
@@ -605,7 +609,8 @@ class WooPaymentsRefundAmbiguityService {
 		foreach ( $rows as $refund ) {
 			$created = $refund->get_date_created();
 			if (
-				! $refund->get_refunded_payment()
+				! self::is_gateway_refund_row( $refund )
+				&& ! $refund->get_refunded_payment()
 				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
 				&& null !== $created && $created->getTimestamp() >= $failed_at
 				&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ) === $amount_minor
@@ -619,6 +624,19 @@ class WooPaymentsRefundAmbiguityService {
 		}
 
 		return $oldest;
+	}
+
+	/**
+	 * Tell whether a refund row was created to be refunded through one of the runtime's gateways (RefundRowCapture).
+	 *
+	 * Such a row is never the merchant's manual record, even while its refund call is still running or after its request
+	 * died before the call returned.
+	 *
+	 * @param WC_Order_Refund $refund Refund row.
+	 * @return bool
+	 */
+	private static function is_gateway_refund_row( WC_Order_Refund $refund ): bool {
+		return '' !== (string) $refund->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true );
 	}
 
 	/**

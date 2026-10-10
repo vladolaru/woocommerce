@@ -25,11 +25,37 @@ use WC_Order_Refund;
 class RefundRowCapture implements RegisterHooksInterface {
 
 	/**
+	 * Refund row meta key marking a row created to be refunded through a gateway the runtime owns, so code looking for
+	 * the merchant's manual refunds never takes it for one, even while its refund call is still running.
+	 *
+	 * @since 11.2.0
+	 */
+	public const GATEWAY_REFUND_META = '_wc_payments_gateway_refund';
+
+	/**
+	 * Provider gateways controller.
+	 *
+	 * @var ProviderGatewaysController
+	 */
+	private ProviderGatewaysController $gateways_controller;
+
+	/**
 	 * The refund the current request is refunding through a gateway, saved or about to be.
 	 *
 	 * @var WC_Order_Refund|null
 	 */
 	private ?WC_Order_Refund $refund = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param ProviderGatewaysController $gateways_controller Provider gateways controller.
+	 */
+	final public function init( ProviderGatewaysController $gateways_controller ): void {
+		$this->gateways_controller = $gateways_controller;
+	}
 
 	/**
 	 * Register the hook, once.
@@ -45,6 +71,9 @@ class RefundRowCapture implements RegisterHooksInterface {
 	/**
 	 * Keep a refund WooCommerce is about to refund through a gateway; any other refund it creates clears what was kept.
 	 *
+	 * A refund through one of the runtime's gateways also gets GATEWAY_REFUND_META, saved with the row (monitor ruling
+	 * 2026-10-10 15:05). Refunds through other plugins' gateways are left untouched.
+	 *
 	 * @internal
 	 *
 	 * @param mixed $refund Refund being created.
@@ -52,6 +81,14 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 */
 	public function handle_create_refund( $refund, $args ): void {
 		$this->refund = $refund instanceof WC_Order_Refund && is_array( $args ) && ! empty( $args['refund_payment'] ) ? $refund : null;
+		if ( null === $this->refund ) {
+			return;
+		}
+
+		$order = wc_get_order( $this->refund->get_parent_id() );
+		if ( $order instanceof WC_Order && isset( $this->gateways_controller ) && $this->gateways_controller->owns_gateway( (string) $order->get_payment_method() ) ) {
+			$this->refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
+		}
 	}
 
 	/**
