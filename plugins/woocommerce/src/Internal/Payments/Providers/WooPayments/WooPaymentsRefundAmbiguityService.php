@@ -339,7 +339,7 @@ class WooPaymentsRefundAmbiguityService {
 		$is_same_amount = $request['amount'] === $refund_amount && strtolower( (string) $order->get_currency() ) === $refund_currency;
 		if ( ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
-			// own (monitor rulings 2026-10-10 13:20 and 13:35).
+			// own (monitor rulings 2026-10-10 13:20 and 13:17).
 			// The rows are in the order's currency, so only a refund in that currency can be one of them (Codex review 201 M4).
 			$manual_row = 0 < $own_row_id && strtolower( (string) $order->get_currency() ) === $refund_currency
 				? self::find_manual_record_row( $this->get_earlier_refund_rows( $order, $own_row_id ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] )
@@ -462,7 +462,7 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * A record naming another order or charge was copied or left stale, and is deleted with a warning. A record never
 	 * expires: losing the key at Stripe after 24 hours does not settle what the earlier request did, so only the lookup
-	 * does (monitor ruling 2026-10-10 14:05, Codex review 201 H3).
+	 * does (monitor ruling 2026-10-10 13:45, Codex review 201 H3).
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.

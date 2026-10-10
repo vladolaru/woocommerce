@@ -172,7 +172,7 @@ class WooPaymentsIntentCodec {
 	 * Stripe's `requires_action` refund (https://docs.stripe.com/api/refunds/object, https://docs.stripe.com/refunds#requires-action)
 	 * waits for the customer's bank details and has moved no money yet, like `pending`. Client 11.1.0 records any refund its
 	 * request returns and marks it pending only for `pending` (class-wc-payment-gateway-wcpay.php:3003-3009); native marks
-	 * both pending (monitor ruling 2026-10-10 13:45).
+	 * both pending (monitor ruling 2026-10-10 13:35).
 	 *
 	 * @since 11.2.0
 	 *

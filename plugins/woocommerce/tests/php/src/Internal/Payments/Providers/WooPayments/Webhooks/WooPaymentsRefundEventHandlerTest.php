@@ -967,7 +967,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A charge.refunded event whose refund is in requires_action records it as pending, and a succeeded charge.refund.updated settles it.
 	 *
-	 * Monitor ruling 2026-10-10 13:45 (U1): the webhook's refund row follows the same pending rule as the refund call. The
+	 * Monitor ruling 2026-10-10 13:35 (U1): the webhook's refund row follows the same pending rule as the refund call. The
 	 * refund is HAND-BUILT (`Fixtures/stripe-docs-f458-requires-action-refund.json`, from Stripe's refund object,
 	 * https://docs.stripe.com/api/refunds/object, and https://docs.stripe.com/refunds#requires-action): no WooPayments
 	 * payment method reaches requires_action today. The charge fields are those client 11.1.0 reads
