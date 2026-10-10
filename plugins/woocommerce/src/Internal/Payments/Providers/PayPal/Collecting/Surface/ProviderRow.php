@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use WC_AJAX;
@@ -91,8 +92,8 @@ class ProviderRow {
 	}
 
 	/**
-	 * Give the PayPal Wallet row its notice: a first wallet order exists, the store still collects and the current user has
-	 * not dismissed it since.
+	 * Give the PayPal Wallet row its notice: a first wallet order exists, the store still collects, core owns the wallet and
+	 * the current user has not dismissed it since.
 	 *
 	 * Hooked to `woocommerce_paypal_wallet_provider_notice`. A notice another callback already set is left alone.
 	 *
@@ -109,6 +110,10 @@ class ProviderRow {
 
 		$first_order_id = $this->options->first_order_id();
 		if ( $first_order_id <= 0 || ConnectionState::COLLECTING !== $this->connection->resolve() ) {
+			return $notice;
+		}
+		// The extension's row shares the gateway ID, and its setup route does not exist; the Plugins page notice speaks then.
+		if ( RuntimeServices::extension_owns_wallet() ) {
 			return $notice;
 		}
 		if ( $this->dismissals->is_dismissed( self::SURFACE, get_current_user_id(), $first_order_id ) ) {

@@ -83,6 +83,18 @@ final class RuntimeServices {
 	}
 
 	/**
+	 * Whether the PayPal Payments extension owns the wallet on this site, so the wallet's settings route does not exist and
+	 * setup cannot complete. The held-order surfaces word and link themselves for that case.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool
+	 */
+	public static function extension_owns_wallet(): bool {
+		return PayPalWalletRuntimeArbiter::OWNER_EXTENSION === wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->get_runtime_owner();
+	}
+
+	/**
 	 * The booted wallet container when the collecting module is in it, or null.
 	 *
 	 * @return ContainerInterface|null

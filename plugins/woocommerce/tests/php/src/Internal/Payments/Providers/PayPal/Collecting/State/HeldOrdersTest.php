@@ -49,29 +49,66 @@ class HeldOrdersTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should return only on-hold wallet orders with the held meta, and count them without loading orders.
+	 * @testdox Should list the wallet orders with the held meta whatever their status, cancelled ones included, except refunded ones, and count them without loading orders.
 	 */
-	public function test_all_returns_the_held_on_hold_wallet_orders_only(): void {
+	public function test_lists_the_wallet_orders_with_the_held_meta(): void {
 		$held        = $this->order( 'on-hold', 'ppcp-gateway', 1000 );
-		$processing  = $this->order( 'processing', 'ppcp-gateway', 1000 );
+		$processing  = $this->order( 'processing', 'ppcp-gateway', 1500 );
 		$not_held    = $this->order( 'on-hold', 'ppcp-gateway', null );
 		$other_gate  = $this->order( 'on-hold', 'bacs', 1000 );
+		$cancelled   = $this->order( 'cancelled', 'ppcp-gateway', 1000 );
+		$refunded    = $this->order( 'refunded', 'ppcp-gateway', 1000 );
 		$second_held = $this->order( 'on-hold', 'ppcp-gateway', 2000 );
 		$sut         = new HeldOrders();
 
-		$ids = array_map(
-			static function ( WC_Order $order ): int {
-				return $order->get_id();
-			},
-			$sut->all()
-		);
-		sort( $ids );
+		$ids = $sut->ids( 25 );
 
-		$this->assertSame( array( $held->get_id(), $second_held->get_id() ), $ids );
-		$this->assertSame( 2, $sut->count() );
-		$this->assertNotContains( $processing->get_id(), $ids );
+		$this->assertSame( array( $held->get_id(), $cancelled->get_id(), $processing->get_id(), $second_held->get_id() ), $ids, 'Oldest first, ties by ID' );
+		$this->assertSame( 4, $sut->count() );
 		$this->assertNotContains( $not_held->get_id(), $ids );
 		$this->assertNotContains( $other_gate->get_id(), $ids );
+		$this->assertNotContains( $refunded->get_id(), $ids, 'A refunded order renders no Refund button and waits for nothing' );
+	}
+
+	/**
+	 * @testdox Should page orders held in the same second by their ID, so a page never repeats or skips one.
+	 */
+	public function test_ids_breaks_ties_by_id(): void {
+		$first  = $this->order( 'on-hold', 'ppcp-gateway', 5000 );
+		$second = $this->order( 'on-hold', 'ppcp-gateway', 5000 );
+		$third  = $this->order( 'on-hold', 'ppcp-gateway', 5000 );
+		$sut    = new HeldOrders();
+
+		$this->assertSame( array( $first->get_id(), $second->get_id(), $third->get_id() ), $sut->ids( 3 ) );
+		$this->assertSame( array( $second->get_id() ), $sut->ids( 1, 1 ) );
+	}
+
+	/**
+	 * @testdox Should not list an order whose held meta is empty, as is_held() does not count it.
+	 */
+	public function test_an_empty_held_meta_is_not_listed(): void {
+		$order = $this->order( 'on-hold', 'ppcp-gateway', 1000 );
+		$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, '' );
+		$order->save();
+		$sut = new HeldOrders();
+
+		$this->assertFalse( $sut->is_held( $order ) );
+		$this->assertSame( array(), $sut->ids( 25 ) );
+		$this->assertSame( 0, $sut->count() );
+	}
+
+	/**
+	 * @testdox Should list a page of held order IDs from an offset, at most the limit.
+	 */
+	public function test_ids_pages_through_the_held_orders(): void {
+		$first  = $this->order( 'on-hold', 'ppcp-gateway', 1000 );
+		$second = $this->order( 'on-hold', 'ppcp-gateway', 2000 );
+		$third  = $this->order( 'on-hold', 'ppcp-gateway', 3000 );
+		$sut    = new HeldOrders();
+
+		$this->assertSame( array( $first->get_id(), $second->get_id() ), $sut->ids( 2 ) );
+		$this->assertSame( array( $third->get_id() ), $sut->ids( 2, 2 ) );
+		$this->assertSame( array(), $sut->ids( 2, 3 ) );
 	}
 
 	/**
@@ -81,7 +118,7 @@ class HeldOrdersTest extends WalletTestCase {
 		$this->order( 'on-hold', 'ppcp-gateway', null );
 		$sut = new HeldOrders();
 
-		$this->assertSame( array(), $sut->all() );
+		$this->assertSame( array(), $sut->ids( 25 ) );
 		$this->assertSame( 0, $sut->count() );
 		$this->assertNull( $sut->earliest_deadline() );
 	}
@@ -92,7 +129,7 @@ class HeldOrdersTest extends WalletTestCase {
 	public function test_deadlines(): void {
 		$early = $this->order( 'on-hold', 'ppcp-gateway', 1000 );
 		$late  = $this->order( 'on-hold', 'ppcp-gateway', 5000 );
-		$this->order( 'processing', 'ppcp-gateway', 10 );
+		$this->order( 'refunded', 'ppcp-gateway', 10 );
 		$sut = new HeldOrders();
 
 		$this->assertSame( 1000 + 30 * DAY_IN_SECONDS, $sut->deadline_for( $early ) );
@@ -134,14 +171,15 @@ class HeldOrdersTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should tell a held order from one that is not, or is no longer on hold.
+	 * @testdox Should tell a held order by its held meta alone, whatever its status.
 	 */
 	public function test_is_held(): void {
 		$sut = new HeldOrders();
 
 		$this->assertTrue( $sut->is_held( $this->order( 'on-hold', 'ppcp-gateway', 1000 ) ) );
 		$this->assertFalse( $sut->is_held( $this->order( 'on-hold', 'ppcp-gateway', null ) ) );
-		$this->assertFalse( $sut->is_held( $this->order( 'processing', 'ppcp-gateway', 1000 ) ) );
+		$this->assertTrue( $sut->is_held( $this->order( 'processing', 'ppcp-gateway', 1000 ) ), 'Moved on by hand, still held' );
+		$this->assertTrue( $sut->is_held( $this->order( 'cancelled', 'ppcp-gateway', 1000 ) ), 'Cancelled by hand, still held' );
 	}
 
 	/**

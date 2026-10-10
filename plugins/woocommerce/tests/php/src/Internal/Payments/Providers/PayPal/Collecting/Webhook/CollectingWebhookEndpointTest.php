@@ -84,6 +84,105 @@ class CollectingWebhookEndpointTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should reject a delivery that lacks one of PayPal's signature headers before looking up any order or calling PayPal: $missing.
+	 * @testWith ["PAYPAL-AUTH-ALGO"]
+	 *           ["PAYPAL-CERT-URL"]
+	 *           ["PAYPAL-TRANSMISSION-ID"]
+	 *           ["PAYPAL-TRANSMISSION-SIG"]
+	 *           ["PAYPAL-TRANSMISSION-TIME"]
+	 *
+	 * @param string $missing The header left out.
+	 */
+	public function test_unsigned_delivery_is_rejected_before_any_lookup( string $missing ): void {
+		global $wpdb;
+		$this->set_collecting();
+		$transport = new FakePlatformTransport( array( 'webhooks' => self::SUBSCRIPTIONS ) );
+		$endpoint  = $this->endpoint( $transport );
+		$order     = $this->wallet_order( '1', PlatformTransport::APP_MERCHANT_APP );
+		$request   = $this->event_request( 'PAYMENT.CAPTURE.COMPLETED', $this->capture_resource( $order, 'PP-ORDER-1' ) );
+		$request->remove_header( $missing );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$verified = $endpoint->verify_request( $request );
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertFalse( $verified );
+		$this->assertSame( array(), $transport->calls_to( 'verify_webhook' ) );
+		$this->assertSame( array(), $transport->calls_to( 'webhook_subscriptions' ), 'Not even the subscriptions are read' );
+		foreach ( $queries as $sql ) {
+			$this->assertFalse( str_contains( $sql, $wpdb->prefix . 'wc_orders' ) || str_contains( $sql, $wpdb->posts ) || str_contains( $sql, $wpdb->postmeta ), "No order lookup: $sql" );
+		}
+	}
+
+	/**
+	 * @testdox Should reject a delivery whose signature headers are not PayPal's shape before looking up any order or calling PayPal: $header.
+	 * @testWith ["PAYPAL-CERT-URL", "https://attacker.example/v1/notifications/certs/CERT-1"]
+	 *           ["PAYPAL-CERT-URL", "http://api.sandbox.paypal.com/v1/notifications/certs/CERT-1"]
+	 *           ["PAYPAL-CERT-URL", "https://api.sandbox.paypal.com.attacker.example/certs/CERT-1"]
+	 *           ["PAYPAL-AUTH-ALGO", "none"]
+	 *           ["PAYPAL-TRANSMISSION-TIME", "not a time"]
+	 *
+	 * @param string $header The header.
+	 * @param string $value  Its forged value.
+	 */
+	public function test_misshapen_signature_headers_are_rejected_before_any_lookup( string $header, string $value ): void {
+		global $wpdb;
+		$this->set_collecting();
+		$transport = new FakePlatformTransport( array( 'webhooks' => self::SUBSCRIPTIONS ) );
+		$endpoint  = $this->endpoint( $transport );
+		$order     = $this->wallet_order( '1', PlatformTransport::APP_MERCHANT_APP );
+		$request   = $this->event_request( 'PAYMENT.CAPTURE.COMPLETED', $this->capture_resource( $order, 'PP-ORDER-1' ) );
+		$request->set_header( $header, $value );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$verified = $endpoint->verify_request( $request );
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertFalse( $verified );
+		$this->assertSame( array(), $transport->calls_to( 'verify_webhook' ) );
+		$this->assertSame( array(), $transport->calls_to( 'webhook_subscriptions' ) );
+		foreach ( $queries as $sql ) {
+			$this->assertFalse( str_contains( $sql, $wpdb->prefix . 'wc_orders' ) || str_contains( $sql, $wpdb->posts ) || str_contains( $sql, $wpdb->postmeta ), "No order lookup: $sql" );
+		}
+	}
+
+	/**
+	 * @testdox Should accept a certificate on any of PayPal's four API hosts: $host.
+	 * @testWith ["api.paypal.com"]
+	 *           ["api-m.paypal.com"]
+	 *           ["api.sandbox.paypal.com"]
+	 *           ["api-m.sandbox.paypal.com"]
+	 *
+	 * @param string $host The certificate host.
+	 */
+	public function test_paypal_certificate_hosts_pass_the_shape_check( string $host ): void {
+		$this->set_collecting();
+		$transport = new FakePlatformTransport( array( 'webhooks' => self::SUBSCRIPTIONS ) );
+		$endpoint  = $this->endpoint( $transport );
+		$order     = $this->wallet_order( '1', PlatformTransport::APP_MERCHANT_APP );
+		$request   = $this->event_request( 'PAYMENT.CAPTURE.COMPLETED', $this->capture_resource( $order, 'PP-ORDER-1' ) );
+		$request->set_header( 'PAYPAL-CERT-URL', 'https://' . $host . '/v1/notifications/certs/CERT-1' );
+
+		$this->assertTrue( $endpoint->verify_request( $request ) );
+	}
+
+	/**
 	 * @testdox Should reject a pinned order's event its app does not verify, without asking the other app.
 	 */
 	public function test_pinned_event_never_falls_back_to_the_other_app(): void {

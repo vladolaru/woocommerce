@@ -14,8 +14,9 @@
  * @package WooCommerce\Templates\Emails\Plain
  * @version 11.3.0
  *
- * @var WC_Order $order              The cancelled order.
+ * @var WC_Order $order              The order.
  * @var bool     $returned           Whether PayPal returned the payment to the customer, rather than denying it.
+ * @var bool     $cancelled          Whether the order is cancelled; false when the merchant had moved it off hold, so it kept its status.
  * @var string   $email_heading      The heading.
  * @var string   $additional_content The text the merchant set below the main content.
  */
@@ -28,7 +29,13 @@ echo "=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n";
 echo esc_html( wp_strip_all_tags( $email_heading ) );
 echo "\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n";
 
-if ( $returned ) {
+if ( empty( $cancelled ) ) {
+	echo sprintf(
+		/* translators: %s: order number */
+		$returned ? esc_html__( 'PayPal returned the payment for order #%s to the customer because PayPal Wallet setup was not completed in time. The order was no longer on hold, so its status and stock were not changed.', 'woocommerce' ) : esc_html__( 'PayPal denied the payment for order #%s. The order was no longer on hold, so its status and stock were not changed.', 'woocommerce' ),
+		esc_html( $order->get_order_number() )
+	) . "\n\n";
+} elseif ( $returned ) {
 	echo sprintf(
 		/* translators: %s: order number */
 		esc_html__( 'PayPal returned the payment for order #%s to the customer because PayPal Wallet setup was not completed in time. The order was cancelled and its stock restored.', 'woocommerce' ),

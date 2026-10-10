@@ -46,8 +46,8 @@ class HeldPaymentReturnedEmailTest extends WalletTestCase {
 	 * @testdox Should say PayPal returned the payment because setup was not completed in time, for a refunded capture.
 	 */
 	public function test_says_the_payment_was_returned(): void {
-		$order       = $this->held_order();
-		$this->mails = array(); // Putting the order on hold sent core's own new-order email.
+		$order       = $this->cancelled_order();
+		$this->mails = array(); // Holding and cancelling the order sent core's own emails.
 
 		$this->sut->trigger( $order, 'refunded' );
 
@@ -65,7 +65,7 @@ class HeldPaymentReturnedEmailTest extends WalletTestCase {
 	 * @param string $reason The reason.
 	 */
 	public function test_says_the_payment_was_denied( string $reason ): void {
-		$order       = $this->held_order();
+		$order       = $this->cancelled_order();
 		$this->mails = array(); // Putting the order on hold sent core's own new-order email.
 
 		$this->sut->trigger( $order, $reason );
@@ -79,7 +79,7 @@ class HeldPaymentReturnedEmailTest extends WalletTestCase {
 	 */
 	public function test_sends_plain_text(): void {
 		$this->set_wallet_option( 'woocommerce_wc_paypal_wallet_held_payment_returned_settings', array( 'email_type' => 'plain' ) );
-		$order       = $this->held_order();
+		$order       = $this->cancelled_order();
 		$this->mails = array(); // Putting the order on hold sent core's own new-order email.
 
 		( new HeldPaymentReturnedEmail() )->trigger( $order, 'refunded' );
@@ -89,6 +89,38 @@ class HeldPaymentReturnedEmailTest extends WalletTestCase {
 		$this->assertStringNotContainsString( '<p', $message );
 		$this->assertStringContainsString( 'PayPal returned the payment for order #' . $order->get_order_number() . ' to the customer because PayPal Wallet setup was not completed in time. The order was cancelled and its stock restored.', $message );
 		$this->assertStringContainsString( 'View order: ', $message );
+	}
+
+	/**
+	 * A held order that settlement cancelled, as it does when PayPal returns or denies the payment of an on-hold order.
+	 *
+	 * @return \WC_Order
+	 */
+	private function cancelled_order(): \WC_Order {
+		$order = $this->held_order();
+		$order->update_status( 'cancelled' );
+
+		return $order;
+	}
+
+	/**
+	 * @testdox Should say the order kept its status and stock when the merchant had moved it off hold: $reason.
+	 * @testWith ["refunded", "PayPal returned the payment for order #%s to the customer because PayPal Wallet setup was not completed in time. The order was no longer on hold, so its status and stock were not changed."]
+	 *           ["declined", "PayPal denied the payment for order #%s. The order was no longer on hold, so its status and stock were not changed."]
+	 *
+	 * @param string $reason   The reason.
+	 * @param string $expected The sentence, with the order number as %s.
+	 */
+	public function test_says_the_order_kept_its_status_when_it_was_moved_off_hold( string $reason, string $expected ): void {
+		$order = $this->held_order();
+		$order->update_status( 'processing' );
+		$this->mails = array();
+
+		$this->sut->trigger( $order, $reason );
+
+		$this->assertCount( 1, $this->mails );
+		$this->assertStringContainsString( sprintf( $expected, $order->get_order_number() ), $this->mails[0]['message'] );
+		$this->assertStringNotContainsString( 'cancelled', $this->mails[0]['message'] );
 	}
 
 	/**

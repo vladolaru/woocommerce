@@ -476,6 +476,13 @@ Names built or returned at runtime (transient prefixes per platform app, the las
 - `wc_paypal_wallet_last_webhook`
 - `wc_paypal_wallet_rate_`
 
+Dash-named identifiers (the Action Scheduler group, the Home task ID, which core stores in its task-list options, the Inbox note name and the log source):
+
+- `wc-paypal-wallet`
+- `wc-paypal-wallet-setup`
+- `wc-paypal-wallet-setup-required`
+- `woocommerce-paypal-wallet`
+
 REST namespace and routes (all `manage_woocommerce`):
 
 - `wc/v3/paypal-wallet`

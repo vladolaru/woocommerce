@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\FirstOrderEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\HeldPaymentReturnedEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\RecordingLogger;
@@ -221,6 +222,25 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'load-plugins.php', PluginsPageNotice::class ) );
 		$this->assertSame( 1, $this->count_surface_callbacks( 'admin_init', OwnerIndependent::class ) );
+		$this->assertSame( 1, $this->count_surface_callbacks( 'woocommerce_paypal_wallet_refund_locked', RefundLock::class ) );
+	}
+
+	/**
+	 * @testdox Should hook the refund lock at priority 1, before the callbacks at the default priority that may unlock.
+	 */
+	public function test_hooks_the_refund_lock_early(): void {
+		global $wp_filter;
+		$this->set_first_order( 7 );
+
+		$this->sut->register();
+
+		$early = array_filter(
+			$wp_filter['woocommerce_paypal_wallet_refund_locked']->callbacks[1] ?? array(),
+			static function ( $callback ): bool {
+				return is_array( $callback['function'] ) && $callback['function'][0] instanceof RefundLock;
+			}
+		);
+		$this->assertCount( 1, $early );
 	}
 
 	/**
@@ -252,6 +272,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->assertSame( $attached, $this->has_surface_callback( 'wc_ajax_wc_paypal_wallet_dismiss_notice', ProviderRow::class ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_admin_order_data_after_payment_info', OrderScreen::class ) );
 		$this->assertSame( $attached, $this->has_surface_callback( 'load-plugins.php', PluginsPageNotice::class ) );
+		$this->assertSame( $attached, $this->has_surface_callback( 'woocommerce_paypal_wallet_refund_locked', RefundLock::class ) );
 	}
 
 	/**
@@ -357,6 +378,7 @@ class OwnerIndependentTest extends WalletTestCase {
 		$previous_server           = $GLOBALS['wp_rest_server'] ?? null;
 		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh server fires rest_api_init before the recording, as WordPress does before a route registers.
 		rest_get_server();
+		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
 		$this->record_queries();
 
 		try {
@@ -663,6 +685,90 @@ class OwnerIndependentTest extends WalletTestCase {
 		$this->set_first_party_connected();
 
 		$this->assertSame( Note::E_WC_ADMIN_NOTE_ACTIONED, Notes::get_note_by_name( InboxNote::NOTE_NAME )->get_status() );
+	}
+
+	/**
+	 * @testdox Should leave the collecting and platform state when a first-party connection is saved, even with held orders: $state.
+	 * @testWith ["collecting"]
+	 *           ["platform_connected"]
+	 *
+	 * @param string $state The state the store is in before the connection.
+	 */
+	public function test_a_first_party_connection_leaves_the_platform_state( string $state ): void {
+		if ( 'collecting' === $state ) {
+			$this->set_collecting();
+		} else {
+			$this->set_platform_connected();
+		}
+		$this->set_first_order( 7 );
+		$this->held_order();
+		$this->sut->register();
+
+		$this->set_first_party_connected();
+
+		$this->assertFalse( get_option( Options::COLLECTING ), 'The collecting option is deleted' );
+		$this->assertFalse( get_option( Options::PLATFORM ), 'The platform option is deleted' );
+	}
+
+	/**
+	 * @testdox Should delete the seller status and the platform apps' tokens with the state on a first-party connection, and query nothing on the next save.
+	 */
+	public function test_a_first_party_connection_forgets_the_platform_data_once(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$this->set_wallet_option( Options::SELLER_STATUS, array( 'payments_receivable' => true ) );
+		$tokens = array( 'wc_paypal_wallet_bearer_platform_ppcp-bearer', 'wc_paypal_wallet_bearer_merchant_app_ppcp-bearer' );
+		foreach ( $tokens as $name ) {
+			$this->set_wallet_transient( $name, 'token' );
+		}
+		$this->sut->register();
+
+		$this->set_first_party_connected();
+
+		$this->assertFalse( get_option( Options::SELLER_STATUS ) );
+		foreach ( $tokens as $name ) {
+			$this->assertFalse( get_transient( $name ), "$name is deleted" );
+		}
+
+		$this->record_queries();
+		$this->sut->handle_connection_change();
+		$this->stop_recording_queries();
+		$touching = array_filter(
+			$this->queries,
+			static function ( string $sql ): bool {
+				return str_contains( $sql, Options::COLLECTING ) || str_contains( $sql, Options::PLATFORM ) || str_contains( $sql, 'woocommerce-ppcp-data-common' );
+			}
+		);
+		$this->assertSame( array(), array_values( $touching ), 'A later save finds no state to leave and reads nothing' );
+	}
+
+	/**
+	 * @testdox Should leave the collecting state from the admin_init fallback when the first-party connection was saved without the hook, even once the note is actioned.
+	 */
+	public function test_the_admin_init_fallback_leaves_the_collecting_state_for_a_first_party_connection(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$this->set_first_party_connected();
+		$this->set_wallet_option( Options::NOTE_STATE, Options::NOTE_ACTIONED );
+		$this->sut->register();
+
+		$this->sut->sync_note();
+
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should keep the collecting state when the shared settings are saved without a connection.
+	 */
+	public function test_a_settings_save_without_a_connection_keeps_the_collecting_state(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$this->sut->register();
+
+		$this->set_wallet_option( 'woocommerce-ppcp-data-common', array( 'sandbox_merchant' => true ) );
+		$this->sut->sync_note();
+
+		$this->assertNotFalse( get_option( Options::COLLECTING ) );
 	}
 
 	/**

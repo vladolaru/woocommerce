@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use InvalidArgumentException;
 use RuntimeException;
 use WP_CLI;
@@ -28,12 +29,21 @@ class CollectCommand {
 	private CollectingState $state;
 
 	/**
+	 * Builds the transport, whose environment the payee is entered in; null when there is none to ask.
+	 *
+	 * @var callable|null
+	 */
+	private $transport;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param CollectingState $state The collecting state the command writes.
+	 * @param CollectingState $state     The collecting state the command writes.
+	 * @param callable|null   $transport Returns the PlatformTransport, built only when the command runs; null for none.
 	 */
-	public function __construct( CollectingState $state ) {
-		$this->state = $state;
+	public function __construct( CollectingState $state, ?callable $transport = null ) {
+		$this->state     = $state;
+		$this->transport = $transport;
 	}
 
 	/**
@@ -45,7 +55,8 @@ class CollectCommand {
 	 * : The PayPal email address buyers pay.
 	 *
 	 * [--sandbox]
-	 * : Use the PayPal sandbox instead of production.
+	 * : Use the PayPal sandbox instead of production. Without it, the environment the platform transport serves; it must
+	 * match that environment when the transport is configured.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -58,8 +69,8 @@ class CollectCommand {
 		unset( $args );
 		$email = isset( $assoc_args['email'] ) && is_string( $assoc_args['email'] ) ? $assoc_args['email'] : '';
 
-		// A bare --sandbox is true; --sandbox=false must not turn the sandbox on.
-		$sandbox = filter_var( \WP_CLI\Utils\get_flag_value( $assoc_args, 'sandbox', false ), FILTER_VALIDATE_BOOLEAN ); // @phpstan-ignore function.notFound (WP-CLI is not installed when PHPStan runs.)
+		// A bare --sandbox is true; --sandbox=false must not turn the sandbox on. No flag at all leaves the transport to decide.
+		$sandbox = array_key_exists( 'sandbox', $assoc_args ) ? filter_var( \WP_CLI\Utils\get_flag_value( $assoc_args, 'sandbox', false ), FILTER_VALIDATE_BOOLEAN ) : null; // @phpstan-ignore function.notFound (WP-CLI is not installed when PHPStan runs.)
 
 		try {
 			$summary = $this->enter_collecting( $email, $sandbox );
@@ -77,24 +88,49 @@ class CollectCommand {
 	/**
 	 * Enter the collecting state and describe it.
 	 *
-	 * @param string $email   The payee email.
-	 * @param bool   $sandbox Whether to use the sandbox.
+	 * Without a sandbox flag the payee is entered in the environment the configured transport serves, or production when
+	 * none is configured. A flag that names another environment than the configured transport's is refused, since the
+	 * transport would talk to the other one.
+	 *
+	 * @param string    $email   The payee email.
+	 * @param bool|null $sandbox Whether to use the sandbox, or null to take the transport's environment.
 	 *
 	 * @return array<string, string> The payee, tracking ID and environment, labelled.
 	 *
 	 * @throws InvalidArgumentException When the email is not valid.
-	 * @throws RuntimeException         When the current payee is already bound.
+	 * @throws RuntimeException         When the environment does not match the transport's, the store is platform
+	 *                                  connected, or a payee is already bound (another one, or in another environment).
 	 */
-	public function enter_collecting( string $email, bool $sandbox ): array {
+	public function enter_collecting( string $email, ?bool $sandbox ): array {
 		$this->require_valid_email( $email );
 
-		$this->state->enter( $email, $sandbox ? CollectingState::ENVIRONMENT_SANDBOX : CollectingState::ENVIRONMENT_PRODUCTION );
+		$this->state->enter( $email, $this->environment( $sandbox ) );
 
 		return array(
 			'Payee'       => $this->state->payee_email(),
 			'Tracking ID' => $this->state->tracking_id(),
 			'Environment' => $this->state->environment(),
 		);
+	}
+
+	/**
+	 * The environment to enter: the flag's, or the configured transport's without a flag, or production when no transport
+	 * is configured.
+	 *
+	 * @param bool|null $sandbox Whether to use the sandbox, or null to take the transport's environment.
+	 * @return string
+	 *
+	 * @throws RuntimeException When the flag names another environment than the configured transport's.
+	 */
+	private function environment( ?bool $sandbox ): string {
+		$transport   = null === $this->transport ? null : ( $this->transport )();
+		$served      = $transport instanceof PlatformTransport && $transport->is_ready() ? $transport->environment() : null;
+		$environment = null === $sandbox ? ( $served ?? CollectingState::ENVIRONMENT_PRODUCTION ) : ( $sandbox ? CollectingState::ENVIRONMENT_SANDBOX : CollectingState::ENVIRONMENT_PRODUCTION );
+		if ( null !== $served && $served !== $environment ) {
+			throw new RuntimeException( sprintf( 'The platform transport serves the %1$s environment, not %2$s.', esc_html( $served ), esc_html( $environment ) ) );
+		}
+
+		return $environment;
 	}
 
 	/**

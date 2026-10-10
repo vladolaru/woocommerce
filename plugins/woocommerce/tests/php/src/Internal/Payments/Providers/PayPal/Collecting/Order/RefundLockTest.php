@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\L
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
@@ -315,11 +316,12 @@ class RefundLockTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should lock through the module callback on the filter the order view applies, and keep is_locked() unchanged with one filter call and no recursion.
+	 * @testdox Should lock through the shell's callback on the filter the order view applies, and keep is_locked() unchanged with one filter call and no recursion.
 	 */
-	public function test_module_callback_locks_a_held_order_for_the_view(): void {
+	public function test_shell_callback_locks_a_held_order_for_the_view(): void {
 		$this->set_platform_connected();
 		$this->boot_container( array( new TransportBindingModule( new FakePlatformTransport() ) ) );
+		( new OwnerIndependent() )->register();
 		$held   = $this->wallet_order( true, true );
 		$normal = $this->wallet_order( true, false );
 		$calls  = array();

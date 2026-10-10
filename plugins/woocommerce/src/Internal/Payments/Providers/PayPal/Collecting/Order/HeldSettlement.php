@@ -27,6 +27,10 @@ use WP_REST_Request;
  * released. Returned: PayPal gave the money back to the buyer, so the order is cancelled with its stock restored, never
  * refunded (a WooCommerce refund would ask the merchant to refund through the gateway, money PayPal already returned).
  *
+ * The held meta is the one marker: an order carrying it is settled whatever its status. A completed capture brings an
+ * order on hold or pending payment to paid; a returned one cancels an order on hold. Any other order keeps its status
+ * and stock, and gets the meta released and a note.
+ *
  * Each settlement runs under a per-order lock, on the order read again inside the lock, so concurrent webhook deliveries
  * or a webhook racing the reconcile settle an order once; a caller holding a stale copy gets `unchanged`.
  *
@@ -218,6 +222,16 @@ final class HeldSettlement {
 				if ( ! $this->held_orders->is_held( $fresh ) ) {
 					return self::OUTCOME_UNCHANGED;
 				}
+				if ( ! $fresh->has_status( array( OrderStatus::ON_HOLD, OrderStatus::PENDING ) ) ) {
+					// Moved on by hand: the wallet's handler would skip it, so only the hold ends.
+					$fresh->add_order_note( __( 'PayPal released the held payment. The order was no longer on hold, so its status was not changed.', 'woocommerce' ) );
+					if ( '' !== $note ) {
+						$fresh->add_order_note( $note );
+					}
+					$this->held_orders->release( $fresh );
+
+					return self::OUTCOME_COMPLETED;
+				}
 
 				$response = $this->run_capture_completed( $fresh, $request );
 				$data     = $response->get_data();
@@ -247,6 +261,9 @@ final class HeldSettlement {
 	 * The stock is restored before the status changes. The cancelled transition restores stock too, from a fresh copy of
 	 * the order, and finds every line already restored, so nothing is counted twice.
 	 *
+	 * An order the merchant moved off hold by hand keeps its status and stock: it may have shipped, or been cancelled
+	 * already. It gets the note, the returned marker and the released meta, and the store is told all the same.
+	 *
 	 * @since 11.3.0
 	 *
 	 * @param WC_Order $order  The order.
@@ -262,24 +279,35 @@ final class HeldSettlement {
 				}
 
 				$capture_id = CaptureReader::capture_id( $fresh );
-				wc_increase_stock_levels( $fresh );
-				$fresh->add_order_note(
-					'refunded' === $reason
-						? __( 'PayPal returned the held payment to the customer because setup was not completed', 'woocommerce' )
-						: __( 'PayPal denied the held payment, so the order was cancelled', 'woocommerce' )
-				);
+				$on_hold    = $fresh->has_status( OrderStatus::ON_HOLD );
+				if ( $on_hold ) {
+					wc_increase_stock_levels( $fresh );
+					$fresh->add_order_note(
+						'refunded' === $reason
+							? __( 'PayPal returned the held payment to the customer because setup was not completed', 'woocommerce' )
+							: __( 'PayPal denied the held payment, so the order was cancelled', 'woocommerce' )
+					);
+				} else {
+					$fresh->add_order_note(
+						'refunded' === $reason
+							? __( 'PayPal returned the held payment to the customer because setup was not completed. The order was no longer on hold, so its status and stock were not changed.', 'woocommerce' )
+							: __( 'PayPal denied the held payment. The order was no longer on hold, so its status and stock were not changed.', 'woocommerce' )
+					);
+				}
 				$fresh->update_meta_data( self::RETURNED_META_KEY, '' !== $capture_id ? $capture_id : 'yes' );
 				$this->held_orders->release( $fresh );
-				$fresh->update_status( OrderStatus::CANCELLED );
+				if ( $on_hold ) {
+					$fresh->update_status( OrderStatus::CANCELLED );
+				}
 
 				/**
 				 * Fires when PayPal returned or denied the payment it held for a wallet order, because the merchant did
-				 * not complete PayPal Wallet setup in time or PayPal declined the capture. The order is cancelled and its
-				 * stock restored.
+				 * not complete PayPal Wallet setup in time or PayPal declined the capture. An order still on hold is
+				 * cancelled and its stock restored; an order the merchant moved off hold keeps its status and stock.
 				 *
 				 * @since 11.3.0
 				 *
-				 * @param \WC_Order $wc_order The cancelled order.
+				 * @param \WC_Order $wc_order The order.
 				 * @param string    $reason   The capture status, lowercase: `refunded` (returned to the customer),
 				 *                            `declined` or `failed` (denied).
 				 */

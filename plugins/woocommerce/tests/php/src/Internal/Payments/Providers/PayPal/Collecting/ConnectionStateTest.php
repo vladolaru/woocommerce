@@ -165,4 +165,75 @@ class ConnectionStateTest extends WalletTestCase {
 		$this->assertCount( 0, $updates[0], 'Resolving must not update the collecting option' );
 		$this->assertCount( 0, $updates[1], 'Resolving must not update the platform option' );
 	}
+	/**
+	 * @testdox Should resolve a store with neither option as dormant without a query, even when the options cache is cold.
+	 */
+	public function test_resolves_dormant_without_a_query_when_neither_option_exists(): void {
+		delete_option( Options::COLLECTING );
+		delete_option( Options::PLATFORM );
+		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$has_state = $this->sut->has_platform_state();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertFalse( $has_state );
+		$this->assertSame( array(), $queries, 'Neither option is in the autoloaded set, so nothing is queried' );
+	}
+
+	/**
+	 * @testdox Should still read an autoloaded collecting or platform option.
+	 */
+	public function test_reads_the_autoloaded_options(): void {
+		$this->set_wallet_option( Options::COLLECTING, array( 'payee_email' => 'p@example.com' ) );
+		$this->assertSame( ConnectionState::COLLECTING, $this->sut->resolve() );
+
+		$this->set_wallet_option( Options::PLATFORM, $this->platform_data() );
+		$this->assertSame( ConnectionState::PLATFORM_CONNECTED, $this->sut->resolve() );
+	}
+	/**
+	 * @testdox Should not query the platform option of a collecting store, which has none, with a cold options cache.
+	 */
+	public function test_a_collecting_store_does_not_query_the_absent_platform_option(): void {
+		$this->set_wallet_option( Options::COLLECTING, array( 'payee_email' => 'p@example.com' ) );
+		delete_option( Options::PLATFORM );
+		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$state = $this->sut->resolve();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertSame( ConnectionState::COLLECTING, $state );
+		foreach ( $queries as $sql ) {
+			$this->assertStringNotContainsString( Options::PLATFORM, $sql );
+		}
+	}
+
+	/**
+	 * @testdox Should read a collecting option that is stored but not autoloaded as dormant: the autoloaded set is the authority.
+	 */
+	public function test_an_option_that_is_not_autoloaded_reads_as_dormant(): void {
+		$this->set_wallet_option( Options::COLLECTING, array( 'payee_email' => 'p@example.com' ) );
+		wp_set_option_autoload( Options::COLLECTING, false );
+
+		$this->assertSame( ConnectionState::DORMANT, $this->sut->resolve() );
+	}
 }

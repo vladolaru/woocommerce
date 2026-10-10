@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
@@ -57,6 +58,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'collecting.webhook.foreign-guard',
 				'collecting.webhook.held-completed',
 				'collecting.webhook.held-returned',
+				'collecting.webhook.held-pending',
 				'collecting.webhook.onboarding-completed',
 				'collecting.reconciler',
 			),
@@ -175,12 +177,57 @@ class CollectingModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should use production without the sandbox flag.
+	 * @testdox Should use production without the sandbox flag when no transport is configured.
 	 */
 	public function test_collect_command_defaults_to_production(): void {
-		( $this->command() )->enter_collecting( 'payee@example.com', false );
+		( $this->command() )->enter_collecting( 'payee@example.com', null );
 
 		$this->assertSame( 'production', get_option( Options::COLLECTING )['environment'] );
+	}
+
+	/**
+	 * A collect command over a state with no held orders and a ready transport in an environment.
+	 *
+	 * @param string $environment The transport's environment.
+	 * @return CollectCommand
+	 */
+	private function command_with_transport( string $environment ): CollectCommand {
+		return new CollectCommand(
+			new CollectingState( new Options(), new FixedHeldOrders( 0 ) ),
+			static function () use ( $environment ): FakePlatformTransport {
+				return new FakePlatformTransport( array( 'environment' => $environment ) );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should take the transport's environment when no sandbox flag is given.
+	 * @testWith ["sandbox"]
+	 *           ["production"]
+	 *
+	 * @param string $environment The transport's environment.
+	 */
+	public function test_collect_command_defaults_to_the_transport_environment( string $environment ): void {
+		$this->command_with_transport( $environment )->enter_collecting( 'payee@example.com', null );
+
+		$this->assertSame( $environment, get_option( Options::COLLECTING )['environment'] );
+	}
+
+	/**
+	 * @testdox Should refuse a sandbox flag that does not match the transport's environment and write nothing.
+	 * @testWith ["sandbox", false]
+	 *           ["production", true]
+	 *
+	 * @param string $environment The transport's environment.
+	 * @param bool   $sandbox     The flag given.
+	 */
+	public function test_collect_command_refuses_an_environment_the_transport_does_not_serve( string $environment, bool $sandbox ): void {
+		try {
+			$this->command_with_transport( $environment )->enter_collecting( 'payee@example.com', $sandbox );
+			$this->fail( 'A mismatched environment must be refused' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( Options::COLLECTING ) );
+		}
 	}
 
 	/**

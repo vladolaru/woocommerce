@@ -19,7 +19,8 @@ use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
  * retry with a new token of the call's app. It drops the cached token first only when the transport's bearer is a
  * PerAppBearer, the transport's own; another Bearer is asked for its token as it is.
  *
- * It acts only on a request to the app's API host, so a platform token is never signed onto another host.
+ * It acts only on a request to the app's API host, so a platform token is never signed onto another host, and leaves a
+ * request that carries the seller's PayPal-Auth-Assertion to AssertedRefundSigner.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -93,6 +94,11 @@ final class BearerRetryFilter {
 		}
 		$authorization = $args['headers']['Authorization'] ?? '';
 		if ( ! is_string( $authorization ) || 0 !== strpos( $authorization, 'Bearer ' ) || ! $this->connection_state->is_served_by_platform() ) {
+			return $args;
+		}
+		// A refund signed for the seller is re-signed by AssertedRefundSigner with the platform app; dropping the order
+		// app's token here would only cost it a token request.
+		if ( AssertedRefundSigner::has_assertion( $args['headers'] ) ) {
 			return $args;
 		}
 

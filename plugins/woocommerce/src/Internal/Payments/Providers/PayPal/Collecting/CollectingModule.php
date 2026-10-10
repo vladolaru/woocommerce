@@ -13,11 +13,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\PayeeFilters;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Rest\CollectingRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\Dismissals;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\SettingsAppData;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\AssertedRefundSigner;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Vendor\Inpsyde\Modularity\Module\ExecutableModule;
@@ -50,6 +50,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	private const RETRY_PRIORITY = 20;
 
 	/**
+	 * The priority of the refund signer: after the retry filter at 20, which re-signs with the order's app.
+	 */
+	private const REFUND_SIGNER_PRIORITY = 30;
+
+	/**
 	 * The priority that leaves the order context after the order processor: after the wallet's own callbacks at 10, which
 	 * may still call PayPal for the order.
 	 */
@@ -59,11 +64,6 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * The priority that checks the reconcile schedule when a capture is held: after the held capture is recorded at 10.
 	 */
 	private const SCHEDULE_PRIORITY = 20;
-
-	/**
-	 * The priority of the refund-lock callback: before the default 10, so a callback at 10 can still unlock.
-	 */
-	private const REFUND_LOCK_PRIORITY = 1;
 
 	/**
 	 * {@inheritDoc}
@@ -81,7 +81,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 
 	/**
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
-	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the listeners
+	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the one that
+	 * signs a capture refund for the connected seller, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
 	 * order, the reconcile, the admin emails, the filters that name the payee and the settings app's collecting data.
 	 *
@@ -96,8 +97,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 		add_filter( 'woocommerce_paypal_payments_features_list', array( $gates, 'handle_woocommerce_paypal_payments_features_list' ), self::GATE_PRIORITY );
 		add_filter( 'woocommerce_paypal_payments_todos_list', array( $gates, 'handle_woocommerce_paypal_payments_todos_list' ), self::GATE_PRIORITY );
 
-		// The order screen applies this filter to false, so the module answers it with the refund lock's own decision. Early, so a later callback can still unlock.
-		add_filter( 'woocommerce_paypal_wallet_refund_locked', array( new RefundLock( $connection_state ), 'handle_woocommerce_paypal_wallet_refund_locked' ), self::REFUND_LOCK_PRIORITY, 2 );
+		// The Refund button's lock is the shell's (OwnerIndependent), so it holds whoever owns the wallet; the server-side
+		// refusal is the LockingRefundProcessor extension.
 
 		if ( $connection_state->is_served_by_platform() ) {
 			$transport = $container->get( 'collecting.transport' );
@@ -107,6 +108,12 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 
 			$retry = new BearerRetryFilter( $connection_state, $transport, $context, $state, $logger );
 			add_filter( 'ppcp_retry_request_args', array( $retry, 'handle_ppcp_retry_request_args' ), self::RETRY_PRIORITY, 2 );
+
+			// Once platform connected, a capture refund goes through the platform app for the seller; it is the one call
+			// that leaves the order's pin. Last on both filters, so the retry is not re-signed with the order's app after it.
+			$refund_signer = new AssertedRefundSigner( $connection_state, $transport, $logger );
+			add_filter( 'ppcp_request_args', array( $refund_signer, 'handle_ppcp_request_args' ), self::REFUND_SIGNER_PRIORITY, 2 );
+			add_filter( 'ppcp_retry_request_args', array( $refund_signer, 'handle_ppcp_retry_request_args' ), self::REFUND_SIGNER_PRIORITY, 2 );
 
 			$listeners = new OrderListeners( $connection_state, $context, $transport, $state, $logger );
 			add_action( 'woocommerce_paypal_wallet_order_context', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );
@@ -181,9 +188,11 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 
 		add_action(
 			Reconciler::HOOK,
-			static function () use ( $reconciler ): void {
-				$reconciler()->handle_woocommerce_paypal_wallet_reconcile();
-			}
+			static function ( $offset = 0, $continuation = false ) use ( $reconciler ): void {
+				$reconciler()->handle_woocommerce_paypal_wallet_reconcile( $offset, $continuation );
+			},
+			10,
+			2
 		);
 		add_action(
 			'admin_init',

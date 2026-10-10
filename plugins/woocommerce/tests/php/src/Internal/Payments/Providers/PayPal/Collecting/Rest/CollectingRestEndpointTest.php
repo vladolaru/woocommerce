@@ -450,6 +450,40 @@ class CollectingRestEndpointTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should check onboarding before reading any held capture, and read at most one batch of captures.
+	 */
+	public function test_check_status_checks_onboarding_first_and_reads_one_batch(): void {
+		$this->set_collecting_unbound();
+		$this->transport  = new FakePlatformTransport( array( 'seller_status' => new SellerStatus( 'MERCHANT-9', true, true, true ) ) );
+		$this->reconciler = $this->boot_container( array( new TransportBindingModule( $this->transport ) ) )->get( 'collecting.reconciler' );
+		for ( $i = 1; $i <= Reconciler::BATCH_SIZE + 1; $i++ ) {
+			$order = $this->held_order( 1000 + $i );
+			$order->set_transaction_id( 'CAPTURE-' . $i );
+			$order->save();
+		}
+		$reads            = 0;
+		$onboarding_first = true;
+		$this->stub_http(
+			function ( $request, $url ) use ( &$reads, &$onboarding_first ) {
+				unset( $request );
+				if ( false !== strpos( (string) $url, '/v2/payments/captures/' ) ) {
+					++$reads;
+					$onboarding_first = $onboarding_first && 1 === count( $this->transport->calls_to( 'seller_status' ) );
+				}
+				return new \WP_Error( 'offline', 'Offline' );
+			}
+		);
+
+		$data = $this->dispatch( 'POST', '/collecting/check-status' )->get_data();
+
+		$this->assertSame( 'completed', $data['check'] );
+		$this->assertTrue( $onboarding_first, 'The seller status was read before any capture' );
+		$this->assertSame( Reconciler::BATCH_SIZE, $reads );
+		$this->assertNotFalse( as_next_scheduled_action( Reconciler::HOOK, array( Reconciler::BATCH_SIZE, true ), Reconciler::GROUP ), 'The rest is queued' );
+		as_unschedule_all_actions( Reconciler::HOOK, null, Reconciler::GROUP );
+	}
+
+	/**
 	 * @testdox Should answer 503 from check-status when the wallet is not running, so no reconciler exists.
 	 */
 	public function test_check_status_needs_a_running_wallet(): void {

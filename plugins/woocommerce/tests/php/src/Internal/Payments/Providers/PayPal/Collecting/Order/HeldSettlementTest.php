@@ -125,6 +125,96 @@ class HeldSettlementTest extends WalletTestCase {
 	}
 
 	/**
+	 * A held order a merchant moved to processing by hand, as fulfilment of an on-hold order often goes.
+	 *
+	 * @return \WC_Order
+	 */
+	private function held_order_moved_on_by_hand(): \WC_Order {
+		$order = $this->wallet_order( '1' );
+		$order->update_status( 'processing' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $this->container->get( 'collecting.held-orders' )->is_held( $order ), 'The held meta stays when the status changes by hand' );
+		$this->assertSame( 1, $this->container->get( 'collecting.held-orders' )->count(), 'It is still listed as held' );
+
+		return $order;
+	}
+
+	/**
+	 * @testdox Should release a held order moved to processing by hand when PayPal completes its capture, without changing its status.
+	 */
+	public function test_completed_capture_releases_an_order_moved_on_by_hand(): void {
+		$order = $this->held_order_moved_on_by_hand();
+		$stock = $this->stock();
+
+		$this->container->get( 'webhook.endpoint.controller' )->handle_request( $this->event_request( 'PAYMENT.CAPTURE.COMPLETED', $this->capture_resource( $order, 'PP-ORDER-1' ) ) );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $saved->get_status() );
+		$this->assertFalse( $this->has_held_meta( $saved ), 'The held meta is released, so the refund lock goes' );
+		$this->assertSame( 1, $this->count_notes( $saved, 'PayPal released the held payment. The order was no longer on hold, so its status was not changed.' ) );
+		$this->assertSame( 0, $this->count_notes( $saved, 'Payment successfully captured.' ) );
+		$this->assertSame( $stock, $this->stock() );
+		$this->assertSame( 0, $this->container->get( 'collecting.held-orders' )->count() );
+	}
+
+	/**
+	 * @testdox Should bring a held order moved back to pending payment by hand to paid when PayPal completes its capture.
+	 */
+	public function test_completed_capture_pays_a_held_order_moved_to_pending(): void {
+		$order = $this->wallet_order( '1' );
+		$order->update_status( 'pending' );
+
+		$this->container->get( 'webhook.endpoint.controller' )->handle_request( $this->event_request( 'PAYMENT.CAPTURE.COMPLETED', $this->capture_resource( $order, 'PP-ORDER-1' ) ) );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $saved->get_status() );
+		$this->assertSame( 1, $this->count_notes( $saved, 'Payment successfully captured.' ) );
+		$this->assertFalse( $this->has_held_meta( $saved ) );
+	}
+
+	/**
+	 * @testdox Should not create a refund for a held order moved to processing by hand when PayPal returns its payment: the status and stock stay, the store is told.
+	 */
+	public function test_returned_capture_of_an_order_moved_on_by_hand_creates_no_refund(): void {
+		$order = $this->held_order_moved_on_by_hand();
+		$stock = $this->stock();
+		$this->stub_captures( array( 'CAPTURE-1' => $this->capture_json( 'CAPTURE-1', 'REFUNDED' ) ) );
+
+		$this->container->get( 'webhook.endpoint.controller' )->handle_request( $this->event_request( 'PAYMENT.CAPTURE.REFUNDED', $this->refund_resource( $order, 'CAPTURE-1' ) ) );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'processing', $saved->get_status() );
+		$this->assertSame( array(), $saved->get_refunds(), 'No WooCommerce refund for money PayPal returned' );
+		$this->assertFalse( $this->has_held_meta( $saved ) );
+		$this->assertTrue( $this->sut->is_returned( $saved ) );
+		$this->assertSame( 1, $this->count_notes( $saved, 'PayPal returned the held payment to the customer because setup was not completed. The order was no longer on hold, so its status and stock were not changed.' ) );
+		$this->assertSame( $stock, $this->stock() );
+		$this->assertCount( 1, $this->returned, 'The store is told' );
+
+		$this->container->get( 'webhook.endpoint.controller' )->handle_request( $this->event_request( 'PAYMENT.CAPTURE.REFUNDED', $this->refund_resource( $order, 'CAPTURE-1' ), 'WH-EVENT-2' ) );
+		$this->assertSame( array(), wc_get_order( $order->get_id() )->get_refunds(), 'A second delivery creates no refund either' );
+		$this->assertCount( 1, $this->returned );
+	}
+
+	/**
+	 * @testdox Should release a held order cancelled by hand when PayPal returns its payment, without restoring stock twice.
+	 */
+	public function test_returned_capture_of_an_order_cancelled_by_hand(): void {
+		$order = $this->wallet_order( '1' );
+		$order->update_status( 'cancelled' );
+		$stock = $this->stock();
+		$this->stub_captures( array( 'CAPTURE-1' => $this->capture_json( 'CAPTURE-1', 'REFUNDED' ) ) );
+
+		$this->container->get( 'webhook.endpoint.controller' )->handle_request( $this->event_request( 'PAYMENT.CAPTURE.REFUNDED', $this->refund_resource( $order, 'CAPTURE-1' ) ) );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'cancelled', $saved->get_status() );
+		$this->assertSame( array(), $saved->get_refunds() );
+		$this->assertFalse( $this->has_held_meta( $saved ) );
+		$this->assertSame( $stock, $this->stock() );
+	}
+
+	/**
 	 * @testdox Should leave an order alone while another request holds its settlement lock, and take over a stale lock.
 	 */
 	public function test_lock_held_by_another_request(): void {

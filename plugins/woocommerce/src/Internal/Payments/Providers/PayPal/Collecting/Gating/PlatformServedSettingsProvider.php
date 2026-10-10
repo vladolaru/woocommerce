@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PayLaterMessagingSettings;
@@ -18,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 
 /**
  * The wallet's settings provider for a store the platform serves: saved PayPal and Venmo and authorize-only always read
- * as off, and the merchant email is the payee's.
+ * as off, and the merchant email is the payee's while the transport is configured.
  *
  * Every checkout reader of the setting (buttons, block method, vault component, Subscriptions mode, SDK v6) asks the
  * provider, so vaulting stays inert. The merchant's stored setting is only read, never changed.
@@ -36,6 +37,13 @@ class PlatformServedSettingsProvider extends SettingsProvider {
 	private CollectingState $state;
 
 	/**
+	 * The platform transport; without its credentials no button can render.
+	 *
+	 * @var PlatformTransport
+	 */
+	private PlatformTransport $transport;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param GeneralSettings           $general_settings            The general settings.
@@ -45,6 +53,7 @@ class PlatformServedSettingsProvider extends SettingsProvider {
 	 * @param StylingSettings           $styling_settings            The styling settings.
 	 * @param PayLaterMessagingSettings $paylater_messaging_settings The Pay Later messaging settings.
 	 * @param CollectingState           $state                       The collecting state, which holds the payee.
+	 * @param PlatformTransport         $transport                   The platform transport.
 	 */
 	public function __construct(
 		GeneralSettings $general_settings,
@@ -53,10 +62,12 @@ class PlatformServedSettingsProvider extends SettingsProvider {
 		SettingsModel $settings_model,
 		StylingSettings $styling_settings,
 		PayLaterMessagingSettings $paylater_messaging_settings,
-		CollectingState $state
+		CollectingState $state,
+		PlatformTransport $transport
 	) {
 		parent::__construct( $general_settings, $onboarding_profile, $payment_settings, $settings_model, $styling_settings, $paylater_messaging_settings );
-		$this->state = $state;
+		$this->state     = $state;
+		$this->transport = $transport;
 	}
 
 	/**
@@ -84,13 +95,13 @@ class PlatformServedSettingsProvider extends SettingsProvider {
 
 	/**
 	 * The payee's email: the store has no first-party merchant, and the wallet's gateway disabler hides the gateway
-	 * from every checkout when this is empty.
+	 * from every checkout when this is empty. Empty while the transport is not configured, since no button can render.
 	 *
 	 * @since 11.3.0
 	 *
 	 * @return string
 	 */
 	public function merchant_email(): string {
-		return $this->state->payee_email();
+		return $this->transport->is_ready() ? $this->state->payee_email() : '';
 	}
 }

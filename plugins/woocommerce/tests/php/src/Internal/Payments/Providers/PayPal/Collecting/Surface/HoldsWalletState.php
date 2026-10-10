@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use WC_Order;
 
@@ -60,6 +61,26 @@ trait HoldsWalletState {
 				'client_secret'      => 'test-client-secret',
 			)
 		);
+	}
+
+	/**
+	 * Run a callback while the PayPal Payments extension owns the wallet, as the arbiter reads it from the active plugins,
+	 * and give the ownership back afterwards.
+	 *
+	 * @param callable $callback The work.
+	 * @return mixed What the callback returns.
+	 */
+	private function as_extension_owner( callable $callback ) {
+		$arbiter = wc_get_container()->get( PayPalWalletRuntimeArbiter::class );
+		$active  = get_option( 'active_plugins', array() );
+		update_option( 'active_plugins', array_merge( (array) $active, array( PayPalWalletRuntimeArbiter::EXTENSION_PLUGIN_FILE ) ) );
+		$arbiter->invalidate();
+		try {
+			return $callback();
+		} finally {
+			update_option( 'active_plugins', $active );
+			$arbiter->invalidate();
+		}
 	}
 
 	/**

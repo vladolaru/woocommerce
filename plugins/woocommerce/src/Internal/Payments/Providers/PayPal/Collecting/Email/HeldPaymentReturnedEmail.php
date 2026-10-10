@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -71,7 +72,7 @@ class HeldPaymentReturnedEmail extends AbstractWalletEmail {
 	 *
 	 * @since 11.3.0
 	 *
-	 * @param mixed $order  The cancelled order.
+	 * @param mixed $order  The order: cancelled, or left as it was when the merchant had moved it off hold.
 	 * @param mixed $reason The capture status that ended the hold: `refunded`, `declined` or `failed`.
 	 */
 	public function trigger( $order = null, $reason = 'refunded' ): void {
@@ -98,6 +99,7 @@ class HeldPaymentReturnedEmail extends AbstractWalletEmail {
 		return array(
 			'order'              => $this->object,
 			'returned'           => 'refunded' === $this->reason,
+			'cancelled'          => $this->object instanceof WC_Order && $this->object->has_status( OrderStatus::CANCELLED ),
 			'email_heading'      => $this->get_heading(),
 			'additional_content' => $this->get_additional_content(),
 			'sent_to_admin'      => true,

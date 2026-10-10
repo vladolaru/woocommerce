@@ -188,6 +188,27 @@ class RetryFilterTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should leave a retry that carries the seller's assertion to the refund signer, asking the order's app for no token.
+	 */
+	public function test_retry_leaves_an_asserted_refund_to_the_signer(): void {
+		$transport = $this->transport();
+		$this->stub_tokens_and_referrals( array( 201 ) );
+		$this->context->enter( PlatformTransport::APP_MERCHANT_APP );
+		$args = array(
+			'method'  => 'POST',
+			'headers' => array(
+				'Authorization'         => 'Bearer token-merchant_app-0',
+				'PayPal-Auth-Assertion' => 'eyJhbGciOiJub25lIn0.e30.',
+			),
+		);
+
+		$retry = $this->build_sut( $transport )->handle_ppcp_retry_request_args( $args, 'https://api-m.sandbox.paypal.com/v2/payments/captures/CAPTURE-1/refund' );
+
+		$this->assertSame( $args, $retry );
+		$this->assertSame( array(), $this->issued, 'No token of the order\'s app is dropped or issued' );
+	}
+
+	/**
 	 * @testdox Should leave the other app's cached token alone.
 	 */
 	public function test_retry_keeps_the_other_apps_token(): void {

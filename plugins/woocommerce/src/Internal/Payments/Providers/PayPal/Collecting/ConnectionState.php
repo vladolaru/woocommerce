@@ -109,13 +109,17 @@ class ConnectionState {
 	/**
 	 * The state the platform and collecting options describe: platform connected, collecting, or dormant.
 	 *
+	 * Both options are written autoloaded, and the autoloaded set is the authority: an option is read only when it is in
+	 * that set, so a store that has neither, or only one, queries nothing for the other. The shell asks this on every
+	 * request of a store with no connection. An option stored without autoload reads as absent.
+	 *
 	 * @return string
 	 */
 	private function resolve_from_platform_options(): string {
-		if ( $this->has_value( $this->options->platform(), 'merchant_id' ) ) {
+		if ( $this->options->has_autoloaded( Options::PLATFORM ) && $this->has_value( $this->options->platform(), 'merchant_id' ) ) {
 			return self::PLATFORM_CONNECTED;
 		}
-		if ( $this->has_value( $this->options->collecting(), 'payee_email' ) ) {
+		if ( $this->options->has_autoloaded( Options::COLLECTING ) && $this->has_value( $this->options->collecting(), 'payee_email' ) ) {
 			return self::COLLECTING;
 		}
 

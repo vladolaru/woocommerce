@@ -77,6 +77,23 @@ class ProviderRowTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should give no notice on the extension's PayPal row while the extension owns the wallet: its setup route does not exist there.
+	 */
+	public function test_no_notice_while_the_extension_owns_the_wallet(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$this->sign_in_admin();
+
+		$notice = $this->as_extension_owner(
+			function () {
+				return $this->sut->handle_woocommerce_paypal_wallet_provider_notice( null, 'ppcp-gateway' );
+			}
+		);
+
+		$this->assertNull( $notice );
+	}
+
+	/**
 	 * @testdox Should give no notice without a first order, for another gateway, or when the store is not collecting.
 	 * @testWith ["no_order", "ppcp-gateway"]
 	 *           ["collecting", "stripe"]

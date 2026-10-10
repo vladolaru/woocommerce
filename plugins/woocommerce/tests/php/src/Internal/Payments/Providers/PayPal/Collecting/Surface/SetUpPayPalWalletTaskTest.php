@@ -45,6 +45,19 @@ class SetUpPayPalWalletTaskTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should point the task at the Plugins page while the extension owns the wallet, where the wallet's settings route does not exist.
+	 */
+	public function test_action_url_while_the_extension_owns_the_wallet(): void {
+		$url = $this->as_extension_owner(
+			function (): string {
+				return $this->sut->get_action_url();
+			}
+		);
+
+		$this->assertSame( admin_url( 'plugins.php' ), $url );
+	}
+
+	/**
 	 * @testdox Should show the task only when a wallet order exists and the store is not first-party connected: $state.
 	 * @testWith ["dormant", true]
 	 *           ["collecting", true]

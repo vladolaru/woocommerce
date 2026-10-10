@@ -47,7 +47,7 @@ final class RefundLock {
 	/**
 	 * Whether refunds of an order are locked: PayPal holds its capture, or it is a wallet order and the store still collects.
 	 * A wallet order is decided by OrderPin::is_wallet_order(). Filterable; see base_locked() for the answer before the filter.
-	 * The module's callback on the filter re-checks base_locked() and must never call is_locked(), which would recurse.
+	 * The shell's callback on the filter re-checks base_locked() and must never call is_locked(), which would recurse.
 	 *
 	 * @since 11.3.0
 	 *
@@ -72,7 +72,7 @@ final class RefundLock {
 
 	/**
 	 * Whether refunds of an order are locked before the filter: PayPal holds its capture, or it is a wallet order and the
-	 * store still collects. The order screen's Refund button asks the filter with false, so the module answers it from here.
+	 * store still collects. The order screen's Refund button asks the filter with false, so the shell's callback answers it from here.
 	 *
 	 * @since 11.3.0
 	 *
@@ -86,7 +86,7 @@ final class RefundLock {
 	}
 
 	/**
-	 * Lock the order screen's Refund button: the callback of the module on `woocommerce_paypal_wallet_refund_locked`.
+	 * Lock the order screen's Refund button: the shell's callback on `woocommerce_paypal_wallet_refund_locked`.
 	 *
 	 * The order items view applies the filter to false and nothing else answered it, so this answers it from the base
 	 * predicate. It keeps a lock another callback already set, never calls is_locked() (which applies the filter again),

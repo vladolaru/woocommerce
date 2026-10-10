@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\O
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\AuthAssertion;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\DirectPlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
@@ -62,6 +63,13 @@ class OrderProcessorSeamTest extends WalletTestCase {
 	private array $approved = array();
 
 	/**
+	 * PayPal order IDs the stub answers as completed with a completed capture, so the refund processor refunds them.
+	 *
+	 * @var string[]
+	 */
+	private array $refundable = array();
+
+	/**
 	 * The status details the stub's capture answers with: empty for a completed capture, else a pending one for the reason.
 	 *
 	 * @var string
@@ -95,7 +103,13 @@ class OrderProcessorSeamTest extends WalletTestCase {
 					$capture_state = '' === $this->pending_reason ? '"status":"COMPLETED"' : '"status":"PENDING","status_details":{"reason":"' . $this->pending_reason . '"}';
 					return $this->http_response( 201, '{"id":"' . basename( dirname( $path ) ) . '","status":"COMPLETED","intent":"CAPTURE","purchase_units":[{"reference_id":"default","amount":{"currency_code":"USD","value":"10.00"},"payments":{"captures":[{"id":"CAPTURE-1",' . $capture_state . ',"amount":{"currency_code":"USD","value":"10.00"},"final_capture":true,"seller_protection":{"status":"NOT_ELIGIBLE"}}]}}]}' );
 				}
-				$id     = basename( $path );
+				if ( '/refund' === substr( $path, -7 ) ) {
+					return $this->http_response( 201, '{"id":"REFUND-1","status":"COMPLETED","amount":{"currency_code":"USD","value":"5.00"}}' );
+				}
+				$id = basename( $path );
+				if ( in_array( $id, $this->refundable, true ) ) {
+					return $this->http_response( 200, '{"id":"' . $id . '","status":"COMPLETED","intent":"CAPTURE","purchase_units":[{"reference_id":"default","amount":{"currency_code":"USD","value":"10.00"},"payments":{"captures":[{"id":"CAPTURE-REF","status":"COMPLETED","amount":{"currency_code":"USD","value":"10.00"},"final_capture":true,"seller_protection":{"status":"NOT_ELIGIBLE"}}]}}]}' );
+				}
 				$status = in_array( $id, $this->approved, true ) ? 'APPROVED' : 'COMPLETED';
 				return $this->http_response( 200, '{"id":"' . $id . '","status":"' . $status . '","intent":"CAPTURE"}' );
 			}
@@ -374,6 +388,40 @@ class OrderProcessorSeamTest extends WalletTestCase {
 
 		$this->assertFalse( $result, 'The completed order has no capture to refund' );
 		$this->assert_gets_signed_by( PlatformTransport::APP_MERCHANT_APP, 'PP-SEAM-3' );
+	}
+
+	/**
+	 * @testdox Should refund a merchant-app capture after the connection through the platform app with the seller's assertion, and fetch the order through the pinned app.
+	 */
+	public function test_refund_after_the_connection_is_signed_for_the_seller(): void {
+		$this->set_state( ConnectionState::PLATFORM_CONNECTED );
+		$this->register_refund_gateway();
+		$this->refundable = array( 'PP-REF' );
+		$container        = $this->boot();
+		$wc_order         = $this->wallet_order( 'PP-REF', PlatformTransport::APP_MERCHANT_APP );
+		$wc_order->set_total( '10.00' );
+		$wc_order->save();
+
+		$result = $container->get( 'wcgateway.processor.refunds' )->process( $wc_order, 5.0, 'reason' );
+
+		$this->assertTrue( $result );
+		$refunds = array_values(
+			array_filter(
+				$this->http_requests,
+				static function ( array $entry ): bool {
+					return false !== strpos( $entry['url'], '/v2/payments/captures/CAPTURE-REF/refund' );
+				}
+			)
+		);
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( 'Bearer token-platform', $refunds[0]['request']['headers']['Authorization'] );
+		$this->assertSame( AuthAssertion::header( 'platform-id', 'M2' )['PayPal-Auth-Assertion'], $refunds[0]['request']['headers']['PayPal-Auth-Assertion'] ?? null );
+		$this->assert_gets_signed_by( PlatformTransport::APP_MERCHANT_APP, 'PP-REF' );
+		foreach ( $this->http_requests as $entry ) {
+			if ( false === strpos( $entry['url'], '/refund' ) ) {
+				$this->assertArrayNotHasKey( 'PayPal-Auth-Assertion', (array) ( $entry['request']['headers'] ?? array() ), 'Only the refund carries the assertion: ' . $entry['url'] );
+			}
+		}
 	}
 
 	/**

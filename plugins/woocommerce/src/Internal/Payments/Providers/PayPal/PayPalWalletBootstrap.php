@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\Col
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
@@ -119,7 +120,7 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 		add_action( 'add_option_woocommerce_ppcp-gateway_settings', array( $this, 'on_gateway_settings_added' ), 10, 2 );
 		// A dormant store never boots the collecting module, so the shell owns the command.
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			WP_CLI::add_command( 'wc paypal-wallet collect', array( new CollectCommand( $this->collecting_state() ), 'collect' ) ); // @phpstan-ignore class.notFound (WP-CLI is not installed when PHPStan runs.)
+			WP_CLI::add_command( 'wc paypal-wallet collect', array( new CollectCommand( $this->collecting_state(), array( RuntimeServices::class, 'transport' ) ), 'collect' ) ); // @phpstan-ignore class.notFound (WP-CLI is not installed when PHPStan runs.)
 		}
 	}
 
@@ -127,7 +128,8 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	 * Leave the collecting state when the PayPal Payments extension is activated: the extension takes over.
 	 *
 	 * Hooked to `activated_plugin`. The state is kept while orders are still held for the payee; the platform apps' cached
-	 * tokens are deleted either way, since the store leaves the platform.
+	 * tokens are deleted either way, since the store leaves the platform. Connecting the extension to a PayPal account
+	 * later is a first-party connection, which leaves the kept state too (see OwnerIndependent).
 	 *
 	 * @since 11.3.0
 	 *

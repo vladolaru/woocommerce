@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use WC_Order;
@@ -93,13 +94,20 @@ class OrderScreen {
 	}
 
 	/**
-	 * The text: confirm the email when the last seller status reads receivable but unconfirmed, else connect the wallet.
+	 * The text: what the Plugins page says while the extension owns the wallet; else confirm the email when the last seller
+	 * status reads receivable but unconfirmed, else connect the wallet.
 	 *
 	 * @return string
 	 */
 	private function text(): string {
 		$status = $this->options->seller_status();
 		$payee  = $this->options->payee_email();
+
+		// The extension owns the wallet: setup cannot complete from the store, so say what the Plugins page says.
+		if ( '' !== $payee && RuntimeServices::extension_owns_wallet() ) {
+			/* translators: %s: the email address of the PayPal account the payment waits for. */
+			return sprintf( __( 'The payment for this order is waiting for the PayPal account %s to be set up and confirmed.', 'woocommerce' ), $payee );
+		}
 
 		if ( '' !== $payee && ! empty( $status['payments_receivable'] ) && empty( $status['primary_email_confirmed'] ) ) {
 			/* translators: %s: the email address of the PayPal account the payment waits for. */

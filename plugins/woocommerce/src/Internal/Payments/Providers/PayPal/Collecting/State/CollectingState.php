@@ -174,8 +174,10 @@ class CollectingState {
 	 * Enter the collecting state with a fresh payee and tracking ID.
 	 *
 	 * A platform-connected store is refused: it already has a merchant ID. A bound payee has been paid, so a different
-	 * payee is refused; entering the same payee again changes nothing and writes nothing. Entering turns the wallet
-	 * gateway on, through its own settings, so the store takes PayPal payments; turning it off stays the merchant's.
+	 * payee, or the same one in another environment, is refused; entering the same payee again changes nothing and writes
+	 * nothing. Entering the same unbound payee in the same environment keeps its tracking ID, so a referral the merchant
+	 * already opened still matches. Entering turns the wallet gateway on, through its own settings, so the store takes
+	 * PayPal payments; turning it off stays the merchant's.
 	 *
 	 * @since 11.3.0
 	 *
@@ -183,8 +185,9 @@ class CollectingState {
 	 * @param string $environment  `sandbox` or `production`.
 	 *
 	 * @throws InvalidArgumentException When the email or the environment is not valid.
-	 * @throws RuntimeException         When the store is platform connected, a different payee is already bound, or the
-	 *                                  gateway cannot be turned on; nothing is written then.
+	 * @throws RuntimeException         When the store is platform connected, a different payee (or the same one in
+	 *                                  another environment) is already bound, or the gateway cannot be turned on; nothing
+	 *                                  is written then.
 	 */
 	public function enter( string $payee_email, string $environment ): void {
 		$payee_email = $this->valid_email( $payee_email );
@@ -194,12 +197,16 @@ class CollectingState {
 		if ( $this->is_platform_connected() ) {
 			throw new RuntimeException( 'The store is already platform connected; it cannot collect.' );
 		}
+		$current = $this->options->collecting();
+		$same    = $this->is_collecting() && $this->payee_email() === $payee_email && $this->string_value( $current, 'environment' ) === $environment;
 		if ( $this->is_collecting() && $this->is_payee_bound() ) {
-			if ( $this->payee_email() === $payee_email ) {
+			if ( $same ) {
 				return;
 			}
-			throw new RuntimeException( 'The payee is already bound; it cannot be replaced.' );
+			throw new RuntimeException( 'The payee is already bound; it cannot be replaced or moved to another environment.' );
 		}
+
+		$tracking_id = $same ? $this->string_value( $current, 'tracking_id' ) : '';
 
 		// The gateway first: when it cannot be turned on, the store is left as it was, not collecting with PayPal off.
 		$this->gateway->turn_on();
@@ -207,7 +214,7 @@ class CollectingState {
 			Options::COLLECTING,
 			array(
 				'payee_email' => $payee_email,
-				'tracking_id' => bin2hex( random_bytes( 16 ) ),
+				'tracking_id' => '' !== $tracking_id ? $tracking_id : bin2hex( random_bytes( 16 ) ),
 				'environment' => $environment,
 				'payee_bound' => false,
 			),
@@ -306,8 +313,9 @@ class CollectingState {
 	 * Leave the collecting state without a connection.
 	 *
 	 * A takeover or a disabled gateway keeps the state while orders are still held for the payee, so they can be
-	 * settled later; the state is deleted once none are held. A first-party connection always deletes it. An unknown
-	 * reason is refused. Deleting the state also deletes the platform apps' cached tokens.
+	 * settled later; the state is deleted once none are held. A first-party connection always deletes it, and the
+	 * platform connection with it, held orders or not: first-party credentials win over everything. An unknown reason is
+	 * refused. Deleting the state also deletes the platform apps' cached tokens.
 	 *
 	 * @since 11.3.0
 	 *
@@ -318,6 +326,7 @@ class CollectingState {
 	public function abandon( string $reason ): void {
 		switch ( $reason ) {
 			case self::ABANDON_FIRST_PARTY:
+				delete_option( Options::PLATFORM );
 				$this->delete_collecting_state();
 				return;
 			case self::ABANDON_TAKEOVER:

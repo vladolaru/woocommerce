@@ -23,7 +23,8 @@ use WC_Order;
  * events the store missed or rejected, such as those the extension's endpoint turned away while it owned the wallet.
  *
  * Each held capture is read through the app its order is pinned to and goes through the same settlement as the webhook
- * handlers. Runs daily through Action Scheduler while orders are held, on demand from WP-CLI, and once after the
+ * handlers. A run settles at most BATCH_SIZE orders and queues an async continuation for the rest. Runs daily through
+ * Action Scheduler while orders are held, on demand from WP-CLI and the panel's status check, and once after the
  * extension hands the wallet back.
  *
  * @since 11.3.0
@@ -44,6 +45,14 @@ final class Reconciler {
 	 * @since 11.3.0
 	 */
 	public const GROUP = 'wc-paypal-wallet';
+
+	/**
+	 * The most held orders one run settles: each costs a PayPal read, and a run can serve a REST request. The rest goes to
+	 * an async continuation.
+	 *
+	 * @since 11.3.0
+	 */
+	public const BATCH_SIZE = 25;
 
 	/**
 	 * The transient that throttles the schedule check on admin screens.
@@ -123,25 +132,52 @@ final class Reconciler {
 	}
 
 	/**
-	 * Run the reconcile from Action Scheduler.
+	 * Run the reconcile from Action Scheduler: the daily run and the hand-back run start at the oldest held order and check
+	 * onboarding; a continuation starts from the offset it was queued with and does not check onboarding again.
 	 *
 	 * @internal
 	 * @since 11.3.0
+	 *
+	 * @param mixed $offset       How many held orders to skip; anything but a non-negative number reads as none.
+	 * @param mixed $continuation Whether this run continues an earlier one.
+	 * @return array The summary of run().
 	 */
-	public function handle_woocommerce_paypal_wallet_reconcile(): void {
-		$this->run();
+	public function handle_woocommerce_paypal_wallet_reconcile( $offset = 0, $continuation = false ): array {
+		return $this->run( is_numeric( $offset ) ? max( 0, (int) $offset ) : 0, true !== $continuation );
 	}
 
 	/**
-	 * Settle every held order from its capture's status, then, while collecting, complete onboarding when the seller
-	 * status is complete. Never throws: a failure is logged and reported in the summary.
+	 * Settle one batch of held orders from their captures' status, then, while collecting and when asked, complete
+	 * onboarding when the seller status is complete. Never throws: a failure is logged and reported in the summary.
 	 *
 	 * @since 11.3.0
 	 *
+	 * @param int  $offset           How many held orders to skip, for a continuation.
+	 * @param bool $check_onboarding Whether to check onboarding; a continuation does not.
 	 * @return array{completed: int[], returned: int[], held: int[], unchanged: int[], failed: int[], onboarding: string}
-	 *         The order IDs by outcome, and the onboarding outcome: `completed`, `incomplete`, `not_collecting` or `failed`.
+	 *         The order IDs by outcome, and the onboarding outcome: `completed`, `incomplete`, `not_collecting`, `failed`
+	 *         or `skipped`.
 	 */
-	public function run(): array {
+	public function run( int $offset = 0, bool $check_onboarding = true ): array {
+		$summary               = $this->settle_held_orders( $offset );
+		$summary['onboarding'] = $check_onboarding ? $this->reconcile_onboarding() : 'skipped';
+		$this->maintain_schedule();
+
+		return $summary;
+	}
+
+	/**
+	 * Settle at most BATCH_SIZE held orders, oldest first from an offset, and queue an async continuation when more are
+	 * held. The continuation skips the orders of this batch that stay held (still pending, or failed to read); orders that
+	 * settled or left the list meanwhile are not counted, so no order is skipped. A batch that settled nothing and left
+	 * nothing listed queues nothing, so a chain always ends; the daily run picks up the rest. Never throws.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param int $offset How many held orders to skip.
+	 * @return array{completed: int[], returned: int[], held: int[], unchanged: int[], failed: int[]} The order IDs by outcome.
+	 */
+	public function settle_held_orders( int $offset = 0 ): array {
 		$settled = array(
 			HeldSettlement::OUTCOME_COMPLETED => array(),
 			HeldSettlement::OUTCOME_RETURNED  => array(),
@@ -149,39 +185,63 @@ final class Reconciler {
 			HeldSettlement::OUTCOME_UNCHANGED => array(),
 		);
 		$failed  = array();
+		$left    = 0;
+		$ids     = array();
 
 		try {
-			foreach ( $this->held_orders->all() as $listed ) {
+			$ids  = $this->held_orders->ids( self::BATCH_SIZE + 1, $offset );
+			$more = count( $ids ) > self::BATCH_SIZE;
+			foreach ( array_slice( $ids, 0, self::BATCH_SIZE ) as $id ) {
 				// The list was read up front; a webhook may have settled an order since, so read each one again.
-				$order = wc_get_order( $listed->get_id() );
+				$order = wc_get_order( $id );
 				if ( ! $order instanceof WC_Order || ! $this->held_orders->is_held( $order ) ) {
-					$settled[ HeldSettlement::OUTCOME_UNCHANGED ][] = $listed->get_id();
+					$settled[ HeldSettlement::OUTCOME_UNCHANGED ][] = $id;
 					continue;
 				}
 				try {
 					$read                  = $this->reader->read( $order );
 					$outcome               = $this->settlement->apply( $order, $read['capture'], $read['create_time'] );
 					$settled[ $outcome ][] = $order->get_id();
+					if ( HeldSettlement::OUTCOME_HELD === $outcome ) {
+						++$left;
+					}
 				} catch ( Throwable $throwable ) {
 					$failed[] = $order->get_id();
+					++$left;
 					$this->log_failure( sprintf( 'WooCommerce order #%d', $order->get_id() ), $throwable );
 				}
 			}
+			$progress = $left + count( $settled[ HeldSettlement::OUTCOME_COMPLETED ] ) + count( $settled[ HeldSettlement::OUTCOME_RETURNED ] );
+			if ( $more && $progress > 0 ) {
+				$this->queue_continuation( $offset + $left );
+			}
+		} catch ( Throwable $throwable ) {
+			$this->log_failure( 'the held orders', $throwable );
 		} finally {
 			$this->context->reset();
 		}
 
-		$onboarding = $this->reconcile_onboarding();
-		$this->maintain_schedule();
-
 		return array(
-			'completed'  => $settled[ HeldSettlement::OUTCOME_COMPLETED ],
-			'returned'   => $settled[ HeldSettlement::OUTCOME_RETURNED ],
-			'held'       => $settled[ HeldSettlement::OUTCOME_HELD ],
-			'unchanged'  => $settled[ HeldSettlement::OUTCOME_UNCHANGED ],
-			'failed'     => $failed,
-			'onboarding' => $onboarding,
+			'completed' => $settled[ HeldSettlement::OUTCOME_COMPLETED ],
+			'returned'  => $settled[ HeldSettlement::OUTCOME_RETURNED ],
+			'held'      => $settled[ HeldSettlement::OUTCOME_HELD ],
+			'unchanged' => $settled[ HeldSettlement::OUTCOME_UNCHANGED ],
+			'failed'    => $failed,
 		);
+	}
+
+	/**
+	 * Queue the reconcile of the next batch as an async action. Not unique: a continuation queued with the same offset
+	 * by the one that is running would otherwise be refused, and settling twice changes nothing.
+	 *
+	 * @param int $offset How many held orders the continuation skips.
+	 */
+	private function queue_continuation( int $offset ): void {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+			return;
+		}
+		as_enqueue_async_action( self::HOOK, array( $offset, true ), self::GROUP );
+		$this->logger->info( sprintf( 'PayPal wallet reconcile: more held orders than one run settles; continuing from offset %d.', $offset ) );
 	}
 
 	/**
@@ -223,11 +283,14 @@ final class Reconciler {
 	}
 
 	/**
-	 * While collecting, complete the state when the seller status is complete.
+	 * While collecting, complete the state when the seller status is complete. One PayPal call; reads no capture, so the
+	 * status check can run on its own, before the held orders.
+	 *
+	 * @since 11.3.0
 	 *
 	 * @return string `completed`, `incomplete`, `not_collecting` or `failed`.
 	 */
-	private function reconcile_onboarding(): string {
+	public function reconcile_onboarding(): string {
 		if ( ! $this->state->is_collecting() ) {
 			return 'not_collecting';
 		}

@@ -3,8 +3,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Reconcile;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\SellerStatus;
@@ -105,6 +108,25 @@ class ReconcilerTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should release a held order the merchant cancelled by hand once PayPal completes its capture, leaving it cancelled and its refunds unlocked.
+	 */
+	public function test_run_releases_a_held_order_cancelled_by_hand(): void {
+		$this->set_platform_connected();
+		$sut   = $this->sut();
+		$order = $this->wallet_order( '1' );
+		$order->update_status( 'cancelled' );
+		$this->stub_captures( array( 'CAPTURE-1' => $this->capture_json( 'CAPTURE-1', 'COMPLETED' ) ) );
+
+		$summary = $sut->run();
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( array( $order->get_id() ), $summary['completed'] );
+		$this->assertSame( 'cancelled', $saved->get_status() );
+		$this->assertFalse( $this->has_held_meta( $saved ) );
+		$this->assertFalse( ( new RefundLock( new ConnectionState() ) )->base_locked( $saved ), 'The refund lock lets go once the meta is released' );
+	}
+
+	/**
 	 * @testdox Should re-read a merchant-app order through the merchant app on a store that is now platform connected.
 	 */
 	public function test_run_reads_through_the_pin_not_the_current_state(): void {
@@ -156,6 +178,210 @@ class ReconcilerTest extends WalletTestCase {
 		$sut->run();
 		$this->assertSame( 'processing', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertFalse( $this->is_scheduled(), 'Unscheduled once nothing is held' );
+	}
+
+	/**
+	 * Hold one more order than a reconcile settles in one run, each with a capture PayPal reports with a status.
+	 *
+	 * @param string $status The capture status PayPal reports for every order.
+	 * @return int[] The order IDs, oldest first.
+	 */
+	private function hold_more_than_a_batch( string $status ): array {
+		$ids      = array();
+		$captures = array();
+		for ( $i = 1; $i <= Reconciler::BATCH_SIZE + 1; $i++ ) {
+			$order = $this->wallet_order( (string) $i );
+			$order->set_date_created( 1000 + $i );
+			$order->save();
+			$ids[]                       = $order->get_id();
+			$captures[ 'CAPTURE-' . $i ] = $this->capture_json( 'CAPTURE-' . $i, $status, 'PENDING' === $status ? 'UNILATERAL' : null );
+		}
+		$this->stub_captures( $captures );
+
+		return $ids;
+	}
+
+	/**
+	 * Whether a continuation of the reconcile is queued from an offset.
+	 *
+	 * @param int $offset The offset.
+	 * @return bool
+	 */
+	private function continuation_queued( int $offset ): bool {
+		return false !== as_next_scheduled_action( Reconciler::HOOK, array( $offset, true ), Reconciler::GROUP );
+	}
+
+	/**
+	 * Remove every queued run of the reconcile, so no action is left for the next test.
+	 */
+	private function unschedule_all(): void {
+		as_unschedule_all_actions( Reconciler::HOOK, null, Reconciler::GROUP );
+	}
+
+	/**
+	 * @testdox Should settle at most one batch of held orders per run and queue a continuation after the orders that stay held.
+	 */
+	public function test_run_settles_one_batch_and_queues_the_rest(): void {
+		$this->set_collecting();
+		$sut = $this->sut();
+		$ids = $this->hold_more_than_a_batch( 'PENDING' );
+
+		$summary = $sut->run();
+
+		$this->assertCount( Reconciler::BATCH_SIZE, $this->capture_reads() );
+		$this->assertSame( array_slice( $ids, 0, Reconciler::BATCH_SIZE ), $summary['held'] );
+		$this->assertTrue( $this->continuation_queued( Reconciler::BATCH_SIZE ), 'The orders that stay held are skipped by the next run' );
+
+		$summary = $sut->handle_woocommerce_paypal_wallet_reconcile( Reconciler::BATCH_SIZE, true );
+
+		$this->assertSame( array( end( $ids ) ), $summary['held'] );
+		$this->assertCount( Reconciler::BATCH_SIZE + 1, $this->capture_reads() );
+		$this->assertFalse( $this->continuation_queued( 2 * Reconciler::BATCH_SIZE ), 'Nothing is left' );
+		$this->unschedule_all();
+	}
+
+	/**
+	 * @testdox Should queue the continuation from the same offset when the batch's orders were settled and left the list.
+	 */
+	public function test_run_continues_from_the_orders_still_listed(): void {
+		$this->set_collecting();
+		$sut = $this->sut();
+		$ids = $this->hold_more_than_a_batch( 'COMPLETED' );
+
+		$summary = $sut->run();
+
+		$this->assertCount( Reconciler::BATCH_SIZE, $summary['completed'] );
+		$this->assertTrue( $this->continuation_queued( 0 ) );
+
+		$summary = $sut->handle_woocommerce_paypal_wallet_reconcile( 0, true );
+
+		$this->assertSame( array( end( $ids ) ), $summary['completed'] );
+		$this->assertSame( 0, $this->container_held_count() );
+		$this->unschedule_all();
+	}
+
+	/**
+	 * @testdox Should not count an order another request released during the batch as still listed, so the continuation skips no order.
+	 */
+	public function test_continuation_offset_leaves_out_an_order_released_meanwhile(): void {
+		$this->set_collecting();
+		$sut      = $this->sut();
+		$ids      = array();
+		$captures = array();
+		for ( $i = 1; $i <= Reconciler::BATCH_SIZE + 2; $i++ ) {
+			$order = $this->wallet_order( (string) $i );
+			$order->set_date_created( 1000 + $i );
+			$order->save();
+			$ids[]                       = $order->get_id();
+			$captures[ 'CAPTURE-' . $i ] = $this->capture_json( 'CAPTURE-' . $i, 2 === $i ? 'COMPLETED' : 'PENDING', 2 === $i ? null : 'UNILATERAL' );
+		}
+		$released = $ids[1];
+		$this->stub_http(
+			function ( $request, $url ) use ( $captures, $released ) {
+				unset( $request );
+				$capture_id = basename( (string) wp_parse_url( (string) $url, PHP_URL_PATH ) );
+				if ( ! isset( $captures[ $capture_id ] ) ) {
+					return new \WP_Error( 'unrouted', "Unrouted $url" );
+				}
+				if ( 'CAPTURE-2' === $capture_id ) {
+					// Another request settles this order while the reconcile reads its capture.
+					( new HeldOrders() )->release( wc_get_order( $released ) );
+				}
+				return $this->http_response( 200, $captures[ $capture_id ] );
+			}
+		);
+
+		$summary = $sut->run();
+
+		$this->assertSame( array( $released ), $summary['unchanged'] );
+		$this->assertTrue( $this->continuation_queued( Reconciler::BATCH_SIZE - 1 ), 'The 24 orders that stay held are skipped, not 25' );
+		$this->assertFalse( $this->continuation_queued( Reconciler::BATCH_SIZE ) );
+		$this->unschedule_all();
+	}
+
+	/**
+	 * @testdox Should queue no continuation when a batch settles nothing and leaves nothing listed, so a chain always ends.
+	 */
+	public function test_no_continuation_without_progress(): void {
+		$this->set_collecting();
+		$container = $this->boot_container( array( new TransportBindingModule( new FakePlatformTransport() ) ) );
+		$missing   = new class() extends HeldOrders {
+			/**
+			 * More IDs than a batch, of orders that do not exist.
+			 *
+			 * @param int $limit  The most IDs.
+			 * @param int $offset Ignored.
+			 * @return int[]
+			 */
+			public function ids( int $limit, int $offset = 0 ): array {
+				unset( $offset );
+				return range( 9900001, 9900000 + $limit );
+			}
+
+			/**
+			 * None held.
+			 *
+			 * @return int
+			 */
+			public function count(): int {
+				return 0;
+			}
+		};
+		$sut       = new Reconciler(
+			$missing,
+			$container->get( 'collecting.capture-reader' ),
+			$container->get( 'collecting.held-settlement' ),
+			$container->get( 'collecting.state' ),
+			$container->get( 'collecting.transport' ),
+			$container->get( 'collecting.order-app-context' ),
+			$container->get( 'woocommerce.logger.woocommerce' )
+		);
+
+		$summary = $sut->handle_woocommerce_paypal_wallet_reconcile( 0, true );
+
+		$this->assertCount( Reconciler::BATCH_SIZE, $summary['unchanged'] );
+		$this->assertFalse( as_has_scheduled_action( Reconciler::HOOK, null, Reconciler::GROUP ), 'No continuation is queued' );
+	}
+
+	/**
+	 * @testdox Should check onboarding on the daily run but not again on its continuations.
+	 */
+	public function test_continuations_skip_the_onboarding_check(): void {
+		$this->set_collecting();
+		$sut = $this->sut( new SellerStatus( '', true, false, true ) );
+
+		$continued = $sut->handle_woocommerce_paypal_wallet_reconcile( Reconciler::BATCH_SIZE, true );
+		$this->assertSame( array(), $this->transport->calls_to( 'seller_status' ) );
+		$this->assertSame( 'skipped', $continued['onboarding'] );
+
+		$daily = $sut->handle_woocommerce_paypal_wallet_reconcile();
+		$this->assertCount( 1, $this->transport->calls_to( 'seller_status' ) );
+		$this->assertSame( 'incomplete', $daily['onboarding'] );
+		delete_option( Options::SELLER_STATUS );
+	}
+
+	/**
+	 * The number of held orders left.
+	 *
+	 * @return int
+	 */
+	private function container_held_count(): int {
+		return ( new HeldOrders() )->count();
+	}
+
+	/**
+	 * @testdox Should check onboarding on its own, without reading any capture.
+	 */
+	public function test_reconcile_onboarding_reads_no_capture(): void {
+		$this->set_collecting();
+		$sut = $this->sut( new SellerStatus( 'M-SELLER', true, true, true ) );
+		$this->wallet_order( '1' );
+		$this->stub_captures( array() );
+
+		$this->assertSame( 'completed', $sut->reconcile_onboarding() );
+
+		$this->assertSame( array(), $this->capture_reads() );
+		$this->assertSame( 'M-SELLER', get_option( Options::PLATFORM )['merchant_id'] ?? null );
 	}
 
 	/**

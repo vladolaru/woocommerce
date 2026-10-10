@@ -170,14 +170,45 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should generate a different tracking ID on each fresh enter.
+	 * @testdox Should generate a fresh tracking ID when entering with a different payee or environment.
 	 */
 	public function test_enter_generates_a_fresh_tracking_id(): void {
 		$this->sut->enter( 'payee@example.com', 'production' );
 		$first = $this->sut->tracking_id();
-		$this->sut->enter( 'payee@example.com', 'production' );
+		$this->sut->enter( 'other@example.com', 'production' );
+		$second = $this->sut->tracking_id();
+		$this->sut->enter( 'other@example.com', 'sandbox' );
 
-		$this->assertNotSame( $first, $this->sut->tracking_id() );
+		$this->assertNotSame( $first, $second );
+		$this->assertNotSame( $second, $this->sut->tracking_id() );
+	}
+
+	/**
+	 * @testdox Should keep the tracking ID when entering again with the same unbound payee, so a referral already opened still matches.
+	 */
+	public function test_enter_keeps_the_tracking_id_for_the_same_payee(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$first = $this->sut->tracking_id();
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertSame( $first, $this->sut->tracking_id() );
+	}
+
+	/**
+	 * @testdox Should refuse to enter the same bound payee in another environment and write nothing.
+	 */
+	public function test_enter_refuses_the_same_bound_payee_in_another_environment(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$before = get_option( Options::COLLECTING );
+
+		try {
+			$this->sut->enter( 'payee@example.com', 'production' );
+			$this->fail( 'A bound payee cannot move to another environment' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertSame( $before, get_option( Options::COLLECTING ) );
+		}
 	}
 
 	/**
@@ -456,6 +487,41 @@ class CollectingStateTest extends WalletTestCase {
 		$held->abandon( 'first_party' );
 
 		$this->assertFalse( get_option( Options::COLLECTING ) );
+	}
+
+	/**
+	 * @testdox Should delete the platform option on a first-party connection too, even with held orders: first-party wins over everything.
+	 */
+	public function test_first_party_deletes_the_platform_option(): void {
+		$held = $this->state_with_held_orders( 2 );
+		$held->enter( 'payee@example.com', 'sandbox' );
+		$held->complete( 'MERCHANT1' );
+		$this->assertTrue( $held->is_platform_connected() );
+		update_option( Options::SELLER_STATUS, array( 'payments_receivable' => false ), false );
+
+		$held->abandon( CollectingState::ABANDON_FIRST_PARTY );
+
+		$this->assertFalse( get_option( Options::PLATFORM ) );
+		$this->assertFalse( get_option( Options::COLLECTING ) );
+		$this->assertFalse( get_option( Options::SELLER_STATUS ) );
+		$this->assertFalse( $held->is_platform_connected() );
+	}
+
+	/**
+	 * @testdox Should keep the platform option when the extension takes over or the gateway is turned off.
+	 *
+	 * @testWith ["takeover"]
+	 *           ["disabled"]
+	 *
+	 * @param string $reason The abandon reason.
+	 */
+	public function test_takeover_and_disable_keep_the_platform_option( string $reason ): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->complete( 'MERCHANT1' );
+
+		$this->sut->abandon( $reason );
+
+		$this->assertTrue( $this->sut->is_platform_connected() );
 	}
 
 	/**

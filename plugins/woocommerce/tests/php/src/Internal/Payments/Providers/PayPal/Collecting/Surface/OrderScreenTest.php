@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OrderScreen;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface\OwnerIndependent;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\BootsCollectingContainer;
@@ -61,7 +62,7 @@ class OrderScreenTest extends WalletTestCase {
 	}
 
 	/**
-	 * Boot the wallet with the collecting module, which hooks the refund lock onto the filter the order view applies.
+	 * Boot the wallet with the collecting module, as on a store the platform serves.
 	 */
 	private function boot_collecting_module(): void {
 		$this->boot_container( array( new TransportBindingModule( new FakePlatformTransport() ) ) );
@@ -222,6 +223,23 @@ class OrderScreenTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should say what the Plugins page says while the extension owns the wallet: the payment waits for the PayPal account, not for a connection.
+	 */
+	public function test_notice_while_the_extension_owns_the_wallet(): void {
+		$this->set_collecting();
+		$order = $this->held_order();
+
+		$html = $this->as_extension_owner(
+			function () use ( $order ): string {
+				return $this->printed( $order );
+			}
+		);
+
+		$this->assertStringContainsString( 'The payment for this order is waiting for the PayPal account payee@example.com to be set up and confirmed.', $html );
+		$this->assertStringNotContainsString( self::D1, $html );
+	}
+
+	/**
 	 * @testdox Should disable the Refund button, with the tooltip, for a held order.
 	 */
 	public function test_refund_button_is_disabled_for_a_held_order(): void {
@@ -230,6 +248,7 @@ class OrderScreenTest extends WalletTestCase {
 		$order->set_total( '25.00' );
 		$order->save();
 		$this->boot_collecting_module();
+		( new OwnerIndependent() )->register();
 
 		$html = $this->items_html( $order );
 
@@ -240,7 +259,9 @@ class OrderScreenTest extends WalletTestCase {
 	 * @testdox Should render the order items view of a regular order byte for byte as before the change.
 	 */
 	public function test_regular_order_markup_is_unchanged(): void {
+		$this->set_collecting();
 		$this->boot_collecting_module();
+		( new OwnerIndependent() )->register();
 		$order = wc_create_order();
 		$order->set_payment_method( 'bacs' );
 		$order->set_total( '25.00' );
@@ -251,16 +272,35 @@ class OrderScreenTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the Refund button enabled when the collecting module is not booted, as when the extension owns the wallet.
+	 * @testdox Should disable the Refund button of a held order when the collecting module is not booted, as when the extension owns the wallet or the gateway is off.
 	 */
-	public function test_refund_button_stays_enabled_without_the_module(): void {
+	public function test_refund_button_is_disabled_without_the_module(): void {
 		$this->set_collecting();
 		$order = $this->held_order();
 		$order->set_total( '25.00' );
 		$order->save();
+		( new OwnerIndependent() )->register();
 
 		$html = $this->items_html( $order );
 
-		$this->assertStringContainsString( '<button type="button" class="button refund-items">Refund</button>', $html );
+		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
+	}
+
+	/**
+	 * @testdox Should disable the Refund button of a held order after a first-party connection left the collecting state.
+	 */
+	public function test_refund_button_stays_disabled_after_a_first_party_connection(): void {
+		$this->set_collecting();
+		$this->set_first_order( 7 );
+		$order = $this->held_order();
+		$order->set_total( '25.00' );
+		$order->save();
+		$this->set_first_party_connected();
+		delete_option( Options::COLLECTING );
+		( new OwnerIndependent() )->register();
+
+		$html = $this->items_html( $order );
+
+		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
 	}
 }

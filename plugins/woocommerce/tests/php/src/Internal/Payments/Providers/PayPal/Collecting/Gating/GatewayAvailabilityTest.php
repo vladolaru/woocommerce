@@ -95,6 +95,18 @@ class GatewayAvailabilityTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should keep the wallet gateway off the available list, with no merchant email, on a collecting store whose transport is not configured.
+	 */
+	public function test_collecting_store_without_a_ready_transport_offers_no_gateway(): void {
+		$this->set_collecting_with_gateway_on();
+		$container = $this->boot_container( array( new TransportBindingModule( new FakePlatformTransport( array( 'ready' => false ) ) ) ) );
+		WC()->payment_gateways()->init();
+
+		$this->assertSame( '', $container->get( 'settings.settings-provider' )->merchant_email() );
+		$this->assertArrayNotHasKey( PayPalGateway::ID, WC()->payment_gateways()->get_available_payment_gateways(), 'No buttons can render, so the gateway is not offered' );
+	}
+
+	/**
 	 * @testdox Should report the payee as the merchant email of a collecting store, for the wallet's readers of the settings.
 	 */
 	public function test_collecting_store_merchant_email_is_the_payee(): void {

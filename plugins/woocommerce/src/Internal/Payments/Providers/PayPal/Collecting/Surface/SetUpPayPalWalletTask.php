@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\S
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\RuntimeServices;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
@@ -184,12 +185,13 @@ class SetUpPayPalWalletTask extends Task {
 	// phpcs:enable Squiz.Commenting.FunctionComment.WrongStyle
 
 	/**
-	 * Action URL: the wallet's settings.
+	 * Action URL: the wallet's settings, or the Plugins page while the extension owns the wallet, where that route does
+	 * not exist and the Plugins page notice explains what waits.
 	 *
 	 * @return string
 	 */
 	public function get_action_url() {
-		return PayPalWalletBootstrap::get_settings_url();
+		return RuntimeServices::extension_owns_wallet() ? admin_url( 'plugins.php' ) : PayPalWalletBootstrap::get_settings_url();
 	}
 
 	/**

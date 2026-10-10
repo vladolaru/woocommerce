@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\AuthAssertion;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\SellerStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Authentication\Bearer;
@@ -15,7 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
  * Options: `ready` (default true), `pick` (the app pick_order_app() answers, default `merchant_app`), `environment`
  * (default `sandbox`), `partner_merchant_id` (default `PARTNER-FAKE`), `seller_status` (a SellerStatus, default an
  * incomplete one, or a RuntimeException to throw), `webhooks` (the subscription map, default empty), `verify` (default
- * true; a bool for every app, or a map of bools by app, where a missing app does not verify).
+ * true; a bool for every app, or a map of bools by app, where a missing app does not verify). The assertion header is
+ * derived from the platform option, as the direct transport derives it.
  */
 final class FakePlatformTransport implements PlatformTransport {
 
@@ -164,7 +167,9 @@ final class FakePlatformTransport implements PlatformTransport {
 	 */
 	public function assertion_header( string $app ): array {
 		$this->record( __FUNCTION__, $app );
-		return array();
+		$merchant_id = ( new Options() )->platform()['merchant_id'] ?? '';
+
+		return is_string( $merchant_id ) && '' !== $merchant_id ? AuthAssertion::header( 'client-' . $app, $merchant_id ) : array();
 	}
 
 	/**

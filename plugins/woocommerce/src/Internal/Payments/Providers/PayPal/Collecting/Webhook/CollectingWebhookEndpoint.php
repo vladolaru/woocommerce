@@ -35,6 +35,16 @@ use WP_REST_Request;
 class CollectingWebhookEndpoint extends IncomingWebhookEndpoint {
 
 	/**
+	 * The headers PayPal signs a delivery with; verification needs all five.
+	 */
+	private const SIGNATURE_HEADERS = array( 'paypal-auth-algo', 'paypal-cert-url', 'paypal-transmission-id', 'paypal-transmission-sig', 'paypal-transmission-time' );
+
+	/**
+	 * The hosts PayPal serves its signing certificates from, live and sandbox.
+	 */
+	private const CERT_HOSTS = array( 'api.paypal.com', 'api-m.paypal.com', 'api.sandbox.paypal.com', 'api-m.sandbox.paypal.com' );
+
+	/**
 	 * The logger.
 	 *
 	 * @var LoggerInterface
@@ -166,13 +176,26 @@ class CollectingWebhookEndpoint extends IncomingWebhookEndpoint {
 	/**
 	 * Try each candidate app in turn; accept the first that verifies the delivery.
 	 *
+	 * A delivery without PayPal's five signature headers, or with headers that are not PayPal's shape, cannot verify, so it
+	 * is refused before any order lookup or call to PayPal: anyone can post to the route.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @phpstan-param WP_REST_Request<array<string, mixed>> $request
 	 * @return bool
 	 */
 	private function verify_with_candidates( WP_REST_Request $request ): bool {
 		$headers = $this->paypal_headers( $request );
-		$body    = $request->get_body();
+		foreach ( self::SIGNATURE_HEADERS as $name ) {
+			if ( '' === ( $headers[ $name ] ?? '' ) ) {
+				$this->collecting_logger->error( 'Webhook request rejected: a PayPal signature header is missing.' );
+				return false;
+			}
+		}
+		if ( ! $this->has_paypal_signature_shape( $headers ) ) {
+			$this->collecting_logger->error( 'Webhook request rejected: the PayPal signature headers are not PayPal\'s.' );
+			return false;
+		}
+		$body = $request->get_body();
 
 		foreach ( $this->candidate_apps( $request ) as $app ) {
 			try {
@@ -187,6 +210,23 @@ class CollectingWebhookEndpoint extends IncomingWebhookEndpoint {
 		$this->collecting_logger->error( 'Webhook verification failed.' );
 
 		return false;
+	}
+
+	/**
+	 * Whether the signature headers have the shape PayPal gives them: the certificate on one of PayPal's API hosts over
+	 * HTTPS, the SHA256withRSA algorithm and a transmission time that parses. A cheap check before any lookup.
+	 *
+	 * @param array<string, string> $headers The request headers by their PayPal names.
+	 * @return bool
+	 */
+	private function has_paypal_signature_shape( array $headers ): bool {
+		$cert = wp_parse_url( $headers['paypal-cert-url'] ?? '' );
+
+		return is_array( $cert )
+			&& 'https' === strtolower( (string) ( $cert['scheme'] ?? '' ) )
+			&& in_array( strtolower( (string) ( $cert['host'] ?? '' ) ), self::CERT_HOSTS, true )
+			&& 'sha256withrsa' === strtolower( $headers['paypal-auth-algo'] ?? '' )
+			&& false !== strtotime( $headers['paypal-transmission-time'] ?? '' );
 	}
 
 	/**

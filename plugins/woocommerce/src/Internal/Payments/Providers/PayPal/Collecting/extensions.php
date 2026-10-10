@@ -93,7 +93,8 @@ return array(
 		return array_values( array_diff( $previous, array( 'wcgateway.settings.wc-tasks.pay-later-task-config' ) ) );
 	},
 	// Saved PayPal and Venmo reads as off for every checkout reader, and the merchant email is the payee's, so the wallet's
-	// gateway disabler keeps the gateway available; built from the same settings models as the wallet's.
+	// gateway disabler keeps the gateway available, unless the transport is not configured; built from the same settings
+	// models as the wallet's.
 	'settings.settings-provider'                       => static function ( SettingsProvider $previous, ContainerInterface $c ): SettingsProvider {
 		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
 			return $previous;
@@ -106,7 +107,8 @@ return array(
 			$c->get( 'settings.data.settings' ),
 			$c->get( 'settings.data.styling' ),
 			$c->get( 'settings.data.paylater-messaging-settings' ),
-			$c->get( 'collecting.state' )
+			$c->get( 'collecting.state' ),
+			$c->get( 'collecting.transport' )
 		);
 	},
 	// The settings app's settings report the capture intent while served, and a save keeps the merchant's stored intent.
@@ -243,6 +245,7 @@ return array(
 				$c->get( 'collecting.webhook.foreign-guard' ),
 				$c->get( 'collecting.webhook.held-completed' ),
 				$c->get( 'collecting.webhook.held-returned' ),
+				$c->get( 'collecting.webhook.held-pending' ),
 				$c->get( 'collecting.webhook.onboarding-completed' ),
 			),
 			$previous

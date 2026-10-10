@@ -183,6 +183,9 @@ trait WebhookFixtures {
 		$request->set_header( 'Content-Type', 'application/json' );
 		$request->set_header( 'PAYPAL-TRANSMISSION-ID', 'TX-1' );
 		$request->set_header( 'PAYPAL-AUTH-ALGO', 'SHA256withRSA' );
+		$request->set_header( 'PAYPAL-CERT-URL', 'https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1' );
+		$request->set_header( 'PAYPAL-TRANSMISSION-SIG', 'SIG-1' );
+		$request->set_header( 'PAYPAL-TRANSMISSION-TIME', '2026-10-09T11:01:26Z' );
 		$request->set_body(
 			(string) wp_json_encode(
 				array(

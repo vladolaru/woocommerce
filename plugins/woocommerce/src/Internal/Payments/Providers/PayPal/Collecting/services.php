@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transpo
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\ForeignEventGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\Guards;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\HeldCaptureCompleted;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\HeldCapturePending;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\HeldCaptureReturned;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Webhook\MerchantOnboardingCompleted;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\Handler\PaymentCaptureCompleted;
@@ -114,6 +115,14 @@ return array(
 			$container->get( 'collecting.held-orders' ),
 			$container->get( 'collecting.held-settlement' ),
 			$container->get( 'collecting.capture-reader' ),
+			$container->get( 'woocommerce.logger.woocommerce' )
+		);
+	},
+	'collecting.webhook.held-pending'         => static function ( ContainerInterface $container ): HeldCapturePending {
+		return new HeldCapturePending(
+			$container->get( 'collecting.webhook.guards' ),
+			$container->get( 'collecting.held-capture' ),
+			$container->get( 'api.factory.capture' ),
 			$container->get( 'woocommerce.logger.woocommerce' )
 		);
 	},

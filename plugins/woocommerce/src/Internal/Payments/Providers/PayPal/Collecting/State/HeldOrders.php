@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State;
 
-use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
@@ -16,9 +16,10 @@ use WC_Order;
 /**
  * The orders whose payment PayPal holds for the collecting payee, found by an order query on the held-capture meta.
  *
- * A held order is an on-hold wallet order that carries the held-capture meta. Nothing is stored apart from the orders
- * themselves, so each order keeps its own deadline. The query goes through wc_get_orders(), which works with orders in
- * posts and with high-performance order storage.
+ * A held order is a wallet order that carries the held-capture meta, whatever its status: a merchant may move it on by
+ * hand, or cancel it, and PayPal still holds the payment until setup is complete. The list leaves out refunded orders,
+ * which render no Refund button. The list is ordered by date, then ID, so pages neither repeat nor skip an order. Nothing is stored apart from the orders themselves, so each order keeps its own deadline. The
+ * query goes through wc_get_orders(), which works with orders in posts and with high-performance order storage.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -33,16 +34,38 @@ class HeldOrders implements HeldOrdersCount {
 	public const HOLD_PERIOD = 30 * DAY_IN_SECONDS;
 
 	/**
-	 * The held orders.
+	 * A page of the held orders' IDs, oldest first. Loads no order.
 	 *
 	 * @since 11.3.0
 	 *
-	 * @return WC_Order[]
+	 * @param int $limit  The most IDs to return; at least one.
+	 * @param int $offset How many held orders to skip.
+	 * @return int[]
 	 */
-	public function all(): array {
-		$orders = wc_get_orders( array_merge( $this->query_args(), array( 'limit' => -1 ) ) );
+	public function ids( int $limit, int $offset = 0 ): array {
+		$ids = wc_get_orders(
+			array_merge(
+				$this->query_args(),
+				array(
+					'limit'   => max( 1, $limit ),
+					'offset'  => max( 0, $offset ),
+					'return'  => 'ids',
+					'orderby' => array(
+						'date' => 'ASC',
+						'ID'   => 'ASC',
+					),
+				)
+			)
+		);
 
-		return is_array( $orders ) ? array_values( $orders ) : array();
+		$listed = array();
+		foreach ( is_array( $ids ) ? $ids : array() as $id ) {
+			if ( is_numeric( $id ) ) {
+				$listed[] = (int) $id;
+			}
+		}
+
+		return $listed;
 	}
 
 	/**
@@ -59,8 +82,10 @@ class HeldOrders implements HeldOrdersCount {
 				$this->query_args(),
 				array(
 					'limit'   => max( 1, $limit ),
-					'orderby' => 'date',
-					'order'   => 'ASC',
+					'orderby' => array(
+						'date' => 'ASC',
+						'ID'   => 'ASC',
+					),
 				)
 			)
 		);
@@ -107,8 +132,10 @@ class HeldOrders implements HeldOrdersCount {
 				array(
 					'limit'   => 1,
 					'return'  => 'ids',
-					'orderby' => 'date',
-					'order'   => 'ASC',
+					'orderby' => array(
+						'date' => 'ASC',
+						'ID'   => 'ASC',
+					),
 				)
 			)
 		);
@@ -139,7 +166,8 @@ class HeldOrders implements HeldOrdersCount {
 	}
 
 	/**
-	 * Whether an order is held: an on-hold order that carries the held-capture meta, as the query reads it.
+	 * Whether an order is held: it carries the held-capture meta, whatever its status. The meta is the one held marker
+	 * the settlement, the webhooks and the refund lock read.
 	 *
 	 * @since 11.3.0
 	 *
@@ -147,7 +175,7 @@ class HeldOrders implements HeldOrdersCount {
 	 * @return bool
 	 */
 	public function is_held( WC_Order $order ): bool {
-		return ! empty( $order->get_meta( RefundLock::HELD_CAPTURE_META_KEY, true ) ) && $order->has_status( OrderStatus::ON_HOLD );
+		return ! empty( $order->get_meta( RefundLock::HELD_CAPTURE_META_KEY, true ) );
 	}
 
 	/**
@@ -172,11 +200,12 @@ class HeldOrders implements HeldOrdersCount {
 	private function query_args(): array {
 		return array(
 			'payment_method' => PayPalGateway::ID,
-			'status'         => OrderStatus::ON_HOLD,
-			'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- The held-capture meta is the held-order marker, and the query is already narrowed to on-hold wallet orders.
+			'status'         => array_values( array_diff( array_keys( wc_get_order_statuses() ), array( OrderInternalStatus::REFUNDED ) ) ),
+			'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- The held-capture meta is the held-order marker, and the query is already narrowed to wallet orders.
 				array(
 					'key'     => RefundLock::HELD_CAPTURE_META_KEY,
-					'compare' => 'EXISTS',
+					'value'   => '',
+					'compare' => '!=',
 				),
 			),
 		);

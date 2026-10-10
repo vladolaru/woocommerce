@@ -308,8 +308,8 @@ class CollectingRestEndpoint {
 	}
 
 	/**
-	 * Run the reconcile, which reads the seller status from PayPal and completes the setup when it is complete, then
-	 * answer the panel data with the check's outcome under `check`.
+	 * Read the seller status from PayPal first, on its own, and complete the setup when it is complete; then settle one
+	 * batch of held orders, the rest queued. Answer the panel data with the onboarding outcome under `check`.
 	 *
 	 * @since 11.3.0
 	 *
@@ -324,9 +324,13 @@ class CollectingRestEndpoint {
 			return new WP_Error( 'wc_paypal_wallet_not_running', __( 'PayPal Wallet is not running on this store, so its status cannot be checked.', 'woocommerce' ), array( 'status' => 503 ) );
 		}
 
-		$summary          = $reconciler->run();
+		// The status the merchant asked about first, on its own; then one batch of held orders, the rest queued.
+		$onboarding = $reconciler->reconcile_onboarding();
+		$reconciler->settle_held_orders();
+		$reconciler->maintain_schedule();
+
 		$payload          = $this->payload();
-		$payload['check'] = $summary['onboarding'];
+		$payload['check'] = $onboarding;
 
 		return rest_ensure_response( $payload );
 	}

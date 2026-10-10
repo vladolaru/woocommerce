@@ -17,15 +17,17 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Runtime
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use Throwable;
 use WC_Order;
 
 /**
  * Registers the surfaces that concern held orders, which must work whoever owns the wallet and whether or not the
- * wallet booted: the Home task, the Inbox note, the two admin emails and the notices on the Payments row, the order
- * screen and the Plugins page. It also registers, on every store, the collecting panel's REST routes and the core
- * profiler's PayPal Wallet card, which a store with no history needs to start collecting.
+ * wallet booted: the Home task, the Inbox note, the two admin emails, the notices on the Payments row, the order
+ * screen and the Plugins page, and the lock on the order screen's Refund button. It leaves the collecting and platform
+ * state when the merchant connects first-party. It also registers, on every store, the collecting panel's REST routes
+ * and the core profiler's PayPal Wallet card, which a store with no history needs to start collecting.
  *
  * The shell calls register() before any ownership check. It needs no container: it reads the autoloaded options
  * directly and builds the held-orders query only when the task is read. On a store that has no collecting or platform
@@ -41,6 +43,11 @@ class OwnerIndependent {
 	 * The priority that runs after the collecting module records a held capture (10) and claims the first order.
 	 */
 	private const AFTER_CAPTURE_RECORDED = 30;
+
+	/**
+	 * The priority of the refund-lock callback: before the default 10, so a callback at 10 can still unlock.
+	 */
+	private const REFUND_LOCK_PRIORITY = 1;
 
 	/**
 	 * The shared settings option the wallet's first-party connection is saved in.
@@ -88,6 +95,13 @@ class OwnerIndependent {
 	 * @var ProfilerCard|null
 	 */
 	private ?ProfilerCard $profiler_card = null;
+
+	/**
+	 * The refund lock the order screen's Refund button asks, built once.
+	 *
+	 * @var RefundLock|null
+	 */
+	private ?RefundLock $refund_lock = null;
 
 	/**
 	 * Constructor.
@@ -139,6 +153,11 @@ class OwnerIndependent {
 		$this->provider_row->register();
 		add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this->order_screen, 'handle_woocommerce_admin_order_data_after_payment_info' ) );
 		$this->plugins_page_notice->register();
+
+		// The order screen applies this filter to false, so the lock answers it from the order's meta and the options,
+		// whoever owns the wallet and whether the gateway is on. Early, so a later callback can still unlock.
+		$this->refund_lock = $this->refund_lock ?? new RefundLock( new ConnectionState( $this->options ) );
+		add_filter( 'woocommerce_paypal_wallet_refund_locked', array( $this->refund_lock, 'handle_woocommerce_paypal_wallet_refund_locked' ), self::REFUND_LOCK_PRIORITY, 2 );
 
 		// Action the note from the connection change itself: the platform option is written when setup completes, and the
 		// shared settings option when a merchant connects first-party. admin_init stays as a marker-gated fallback.
@@ -209,16 +228,26 @@ class OwnerIndependent {
 	}
 
 	/**
-	 * Keep the Inbox note in step with the store, as a fallback to the hooks that act on the change itself.
+	 * Keep the collecting state and the Inbox note in step with the store, as a fallback to the hooks that act on the
+	 * change itself.
 	 *
-	 * Hooked to `admin_init`. It skips AJAX requests (Heartbeat among them) and returns at once, with no query, once the
-	 * note is actioned. Before that it adds the note once for a store that has a wallet order and is not connected, and
-	 * actions it when the store is connected.
+	 * Hooked to `admin_init`. It skips AJAX requests (Heartbeat among them). It leaves the collecting and platform state
+	 * when a first-party connection exists, which reads the shared settings only on a store that has either option. It
+	 * then returns, with no query, once the note is actioned. Before that it adds the note once for a store that has a
+	 * wallet order and is not connected, and actions it when the store is connected.
 	 *
 	 * @since 11.3.0
 	 */
 	public function sync_note(): void {
-		if ( wp_doing_ajax() || Options::NOTE_ACTIONED === $this->options->note_state() || $this->options->first_order_id() <= 0 ) {
+		if ( wp_doing_ajax() ) {
+			return;
+		}
+		$this->guarded(
+			function (): void {
+				$this->leave_for_first_party();
+			}
+		);
+		if ( Options::NOTE_ACTIONED === $this->options->note_state() || $this->options->first_order_id() <= 0 ) {
 			return;
 		}
 
@@ -251,19 +280,43 @@ class OwnerIndependent {
 	}
 
 	/**
-	 * Action the Inbox note when a connection option is written.
+	 * Leave the collecting and platform state on a first-party connection, and action the Inbox note, when a connection
+	 * option is written.
 	 *
-	 * Hooked to the add and update hooks of the platform option and of the shared settings option. Cheap when the note is
-	 * not waiting: the note-state option is read from the autoloaded set.
+	 * Hooked to the add and update hooks of the platform option and of the shared settings option. Cheap when neither
+	 * applies: the collecting, platform and note-state options are read from the autoloaded set.
 	 *
 	 * @since 11.3.0
 	 */
 	public function handle_connection_change(): void {
 		$this->guarded(
+			function (): void {
+				$this->leave_for_first_party();
+			}
+		);
+		$this->guarded(
 			static function (): void {
 				InboxNote::possibly_action();
 			}
 		);
+	}
+
+	/**
+	 * Leave the collecting and platform state when the merchant connected first-party: first-party credentials win over
+	 * everything, held orders or not. The held orders keep their meta, so their surfaces stay; they are settled by hand.
+	 *
+	 * Reads the shared settings only on a store that has a collecting or platform option, both answered from the
+	 * autoloaded set.
+	 */
+	private function leave_for_first_party(): void {
+		if ( ! $this->options->has_autoloaded( Options::COLLECTING ) && ! $this->options->has_autoloaded( Options::PLATFORM ) ) {
+			return;
+		}
+		if ( ! GeneralSettings::read_connection_from_options()['connected'] ) {
+			return;
+		}
+
+		( new CollectingState( $this->options, new HeldOrders() ) )->abandon( CollectingState::ABANDON_FIRST_PARTY );
 	}
 
 	/**
