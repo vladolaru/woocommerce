@@ -80,6 +80,9 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		foreach ( array( 'giropay', 'sofort' ) as $payment_method_id ) {
 			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is discontinued and should have no definition." );
 		}
+		foreach ( WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS as $payment_method_id ) {
+			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is listed as discontinued, so cutover removes it from settings; it must have no definition." );
+		}
 		$this->assertNull( $this->registry->get( 'jcb' ), 'The standalone extension has no JCB payment method definition.' );
 	}
 
@@ -130,6 +133,20 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
+	}
+
+	/**
+	 * Client 11.1.0 keeps a valid filter return as it is, an empty list included (`includes/class-wc-payment-gateway-wcpay.php:4864-4879`).
+	 *
+	 * @testdox Should offer no payment method when an availability filter callback returns an empty list.
+	 */
+	public function test_availability_filter_empty_list_offers_no_payment_method(): void {
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static fn(): array => array()
+		);
+
+		$this->assertSame( array(), $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
 	}
 
 	/**

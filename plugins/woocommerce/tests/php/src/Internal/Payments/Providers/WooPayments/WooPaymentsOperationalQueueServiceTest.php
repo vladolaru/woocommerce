@@ -865,7 +865,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 
 		// A GB account: Amazon Pay's supported currencies there include EUR (client 11.1.0
-		// `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
+		// `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`). The account fields follow the
+		// recorded Fixtures/rec-t60-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
 		$account_service = $this->create_account_service(
 			array(
 				'account_id'       => 'acct_native_test',

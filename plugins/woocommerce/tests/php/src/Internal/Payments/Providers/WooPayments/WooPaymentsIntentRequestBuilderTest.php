@@ -479,6 +479,26 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 declares these methods with the refunds capability only, no tokenization, so they are never saved for
+	 * later (`includes/payment-methods/Configs/Definitions/IdealDefinition.php:125-129`, `BancontactDefinition.php:125-129`,
+	 * `P24Definition.php:128-132`, `EpsDefinition.php:125-129`).
+	 *
+	 * @testdox Should not request setup_future_usage for a non-reusable payment method when saving is requested.
+	 * @testWith ["ideal"]
+	 *           ["bancontact"]
+	 *           ["p24"]
+	 *           ["eps"]
+	 *
+	 * @param string $payment_method_id Non-reusable payment method ID.
+	 */
+	public function test_setup_future_usage_is_not_requested_for_non_reusable_methods( string $payment_method_id ): void {
+		$request = $this->build_save_requested_charge( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id, 'pm_' . $payment_method_id );
+
+		$this->assertSame( array( $payment_method_id ), $request['payment_method_types'] );
+		$this->assertArrayNotHasKey( 'setup_future_usage', $request );
+	}
+
+	/**
 	 * Client 11.1.0 reads reusability from the registered payment methods (`includes/class-wc-payments.php:616-645`), which
 	 * the availability filter does not change.
 	 *
