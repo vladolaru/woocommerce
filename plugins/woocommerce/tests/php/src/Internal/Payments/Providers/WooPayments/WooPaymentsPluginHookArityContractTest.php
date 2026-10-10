@@ -614,11 +614,11 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Group `payment_method_availability` (1 hook): the available-payment-methods registry read.
+	 * Group `payment_method_availability` (1 hook): the account's available-payment-methods read.
 	 */
 	private function probe_payment_method_availability(): void {
 		$registry = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
-		$registry->get_all();
+		$registry->get_available_payment_method_ids_for_account( wc_get_container()->get( WooPaymentsAccountService::class ) );
 	}
 
 	/**
@@ -634,15 +634,13 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `order_success_logos` (2 hooks): the thank-you-page payment method logo renderer.
 	 */
 	private function probe_order_success_logos(): void {
-		$order       = new WC_Order();
-		$page        = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
-		$registry    = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
-		$definitions = $registry->get_all();
-		$definition  = $definitions['ideal'] ?? reset( $definitions );
+		$order      = new WC_Order();
+		$page       = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
+		$definition = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get( 'ideal' );
 
-		// A registry with no definitions must fail this row, not silently skip it: an empty
-		// registry is exactly the regression this probe exists to catch.
-		$this->assertNotFalse( $definition, 'The native payment method registry must have at least one definition to probe order_success_logos.' );
+		// A missing definition must fail this row, not silently skip it: a registry without it is
+		// exactly the regression this probe exists to catch.
+		$this->assertNotNull( $definition, 'The native payment method registry must have the iDEAL definition to probe order_success_logos.' );
 
 		$this->native_invoke( $page, 'render_definition_title', array( $definition, $order, false ) );
 	}

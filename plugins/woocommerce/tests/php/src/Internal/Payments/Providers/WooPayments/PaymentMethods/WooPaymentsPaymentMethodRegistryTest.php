@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use WC_Unit_Test_Case;
 
 /**
@@ -75,7 +76,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Registry exposes the payment method definitions in display order, without the discontinued methods.
 	 */
 	public function test_registry_exposes_definition_order_without_discontinued_methods(): void {
-		$this->assertSame( self::EXPECTED_DEFINITION_IDS, array_keys( $this->registry->get_all() ) );
+		$this->assertSame( self::EXPECTED_DEFINITION_IDS, array_keys( $this->registry->get_registered( $this->create_account_service() ) ) );
 		foreach ( array( 'giropay', 'sofort' ) as $payment_method_id ) {
 			$this->assertNull( $this->registry->get( $payment_method_id ), "{$payment_method_id} is discontinued and should have no definition." );
 		}
@@ -83,7 +84,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Availability filter receives one ordered ID-list argument exactly once and controls the catalog.
+	 * @testdox Availability filter receives one ordered ID-list argument exactly once and controls the available methods.
 	 */
 	public function test_availability_filter_receives_oracle_shape_once_and_controls_catalog(): void {
 		$filter_calls = 0;
@@ -100,16 +101,15 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			99
 		);
 
-		$available_definitions = $this->registry->get_all();
+		$available_ids = $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() );
 
-		$this->assertSame( 1, $filter_calls, 'One registry catalog computation should dispatch the availability filter once.' );
+		$this->assertSame( 1, $filter_calls, 'One available-methods computation should dispatch the availability filter once.' );
 		$this->assertCount( 1, $filter_args, 'The pinned oracle passes no gateway or context argument.' );
 		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $filter_args[0], 'The filter should receive every definition ID in registry order.' );
-		$this->assertArrayNotHasKey( 'bancontact', $available_definitions, 'A filtered method should not remain in the available definition catalog.' );
 		$this->assertSame(
 			array_values( array_diff( self::EXPECTED_DEFINITION_IDS, array( 'bancontact' ) ) ),
-			array_keys( $available_definitions ),
-			'The remaining definition order should follow the normalized filtered ID list.'
+			$available_ids,
+			'The available methods should follow the normalized filtered ID list.'
 		);
 	}
 
@@ -129,8 +129,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			static fn() => $filter_return
 		);
 
-		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $this->registry->get_available_payment_method_ids() );
-		$this->assertSame( self::EXPECTED_DEFINITION_IDS, array_keys( $this->registry->get_all() ) );
+		$this->assertSame( self::EXPECTED_DEFINITION_IDS, $this->registry->get_available_payment_method_ids_for_account( $this->create_account_service() ) );
 	}
 
 	/**
@@ -201,7 +200,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 		add_filter( 'gettext', $filter, 10, 3 );
 
 		try {
-			foreach ( ( new WooPaymentsPaymentMethodRegistry() )->get_all() as $id => $definition ) {
+			foreach ( ( new WooPaymentsPaymentMethodRegistry() )->get_registered( $this->create_account_service() ) as $id => $definition ) {
 				foreach ( array( null, 'US', 'GB' ) as $country ) {
 					$this->assertStringStartsWith( 'T:', $definition->get_title( $country ), "Untranslated title for {$id} ({$country})" );
 					$this->assertStringStartsWith( 'T:', $definition->get_description( $country ), "Untranslated description for {$id} ({$country})" );
@@ -312,7 +311,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * @testdox Every registry-projected icon is published with the WooCommerce plugin.
 	 */
 	public function test_registry_icon_assets_exist(): void {
-		foreach ( $this->registry->get_all() as $definition ) {
+		foreach ( $this->registry->get_registered( $this->create_account_service() ) as $definition ) {
 			$countries = array_merge( array( null ), $definition->get_supported_countries() );
 			foreach ( $countries as $country ) {
 				$asset_paths = array(
@@ -665,5 +664,27 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * Create an account service whose account has a fee for every payment method, so Amazon Pay is registered and every
+	 * method is available. Fees are keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json
+	 * `account.fees`.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service(): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country' => 'US',
+				'fees'    => array_fill_keys( self::EXPECTED_DEFINITION_IDS, array() ),
+			)
+		);
+
+		return $account_service;
 	}
 }

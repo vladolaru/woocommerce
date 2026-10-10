@@ -50,35 +50,6 @@ class WooPaymentsPaymentMethodRegistry {
 	private array $definitions = array();
 
 	/**
-	 * Get all registered definitions keyed by payment method ID.
-	 *
-	 * @return array<string,WooPaymentsPaymentMethodDefinition>
-	 */
-	public function get_all(): array {
-		$this->initialize_definitions();
-
-		$available_definitions = array();
-		foreach ( $this->get_available_payment_method_ids() as $payment_method_id ) {
-			if ( is_string( $payment_method_id ) && isset( $this->definitions[ $payment_method_id ] ) ) {
-				$available_definitions[ $payment_method_id ] = $this->definitions[ $payment_method_id ];
-			}
-		}
-
-		return $available_definitions;
-	}
-
-	/**
-	 * Get available payment method IDs in WooPayments' display order.
-	 *
-	 * @return string[]
-	 */
-	public function get_available_payment_method_ids(): array {
-		$this->initialize_definitions();
-
-		return $this->filter_available_payment_method_ids( array_keys( $this->definitions ) );
-	}
-
-	/**
 	 * Get the definitions WooPayments registers on this store, keyed by payment method ID in WooPayments' display order.
 	 *
 	 * Every definition, with Amazon Pay only while its feature is on. The availability filter does not apply here: it
