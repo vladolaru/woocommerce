@@ -23,24 +23,34 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
@@ -104,6 +114,28 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	private const API_TRANSPORT_EXPECTED_ARGS = array(
 		'api'    => 'disputes',
 		'method' => 'GET',
+	);
+
+	/**
+	 * The native request class each plugin request class in the fixture's `@param` types is checked against.
+	 *
+	 * Native passes its own request objects to the plugin's request filters and does not declare the plugin's
+	 * `WCPay\Core\Server\Request` classes, so a fixture type naming one is satisfied by the request native sends in its place.
+	 * Keys are the client 11.1.0 classes in `includes/core/server/request/`.
+	 *
+	 * @var array<string,class-string>
+	 */
+	private const PLUGIN_REQUEST_TYPES = array(
+		'WCPay\Core\Server\Request\Get_Request'           => WooPaymentsApiRequest::class, // class-get-request.php.
+		'WCPay\Core\Server\Request\Get_PM_Promotions'     => WooPaymentsGetPmPromotionsRequest::class, // class-get-pm-promotions.php.
+		'WCPay\Core\Server\Request\Activate_PM_Promotion' => WooPaymentsActivatePmPromotionRequest::class, // class-activate-pm-promotion.php.
+		'WCPay\Core\Server\Request\Get_Account_Capital_Link' => WooPaymentsGetAccountCapitalLinkRequest::class, // class-get-account-capital-link.php.
+		'WCPay\Core\Server\Request\List_Authorizations'   => WooPaymentsAuthorizationsListRequest::class, // class-list-authorizations.php.
+		'WCPay\Core\Server\Request\List_Deposits'         => WooPaymentsDepositsListRequest::class, // class-list-deposits.php.
+		'WCPay\Core\Server\Request\List_Disputes'         => WooPaymentsDisputesListRequest::class, // class-list-disputes.php.
+		'WCPay\Core\Server\Request\List_Documents'        => WooPaymentsDocumentsListRequest::class, // class-list-documents.php.
+		'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions' => WooPaymentsFraudOutcomeTransactionsListRequest::class, // class-list-fraud-outcome-transactions.php.
+		'WCPay\Core\Server\Request\List_Transactions'     => WooPaymentsTransactionsListRequest::class, // class-list-transactions.php.
 	);
 
 	/**
@@ -419,6 +451,8 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 			if ( isset( $scalar_map[ $candidate ] ) && gettype( $value ) === $scalar_map[ $candidate ] ) {
 				return;
 			}
+
+			$candidate = self::PLUGIN_REQUEST_TYPES[ $candidate ] ?? $candidate;
 
 			if ( class_exists( $candidate ) && $value instanceof $candidate ) {
 				return;

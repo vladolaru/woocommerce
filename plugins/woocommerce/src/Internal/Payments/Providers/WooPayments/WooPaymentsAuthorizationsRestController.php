@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -380,7 +379,6 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * @return array<string,mixed>
 	 */
 	private function apply_authorizations_request_filter( array $params ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsAuthorizationsListRequest::class );
 		$request = WooPaymentsAuthorizationsListRequest::from_params( $params );
 
 		/**

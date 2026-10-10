@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Request;
@@ -319,7 +318,6 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_filtered_deposits_list_params( WP_REST_Request $request ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsDepositsListRequest::class );
 		$deposits_request = WooPaymentsDepositsListRequest::from_rest_request( $request );
 
 		/**

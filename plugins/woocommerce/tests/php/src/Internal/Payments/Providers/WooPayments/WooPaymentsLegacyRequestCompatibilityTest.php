@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountLoginDataRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
@@ -19,12 +18,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsResponse;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for legacy WooPayments request aliases and their send contracts.
+ * Tests for the WooPayments request objects and their send contracts.
  */
 class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 
@@ -65,8 +65,6 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $this->http_client, $this->create_account_service(), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
-
-		$this->register_compat_class_aliases();
 	}
 
 	/**
@@ -87,9 +85,8 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	 * @dataProvider concrete_request_provider
 	 *
 	 * @param class-string $native_class Native request class.
-	 * @param class-string $legacy_class Legacy request alias.
 	 */
-	public function test_unknown_custom_set_param_survives_unchanged( string $native_class, string $legacy_class ): void {
+	public function test_unknown_custom_set_param_survives_unchanged( string $native_class ): void {
 		$request = $this->create_request( $native_class );
 		$value   = array(
 			'nested'  => array( 'alpha' => 1 ),
@@ -99,7 +96,6 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		$result = $request->set( 'extension_custom_param', $value );
 
 		$this->assertSame( $request, $result, 'set() should preserve the oracle fluent return contract.' );
-		$this->assertInstanceOf( $legacy_class, $request, 'The custom-param behavior should be exposed through the legacy alias.' );
 		$this->assertSame( $value, $request->get_params()['extension_custom_param'], 'Custom parameter values should not be normalized or dropped.' );
 	}
 
@@ -206,7 +202,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		} elseif ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $native_class ) {
 			$this->assertSame( array(), $result, 'Fraud-outcome requests should apply their custom array formatter.' );
 		} else {
-			$this->assertInstanceOf( 'WCPay\Core\Server\Response', $result, 'Normally formatted requests should return the legacy Response type.' );
+			$this->assertInstanceOf( WooPaymentsResponse::class, $result, 'Normally formatted requests should return the Response type.' );
 			$this->assertSame(
 				$returns_raw ? $this->http_client->response : $decoded_response,
 				$result->to_array(),
@@ -216,10 +212,10 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy Response is immutable ArrayAccess with an exact to_array view.
+	 * @testdox The response is immutable ArrayAccess with an exact to_array view.
 	 */
 	public function test_legacy_response_array_access_and_to_array_contract(): void {
-		$response_class = 'WCPay\Core\Server\Response';
+		$response_class = WooPaymentsResponse::class;
 		$data           = array( 'answer' => 42 );
 		$response       = new $response_class( $data );
 
@@ -230,13 +226,13 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy Response rejects writes and unsets.
+	 * @testdox The response rejects writes and unsets.
 	 * @dataProvider response_mutation_provider
 	 *
 	 * @param string $operation Mutation operation.
 	 */
 	public function test_legacy_response_is_immutable( string $operation ): void {
-		$response_class = 'WCPay\Core\Server\Response';
+		$response_class = WooPaymentsResponse::class;
 		$response       = new $response_class( array( 'answer' => 42 ) );
 
 		$this->expectException( \Throwable::class );
@@ -295,39 +291,25 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide every native-to-legacy request alias.
+	 * Provide every concrete request class.
 	 *
-	 * @return array<string,array{class-string,class-string}>
-	 */
-	public function legacy_alias_provider(): array {
-		return array(
-			'base request'              => array( WooPaymentsPaginatedListRequest::class, 'WCPay\Core\Server\Request' ),
-			'paginated request'         => array( WooPaymentsPaginatedListRequest::class, 'WCPay\Core\Server\Request\Paginated' ),
-			'authorizations list'       => array( WooPaymentsAuthorizationsListRequest::class, 'WCPay\Core\Server\Request\List_Authorizations' ),
-			'deposits list'             => array( WooPaymentsDepositsListRequest::class, 'WCPay\Core\Server\Request\List_Deposits' ),
-			'disputes list'             => array( WooPaymentsDisputesListRequest::class, 'WCPay\Core\Server\Request\List_Disputes' ),
-			'documents list'            => array( WooPaymentsDocumentsListRequest::class, 'WCPay\Core\Server\Request\List_Documents' ),
-			'fraud outcomes list'       => array( WooPaymentsFraudOutcomeTransactionsListRequest::class, 'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions' ),
-			'transactions list'         => array( WooPaymentsTransactionsListRequest::class, 'WCPay\Core\Server\Request\List_Transactions' ),
-			'reporting balance summary' => array( WooPaymentsReportingBalanceSummaryRequest::class, 'WCPay\Core\Server\Request\Get_Reporting_Balance_Summary' ),
-			'generic get request'       => array( WooPaymentsApiRequest::class, 'WCPay\Core\Server\Request\Get_Request' ),
-			'get PM promotions'         => array( WooPaymentsGetPmPromotionsRequest::class, 'WCPay\Core\Server\Request\Get_PM_Promotions' ),
-			'activate PM promotion'     => array( WooPaymentsActivatePmPromotionRequest::class, 'WCPay\Core\Server\Request\Activate_PM_Promotion' ),
-			'get account capital link'  => array( WooPaymentsGetAccountCapitalLinkRequest::class, 'WCPay\Core\Server\Request\Get_Account_Capital_Link' ),
-			'get account login data'    => array( WooPaymentsGetAccountLoginDataRequest::class, 'WCPay\Core\Server\Request\Get_Account_Login_Data' ),
-		);
-	}
-
-	/**
-	 * Provide every concrete native-to-legacy request alias.
-	 *
-	 * @return array<string,array{class-string,class-string}>
+	 * @return array<string,array{class-string}>
 	 */
 	public function concrete_request_provider(): array {
-		$aliases = $this->legacy_alias_provider();
-		unset( $aliases['base request'], $aliases['paginated request'] );
-
-		return $aliases;
+		return array(
+			'authorizations list'       => array( WooPaymentsAuthorizationsListRequest::class ),
+			'deposits list'             => array( WooPaymentsDepositsListRequest::class ),
+			'disputes list'             => array( WooPaymentsDisputesListRequest::class ),
+			'documents list'            => array( WooPaymentsDocumentsListRequest::class ),
+			'fraud outcomes list'       => array( WooPaymentsFraudOutcomeTransactionsListRequest::class ),
+			'transactions list'         => array( WooPaymentsTransactionsListRequest::class ),
+			'reporting balance summary' => array( WooPaymentsReportingBalanceSummaryRequest::class ),
+			'generic get request'       => array( WooPaymentsApiRequest::class ),
+			'get PM promotions'         => array( WooPaymentsGetPmPromotionsRequest::class ),
+			'activate PM promotion'     => array( WooPaymentsActivatePmPromotionRequest::class ),
+			'get account capital link'  => array( WooPaymentsGetAccountCapitalLinkRequest::class ),
+			'get account login data'    => array( WooPaymentsGetAccountLoginDataRequest::class ),
+		);
 	}
 
 	/**
@@ -569,15 +551,6 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		$body = json_decode( (string) $this->http_client->last_body, true );
 
 		return is_array( $body ) ? ( $body[ $key ] ?? null ) : null;
-	}
-
-	/**
-	 * Register all concrete and base legacy aliases.
-	 */
-	private function register_compat_class_aliases(): void {
-		foreach ( array_column( $this->concrete_request_provider(), 0 ) as $native_class ) {
-			WooPaymentsCompatClassAliases::register( $native_class );
-		}
 	}
 
 	/**

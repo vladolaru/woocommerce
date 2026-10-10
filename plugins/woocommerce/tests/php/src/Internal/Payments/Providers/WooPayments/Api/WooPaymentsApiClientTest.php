@@ -8,18 +8,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountLoginDataRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use WCPay\Core\Server\Request\Get_Reporting_Balance_Summary;
-use WCPay\Core\Server\Request\List_Authorizations;
-use WCPay\Core\Server\Request\List_Documents;
 use WC_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
@@ -140,7 +140,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $captured[0], 'The plugin passes only the request object.' );
 
 		$request = $captured[0][0];
-		$this->assertInstanceOf( 'WCPay\Core\Server\Request\Get_Account_Login_Data', $request );
+		$this->assertInstanceOf( WooPaymentsGetAccountLoginDataRequest::class, $request );
 		$this->assertSame( 'accounts/login_links', $request->get_api() );
 		$this->assertSame( 'POST', $request->get_method() );
 		$this->assertTrue( $request->should_use_user_token() );
@@ -4502,7 +4502,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			),
 		);
 		$observed_request      = null;
-		$filter                = static function ( List_Authorizations $request ) use ( &$observed_request ): List_Authorizations {
+		$filter                = static function ( WooPaymentsAuthorizationsListRequest $request ) use ( &$observed_request ): WooPaymentsAuthorizationsListRequest {
 			$observed_request = $request;
 			$request->set_param( 'pagesize', 50 );
 			$request->set_param( 'customer_email_is', 'ada@example.com' );
@@ -4531,7 +4531,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 'pi_auth', $result['data'][0]['payment_intent_id'] );
-		$this->assertInstanceOf( List_Authorizations::class, $observed_request );
+		$this->assertInstanceOf( WooPaymentsAuthorizationsListRequest::class, $observed_request );
 		$this->assertSame( 'authorizations', $observed_request->get_api() );
 		$this->assertSame( 'GET', $observed_request->get_method() );
 		$this->assertSame( '/sites/123/wcpay/authorizations?test_mode=0&page=2&pagesize=50&sort=created&direction=desc&limit=100&customer_email_is=ada%40example.com', $http_client->last_path );
@@ -4775,7 +4775,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 
 		$observed_request = null;
-		$filter           = function ( \WCPay\Core\Server\Request\Get_Account_Capital_Link $request ) use ( &$observed_request ): \WCPay\Core\Server\Request\Get_Account_Capital_Link {
+		$filter           = function ( WooPaymentsGetAccountCapitalLinkRequest $request ) use ( &$observed_request ): WooPaymentsGetAccountCapitalLinkRequest {
 			$observed_request = $request;
 
 			$this->assertSame( 'accounts/capital_links', $request->get_api() );
@@ -4811,9 +4811,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Capital request filters as legacy request objects.
+	 * @testdox Should pass the request object to the Capital request filters.
 	 */
-	public function test_capital_admin_methods_expose_legacy_request_object_aliases(): void {
+	public function test_capital_admin_methods_pass_the_request_object_to_their_filters(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -4829,7 +4829,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$observed_summary_request = null;
 		$observed_loans_request   = null;
 
-		$summary_filter = function ( \WCPay\Core\Server\Request $request ) use ( &$observed_summary_request ): \WCPay\Core\Server\Request {
+		$summary_filter = function ( WooPaymentsApiRequest $request ) use ( &$observed_summary_request ): WooPaymentsApiRequest {
 			$observed_summary_request = $request;
 			$this->assertSame( 'capital/active_loan_summary', $request->get_api() );
 			$this->assertSame( 'GET', $request->get_method() );
@@ -4837,7 +4837,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 			return $request;
 		};
-		$loans_filter   = function ( \WCPay\Core\Server\Request\Get_Request $request ) use ( &$observed_loans_request ): \WCPay\Core\Server\Request\Get_Request {
+		$loans_filter   = function ( WooPaymentsApiRequest $request ) use ( &$observed_loans_request ): WooPaymentsApiRequest {
 			$observed_loans_request = $request;
 			$this->assertSame( 'capital/loans', $request->get_api() );
 			$this->assertSame( 'GET', $request->get_method() );
@@ -5679,9 +5679,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose payment method promotion filters as concrete legacy request objects.
+	 * @testdox Should pass their request objects to the payment method promotion filters.
 	 */
-	public function test_pm_promotion_methods_expose_concrete_legacy_request_object_aliases(): void {
+	public function test_pm_promotion_methods_pass_their_request_objects_to_their_filters(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5692,7 +5692,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$observed_get_request      = null;
 		$observed_activate_request = null;
-		$get_filter                = function ( \WCPay\Core\Server\Request\Get_PM_Promotions $request ) use ( &$observed_get_request ): \WCPay\Core\Server\Request\Get_PM_Promotions {
+		$get_filter                = function ( WooPaymentsGetPmPromotionsRequest $request ) use ( &$observed_get_request ): WooPaymentsGetPmPromotionsRequest {
 			$observed_get_request = $request;
 			$this->assertSame( 'payment_method_promotions', $request->get_api() );
 			$this->assertSame( 'GET', $request->get_method() );
@@ -5701,7 +5701,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 			return $request;
 		};
-		$activate_filter           = function ( \WCPay\Core\Server\Request\Activate_PM_Promotion $request ) use ( &$observed_activate_request ): \WCPay\Core\Server\Request\Activate_PM_Promotion {
+		$activate_filter           = function ( WooPaymentsActivatePmPromotionRequest $request ) use ( &$observed_activate_request ): WooPaymentsActivatePmPromotionRequest {
 			$observed_activate_request = $request;
 			$this->assertSame( 'klarna-promo__spotlight', $request->get_id() );
 			$this->assertSame( 'payment_method_promotions/klarna-promo__spotlight/activate', $request->get_api() );
@@ -5743,7 +5743,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 		$observed_request      = null;
 
-		$filter = function ( List_Documents $request ) use ( &$observed_request ): List_Documents {
+		$filter = function ( WooPaymentsDocumentsListRequest $request ) use ( &$observed_request ): WooPaymentsDocumentsListRequest {
 			$observed_request = $request;
 			$this->assertSame( 'documents', $request->get_api() );
 			$this->assertSame( 'GET', $request->get_method() );
@@ -5985,7 +5985,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		);
 		$observed_request      = null;
 
-		$filter = function ( Get_Reporting_Balance_Summary $request ) use ( &$observed_request ): Get_Reporting_Balance_Summary {
+		$filter = function ( WooPaymentsReportingBalanceSummaryRequest $request ) use ( &$observed_request ): WooPaymentsReportingBalanceSummaryRequest {
 			$observed_request = $request;
 			$this->assertSame( 'reporting/balance_summary', $request->get_api() );
 			$this->assertSame( 'GET', $request->get_method() );

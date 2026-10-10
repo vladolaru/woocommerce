@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
@@ -2504,8 +2503,6 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	private function request_with_legacy_filter( array $params, string $api, string $method, string $hook ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsApiRequest::class );
-
 		$request = WooPaymentsApiRequest::create( $params, $api, $method );
 
 		return $this->request_with_legacy_request_filter( $request, $hook );
@@ -2524,16 +2521,16 @@ class WooPaymentsApiClient {
 	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
-		WooPaymentsCompatClassAliases::register_for_request( $request );
-
 		/**
-		 * Filters a WooPayments API request before native transport dispatch.
+		 * Filters a WooPayments API request before it is sent to the platform.
 		 *
-		 * This preserves legacy WooPayments request-object filters for provider APIs that had public request hooks before moving into core.
+		 * Fires under the WooPayments extension's request hook names, so existing callbacks keep running. Callbacks receive the
+		 * provider's own request object, not the extension's `WCPay\Core\Server\Request` classes; its class and setters are not
+		 * a supported API. Any return value that is not a `WooPaymentsPaginatedListRequest` stops the request with an error.
 		 *
 		 * @since 11.0.0
 		 *
-		 * @param WooPaymentsPaginatedListRequest $request Native request compatibility object, aliased to legacy WooPayments request classes when the extension is absent.
+		 * @param WooPaymentsPaginatedListRequest $request Request about to be sent.
 		 */
 		$filtered_request = apply_filters( $hook, $request );
 

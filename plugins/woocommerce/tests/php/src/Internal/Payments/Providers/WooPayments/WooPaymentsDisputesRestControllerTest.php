@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
 use RuntimeException;
@@ -98,7 +99,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->create_disputes_controller( true )->register_routes();
 		add_filter(
 			'wcpay_list_disputes_request',
-			static function ( \WCPay\Core\Server\Request\List_Disputes $request ): \WCPay\Core\Server\Request\List_Disputes {
+			static function ( WooPaymentsDisputesListRequest $request ): WooPaymentsDisputesListRequest {
 				$request->set( 'extension_custom_param', 'disputes-custom' );
 
 				return $request;

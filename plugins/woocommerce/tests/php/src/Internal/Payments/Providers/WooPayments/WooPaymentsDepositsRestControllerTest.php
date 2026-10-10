@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -217,23 +218,9 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$observed_page_size = null;
 		$observed_api       = null;
 
-		add_filter(
-			'wcpay_list_deposits_request',
-			static function ( \WCPay\Core\Server\Request $request ): \WCPay\Core\Server\Request {
-				return $request;
-			},
-			8
-		);
-		add_filter(
-			'wcpay_list_deposits_request',
-			static function ( \WCPay\Core\Server\Request\Paginated $request ): \WCPay\Core\Server\Request\Paginated {
-				return $request;
-			},
-			9
-		);
 			add_filter(
 				'wcpay_list_deposits_request',
-				static function ( \WCPay\Core\Server\Request\List_Deposits $request ) use ( &$observed_api, &$observed_page_size ): \WCPay\Core\Server\Request\List_Deposits {
+				static function ( WooPaymentsDepositsListRequest $request ) use ( &$observed_api, &$observed_page_size ): WooPaymentsDepositsListRequest {
 					$observed_api       = $request->get_api();
 					$observed_page_size = $request->get_param( 'pagesize' );
 					$request->set_page_size( 50 );

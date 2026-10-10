@@ -173,7 +173,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		add_filter(
 			'wcpay_list_authorizations_request',
-			static function ( \WCPay\Core\Server\Request\List_Authorizations $request ) use ( &$observed_request ): \WCPay\Core\Server\Request\List_Authorizations {
+			static function ( WooPaymentsAuthorizationsListRequest $request ) use ( &$observed_request ): WooPaymentsAuthorizationsListRequest {
 				$observed_request = $request;
 				$request->set_page_size( 50 );
 				$request->set_param( 'customer_email_is', 'ada@example.com' );

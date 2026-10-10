@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use WP_REST_Request;
 
 /**
@@ -313,14 +312,12 @@ abstract class WooPaymentsPaginatedListRequest {
 	}
 
 	/**
-	 * Wrap a transport response in the legacy response type.
+	 * Wrap a transport response in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return WooPaymentsResponse
 	 */
 	protected function format_default_response( $response ): WooPaymentsResponse {
-		WooPaymentsCompatClassAliases::register( WooPaymentsResponse::class );
-
 		return new WooPaymentsResponse( $response );
 	}
 

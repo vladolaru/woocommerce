@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Request;
@@ -347,7 +346,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_filtered_transactions_list_params( WP_REST_Request $request ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsTransactionsListRequest::class );
 		$transactions_request = WooPaymentsTransactionsListRequest::from_rest_request( $request );
 
 		/**
@@ -400,7 +398,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_fraud_outcome_params( WP_REST_Request $request, string $hook ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsFraudOutcomeTransactionsListRequest::class );
 		$fraud_outcome_request = WooPaymentsFraudOutcomeTransactionsListRequest::from_rest_request( $request );
 		// A callback may send() the request it receives, which needs the hook it was filtered under.
 		$fraud_outcome_request->assign_hook( $hook );
