@@ -226,24 +226,6 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Tell whether Amazon Pay is enabled at any express checkout location and usable for a currency.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param string $currency Optional cart currency; the store currency when empty.
-	 * @return bool
-	 */
-	public function can_use_amazon_pay( string $currency = '' ): bool {
-		foreach ( array( 'product', 'cart', 'checkout' ) as $context ) {
-			if ( in_array( WooPaymentsExpressPaymentMethodTypes::EXPRESS_METHOD_AMAZON_PAY, $this->get_enabled_methods_for_context( $context, $currency ), true ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
 	 * Tell whether Amazon Pay is usable for express checkout, whichever locations list it.
 	 *
 	 * The client's `can_use_amazon_pay()` (11.1.0 class-wc-payments-express-checkout-button-helper.php:362-388).

@@ -3714,7 +3714,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			array(
 				'enabled'                           => 'yes',
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			array(
@@ -3797,11 +3796,11 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			false,
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			array(
 				'ece_confirmation_tokens_disabled' => false,
+				'capabilities'                     => array( 'amazon_pay_payments' => 'inactive' ),
 			)
 		);
 
@@ -4278,7 +4277,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			array(
 				'enabled'                           => 'yes',
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			array(
@@ -4361,7 +4359,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			array(
 				'express_checkout_cart_methods'     => array( 'payment_request', 'amazon_pay' ),
 				'express_checkout_checkout_methods' => array( 'payment_request' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			array(
@@ -4450,7 +4447,6 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			array(
 				'enabled'                           => 'yes',
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			array(

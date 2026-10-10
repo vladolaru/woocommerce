@@ -1444,7 +1444,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 					'express_checkout_product_methods'  => array( 'payment_request', 'amazon_pay' ),
 					'express_checkout_cart_methods'     => array( 'payment_request', 'amazon_pay' ),
 					'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-					'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				),
 				$settings
 			),
@@ -1455,7 +1454,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			$test_mode
 		);
 
-		$this->assertSame( $expected, $sut->can_use_amazon_pay( 'USD' ), 'Store API extension data' );
 		$this->assertSame( $expected, $sut->is_amazon_pay_usable( 'checkout', 'USD' ), 'Location-independent usability' );
 		$this->assertSame( $expected ? array( 'payment_request', 'amazon_pay' ) : array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ), 'Button enabled methods' );
 		$this->assertSame( $expected ? array( 'card', 'amazon_pay' ) : array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ), 'Button payment method types' );
@@ -1484,7 +1482,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 			),
 			true,
 			array( 'ece_confirmation_tokens_disabled' => false ),
@@ -1493,11 +1490,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			false
 		);
 
-		$this->assertFalse( $sut->can_use_amazon_pay( 'USD' ), 'Storefront requires HTTPS in live mode.' );
+		$this->assertFalse( $sut->is_amazon_pay_usable( 'checkout', 'USD' ), 'Storefront requires HTTPS in live mode.' );
 
 		$GLOBALS['current_screen'] = \WP_Screen::get( 'dashboard' ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		try {
-			$this->assertTrue( $sut->can_use_amazon_pay( 'USD' ) );
+			$this->assertTrue( $sut->is_amazon_pay_usable( 'checkout', 'USD' ) );
 		} finally {
 			unset( $GLOBALS['current_screen'] );
 		}
@@ -1563,7 +1560,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$settings = array(
 			'enabled'                           => 'yes',
 			'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-			'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 			'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 		);
 		$eligible = array( 'ece_confirmation_tokens_disabled' => false );
@@ -1576,11 +1572,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should tell Amazon Pay usable when any express checkout location enables it and the account is eligible.
+	 * @testdox Should offer Amazon Pay express in a context only when that context's location setting lists it (client 11.1.0 `get_enabled_express_checkout_methods_for_context()`, button helper :401-427).
 	 */
-	public function test_can_use_amazon_pay_checks_every_location_and_eligibility(): void {
-		$eligible = array( 'ece_confirmation_tokens_disabled' => false );
-
+	public function test_enabled_methods_follow_each_location_setting(): void {
 		$only_product = $this->create_service(
 			array(
 				'express_checkout_product_methods'  => array( 'amazon_pay' ),
@@ -1588,35 +1582,21 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				'express_checkout_checkout_methods' => array( 'payment_request' ),
 			),
 			true,
-			$eligible
-		);
-		$no_location  = $this->create_service( array(), true, $eligible );
-		$unavailable  = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card' ),
-			),
-			true,
-			$eligible
+			array( 'ece_confirmation_tokens_disabled' => false )
 		);
 
-		$this->assertTrue( $only_product->can_use_amazon_pay( 'USD' ) );
-		$this->assertFalse( $only_product->can_use_amazon_pay( 'EUR' ) );
-		$this->assertFalse( $no_location->can_use_amazon_pay( 'USD' ) );
-		$this->assertFalse( $unavailable->can_use_amazon_pay( 'USD' ) );
+		$this->assertContains( 'amazon_pay', $only_product->get_enabled_methods_for_context( 'product', 'USD' ) );
+		$this->assertNotContains( 'amazon_pay', $only_product->get_enabled_methods_for_context( 'checkout', 'USD' ) );
 	}
 
 	/**
 	 * @testdox Should tell Amazon Pay usable whichever locations list it, like the client's can_use_amazon_pay().
 	 */
 	public function test_is_amazon_pay_usable_ignores_location_settings(): void {
-		$eligible    = array( 'ece_confirmation_tokens_disabled' => false );
-		$no_location = $this->create_service( array(), true, $eligible );
-		$unavailable = $this->create_service( array( 'upe_available_payment_methods' => array( 'card' ) ), true, $eligible );
+		$no_location = $this->create_service( array(), true, array( 'ece_confirmation_tokens_disabled' => false ) );
 
 		$this->assertTrue( $no_location->is_amazon_pay_usable( 'checkout', 'USD' ) );
 		$this->assertFalse( $no_location->is_amazon_pay_usable( 'checkout', 'EUR' ) );
-		$this->assertFalse( $unavailable->is_amazon_pay_usable( 'checkout', 'USD' ) );
 	}
 
 	/**
@@ -1665,27 +1645,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 ignores checkout locations.
 			'amazon pay usable with no location listing it' => array( array_diff_key( $amazon_only, array( 'express_checkout_checkout_methods' => true ) ), array(), true ),
 		);
-	}
-
-	/**
-	 * @testdox Should fail closed when Amazon Pay is configured but not available on the connected account.
-	 */
-	public function test_allowed_payment_method_types_exclude_unavailable_amazon_pay(): void {
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-			)
-		);
-
-		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-		$this->assertSame( array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
-		$this->assertSame( array( 'payment_request' ), $sut->get_express_checkout_params( 'checkout' )['enabled_methods'] );
 	}
 
 	/**
@@ -1748,7 +1707,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			true,
@@ -1770,7 +1728,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			true,
@@ -1792,7 +1749,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			true,
@@ -1822,7 +1778,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$params = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			true,
@@ -1855,7 +1810,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$params = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_available_payment_methods'     => array( 'card', 'amazon_pay' ),
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 			),
 			true,

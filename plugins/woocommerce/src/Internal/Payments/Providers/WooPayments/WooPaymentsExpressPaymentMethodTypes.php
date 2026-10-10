@@ -394,14 +394,6 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @return bool
 	 */
 	private static function is_amazon_pay_enabled_for_account( WooPaymentsAccountService $account_service, array $account_data ): bool {
-		$available = $account_service->get_gateway_setting( 'upe_available_payment_methods', array() );
-
-		$available = is_array( $available ) ? self::normalize_express_method_ids( $available ) : array();
-
-		if ( ! empty( $available ) && ! in_array( self::EXPRESS_METHOD_AMAZON_PAY, $available, true ) ) {
-			return false;
-		}
-
 		// The Amazon Pay gateway needs no setup: an account with a status and payments enabled (client 11.1.0
 		// class-wc-payment-gateway-wcpay.php:946, needs_setup() at :851-858, account status data at class-wc-payments-account.php:360-365).
 		if ( array() === $account_data || ! isset( $account_data['status'], $account_data['payments_enabled'] ) || ! $account_data['payments_enabled'] ) {
