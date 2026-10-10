@@ -1636,19 +1636,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` and the account has an `amazon_pay` fee
-	 * entry; the account shape is the one create_account_service() cites.
+	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` (client 11.1.0
+	 * class-wc-payment-gateway-wcpay.php:908-913); the account shape is the one create_account_service() cites.
 	 *
-	 * @testdox Should leave Amazon Pay out when its capability is $amazon_pay_status or its fee entry is missing.
-	 * @testWith ["inactive", true]
-	 *           ["pending", true]
-	 *           ["disabled", true]
-	 *           ["active", false]
+	 * @testdox Should leave Amazon Pay out when its capability is $amazon_pay_status.
+	 * @testWith ["inactive"]
+	 *           ["pending"]
+	 *           ["disabled"]
 	 *
 	 * @param string $amazon_pay_status Platform status of the amazon_pay_payments capability.
-	 * @param bool   $has_fee           Whether the account lists an amazon_pay fee.
 	 */
-	public function test_allowed_payment_method_types_exclude_amazon_pay_without_active_capability_and_fee( string $amazon_pay_status, bool $has_fee ): void {
+	public function test_allowed_payment_method_types_exclude_amazon_pay_without_active_capability( string $amazon_pay_status ): void {
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
@@ -1658,12 +1656,36 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			array(
 				'ece_confirmation_tokens_disabled' => false,
 				'capabilities'                     => array( 'amazon_pay_payments' => $amazon_pay_status ),
-				'fees'                             => $has_fee ? array( 'amazon_pay' => array( 'base' => array( 'currency' => 'usd' ) ) ) : array( 'card' => array() ),
 			)
 		);
 
 		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
 		$this->assertSame( array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
+	}
+
+	/**
+	 * Client 11.1.0 gates Amazon Pay express on its capability alone: `can_use_amazon_pay()` (express checkout button helper :362-388)
+	 * reaches `check_base_availability()` (class-wc-payment-gateway-wcpay.php:897-947), which reads capability statuses (:908-913) and
+	 * never the account fees; fees only shape the settings list (:4848-4879) and the Link note (:4835-4840).
+	 *
+	 * @testdox Should offer Amazon Pay express while its capability is active, whether or not the account lists an Amazon Pay fee.
+	 */
+	public function test_amazon_pay_is_offered_without_an_amazon_pay_fee_entry(): void {
+		$sut = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+			),
+			true,
+			array(
+				'ece_confirmation_tokens_disabled' => false,
+				'capabilities'                     => array( 'amazon_pay_payments' => 'active' ),
+				'fees'                             => array( 'card' => array( 'base' => array( 'currency' => 'usd' ) ) ),
+			)
+		);
+
+		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
+		$this->assertSame( array( 'card', 'amazon_pay' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
 	}
 
 	/**

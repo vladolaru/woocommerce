@@ -379,6 +379,9 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether Amazon Pay is available and enabled on the connected account.
 	 *
+	 * The account side of the client's gate is the `amazon_pay_payments` capability being active; the client never reads the
+	 * account fees for express checkout (11.1.0 class-wc-payment-gateway-wcpay.php:908-913).
+	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param array<string,mixed>       $account_data    Cached account data.
 	 * @return bool
@@ -396,11 +399,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		$fees = $account_data['fees'] ?? array();
-
-		return is_array( $fees )
-			&& $account_service->is_capability_active( 'amazon_pay_payments' )
-			&& is_array( $fees[ self::STRIPE_TYPE_AMAZON_PAY ] ?? null );
+		return $account_service->is_capability_active( 'amazon_pay_payments' );
 	}
 
 	/**
