@@ -1326,12 +1326,17 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether saved payment methods are enabled for this gateway.
 	 *
-	 * Each gateway reads its own setting, "yes" when none is stored, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989,
-	 * form field default :404-410). Only the card gateway's setting is ever saved, so the other gateways keep "yes".
+	 * Each gateway reads its own setting, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989). Only the card
+	 * gateway has the saved_cards form field and its "yes" default (:387-410, merged at :545); a split gateway reads its own
+	 * stored value, so it is on only where its row stores "yes", as rows first written before the extension's 10.1.0 do.
 	 *
 	 * @return bool
 	 */
 	public function is_saved_cards_enabled(): bool {
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $this->id ) {
+			return 'yes' === $this->get_option( 'saved_cards' );
+		}
+
 		// A literal default: the shared defaults translate labels, which gateway construction must not do before init.
 		return 'yes' === $this->get_option( 'saved_cards', 'yes' );
 	}
@@ -2837,7 +2842,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		// Every gateway with saved cards on claims both, reusable or not, as in client 11.1.0 (class-wc-payment-gateway-wcpay.php:338-340).
+		// A gateway whose own saved cards setting is on claims both, reusable or not, as in client 11.1.0 (class-wc-payment-gateway-wcpay.php:338-340).
 		// The save checkbox and the add-payment-method page still offer only methods that can be saved.
 		if ( $saved_cards_enabled ?? $this->is_saved_cards_enabled() ) {
 			$this->supports[] = PaymentGatewayFeature::TOKENIZATION;

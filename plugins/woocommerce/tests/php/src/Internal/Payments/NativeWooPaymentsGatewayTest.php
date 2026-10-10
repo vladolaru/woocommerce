@@ -472,16 +472,24 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 reads saved cards per gateway (class-wc-payment-gateway-wcpay.php:987-989). Only the card gateway's setting
-	 * is ever saved (class-wc-rest-payments-settings-controller.php:1108-1116), so every other gateway keeps the form field's
-	 * "yes" (:404-410) and claims tokenization and adding payment methods (:338-340). With saved cards off, an available iDEAL
-	 * gateway therefore keeps WooCommerce's My Account "Payment methods" entry (wc-account-functions.php:123-136), while it
-	 * offers no save checkbox at checkout (class-wc-payments-checkout.php:505) and no place on the add-payment-method page
-	 * (class-wc-payment-gateway-wcpay.php:915-917).
+	 * Client 11.1.0 reads saved cards per gateway (class-wc-payment-gateway-wcpay.php:987-989), and only the card gateway has
+	 * the saved_cards form field with its "yes" default (:387-410, merged at :545; a split gateway gets only `enabled`,
+	 * :379-385). A split gateway therefore reads its own stored value, or '' when its row holds none (WC_Settings_API::get_option()),
+	 * and claims tokenization and adding payment methods (:338-340) only when its row stores "yes": rows first written before
+	 * 10.1.0 saved the full defaults, later rows hold no saved_cards. With saved cards off on the card gateway, an available
+	 * iDEAL gateway keeps WooCommerce's My Account "Payment methods" entry (wc-account-functions.php:123-136) only in the first
+	 * history. Either way iDEAL offers no save checkbox at checkout (class-wc-payments-checkout.php:505) and no place on the
+	 * add-payment-method page (class-wc-payment-gateway-wcpay.php:915-917).
 	 *
-	 * @testdox Should keep the My Account payment methods entry through an available split gateway while saved cards are off.
+	 * @testdox Should keep the My Account payment methods entry through a split gateway with saved cards off only when its row stores saved cards: $history.
+	 * @testWith ["row without saved_cards (first written on 10.1.0 or later, or by native)", null, false]
+	 *           ["row storing saved_cards yes (first written before 10.1.0)", "yes", true]
+	 *
+	 * @param string      $history          Store history.
+	 * @param string|null $ideal_saved_cards iDEAL's stored saved_cards, or null for none.
+	 * @param bool        $keeps_entry      Whether the Payment methods entry stays.
 	 */
-	public function test_split_gateway_keeps_the_payment_methods_entry_while_saved_cards_are_off(): void {
+	public function test_split_gateway_keeps_the_payment_methods_entry_only_with_its_own_saved_cards( string $history, ?string $ideal_saved_cards, bool $keeps_entry ): void {
 		global $wp;
 
 		$this->activate_builtin_tier();
@@ -516,15 +524,19 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				echo '<div id="wcpay-bridge-marker"></div>';
 			}
 		);
-		// The WooPayments settings turn saved cards off; iDEAL's own settings, as the extension leaves them, hold no saved_cards.
+		// The WooPayments settings turn saved cards off. iDEAL's own row holds only what the client's settings sync writes
+		// (enabled and the enabled list), plus saved_cards in the pre-10.1.0 history.
 		$card_settings      = static fn(): array => array(
 			'enabled'                        => 'yes',
 			'saved_cards'                    => 'no',
 			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
 		);
-		$ideal_settings     = static fn(): array => array(
-			'enabled'                        => 'yes',
-			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+		$ideal_settings     = static fn(): array => array_merge(
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+			),
+			null === $ideal_saved_cards ? array() : array( 'saved_cards' => $ideal_saved_cards )
 		);
 		$currency_filter    = static fn(): string => 'EUR';
 		$my_account_page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
@@ -543,7 +555,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$ideal_gateway->id => $ideal_gateway,
 			);
 
-			$this->assertArrayHasKey( 'payment-methods', wc_get_account_menu_items() );
+			$this->assertSame( $keeps_entry, array_key_exists( 'payment-methods', wc_get_account_menu_items() ), $history );
 
 			add_filter( 'woocommerce_is_checkout', '__return_true' );
 			ob_start();
@@ -583,6 +595,38 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ) );
 			}
 		);
+	}
+
+	/**
+	 * Client 11.1.0 gives only the card gateway the saved_cards form field (class-wc-payment-gateway-wcpay.php:387-410, merged at
+	 * :545); a split gateway reads its own row (:987-989), which the settings sync writes with only `enabled` and the enabled list,
+	 * so it claims neither feature (:338-340), even for a method that can be saved.
+	 *
+	 * @testdox Should give a reusable split gateway with no saved cards setting of its own neither tokenization nor adding payment methods.
+	 */
+	public function test_reusable_split_gateway_without_its_own_saved_cards_claims_no_tokenization(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'apple_pay' );
+		$this->assertNotNull( $definition );
+		$apple_pay_settings = static fn(): array => array( 'enabled' => 'yes' );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $apple_pay_settings );
+
+		try {
+			$this->with_gateway_settings(
+				array(
+					'enabled'     => 'yes',
+					'saved_cards' => 'yes',
+				),
+				function () use ( $definition ): void {
+					$gateway = new NativeWooPaymentsGateway( $definition );
+
+					$this->assertFalse( $gateway->is_saved_cards_enabled() );
+					$this->assertFalse( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+					$this->assertFalse( $gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ) );
+				}
+			);
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $apple_pay_settings );
+		}
 	}
 
 	/**
