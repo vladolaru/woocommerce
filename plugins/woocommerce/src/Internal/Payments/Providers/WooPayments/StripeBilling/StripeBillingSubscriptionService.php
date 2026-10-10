@@ -106,6 +106,11 @@ class StripeBillingSubscriptionService {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * Stack frames the on-hold suspension line writes: enough to reach past the status hooks to the code that changed the status.
+	 */
+	private const STATUS_CHANGE_TRACE_FRAMES = 20;
+
+	/**
 	 * Features temporarily allowed, by subscription ID.
 	 *
 	 * @var array<int,array<string,bool>>
@@ -576,14 +581,15 @@ class StripeBillingSubscriptionService {
 
 		$subscription->add_order_note( __( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', 'woocommerce' ) );
 
-		// The stack shows where the status change came from, such as an admin action or custom code.
+		// The trace shows where the status change came from, such as an admin action or custom code.
 		$this->logger->log(
 			sprintf(
-				'Suspended WooPayments Subscription because subscription status changed to on-hold. WC ID: %d; WooPayments ID: %s; stack: %s',
+				'Suspended WooPayments Subscription because subscription status changed to on-hold. WC ID: %d; WooPayments ID: %s.',
 				$subscription->get_id(),
-				$this->get_wcpay_subscription_id( $subscription ),
-				( new \Exception() )->getTraceAsString()
-			)
+				$this->get_wcpay_subscription_id( $subscription )
+			),
+			'info',
+			array( 'trace' => WooPaymentsLogger::get_throwable_context( new \Exception(), self::STATUS_CHANGE_TRACE_FRAMES )['trace'] )
 		);
 	}
 

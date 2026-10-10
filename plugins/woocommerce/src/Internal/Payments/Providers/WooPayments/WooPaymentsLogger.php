@@ -312,14 +312,16 @@ class WooPaymentsLogger {
 	/**
 	 * Get a throwable's class, code and first stack frames, without its message or call arguments.
 	 *
-	 * Public for the WooPay lines still written under their own log source.
+	 * Public for the WooPay lines still written under their own log source, and for a line that logs a call trace with no
+	 * failure (a Stripe Billing subscription put on hold).
 	 *
-	 * @param Throwable $throwable Caught throwable.
+	 * @param Throwable $throwable   Caught throwable, or one made only for its trace.
+	 * @param int       $frame_limit Number of stack frames written.
 	 * @return array{exception:string,code:int|string,trace:string}
 	 */
-	public static function get_throwable_context( Throwable $throwable ): array {
+	public static function get_throwable_context( Throwable $throwable, int $frame_limit = self::TRACE_FRAMES ): array {
 		$frames = array();
-		foreach ( array_slice( $throwable->getTrace(), 0, self::TRACE_FRAMES ) as $index => $frame ) {
+		foreach ( array_slice( $throwable->getTrace(), 0, $frame_limit ) as $index => $frame ) {
 			$frames[] = sprintf(
 				'#%d %s(%s): %s%s%s()',
 				$index,

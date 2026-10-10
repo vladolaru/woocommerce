@@ -586,6 +586,34 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The on-hold suspension line names the code that changed the status, through the status hooks, without call arguments.
+	 *
+	 * Client 11.1.0 appends `getTraceAsString()` to the message (`class-wc-payments-subscription-service.php:552-565`).
+	 */
+	public function test_suspension_log_traces_the_status_change_without_call_arguments(): void {
+		$this->queue_entry( $this->get_entry( 'update_subscription' ) );
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
+		$subscription->set_status( 'active' );
+		$subscription->save();
+		add_action( 'woocommerce_subscription_status_on-hold', array( $this->sut, 'handle_subscription_status_on_hold' ) );
+		$this->logging_enabled = true;
+		$logger                = RecordingWcLogger::install();
+
+		$this->put_on_hold_from_custom_code( $subscription, 'secret-call-argument' );
+
+		$prefix = 'Suspended WooPayments Subscription because subscription status changed to on-hold.';
+		$lines  = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], $prefix ) ) );
+		$this->assertCount( 1, $lines );
+		$this->assertSame(
+			sprintf( '%s WC ID: %d; WooPayments ID: %s.', $prefix, $subscription->get_id(), self::MAIN_SUBSCRIPTION_ID ),
+			$logger->lines[ $lines[0] ][1]
+		);
+		$trace = (string) ( $logger->contexts[ $lines[0] ]['trace'] ?? '' );
+		$this->assertStringContainsString( __CLASS__ . '->put_on_hold_from_custom_code()', $trace, 'The trace reaches past the status hooks to the code that changed the status.' );
+		$this->assertStringNotContainsString( 'secret-call', $trace . wp_json_encode( $logger->contexts[ $lines[0] ] ), 'The trace leaves out call arguments.' );
+	}
+
+	/**
 	 * @testdox Status changes made while running without Stripe sync stay local, and reach Stripe again afterwards, even when the callback fails.
 	 *
 	 * Client 11.1.0 removes the on-hold and reactivation hooks around a renewal recorded from an invoice event (`class-wc-payments-subscriptions-event-handler.php:165-175`).
@@ -1104,6 +1132,16 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][] = $subscription->get_id();
 
 		return wc_get_order( $subscription->get_id() );
+	}
+
+	/**
+	 * Put a subscription on hold the way a store's own code would, one call above the status change.
+	 *
+	 * @param WC_Order $subscription Subscription.
+	 * @param string   $reason       Note added with the change.
+	 */
+	private function put_on_hold_from_custom_code( WC_Order $subscription, string $reason ): void {
+		$subscription->update_status( 'on-hold', $reason );
 	}
 
 	/**
