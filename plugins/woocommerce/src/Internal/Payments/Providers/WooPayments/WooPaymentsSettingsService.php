@@ -601,9 +601,10 @@ class WooPaymentsSettingsService {
 				return $capability_error;
 			}
 
-			$previous_enabled_payment_method_ids = $this->sanitize_payment_method_ids(
-				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) ),
-				$enabled_methods_update['available']
+			// The stored list as it is, whatever is available now, so a removed method is seen even when the availability
+			// filter hides it (client 11.1.0 class-wc-rest-payments-settings-controller.php:738-740).
+			$previous_enabled_payment_method_ids = $this->normalize_payment_method_ids(
+				$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids', array( 'card' ) )
 			);
 			$enabled_payment_method_ids          = $this->sanitize_payment_method_ids(
 				$enabled_methods_update['requested'],
@@ -2371,6 +2372,26 @@ class WooPaymentsSettingsService {
 	private function should_skip_local_setting_update_in_dev_mode( string $request_key ): bool {
 		return $this->account_service->is_dev_mode_enabled()
 			&& in_array( $request_key, array( 'is_test_mode_enabled', 'is_debug_log_enabled' ), true );
+	}
+
+	/**
+	 * Read payment method IDs as a list of unique, non-empty strings.
+	 *
+	 * @param array<int|string,mixed> $payment_method_ids Raw payment method IDs.
+	 * @return string[]
+	 */
+	private function normalize_payment_method_ids( array $payment_method_ids ): array {
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
+						$payment_method_ids
+					),
+					static fn( string $payment_method_id ): bool => '' !== $payment_method_id
+				)
+			)
+		);
 	}
 
 	/**

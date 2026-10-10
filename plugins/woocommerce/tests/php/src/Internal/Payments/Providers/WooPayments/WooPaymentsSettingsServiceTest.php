@@ -2779,6 +2779,27 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Removing card disables the WooPayments gateway even while card is filtered out of the available methods (client 11.1.0 `class-wc-rest-payments-settings-controller.php:738-740,782-789` compares with the stored list).
+	 */
+	public function test_settings_route_disables_the_gateway_when_an_unavailable_card_is_removed(): void {
+		$this->store_card_and_ideal_enabled();
+		$without_card = static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'card' ) ) );
+		add_filter( 'wcpay_upe_available_payment_methods', $without_card );
+
+		try {
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'ideal' ) ) );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertSame( array( 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
+			$this->assertSame( 'no', $stored['enabled'] );
+		} finally {
+			remove_filter( 'wcpay_upe_available_payment_methods', $without_card );
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
 	 * @testdox Card is no longer offered at checkout once the settings route removes it (client 11.1.0 `class-wc-payment-gateway-wcpay.php:897-906`).
 	 */
 	public function test_card_is_not_offered_after_the_settings_route_removes_it(): void {
