@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
@@ -71,7 +72,7 @@ trait WooPaymentsEventHandlerTestTrait {
 	/**
 	 * Build an event ingestor from the given handlers and collaborators, with the rest from the container.
 	 *
-	 * The lifecycle service and the API client also go to the payment intent event handler the ingestor routes to.
+	 * The lifecycle service and the API client go to the payment intent event handler the ingestor routes to.
 	 *
 	 * @param OrderPaymentLifecycleService                  $lifecycle_service                 Order lifecycle service.
 	 * @param LegacyProxy                                   $legacy_proxy                      Legacy proxy.
@@ -101,7 +102,7 @@ trait WooPaymentsEventHandlerTestTrait {
 		$ingestor = new WooPaymentsEventIngestor();
 		$ingestor->init(
 			$legacy_proxy,
-			$api_client,
+			$container->get( WooPaymentsTransportLog::class ),
 			$dispute_event_handler,
 			$refund_event_handler,
 			$account_event_handler,

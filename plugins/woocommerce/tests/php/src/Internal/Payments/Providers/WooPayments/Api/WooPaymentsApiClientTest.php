@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use WCPay\Core\Server\Request\Get_Reporting_Balance_Summary;
@@ -1561,7 +1562,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				)
 			),
 		);
-		$sut                   = new class() extends WooPaymentsApiClient {
+		$transport_log         = new class() extends WooPaymentsTransportLog {
 			/**
 			 * Redactions made.
 			 *
@@ -1575,13 +1576,15 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			 * @param mixed $input Params, body, message or code.
 			 * @return mixed
 			 */
-			protected function redact_for_log( $input ) {
+			public function redact( $input ) {
 				++$this->redactions;
 
-				return parent::redact_for_log( $input );
+				return parent::redact( $input );
 			}
 		};
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		$transport_log->init( wc_get_container()->get( WooPaymentsLogger::class ) );
+		$sut = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ), $transport_log );
 		$send = static function () use ( $sut ): void {
 			try {
 				$sut->send_site_request( array( 'note' => 'https://shop.example.test/?key=wc_order_1' ), 'subscriptions', 'POST' );
@@ -1592,7 +1595,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		try {
 			$send();
-			$redactions_while_off = $sut->redactions;
+			$redactions_while_off = $transport_log->redactions;
 			$entries_while_off    = $logger->entries;
 			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 			$send();
@@ -1604,7 +1607,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $entries_while_off );
 		$this->assertSame( 0, $redactions_while_off, 'Nothing is redacted while logging is off.' );
-		$this->assertGreaterThan( 0, $sut->redactions, 'With logging on, the logged values are redacted.' );
+		$this->assertGreaterThan( 0, $transport_log->redactions, 'With logging on, the logged values are redacted.' );
 		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ), 'The request line is written.' );
 		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API RESPONSE (' ) ), 'The response line is written.' );
 		$this->assertNotEmpty( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'The error line is written.' );
