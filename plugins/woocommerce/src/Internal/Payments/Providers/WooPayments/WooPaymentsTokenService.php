@@ -1126,8 +1126,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * Get the payment method types to retrieve from the provider.
 	 *
 	 * With a gateway ID, all of that gateway's types are retrieved, enabled or not, except Link, which rides the card
-	 * gateway and is checked separately; without one, card is always retrieved plus every other enabled type. Client
-	 * 11.1.0 `includes/class-wc-payments-token-service.php:323-377`.
+	 * gateway and is checked separately; without one, card is always retrieved plus every other enabled type, Amazon Pay
+	 * only while its gateway is registered. Client 11.1.0 `includes/class-wc-payments-token-service.php:323-377`.
 	 *
 	 * @param string $gateway_id Requested gateway ID, or '' for all.
 	 * @return string[]
@@ -1143,6 +1143,10 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 
 			$checks_setting = '' === $gateway_id || self::PAYMENT_METHOD_TYPE_LINK === $type;
 			if ( $checks_setting && ! $this->is_payment_method_type_enabled( $type, $enabled_method_ids ) ) {
+				continue;
+			}
+
+			if ( '' === $gateway_id && self::PAYMENT_METHOD_TYPE_AMAZON_PAY === $type && ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
 				continue;
 			}
 

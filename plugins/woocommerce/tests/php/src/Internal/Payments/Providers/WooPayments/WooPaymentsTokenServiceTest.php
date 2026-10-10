@@ -1561,6 +1561,53 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 retrieves Amazon Pay on an all-gateway read only while its gateway exists and is enabled
+	 * (`includes/class-wc-payments-token-service.php:338-354`), and registers that gateway only while the feature is on
+	 * (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`). Core's token data store
+	 * leaves out tokens of an unregistered gateway (`includes/data-stores/class-wc-payment-token-data-store.php:259-273`).
+	 *
+	 * @testdox Should not retrieve or save Amazon Pay methods on an all-gateway read while the Amazon Pay feature is off.
+	 */
+	public function test_reconcile_skips_amazon_pay_while_its_feature_is_off(): void {
+		global $wpdb;
+
+		update_option( '_wcpay_feature_amazon_pay', '0' );
+		$this->register_card_gateway_id();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		// An Amazon Pay payment method carries the customer's email in billing_details (client 11.1.0 `includes/class-wc-payments-token-service.php:95-99`).
+		$customer_service = $this->create_reconciling_customer_service(
+			'cus_1',
+			array(
+				'card'       => array(),
+				'amazon_pay' => array(
+					array(
+						'id'              => 'pm_amazon',
+						'type'            => 'amazon_pay',
+						'billing_details' => array( 'email' => 'buyer@example.com' ),
+					),
+				),
+			)
+		);
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'amazon_pay' ) ) );
+
+		$count_tokens = static fn(): int => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d", $user_id ) );
+		$returned     = array();
+		$saved_counts = array();
+		foreach ( array( 1, 2 ) as $read ) {
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
+			foreach ( apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' ) as $token ) {
+				$returned[] = $token->get_token();
+			}
+			$saved_counts[] = $count_tokens();
+		}
+
+		$this->assertSame( array( 0, 0 ), $saved_counts, 'Neither read saves an Amazon Pay token.' );
+		$this->assertNotContains( 'pm_amazon', $returned, 'No Amazon Pay token is returned while its gateway is not registered.' );
+	}
+
+	/**
 	 * @testdox Should only retrieve the payment method types belonging to the requested gateway.
 	 */
 	public function test_reconcile_scopes_types_to_the_requested_gateway(): void {
