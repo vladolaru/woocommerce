@@ -30,7 +30,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 *
 	 * @since 11.2.0
 	 */
-	public const GATEWAY_REFUND_META = '_wc_payments_gateway_refund';
+	public const GATEWAY_REFUND_META = '_wc_provider_gateway_refund';
 
 	/**
 	 * Provider gateways controller.
