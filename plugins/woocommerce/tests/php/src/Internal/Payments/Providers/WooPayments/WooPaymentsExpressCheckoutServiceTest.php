@@ -1590,6 +1590,78 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * On the storefront the client's Amazon Pay gateway also needs the store currency among the account's supported customer
+	 * currencies, an unknown list allowing any (client 11.1.0 `is_available_for_current_currency()`,
+	 * class-wc-payment-gateway-wcpay.php:921,1058-1069, reading class-wc-payments-account.php:673-676).
+	 *
+	 * @testdox Should offer Amazon Pay express only while the account's customer currencies include the store currency: $scenario.
+	 * @testWith ["store currency supported", ["usd", "eur"], true]
+	 *           ["store currency not supported", ["eur"], false]
+	 *           ["no supported list", [], true]
+	 *
+	 * @param string   $scenario  Scenario description.
+	 * @param string[] $supported Account's supported customer currencies, lowercase as the platform sends them.
+	 * @param bool     $offered   Whether Amazon Pay should be offered.
+	 */
+	public function test_amazon_pay_follows_the_account_customer_currencies( string $scenario, array $supported, bool $offered ): void {
+		unset( $scenario );
+		// The account's `customer_currencies` as recorded in Fixtures/rec-t60-test-drive-account.json `account.customer_currencies`.
+		$sut = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+			),
+			true,
+			array(
+				'ece_confirmation_tokens_disabled' => false,
+				'customer_currencies'              => array( 'supported' => $supported ),
+			)
+		);
+
+		$this->assertSame( $offered, $sut->is_amazon_pay_usable( 'checkout', 'USD' ) );
+		$this->assertSame( $offered, in_array( 'amazon_pay', $sut->get_enabled_methods_for_context( 'checkout', 'USD' ), true ) );
+	}
+
+	/**
+	 * Under Multi-Currency the order currency the charge asks about can differ from the store currency. The client checks the
+	 * account's customer currencies against the store currency (class-wc-payment-gateway-wcpay.php:1058-1069) and Amazon Pay's own
+	 * table against the order currency (class-upe-payment-method.php:311-326,491-504).
+	 *
+	 * @testdox Should check the account's customer currencies against the store currency, not the order currency: $scenario.
+	 * @testWith ["only the order currency supported", "GBP", "EUR", false]
+	 *           ["only the store currency supported", "EUR", "GBP", true]
+	 *
+	 * @param string $scenario       Scenario description.
+	 * @param string $store_currency Store currency.
+	 * @param string $order_currency Currency the charge asks about.
+	 * @param bool   $offered        Whether Amazon Pay should be offered.
+	 */
+	public function test_amazon_pay_checks_customer_currencies_against_the_store_currency( string $scenario, string $store_currency, string $order_currency, bool $offered ): void {
+		unset( $scenario );
+		// A GB account, for which Amazon Pay takes both EUR and GBP (client 11.1.0 AmazonPayDefinition.php:106-128).
+		$sut                   = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+			),
+			true,
+			array(
+				'country'                          => 'GB',
+				'ece_confirmation_tokens_disabled' => false,
+				'customer_currencies'              => array( 'supported' => array( 'eur' ) ),
+			)
+		);
+		$store_currency_filter = static fn(): string => $store_currency;
+		add_filter( 'woocommerce_currency', $store_currency_filter );
+
+		try {
+			$this->assertSame( $offered, $sut->is_amazon_pay_usable( 'checkout', $order_currency ) );
+		} finally {
+			remove_filter( 'woocommerce_currency', $store_currency_filter );
+		}
+	}
+
+	/**
 	 * @testdox Should tell Amazon Pay usable whichever locations list it, like the client's can_use_amazon_pay().
 	 */
 	public function test_is_amazon_pay_usable_ignores_location_settings(): void {

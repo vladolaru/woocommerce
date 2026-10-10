@@ -363,6 +363,13 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
+		// The store currency must be one the account takes from customers, an unknown list allowing any; the client reads the store
+		// currency here even on the order-pay page (client 11.1.0 class-wc-payment-gateway-wcpay.php:921,1058-1069).
+		$customer_currencies = $account_service->get_customer_supported_currencies();
+		if ( array() !== $customer_currencies && ! in_array( strtolower( get_woocommerce_currency() ), $customer_currencies, true ) ) {
+			return false;
+		}
+
 		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
 
 		return self::is_amazon_pay_currency_supported( strtolower( $currency ), strtoupper( (string) ( $account_data['country'] ?? '' ) ) );
@@ -418,6 +425,10 @@ class WooPaymentsExpressPaymentMethodTypes {
 
 	/**
 	 * Tell whether Amazon Pay supports a currency for the connected account country.
+	 *
+	 * The same table as the client's Amazon Pay definition, applied to the order currency on the order-pay page and the store
+	 * currency elsewhere (client 11.1.0 AmazonPayDefinition.php:106-128, through `is_currency_valid()`,
+	 * class-upe-payment-method.php:311-326,491-504).
 	 *
 	 * @param string $currency        Currency code.
 	 * @param string $account_country Connected account country.
