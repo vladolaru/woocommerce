@@ -37,6 +37,17 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	}
 
 	/**
+	 * Tell whether WooCommerce Subscriptions is active in this request, the condition for the Stripe Billing module to load
+	 * (client 11.1.0 `class-wc-payments-features.php:312`). The Stripe Billing migrator, the cutover guard and the card
+	 * gateway ask the same question.
+	 *
+	 * @return bool
+	 */
+	public static function is_woocommerce_subscriptions_active(): bool {
+		return (bool) wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions' );
+	}
+
+	/**
 	 * Tell whether WooCommerce Subscriptions 2.2.0 or later, or the Subscriptions core library, is loaded.
 	 *
 	 * The same check as the card gateway's is_subscriptions_enabled(), usable before any gateway exists.

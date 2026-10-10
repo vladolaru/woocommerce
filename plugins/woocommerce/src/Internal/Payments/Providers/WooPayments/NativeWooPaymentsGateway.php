@@ -1332,7 +1332,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_subscriptions_plugin_active(): bool {
-		return class_exists( 'WC_Subscriptions' );
+		return WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
 	}
 
 	/**

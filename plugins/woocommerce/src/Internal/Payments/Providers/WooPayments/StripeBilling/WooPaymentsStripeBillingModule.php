@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -91,7 +90,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_plugins_loaded(): void {
-		if ( ! self::is_woocommerce_subscriptions_active() ) {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
 			return;
 		}
 
@@ -160,16 +159,6 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 				'permission_callback' => static fn() => current_user_can( 'manage_woocommerce' ),
 			)
 		);
-	}
-
-	/**
-	 * Tell whether WooCommerce Subscriptions is active in this request, the condition for the module to load (client 11.1.0
-	 * `class-wc-payments-features.php:312`). The migrator and the cutover guard ask the same question.
-	 *
-	 * @return bool
-	 */
-	public static function is_woocommerce_subscriptions_active(): bool {
-		return (bool) wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions' );
 	}
 
 	/**

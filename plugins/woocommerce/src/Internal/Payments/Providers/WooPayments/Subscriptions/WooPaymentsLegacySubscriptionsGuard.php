@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 
 /**
  * Detects stores on the bundled WooPayments subscriptions flavor, which stay on the plugin at cutover.
@@ -71,14 +70,14 @@ class WooPaymentsLegacySubscriptionsGuard {
 	/**
 	 * Tell whether WooCommerce Subscriptions is active on the current site.
 	 *
-	 * On the site serving the request this is the Stripe Billing module's own check. A site visited with switch_to_blog() has not
+	 * On the site serving the request the subscription method policy answers. A site visited with switch_to_blog() has not
 	 * loaded its plugins, so its active plugin options are read instead.
 	 *
 	 * @return bool
 	 */
 	protected function is_subscriptions_plugin_active(): bool {
 		if ( ! is_multisite() || ! ms_is_switched() ) {
-			return WooPaymentsStripeBillingModule::is_woocommerce_subscriptions_active();
+			return WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
 		}
 
 		$active_plugins = (array) get_option( 'active_plugins', array() );
