@@ -1544,7 +1544,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	private function get_card_brand_icons(): array {
 		$icons = array();
 
-		foreach ( $this->get_card_brand_icon_labels() as $brand => $label ) {
+		foreach ( self::get_card_brand_icon_labels() as $brand => $label ) {
 			$asset_path = self::CARD_BRAND_ICON_ASSETS[ $brand ] ?? 'payment-methods/' . $brand . '.svg';
 			$icons[]    = array(
 				'id'  => $brand,
@@ -1557,14 +1557,16 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get shopper-facing card brand labels for the store base country.
+	 * Get shopper-facing card brand labels for the store base country, for the checkout config and the gateway icon.
 	 *
 	 * Client 11.1.0 adds Cartes Bancaires for stores based in France, reading the storeCountry it sends
 	 * (`client/utils/card-brands.ts:43-50`, `includes/class-wc-payments-checkout.php:270`).
 	 *
-	 * @return array<string,string>
+	 * @since 11.2.0
+	 *
+	 * @return array<string,string> Labels keyed by card brand.
 	 */
-	private function get_card_brand_icon_labels(): array {
+	public static function get_card_brand_icon_labels(): array {
 		if ( 'FR' === WC()->countries->get_base_country() ) {
 			return array_merge( self::CARD_BRAND_ICONS, self::FR_CARD_BRAND_ICONS );
 		}

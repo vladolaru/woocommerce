@@ -92,29 +92,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	);
 
 	/**
-	 * Shopper-facing card brand icons.
-	 *
-	 * @var array<string,string>
-	 */
-	private const CARD_BRAND_ICONS = array(
-		'visa'       => 'Visa',
-		'mastercard' => 'Mastercard',
-		'amex'       => 'American Express',
-		'discover'   => 'Discover',
-		'jcb'        => 'JCB',
-		'unionpay'   => 'Union Pay',
-	);
-
-	/**
-	 * France-only shopper-facing card brand icons.
-	 *
-	 * @var array<string,string>
-	 */
-	private const FR_CARD_BRAND_ICONS = array(
-		'cartes_bancaires' => 'Cartes Bancaires',
-	);
-
-	/**
 	 * Recommended payment methods cache key.
 	 */
 	public const RECOMMENDED_PAYMENT_METHODS_CACHE_KEY = 'woocommerce_woocommerce_payments_recommended_payment_methods';
@@ -1482,7 +1459,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 			$icon = implode( '', $icons );
 		} else {
-			$brand_labels          = $this->get_card_brand_icon_labels();
+			$brand_labels          = WooPaymentsCheckoutBridge::get_card_brand_icon_labels();
 			$brands                = array_slice( $brand_labels, 0, 3, true );
 			$additional_icon_count = count( $brand_labels ) - count( $brands );
 
@@ -1513,21 +1490,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		 * @return string
 		 */
 		return apply_filters( 'woocommerce_gateway_icon', $icon, $this->id );
-	}
-
-	/**
-	 * Get shopper-facing card brand labels for the store base country.
-	 *
-	 * Client 11.1.0 adds Cartes Bancaires for stores based in France (`client/utils/card-brands.ts:43-50`).
-	 *
-	 * @return array<string,string>
-	 */
-	private function get_card_brand_icon_labels(): array {
-		if ( 'FR' === WC()->countries->get_base_country() ) {
-			return array_merge( self::CARD_BRAND_ICONS, self::FR_CARD_BRAND_ICONS );
-		}
-
-		return self::CARD_BRAND_ICONS;
 	}
 
 	/**
