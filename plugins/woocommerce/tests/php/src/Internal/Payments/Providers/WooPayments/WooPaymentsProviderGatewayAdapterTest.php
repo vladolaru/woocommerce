@@ -8986,13 +8986,19 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed refund through the gateway counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 * @testdox A completed refund through the gateway ($shape) counts as refunded, so a found hold the order can no longer refund is cleared and the call sends with no lookup.
+	 * @dataProvider completed_gateway_row_shapes_data
 	 *
 	 * Review C10a (F1): every completed native refund leaves a row with refunded_payment set and a provider refund ID, and
 	 * no manual record mark. The backstop counts it through refunded_payment (monitor rulings 2026-10-10 15:05, 17:40);
-	 * skipping it would count none of the order's native refunds and block every later refund.
+	 * skipping it would count none of the order's native refunds and block every later refund. Codex review 207: the
+	 * unlinked shape pins refunded_payment on its own, since the provider link also counts a row.
+	 *
+	 * @param string $shape     Case label.
+	 * @param string $refund_id Provider refund ID the row is linked to; empty for none.
 	 */
-	public function test_completed_gateway_refund_counts_for_the_backstop(): void {
+	public function test_completed_gateway_refund_counts_for_the_backstop( string $shape, string $refund_id ): void {
+		unset( $shape );
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
@@ -9001,7 +9007,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 				'found_amount'    => 555,
 			)
 		);
-		$this->create_completed_gateway_row( $order, 40.00, 're_f458_completed_gateway_refund' );
+		$this->create_completed_gateway_row( $order, 40.00, $refund_id );
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_completed', 'key_f458_not_read', 200 ) ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
@@ -9014,6 +9020,18 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
 		$this->assertSame( 're_f458_after_completed', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Shapes of a completed refund row through the gateway.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function completed_gateway_row_shapes_data(): array {
+		return array(
+			'refunded and linked'    => array( 'refunded and linked', 're_f458_completed_gateway_refund' ),
+			'refunded, with no link' => array( 'refunded, with no link', '' ),
+		);
 	}
 
 	/**
@@ -9429,17 +9447,19 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Create a refund row as a completed refund through the runtime's gateway leaves it: refunded through the gateway,
-	 * linked to its provider refund and not marked as a manual record.
+	 * linked to its provider refund unless the ID is empty, and not marked as a manual record.
 	 *
 	 * @param WC_Order $order     Parent order.
 	 * @param float    $amount    Amount.
-	 * @param string   $refund_id Provider refund ID.
+	 * @param string   $refund_id Provider refund ID; empty for an unlinked row.
 	 * @return WC_Order_Refund
 	 */
 	private function create_completed_gateway_row( WC_Order $order, float $amount, string $refund_id ): WC_Order_Refund {
 		$row = $this->create_in_flight_gateway_row( $order, $amount );
 		$row->set_refunded_payment( true );
-		$row->update_meta_data( '_wcpay_refund_id', $refund_id );
+		if ( '' !== $refund_id ) {
+			$row->update_meta_data( '_wcpay_refund_id', $refund_id );
+		}
 		$row->save();
 
 		return $row;
