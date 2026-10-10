@@ -216,7 +216,8 @@ class WooPaymentsProviderGatewayAdapter {
 					'source' => 'woocommerce_core',
 				);
 
-				$decision = $this->refund_ambiguity_service->decide( $order, $request );
+				$own_row_id = (int) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? 0 );
+				$decision   = $this->refund_ambiguity_service->decide( $order, $request, $own_row_id );
 				switch ( $decision['action'] ) {
 					case WooPaymentsRefundAmbiguityService::ACTION_REFUSE:
 						return self::refused_refund_outcome( $decision );
@@ -225,9 +226,9 @@ class WooPaymentsProviderGatewayAdapter {
 
 						return WooPaymentsIntentCodec::outcome_from_refund_result( $refund )->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $refund ) );
 					case WooPaymentsRefundAmbiguityService::ACTION_RETRY_HELD_KEY:
-						return $this->send_refund( $order, $decision['request'] ?? $request, (string) ( $decision['key'] ?? '' ), true );
+						return $this->send_refund( $order, $decision['request'] ?? $request, (string) ( $decision['key'] ?? '' ), true, $own_row_id );
 					default:
-						return $this->send_refund( $order, $request, $idempotency_key, false );
+						return $this->send_refund( $order, $request, $idempotency_key, false, $own_row_id );
 				}
 			}
 		}
@@ -242,16 +243,17 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param array{charge:string,amount:int,reason:string,source:string} $request           Refund request.
 	 * @param string                                                      $key               Key to send it under.
 	 * @param bool                                                        $is_held_key_retry Whether this resends an earlier ambiguous request under its kept key.
+	 * @param int                                                         $own_row_id        The refund row this call links, 0 when unknown.
 	 * @return PaymentOutcome
 	 */
-	private function send_refund( WC_Order $order, array $request, string $key, bool $is_held_key_retry ): PaymentOutcome {
+	private function send_refund( WC_Order $order, array $request, string $key, bool $is_held_key_retry, int $own_row_id ): PaymentOutcome {
 		try {
 			$result = $this->api_client->refund_charge( $request['charge'], $request['amount'], $request['reason'], $request['source'], $key );
 		} catch ( WooPaymentsApiException $exception ) {
 			// A definitive answer leaves any kept record as it was: after a held-key retry, a 400 can be Stripe's refusal of a
 			// key still in use or the replay of a stored failure, neither of which settles the earlier attempt.
 			if ( $this->api_client->is_ambiguous_request_failure( $exception ) ) {
-				$this->refund_ambiguity_service->record_ambiguous_answer( $order, $key, $request );
+				$this->refund_ambiguity_service->record_ambiguous_answer( $order, $key, $request, $own_row_id );
 			}
 
 			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );

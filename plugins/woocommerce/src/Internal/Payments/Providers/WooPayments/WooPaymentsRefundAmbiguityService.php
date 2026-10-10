@@ -101,13 +101,6 @@ class WooPaymentsRefundAmbiguityService {
 	private const ALREADY_RECORDED_WINDOW_SECONDS = 900;
 
 	/**
-	 * Seconds after the first ambiguous failure for which a record that has not located its refund is honoured.
-	 *
-	 * Stripe prunes idempotency keys after 24 hours, so a held key protects nothing after that.
-	 */
-	private const RECORD_LIFETIME_SECONDS = DAY_IN_SECONDS;
-
-	/**
 	 * Native API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -132,18 +125,23 @@ class WooPaymentsRefundAmbiguityService {
 	 * are read and the one carrying the kept key (or the refund the record already located) decides; the record is
 	 * kept while the earlier attempt is unsettled and cleared once it is.
 	 *
-	 * @param WC_Order                                                    $order   Order being refunded.
-	 * @param array{charge:string,amount:int,reason:string,source:string} $request This call's refund request.
+	 * @param WC_Order                                                    $order      Order being refunded.
+	 * @param array{charge:string,amount:int,reason:string,source:string} $request    This call's refund request.
+	 * @param int                                                         $own_row_id The refund row this call links, as the runtime read it under the lock
+	 *                                                                                before the provider call; 0 when unknown, then the newest row now.
 	 * @return array{action:string,key?:string,request?:array{charge:string,amount:int,reason:string,source:string},refund?:array<string,mixed>,code?:string,message?:string} `action` (one of the ACTION_* values), with `key` and `request` for a held-key retry, `refund` for a
 	 *         link, and `code` and `message` for a refusal.
 	 */
-	public function decide( WC_Order $order, array $request ): array {
+	public function decide( WC_Order $order, array $request, int $own_row_id = 0 ): array {
 		$record = $this->read_record( $order, $request['charge'] );
 		if ( null === $record ) {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
-		if ( '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record ) ) {
+		// Fixed before any request: a row saved during the lookup must never take this call's place (Codex review 201 H2).
+		$own_row_id = 0 < $own_row_id ? $own_row_id : $this->get_newest_refund_id( $order );
+
+		if ( '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record, $own_row_id ) ) {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
@@ -162,17 +160,18 @@ class WooPaymentsRefundAmbiguityService {
 			return $this->decide_without_refund( $order, $record, $request, ! empty( $list['has_more'] ) );
 		}
 
-		return $this->decide_with_refund( $order, $record, $request, $refund );
+		return $this->decide_with_refund( $order, $record, $request, $refund, $own_row_id );
 	}
 
 	/**
 	 * Record an ambiguous answer to a refund request, or move the latest failure time of the record for the same key.
 	 *
-	 * @param WC_Order                                                    $order   Order being refunded.
-	 * @param string                                                      $key     Key the request was sent with.
-	 * @param array{charge:string,amount:int,reason:string,source:string} $request Refund request sent.
+	 * @param WC_Order                                                    $order      Order being refunded.
+	 * @param string                                                      $key        Key the request was sent with.
+	 * @param array{charge:string,amount:int,reason:string,source:string} $request    Refund request sent.
+	 * @param int                                                         $own_row_id The refund row the call links, for the log line; 0 when unknown.
 	 */
-	public function record_ambiguous_answer( WC_Order $order, string $key, array $request ): void {
+	public function record_ambiguous_answer( WC_Order $order, string $key, array $request, int $own_row_id = 0 ): void {
 		$now    = time();
 		$record = $this->read_record( $order, $request['charge'] );
 		if ( null !== $record && $key === $record['key'] ) {
@@ -186,7 +185,7 @@ class WooPaymentsRefundAmbiguityService {
 				'amount'          => $request['amount'],
 				'currency'        => strtolower( (string) $order->get_currency() ),
 				'request'         => $request,
-				'wc_refund_id'    => $this->get_newest_refund_id( $order ),
+				'wc_refund_id'    => 0 < $own_row_id ? $own_row_id : $this->get_newest_refund_id( $order ),
 				'failed_at'       => $now,
 				'last_failed_at'  => $now,
 				'found_refund_id' => '',
@@ -301,13 +300,14 @@ class WooPaymentsRefundAmbiguityService {
 	/**
 	 * Decide from the refund the earlier attempt made.
 	 *
-	 * @param WC_Order                                                    $order   Order being refunded.
-	 * @param array<string,mixed>                                         $record  The order's record.
-	 * @param array{charge:string,amount:int,reason:string,source:string} $request This call's refund request.
-	 * @param array<string,mixed>                                         $refund  The earlier attempt's refund.
+	 * @param WC_Order                                                    $order      Order being refunded.
+	 * @param array<string,mixed>                                         $record     The order's record.
+	 * @param array{charge:string,amount:int,reason:string,source:string} $request    This call's refund request.
+	 * @param array<string,mixed>                                         $refund     The earlier attempt's refund.
+	 * @param int                                                         $own_row_id The refund row this call links.
 	 * @return array{action:string,key?:string,request?:array{charge:string,amount:int,reason:string,source:string},refund?:array<string,mixed>,code?:string,message?:string}
 	 */
-	private function decide_with_refund( WC_Order $order, array $record, array $request, array $refund ): array {
+	private function decide_with_refund( WC_Order $order, array $record, array $request, array $refund, int $own_row_id ): array {
 		$refund_id       = (string) ( $refund['id'] ?? '' );
 		$refund_amount   = is_numeric( $refund['amount'] ?? null ) ? (int) $refund['amount'] : -1;
 		$refund_currency = strtolower( (string) ( $refund['currency'] ?? '' ) );
@@ -341,7 +341,10 @@ class WooPaymentsRefundAmbiguityService {
 		if ( ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
 			// own (monitor rulings 2026-10-10 13:20 and 13:35).
-			$manual_row = self::find_manual_record_row( $this->get_earlier_refund_rows( $order ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] );
+			// The rows are in the order's currency, so only a refund in that currency can be one of them (Codex review 201 M4).
+			$manual_row = strtolower( (string) $order->get_currency() ) === $refund_currency
+				? self::find_manual_record_row( $this->get_earlier_refund_rows( $order, $own_row_id ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] )
+				: null;
 			if ( null !== $manual_row ) {
 				$this->link_manual_record_row( $order, $record, $manual_row, $refund_id );
 
@@ -457,8 +460,9 @@ class WooPaymentsRefundAmbiguityService {
 	/**
 	 * Read the order's record when it applies to this order and charge.
 	 *
-	 * A record naming another order or charge was copied or left stale, and one that has not located its refund
-	 * expires with the key Stripe pruned; either is deleted with a warning.
+	 * A record naming another order or charge was copied or left stale, and is deleted with a warning. A record never
+	 * expires: losing the key at Stripe after 24 hours does not settle what the earlier request did, so only the lookup
+	 * does (monitor ruling 2026-10-10 14:05, Codex review 201 H3).
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.
@@ -480,7 +484,8 @@ class WooPaymentsRefundAmbiguityService {
 		}
 
 		$failed_at = (int) ( $stored['failed_at'] ?? 0 );
-		$record    = array(
+
+		return array(
 			'order_id'        => $order->get_id(),
 			'charge_id'       => $charge_id,
 			'key'             => $key,
@@ -498,16 +503,6 @@ class WooPaymentsRefundAmbiguityService {
 			'found_refund_id' => (string) ( $stored['found_refund_id'] ?? '' ),
 			'found_amount'    => (int) ( $stored['found_amount'] ?? 0 ),
 		);
-
-		// A record that located its refund never expires: only linking it or its webhook row settles it.
-		if ( '' === $record['found_refund_id'] && time() - $failed_at >= self::RECORD_LIFETIME_SECONDS ) {
-			$this->clear_record( $order );
-			$this->log_cleared( $order, $record, 'it is older than the 24 hours Stripe keeps idempotency keys, so this call sends under its own key' );
-
-			return null;
-		}
-
-		return $record;
 	}
 
 	/**
@@ -548,12 +543,13 @@ class WooPaymentsRefundAmbiguityService {
 	 * (Opus review F2, monitor ruling 2026-10-10 13:20). This call's own row, the newest, does not count. A manual row
 	 * that records the found refund is linked only after the lookup, once its status and the order's rows are known.
 	 *
-	 * @param WC_Order            $order  Order being refunded.
-	 * @param array<string,mixed> $record The order's record, holding a found refund.
+	 * @param WC_Order            $order      Order being refunded.
+	 * @param array<string,mixed> $record     The order's record, holding a found refund.
+	 * @param int                 $own_row_id The refund row this call links.
 	 * @return bool Whether the hold was cleared, so this call sends under its own key.
 	 */
-	private function clear_found_refund_the_order_cannot_refund( WC_Order $order, array $record ): bool {
-		$rows        = $this->get_earlier_refund_rows( $order );
+	private function clear_found_refund_the_order_cannot_refund( WC_Order $order, array $record, int $own_row_id ): bool {
+		$rows        = $this->get_earlier_refund_rows( $order, $own_row_id );
 		$currency    = (string) $order->get_currency();
 		$found_id    = (string) $record['found_refund_id'];
 		$found_minor = (int) $record['found_amount'];
@@ -570,14 +566,14 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Get the order's local refunds other than this call's own row, the newest, read again past the request cache.
+	 * Get the order's local refunds other than this call's own row, read again past the request cache.
 	 *
-	 * @param WC_Order $order Order being refunded.
+	 * @param WC_Order $order      Order being refunded.
+	 * @param int      $own_row_id The refund row this call links.
 	 * @return WC_Order_Refund[]
 	 */
-	private function get_earlier_refund_rows( WC_Order $order ): array {
-		$refunds    = $this->get_fresh_refunds( $order );
-		$own_row_id = array() === $refunds ? 0 : max( array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $refunds ) );
+	private function get_earlier_refund_rows( WC_Order $order, int $own_row_id ): array {
+		$refunds = $this->get_fresh_refunds( $order );
 
 		return array_values( array_filter( $refunds, static fn( WC_Order_Refund $refund ): bool => $own_row_id !== $refund->get_id() ) );
 	}
@@ -630,7 +626,7 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Get the ID of the order's newest local refund, which the failed call created.
+	 * Get the ID of the order's newest local refund, which this call created, for a caller that did not say which it links.
 	 *
 	 * @param WC_Order $order Order being refunded.
 	 * @return int 0 when the order has none.

@@ -363,7 +363,9 @@ class PaymentProcessingService {
 	 * Process a refund through a provider.
 	 *
 	 * When applying a refund the provider already made fails, the refund still reports success, because WooCommerce
-	 * deletes its refund row when the gateway reports a failure.
+	 * deletes its refund row when the gateway reports a failure. Under the lock the order is read again in place, as for a
+	 * charge, so a request that waited on the lock sees what the earlier one saved, and the provider gets the refund row
+	 * this call links in the payment data (PaymentOperationContext::PAYMENT_DATA_REFUND_ID).
 	 *
 	 * @since 11.0.0
 	 *
@@ -391,6 +393,9 @@ class PaymentProcessingService {
 		}
 
 		try {
+			// A request that waited on the lock may hold an order loaded before the earlier refund saved its state.
+			$this->lifecycle_service->reread_order_from_data_store( $order );
+
 			// Read the newest row under the lock and before the provider call, so a row created after this read (a manual
 			// refund, or one the lock refuses) is never linked; a row another request saves between this call's own row and
 			// this read is.
@@ -408,6 +413,7 @@ class PaymentProcessingService {
 				);
 			}
 
+			$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $wc_refund_id ) );
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );
 			} catch ( Throwable $exception ) {

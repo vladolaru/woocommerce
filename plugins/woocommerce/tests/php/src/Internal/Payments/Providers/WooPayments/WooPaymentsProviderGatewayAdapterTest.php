@@ -7759,8 +7759,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param float  $amount        Row amount.
 	 * @param int    $age           Seconds before the failure the row was created, or 0 for after it.
 	 * @param string $provider_link `_wcpay_refund_id` on the row, as a webhook row carries it.
+	 * @param bool   $through_gateway Whether the row was refunded through the gateway (`refunded_payment`).
 	 */
-	public function test_rows_that_do_not_record_the_found_refund_leave_the_hold( string $row_kind, float $amount, int $age, string $provider_link ): void {
+	public function test_rows_that_do_not_record_the_found_refund_leave_the_hold( string $row_kind, float $amount, int $age, string $provider_link, bool $through_gateway = false ): void {
 		unset( $row_kind );
 		$failed_at = time() - 1000;
 		$order     = $this->create_refund_hold_order();
@@ -7780,6 +7781,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		if ( '' !== $provider_link ) {
 			$row->update_meta_data( '_wcpay_refund_id', $provider_link );
 		}
+		$row->set_refunded_payment( $through_gateway );
 		$row->save();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
@@ -7797,13 +7799,14 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Local rows that do not record the found refund.
 	 *
-	 * @return array<string,array{string,float,int,string}>
+	 * @return array<string,array{0:string,1:float,2:int,3:string,4?:bool}>
 	 */
 	public function rows_that_do_not_record_the_found_refund_data(): array {
 		return array(
 			'manual row of another amount'       => array( 'manual row of another amount', 4.00, 0, '' ),
 			'manual row from before the failure' => array( 'manual row from before the failure', 5.55, 100, '' ),
 			'webhook row of the found amount'    => array( 'webhook row of the found amount', 5.55, 0, 're_f458_webhook_row' ),
+			'gateway row with no provider link'  => array( 'gateway row with no provider link', 5.55, 0, '', true ),
 		);
 	}
 
@@ -7908,16 +7911,24 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An unrecorded earlier refund in another currency than the order's is not taken for this call's amount.
+	 * @testdox An unrecorded earlier refund in another currency than the order's is not taken for this call's amount, nor for a manual row of that amount.
 	 *
 	 * The same-amount check compares the currency too: 5.55 USD is not 5.55 EUR, so the call is refused as row 4 instead
-	 * of being answered with the earlier refund.
+	 * of being answered with the earlier refund, and a manual EUR 5.55 row does not record it.
 	 */
 	public function test_earlier_refund_in_another_currency_is_not_linked(): void {
 		$order = $this->create_refund_hold_order();
 		$order->set_currency( 'EUR' );
 		$order->save();
-		$this->seed_refund_hold( $order );
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		// A manual EUR 5.55 row is not a record of a USD 5.55 refund (Codex review 201 M4).
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded locally' );
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
 		$provider               = $this->create_refund_hold_provider( $http_client );
@@ -7927,6 +7938,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertWPError( $result );
 		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
 		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'A row in the order currency cannot record a refund in another.' );
 	}
 
 	/**
@@ -8022,7 +8034,10 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A hold that has not found its refund and is older than 24 hours, or that names another order or charge, is deleted with no lookup.
+	 * @testdox A hold that names another order or charge is deleted with no lookup.
+	 *
+	 * Monitor ruling 2026-10-10 14:05 removed the 24-hour expiry this test also pinned: an old hold is now looked up
+	 * (test_unrecorded_refund_older_than_24_hours_is_found_and_linked).
 	 *
 	 * @dataProvider stale_refund_hold_data
 	 *
@@ -8055,14 +8070,8 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function stale_refund_hold_data(): array {
 		return array(
-			'older than 24 hours' => array(
-				array(
-					'failed_at'      => time() - DAY_IN_SECONDS - 60,
-					'last_failed_at' => time() - DAY_IN_SECONDS - 60,
-				),
-			),
-			'another order'       => array( array( 'order_id' => -1 ) ),
-			'another charge'      => array( array( 'charge_id' => 'ch_f458_other' ) ),
+			'another order'  => array( array( 'order_id' => -1 ) ),
+			'another charge' => array( array( 'charge_id' => 'ch_f458_other' ) ),
 		);
 	}
 
@@ -8220,6 +8229,166 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund request that loaded the order before another request saved a hold reads the hold under the lock and looks the earlier refund up.
+	 *
+	 * Codex review 201 H1 and monitor ruling 2026-10-10 14:05: a request that waited on the lock holds an order object read
+	 * before the earlier request's ambiguous answer was saved; the runtime reads the order again under the lock, as for a
+	 * charge, so the second request links the earlier refund instead of sending a second one.
+	 */
+	public function test_request_that_waited_on_the_lock_reads_the_hold_and_looks_up(): void {
+		$order  = $this->create_refund_hold_order();
+		$loaded = wc_get_order( $order->get_id() );
+		$this->assertSame( self::F458_CHARGE, $loaded->get_meta( '_charge_id', true ), 'The waiting request has read the order meta.' );
+		$this->seed_refund_hold( $order );
+		$this->assertSame( '', $loaded->get_meta( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, true ), 'Its order object does not see the hold.' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55, 'requested_by_customer', $loaded );
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'The earlier refund is looked up, not sent again.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A manual refund saved by another request during the lookup does not make this call's own row look like a manual record.
+	 *
+	 * Codex review 201 H2: this call's row is the one the runtime read under the lock before the provider call. Taking the
+	 * newest row after the lookup instead would exclude the new manual row, take this call's own 5.55 row for a manual
+	 * record of the earlier 5.55 refund, and send 5.55 again.
+	 */
+	public function test_manual_row_saved_during_the_lookup_does_not_shift_this_calls_row(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$test        = $this;
+		$late_row    = null;
+		$http_client = new class() extends FakeWooPaymentsHttpClient {
+			/**
+			 * Called before each answer.
+			 *
+			 * @var callable|null
+			 */
+			public $before_answer = null;
+
+			/**
+			 * Run the callback, then answer from the queue.
+			 *
+			 * @param string      $method         HTTP method.
+			 * @param string      $path           WPCOM path.
+			 * @param string[]    $headers        Request headers.
+			 * @param string|null $body           Request body.
+			 * @param int         $timeout        Request timeout.
+			 * @param bool        $use_user_token Whether to sign with the connection-owner user token.
+			 * @param bool        $blocking       Whether the request should block for the response.
+			 * @return mixed
+			 */
+			public function request( string $method, string $path, array $headers = array(), ?string $body = null, int $timeout = 70, bool $use_user_token = false, bool $blocking = true ) {
+				if ( is_callable( $this->before_answer ) ) {
+					call_user_func( $this->before_answer, $method );
+				}
+
+				return parent::request( $method, $path, $headers, $body, $timeout, $use_user_token, $blocking );
+			}
+		};
+
+		$http_client->before_answer = static function ( string $method ) use ( $test, $order, &$late_row ): void {
+			if ( 'GET' === $method && null === $late_row ) {
+				$late_row = wc_create_refund(
+					array(
+						'order_id'       => $order->get_id(),
+						'amount'         => 1.00,
+						'reason'         => 'Recorded by another request',
+						'refund_payment' => false,
+					)
+				);
+				$test->assertInstanceOf( WC_Order_Refund::class, $late_row );
+			}
+		};
+		$http_client->responses     = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider                   = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertInstanceOf( WC_Order_Refund::class, $late_row );
+		$this->assertGreaterThan( $row, $late_row->get_id(), 'The other request saved the newer row.' );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'No second refund may be sent.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $late_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox An unrecorded earlier refund whose hold is older than 24 hours is found and linked, not refunded again.
+	 *
+	 * Codex review 201 H3 and monitor ruling 2026-10-10 14:05: Stripe forgetting the key after 24 hours does not settle what
+	 * the earlier request did, so the hold never expires and the lookup decides.
+	 */
+	public function test_unrecorded_refund_older_than_24_hours_is_found_and_linked(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 2 * DAY_IN_SECONDS,
+				'last_failed_at' => time() - 2 * DAY_IN_SECONDS,
+			)
+		);
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_list() ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox A manual row matching the found refund's own amount records it even when the hold recorded another amount.
+	 *
+	 * Codex review 201 M5 and monitor ruling 2026-10-10 11:05: the refund carrying the marker decides on its own amount, so
+	 * the manual record is matched on 5.55, not on the 6.00 the hold holds.
+	 */
+	public function test_manual_row_matches_the_found_refunds_own_amount(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'amount'         => 600,
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_m5', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertCount( 2, $trail );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertSame( 're_f458_after_m5', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
 	 * Create an order paid by the charge recorded in `Fixtures/rec-f458-refund-list.json`.
 	 *
 	 * @return WC_Order
@@ -8267,12 +8436,13 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @param WC_Order            $order    Order.
 	 * @param float               $amount   Refund amount.
 	 * @param string              $reason   Refund reason.
+	 * @param WC_Order|null       $loaded   Order object as the refunding request loaded it; read fresh when null.
 	 * @return array{0:true|WP_Error,1:int} The result and the refund row ID.
 	 */
-	private function run_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $reason = 'requested_by_customer' ): array {
+	private function run_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount, string $reason = 'requested_by_customer', ?WC_Order $loaded = null ): array {
 		$row    = $this->create_refund_row( $order, $amount, $reason );
 		$result = wc_get_container()->get( PaymentProcessingService::class )->process_refund(
-			PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ),
+			PaymentOperationContext::for_refund( $loaded ?? wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, $amount, $reason ),
 			$provider
 		);
 		if ( is_wp_error( $result ) ) {

@@ -18,6 +18,14 @@ use WC_Order;
 class PaymentOperationContext {
 
 	/**
+	 * Payment data key the runtime sets on a refund: the ID of the WooCommerce refund row the call links, read under the
+	 * order payment lock before the provider call.
+	 *
+	 * @since 11.2.0
+	 */
+	public const PAYMENT_DATA_REFUND_ID = 'wc_refund_id';
+
+	/**
 	 * Order being acted on.
 	 *
 	 * @var WC_Order
@@ -206,5 +214,17 @@ class PaymentOperationContext {
 	 */
 	public function get_provider_data(): array {
 		return $this->provider_data;
+	}
+
+	/**
+	 * Get a copy of this context with more payment data.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,mixed> $payment_data Payment data to add; a key already present is replaced.
+	 * @return self
+	 */
+	public function with_payment_data( array $payment_data ): self {
+		return new self( $this->order, $this->gateway_id, $this->payment_method_id, array_merge( $this->payment_data, $payment_data ), $this->provider_data, $this->amount );
 	}
 }
