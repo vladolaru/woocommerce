@@ -8631,6 +8631,58 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A gateway refund row is never taken for a manual record at its first save, before WooCommerce fires woocommerce_create_refund: no refund is sent again and the earlier refund stays linked.
+	 *
+	 * Codex review 204 F1 and monitor ruling 2026-10-10 16:30: wc_create_refund() first saves the row inside update_taxes()
+	 * (includes/wc-order-functions.php:657, abstracts/abstract-wc-order.php:2455) and fires the hook only at :672. Another
+	 * request's refund that ran right after that first save took the unmarked 5.55 row for the merchant's record of the
+	 * earlier 5.55 refund and sent 2.00; the 5.55 request then sent 5.55 again and its own refund replaced the link.
+	 */
+	public function test_gateway_row_is_never_taken_for_a_manual_record_at_its_first_save(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$other_client            = new FakeWooPaymentsHttpClient();
+		$other_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_first_save_200', 'key_f458_not_read', 200 ) ),
+		);
+		$other_provider          = $this->create_refund_hold_provider( $other_client );
+		$other_result            = null;
+		$interleave              = function ( $refund ) use ( &$interleave, &$other_result, $other_provider, $order ): void {
+			if ( ! $refund instanceof WC_Order_Refund || $order->get_id() !== $refund->get_parent_id() ) {
+				return;
+			}
+			remove_action( 'woocommerce_after_order_refund_object_save', $interleave );
+			// Another request refunds 2.00 right after the 5.55 row's first save.
+			list( $other_result ) = $this->run_refund( $other_provider, $order, 2.00 );
+		};
+		add_action( 'woocommerce_after_order_refund_object_save', $interleave );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_first_save_555', 'key_f458_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		$refund = $this->create_refund_through_the_gateway( $provider, $order, 5.55 );
+		remove_action( 'woocommerce_after_order_refund_object_save', $interleave );
+
+		$this->assertWPError( $other_result, 'The 2.00 refund is refused while the earlier 5.55 refund is unrecorded.' );
+		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $other_result->get_error_code() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $other_client ), 'The 2.00 request sends nothing.' );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ), 'The 5.55 request sends nothing again.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $refund->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The 5.55 row records the earlier refund.' );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
 	 * @testdox Another request's gateway refund row still in flight does not count as refunded, so the backstop keeps a found hold.
 	 *
 	 * Monitor ruling 2026-10-10 15:05 (R1b): the in-flight refund may still fail; counting it could only clear the hold early.

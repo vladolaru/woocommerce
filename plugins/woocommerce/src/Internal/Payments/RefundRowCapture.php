@@ -14,10 +14,11 @@ use WC_Order_Refund;
 /**
  * Remembers, for this request, the refund row WooCommerce is about to refund through a gateway.
  *
- * `wc_create_refund()` fires `woocommerce_create_refund` with the refund just before it saves it, and then, for a refund
- * through the gateway, calls `wc_refund_payment()` in the same request (includes/wc-order-functions.php:672-676). The
- * refund is kept here and handed to the refund call once, so the call links its own row even when another request saved
- * a newer one meanwhile. A direct `wc_refund_payment()` caller with no such row leaves nothing to take.
+ * `wc_create_refund()` first saves the refund inside `update_taxes()`, then fires `woocommerce_create_refund` with it,
+ * saves it again and, for a refund through the gateway, calls `wc_refund_payment()` in the same request
+ * (includes/wc-order-functions.php:657,672-676). The refund is kept here and handed to the refund call once, so the call
+ * links its own row even when another request saved a newer one meanwhile. A direct `wc_refund_payment()` caller with
+ * no such row leaves nothing to take.
  *
  * @since 11.2.0
  * @internal
@@ -27,6 +28,9 @@ class RefundRowCapture implements RegisterHooksInterface {
 	/**
 	 * Refund row meta key marking a row created to be refunded through a gateway the runtime owns, so code looking for
 	 * the merchant's manual refunds never takes it for one, even while its refund call is still running.
+	 *
+	 * It is written at the row's first save, before WooCommerce says whether the refund goes through the gateway, and
+	 * removed at `woocommerce_create_refund` when it does not (monitor ruling 2026-10-10 16:30).
 	 *
 	 * @since 11.2.0
 	 */
@@ -63,16 +67,35 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register(): void {
+		if ( false === has_action( 'woocommerce_before_order_refund_object_save', array( $this, 'handle_before_refund_save' ) ) ) {
+			add_action( 'woocommerce_before_order_refund_object_save', array( $this, 'handle_before_refund_save' ), 10, 1 );
+		}
 		if ( false === has_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ) ) ) {
 			add_action( 'woocommerce_create_refund', array( $this, 'handle_create_refund' ), 10, 2 );
 		}
 	}
 
 	/**
+	 * Mark a new refund of an order paid through one of the runtime's gateways before its first save.
+	 *
+	 * WooCommerce saves the row in wc_create_refund() before it fires `woocommerce_create_refund`, so the marker must
+	 * already be there for another request never to take the row for a manual record (Codex review 204 F1).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $refund Refund about to be saved.
+	 */
+	public function handle_before_refund_save( $refund ): void {
+		if ( $refund instanceof WC_Order_Refund && 0 === $refund->get_id() ) {
+			$this->mark_if_runtime_gateway_refund( $refund );
+		}
+	}
+
+	/**
 	 * Keep a refund WooCommerce is about to refund through a gateway; any other refund it creates clears what was kept.
 	 *
-	 * A refund through one of the runtime's gateways also gets GATEWAY_REFUND_META, saved with the row (monitor ruling
-	 * 2026-10-10 15:05). Refunds through other plugins' gateways are left untouched.
+	 * A refund that does not go through the gateway loses the marker its first save gave it; the save that follows this
+	 * hook stores the removal. Refunds through other plugins' gateways are never marked.
 	 *
 	 * @internal
 	 *
@@ -80,14 +103,36 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * @param mixed $args   The arguments wc_create_refund() was called with.
 	 */
 	public function handle_create_refund( $refund, $args ): void {
-		$this->refund = $refund instanceof WC_Order_Refund && is_array( $args ) && ! empty( $args['refund_payment'] ) ? $refund : null;
-		if ( null === $this->refund ) {
+		if ( ! $refund instanceof WC_Order_Refund ) {
+			$this->refund = null;
 			return;
 		}
 
-		$order = wc_get_order( $this->refund->get_parent_id() );
-		if ( $order instanceof WC_Order && isset( $this->gateways_controller ) && $this->gateways_controller->owns_gateway( (string) $order->get_payment_method() ) ) {
-			$this->refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
+		if ( ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
+			$this->refund = null;
+			$refund->delete_meta_data( self::GATEWAY_REFUND_META );
+			return;
+		}
+
+		$this->refund = $refund;
+		if ( '' === $refund->get_meta( self::GATEWAY_REFUND_META, true ) ) {
+			$this->mark_if_runtime_gateway_refund( $refund );
+		}
+	}
+
+	/**
+	 * Mark a refund with GATEWAY_REFUND_META when its order was paid through one of the runtime's gateways.
+	 *
+	 * @param WC_Order_Refund $refund Refund.
+	 */
+	private function mark_if_runtime_gateway_refund( WC_Order_Refund $refund ): void {
+		if ( ! isset( $this->gateways_controller ) || 0 >= $refund->get_parent_id() ) {
+			return;
+		}
+
+		$order = wc_get_order( $refund->get_parent_id() );
+		if ( $order instanceof WC_Order && $this->gateways_controller->owns_gateway( (string) $order->get_payment_method() ) ) {
+			$refund->update_meta_data( self::GATEWAY_REFUND_META, 'yes' );
 		}
 	}
 

@@ -528,7 +528,9 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 * @testdox A refund through wc_create_refund() reaches the provider with the row WooCommerce created, and that row is marked as a gateway refund before the provider call.
 	 *
 	 * Review F-458 final 3 (T1) and review C10a (F3): the bootstrap's refund row capture, the container's controller wiring
-	 * and core's `woocommerce_create_refund` timing (an unsaved row at fire time), pinned on the real path in one place.
+	 * and core's save order, pinned on the real path in one place. wc_create_refund() first saves the row inside
+	 * update_taxes(), where the marker is written, then fires `woocommerce_create_refund` and saves it again
+	 * (includes/wc-order-functions.php:657,672-674; Codex review 204 F6).
 	 */
 	public function test_core_refund_hands_its_marked_row_to_the_provider(): void {
 		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );

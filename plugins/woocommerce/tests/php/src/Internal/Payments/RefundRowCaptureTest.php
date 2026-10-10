@@ -17,7 +17,8 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A refund WooCommerce creates to refund through the gateway is handed to that order's refund call of its amount, once, with the ID it got when saved.
 	 *
-	 * wc_create_refund() fires `woocommerce_create_refund` before it saves the refund (includes/wc-order-functions.php:672-674).
+	 * wc_create_refund() fires `woocommerce_create_refund` before it saves the refund again (includes/wc-order-functions.php:672-674);
+	 * this case starts from an unsaved refund, as a direct caller of the hook may.
 	 */
 	public function test_hands_over_the_gateway_refund_once_with_its_saved_id(): void {
 		$order  = $this->create_order();
@@ -115,6 +116,75 @@ class RefundRowCaptureTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'yes', $marked['runtime_gateway'] );
 		$this->assertSame( '', $marked['other_plugin_gateway'] );
+	}
+
+	/**
+	 * @testdox Through wc_create_refund(), a $label refund is stored with marker "$first_save_marker" at its first save and "$final_marker" once created.
+	 *
+	 * The gateway case has no gateway to refund through, so WooCommerce deletes its row; only its first save is read.
+	 * @dataProvider first_save_marker_data
+	 *
+	 * Codex review 204 F1 and monitor ruling 2026-10-10 16:30: wc_create_refund() first saves the row inside update_taxes()
+	 * (includes/wc-order-functions.php:657), before `woocommerce_create_refund` at :672, so the marker is written at that
+	 * first save and removed again at the hook when the refund does not go through the gateway.
+	 *
+	 * @param string      $label             Case label.
+	 * @param string      $payment_method    The order's payment method.
+	 * @param bool        $refund_payment    Whether the refund goes through the gateway.
+	 * @param string      $first_save_marker The marker stored at the row's first save.
+	 * @param string|null $final_marker      The marker stored once wc_create_refund() returns; null when the row is deleted.
+	 */
+	public function test_marks_at_the_first_save_and_unmarks_a_manual_refund( string $label, string $payment_method, bool $refund_payment, string $first_save_marker, ?string $final_marker ): void {
+		unset( $label );
+		$controller = $this->createMock( ProviderGatewaysController::class );
+		$controller->method( 'owns_gateway' )->willReturnCallback( static fn( string $gateway_id ): bool => 'runtime_gateway' === $gateway_id );
+		$sut = new RefundRowCapture();
+		$sut->init( $controller );
+		$sut->register();
+		$order = $this->create_order();
+		$order->set_payment_method( $payment_method );
+		$order->save();
+		$stored     = array();
+		$first_save = static function ( $refund ) use ( &$stored ): void {
+			$stored[] = $refund instanceof WC_Order_Refund ? (string) wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) : null;
+		};
+		add_action( 'woocommerce_after_order_refund_object_save', $first_save );
+
+		try {
+			$refund = wc_create_refund(
+				array(
+					'order_id'       => $order->get_id(),
+					'amount'         => 4.25,
+					'refund_payment' => $refund_payment,
+				)
+			);
+		} finally {
+			remove_action( 'woocommerce_after_order_refund_object_save', $first_save );
+			remove_action( 'woocommerce_before_order_refund_object_save', array( $sut, 'handle_before_refund_save' ) );
+			remove_action( 'woocommerce_create_refund', array( $sut, 'handle_create_refund' ) );
+		}
+
+		$this->assertNotEmpty( $stored );
+		$this->assertSame( $first_save_marker, $stored[0], 'The marker stored at the first save.' );
+		if ( null === $final_marker ) {
+			$this->assertWPError( $refund );
+		} else {
+			$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+			$this->assertSame( $final_marker, wc_get_order( $refund->get_id() )->get_meta( RefundRowCapture::GATEWAY_REFUND_META, true ) );
+		}
+	}
+
+	/**
+	 * Refunds created through wc_create_refund().
+	 *
+	 * @return array<string,array{string,string,bool,string,string|null}>
+	 */
+	public function first_save_marker_data(): array {
+		return array(
+			'gateway refund on a runtime order'     => array( 'gateway', 'runtime_gateway', true, 'yes', null ),
+			'manual refund on a runtime order'      => array( 'manual', 'runtime_gateway', false, 'yes', '' ),
+			'manual refund on another plugin order' => array( 'other plugin', 'other_plugin_gateway', false, '', '' ),
+		);
 	}
 
 	/**
