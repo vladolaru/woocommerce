@@ -6470,6 +6470,68 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 offers the save checkbox only while saved cards are on and the method can be saved: reusable, in a valid
+	 * currency (class-wc-payments-checkout.php:505-517, class-wc-payment-gateway-wcpay.php:4900-4902,4961-4968). A gateway
+	 * claiming tokenization through the core supports filter does not change that.
+	 *
+	 * @testdox Should print no save checkbox, even when a filter makes the gateway claim tokenization: $scenario.
+	 * @testWith ["iDEAL, which cannot be saved, in a currency it takes", "ideal", "yes", "EUR"]
+	 *           ["card with saved cards off", "card", "no", "USD"]
+	 *
+	 * @param string $scenario          Scenario description.
+	 * @param string $payment_method_id Payment method of the gateway.
+	 * @param string $saved_cards       Saved cards setting.
+	 * @param string $currency          Store currency.
+	 */
+	public function test_payment_fields_offer_no_saving_the_client_does_not_offer( string $scenario, string $payment_method_id, string $saved_cards, string $currency ): void {
+		unset( $scenario );
+		add_filter( 'woocommerce_is_checkout', '__return_true' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		$gateway_id          = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_id;
+		$claims_tokenization = static fn( bool $supported, string $feature, $gateway ): bool => $supported || ( PaymentGatewayFeature::TOKENIZATION === $feature && $gateway_id === $gateway->id );
+		$store_currency      = static fn(): string => $currency;
+		add_filter( 'woocommerce_payment_gateway_supports', $claims_tokenization, 10, 3 );
+		add_filter( 'woocommerce_currency', $store_currency );
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'render_payment_fields' ) )
+			->getMock();
+		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+			static function (): void {
+				echo '<div id="wcpay-bridge-marker"></div>';
+			}
+		);
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_for_method' ) )
+			->getMock();
+		$provider->method( 'get_gateway_for_method' )->willReturn( null );
+
+		$output = '';
+		try {
+			$this->with_gateway_settings(
+				array( 'saved_cards' => $saved_cards ),
+				function () use ( $bridge, $provider, $payment_method_id, &$output ): void {
+					$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
+					$gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge );
+					$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ), 'The filter makes the gateway claim tokenization.' );
+
+					ob_start();
+					$gateway->payment_fields();
+					$output = (string) ob_get_clean();
+				}
+			);
+		} finally {
+			remove_filter( 'woocommerce_is_checkout', '__return_true' );
+			remove_filter( 'woocommerce_payment_gateway_supports', $claims_tokenization, 10 );
+			remove_filter( 'woocommerce_currency', $store_currency );
+		}
+
+		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
+		$this->assertStringNotContainsString( 'wc-' . $gateway_id . '-new-payment-method', $output );
+	}
+
+	/**
 	 * @testdox Should turn the express gateways off in the block editor before the Checkout block lists enabled gateways.
 	 */
 	public function test_block_editor_turns_express_gateways_off(): void {
