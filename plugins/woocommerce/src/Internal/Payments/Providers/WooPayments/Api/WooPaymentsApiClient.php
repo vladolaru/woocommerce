@@ -70,6 +70,26 @@ class WooPaymentsApiClient {
 	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
 
 	/**
+	 * Route ID pattern for resource IDs: letters, digits, underscores and hyphens.
+	 */
+	private const ROUTE_ID_PATTERN = '/^[\w-]+$/';
+
+	/**
+	 * Route ID pattern for word-only IDs: letters, digits and underscores.
+	 */
+	private const ROUTE_WORD_ID_PATTERN = '/^\w+$/';
+
+	/**
+	 * Route ID pattern for export IDs: export routes accept opaque IDs from the platform and only exclude path separators and URL-encoded path bytes.
+	 */
+	private const ROUTE_EXPORT_ID_PATTERN = '/^[^\/\\\\%]+$/';
+
+	/**
+	 * Route ID pattern for payment method promotion IDs.
+	 */
+	private const ROUTE_PM_PROMOTION_ID_PATTERN = '/^[A-Za-z0-9_-]+$/';
+
+	/**
 	 * Common keys in API requests/responses that must be redacted before logging.
 	 *
 	 * Ported from the plugin's API_KEYS_TO_REDACT; the list is the logging
@@ -590,7 +610,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the customer ID is invalid or the request fails.
 	 */
 	public function list_payment_intentions( string $customer_id, int $limit = 100 ): array {
-		$this->validate_route_customer_id( $customer_id );
+		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
 
 		return $this->request(
 			array(
@@ -646,7 +666,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the charge ID is invalid or the request fails.
 	 */
 	public function list_charge_refunds( string $charge_id, int $limit = 100 ): array {
-		$this->validate_route_word_id( $charge_id );
+		$this->validate_route_id( $charge_id, self::ROUTE_WORD_ID_PATTERN );
 
 		return $this->request(
 			array(
@@ -718,7 +738,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the customer ID is invalid.
 	 */
 	public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
-		$this->validate_route_customer_id( $customer_id );
+		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
 
 		return $this->request(
 			array(
@@ -767,7 +787,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function update_payment_method( string $payment_method_id, array $payment_method_data = array() ): array {
-		$this->validate_route_resource_id( $payment_method_id );
+		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( $payment_method_data, self::PAYMENT_METHODS_API . '/' . $payment_method_id, 'POST' );
 	}
@@ -780,7 +800,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function detach_payment_method( string $payment_method_id ): array {
-		$this->validate_route_resource_id( $payment_method_id );
+		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::PAYMENT_METHODS_API . '/' . $payment_method_id . '/detach', 'POST' );
 	}
@@ -832,7 +852,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the promotion ID or request is invalid.
 	 */
 	public function activate_pm_promotion( string $promotion_id ): array {
-		$this->validate_pm_promotion_id( $promotion_id );
+		$this->validate_route_id( $promotion_id, self::ROUTE_PM_PROMOTION_ID_PATTERN );
 		$request = WooPaymentsActivatePmPromotionRequest::from_id( $promotion_id );
 
 		return $this->request_with_legacy_request_filter(
@@ -849,7 +869,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_timeline( string $id ): array {
-		$this->validate_route_resource_id( $id );
+		$this->validate_route_id( $id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::TIMELINE_API . '/' . $id, 'GET' );
 	}
@@ -990,7 +1010,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function prepare_terminal_payment( string $intent_id, int $order_id ): array {
-		$this->validate_route_resource_id( $intent_id );
+		$this->validate_route_id( $intent_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request(
 			array(
@@ -1072,7 +1092,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_terminal_location( string $location_id ): array {
-		$this->validate_route_resource_id( $location_id );
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::TERMINAL_LOCATIONS_API . '/' . $location_id, 'GET' );
 	}
@@ -1113,7 +1133,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function update_terminal_location( string $location_id, ?string $display_name = null, ?array $address = null ): array {
-		$this->validate_route_resource_id( $location_id );
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
 
 		$params = array();
 		if ( null !== $display_name ) {
@@ -1135,7 +1155,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function delete_terminal_location( string $location_id ): array {
-		$this->validate_route_resource_id( $location_id );
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::TERMINAL_LOCATIONS_API . '/' . $location_id, 'DELETE' );
 	}
@@ -1148,7 +1168,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_charge( string $charge_id ): array {
-		$this->validate_route_resource_id( $charge_id );
+		$this->validate_route_id( $charge_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), 'charges/' . $charge_id, 'GET' );
 	}
@@ -1161,7 +1181,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_dispute_summary( string $dispute_id ): array {
-		$this->validate_route_resource_id( $dispute_id );
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), 'disputes/' . $dispute_id . '/summary', 'GET' );
 	}
@@ -1174,7 +1194,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_transaction( string $transaction_id ): array {
-		$this->validate_route_resource_id( $transaction_id );
+		$this->validate_route_id( $transaction_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::TRANSACTIONS_API . '/' . $transaction_id, 'GET' );
 	}
@@ -1272,7 +1292,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_authorization( string $payment_intent_id ): array {
-		$this->validate_route_resource_id( $payment_intent_id );
+		$this->validate_route_id( $payment_intent_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request_with_legacy_filter(
 			array(),
@@ -1316,7 +1336,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_transactions_export_url( string $export_id ): array {
-		$this->validate_route_export_id( $export_id );
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
 
 		return $this->request( array(), self::TRANSACTIONS_API . '/download/' . $export_id, 'GET' );
 	}
@@ -1385,7 +1405,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_latest_fraud_outcome( string $id ): array {
-		$this->validate_route_word_id( $id );
+		$this->validate_route_id( $id, self::ROUTE_WORD_ID_PATTERN );
 
 		$response = $this->request( array(), self::FRAUD_OUTCOMES_API . '/order_id/' . $id, 'GET' );
 
@@ -1466,7 +1486,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_dispute( string $dispute_id ): array {
-		$this->validate_route_resource_id( $dispute_id );
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::DISPUTES_API . '/' . $dispute_id, 'GET' );
 	}
@@ -1482,7 +1502,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function update_dispute( string $dispute_id, array $evidence, bool $submit, array $metadata ): array {
-		$this->validate_route_resource_id( $dispute_id );
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
 
 		$request = array(
 			'evidence' => $evidence,
@@ -1513,7 +1533,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function close_dispute( string $dispute_id ): array {
-		$this->validate_route_resource_id( $dispute_id );
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::DISPUTES_API . '/' . $dispute_id . '/close', 'POST' );
 	}
@@ -1547,7 +1567,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_disputes_export_url( string $export_id ): array {
-		$this->validate_route_export_id( $export_id );
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
 
 		return $this->request( array(), self::DISPUTES_API . '/download/' . $export_id, 'GET' );
 	}
@@ -1592,7 +1612,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_deposit( string $deposit_id ): array {
-		$this->validate_route_resource_id( $deposit_id );
+		$this->validate_route_id( $deposit_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::DEPOSITS_API . '/' . $deposit_id, 'GET' );
 	}
@@ -1626,7 +1646,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_payouts_export_url( string $export_id ): array {
-		$this->validate_route_export_id( $export_id );
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
 
 		return $this->request( array(), self::DEPOSITS_API . '/download/' . $export_id, 'GET' );
 	}
@@ -1712,7 +1732,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
 	public function get_document( string $document_id ): array {
-		$this->validate_document_id( $document_id );
+		$this->validate_route_id( $document_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request( array(), self::DOCUMENTS_API . '/' . $document_id, 'GET', true, false, true, true, true );
 	}
@@ -2251,7 +2271,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_file( string $file_id, bool $as_account = true ): array {
-		$this->validate_route_resource_id( $file_id );
+		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request(
 			array( 'as_account' => $as_account ),
@@ -2269,7 +2289,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_file_contents( string $file_id, bool $as_account = true ): array {
-		$this->validate_route_resource_id( $file_id );
+		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
 
 		return $this->request(
 			array( 'as_account' => $as_account ),
@@ -2305,80 +2325,14 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Validate a WooPayments route resource ID before path interpolation.
+	 * Validate a WooPayments route ID against its pattern before path interpolation.
 	 *
-	 * @param string $id Resource ID.
+	 * @param string $id      Route ID.
+	 * @param string $pattern One of the ROUTE_*_PATTERN constants.
 	 * @throws WooPaymentsApiException When the route parameter is invalid.
 	 */
-	private function validate_route_resource_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^[\w-]+$/', $id ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
-		}
-	}
-
-	/**
-	 * Validate a WooPayments word-only route resource ID before path interpolation.
-	 *
-	 * @param string $id Resource ID.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
-	 */
-	private function validate_route_word_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^\w+$/', $id ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
-		}
-	}
-
-	/**
-	 * Validate a WooPayments customer ID before using it as a route parameter.
-	 *
-	 * @param string $id Customer ID.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
-	 */
-	private function validate_route_customer_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^\w+$/', $id ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
-		}
-	}
-
-	/**
-	 * Validate a WooPayments export ID before path interpolation.
-	 *
-	 * Export routes accept opaque IDs from the platform and only exclude path separators and URL-encoded path bytes.
-	 *
-	 * @param string $id Export ID.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
-	 */
-	private function validate_route_export_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^[^\/\\\\%]+$/', $id ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
-		}
-	}
-
-	/**
-	 * Validate a WooPayments document ID before path interpolation.
-	 *
-	 * @param string $id Document ID.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
-	 */
-	private function validate_document_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^[\w-]+$/', $id ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
-		}
-	}
-
-	/**
-	 * Validate a payment method promotion ID before path interpolation.
-	 *
-	 * @param string $id Promotion ID.
-	 * @throws WooPaymentsApiException When the route parameter is invalid.
-	 */
-	private function validate_pm_promotion_id( string $id ): void {
-		if ( '' === $id || ! preg_match( '/^[A-Za-z0-9_-]+$/', $id ) ) {
+	private function validate_route_id( string $id, string $pattern ): void {
+		if ( '' === $id || ! preg_match( $pattern, $id ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
 			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
 		}
