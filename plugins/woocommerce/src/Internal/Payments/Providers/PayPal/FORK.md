@@ -27,7 +27,7 @@ The three stored DTO files are always marked as contract: any upstream change to
 
 **Webhook events of hosted subscriptions.** On a webhook registered earlier, `BILLING.SUBSCRIPTION.CANCELLED` and the three plan events get HTTP 200 and are dropped, so PayPal never retries. A hosted subscription cancelled at PayPal stays active in WooCommerce until the extension takes over again.
 
-**Connect nudges on a dormant store.** The wallet's own connect task (the WooCommerce Home task) and its plugins-page connect notice cannot show while the wallet is dormant. Until core's own dormant-time nudge exists, the "Complete setup" row in the Payments settings list is the nudge. A later change designs core's task, alert and profiler card for that state and deletes the wallet's dead task and notice.
+**Connect nudges on a dormant store.** The wallet's own connect task (the WooCommerce Home task), its connect admin notice (`ConnectAdminNotice`) and its loading-screen CSS were removed with the connect-surface trims (see "The connect-surface trims (Task 3)" below), so a plain dormant store, with no connection and no collecting state, shows none of them. Its nudge is the "Complete setup" row in the Payments settings list. Core's own surfaces replace the wallet's for the collecting state: the setup task and the Inbox note appear once a first wallet order exists on a store that is not connected, the row notice while the store still collects, and the order-screen and plugins-page notices (see "Seams for the after-payment flow").
 
 **PayPal suggestions in the Payments settings list.** While core holds the native wallet, the list shows no PayPal suggestion: `PaymentsProviders::get_extension_suggestions()` skips both `paypal_wallet` and `paypal_full_stack`. A merchant who wants the full PayPal Payments extension installs it from the Marketplace, and it takes the wallet over. `PaymentsExtensionSuggestionsCountryPlacementTest` pins the extension as owner for its fixtures, which describe the catalog, and checks every country again under core's wallet: the same placement without the two PayPal suggestions.
 
@@ -74,6 +74,170 @@ These are deliberate choices that keep the fork's behaviour and shared state as 
 - **Dormant mode.** When the store has no connected PayPal account (the connection options of the extension's settings say so), the wallet is not built and none of its hooks, scripts or routes load, except on its own admin pages (the settings route and the old `section=ppcp-gateway` URL) and its REST routes (`/wc/v3/wc_paypal` and `/paypal/v1`), where it boots so a merchant can connect. The Payments settings list shows a placeholder "PayPal Wallet" row (`DormantPayPalGateway`, which shares the wallet gateway's ID and only reads its settings) with a setup button that opens the wallet's settings route. The placeholder never writes an option.
 - **The settings route.** The wallet's settings page lives at `admin.php?page=wc-settings&tab=checkout&path=/paypal-wallet`, inside the Payments settings app. The old `section=ppcp-gateway` URL, and the sections of the extension's other gateways, redirect to it with a 302 that keeps the query arguments, so links and the onboarding return keep working.
 - **Card funding is off by decision.** Core disables card funding in the PayPal button stack (`DisabledFundingSources` always adds `card`), and no merchant setting is planned. The card button is PayPal-hosted guest card acceptance: the extension's own card button gateway, which the card cut removed together with its 3D Secure and fraud handling. It is not wallet functionality. PayPal's own guest card path inside the PayPal popup is unaffected by `disable-funding=card`, so a shopper without a PayPal account can still pay by card there. Bringing the separate card button back would be a decision about cards, not about the wallet.
+- **Core-owned names for the collecting state.** Everything the collecting state adds uses `wc_paypal_wallet`, `woocommerce_paypal_wallet` or `collecting.` (the container's service IDs and extension keys), never `ppcp`, so the extension's names stay the extension's. New hooks carry `@since 11.3.0` and untyped parameters that their callbacks validate. The last section of `contract-appendix.md` lists the names and is generated from the tree. Nothing ends this convention; it keeps the grep for `ppcp` honest.
+- **The collecting state is additional to the fork.** Its code lives in `Collecting/` beside `Wallet/`, its tests in `tests/php/src/Internal/Payments/Providers/PayPal/Collecting/` and its JS in `client/admin/client/paypal-wallet/collecting/`. Forked files change only at the seams listed under "Seams for the after-payment flow", one hunk each. The shell (`PayPalWalletBootstrap.php`, `PayPalWalletRuntimeArbiter.php`) is core-owned and may change. Ends with the removal described under "Removing the collecting state".
+- **The storefront runs on the v5 SDK path while the platform serves the store.** A store the platform serves is one in the collecting state or the platform-connected state. For such a store `sdk-v6.buttons-available` is false and the buttons use the v5 `SmartButton` path, with the platform app's client ID and the payee as `merchant-id`. The v6 layer has no `merchant-id` and mints its client token from merchant credentials, so it cannot sell for a payee that has no PayPal account (Rulings 66 and 73; the "Ruling", "R" and "Task" numbers in this file refer to the proof-of-concept session's oversight log and controller ledger, which are not in the repository, and each fact is stated here as well). The transport interface has no `sdk_client_token()` for that reason; enabling v6 for such stores adds it. No settings-app data carries the v6 flag, so the panel cannot show the limit (Ruling 123). Ends when the v6 layer can take a payee and a platform client ID.
+
+## Seams for the after-payment flow
+
+The collecting state is a store that sells with PayPal before its merchant has a PayPal account, and then connects through the wallet's own onboarding. It is added to the fork, not edited into it. `Collecting/` attaches through the extension's own extension points where one exists: the container's `extensions.php` mechanism, the `woocommerce_paypal_payments_*` and `ppcp_*` hooks the fork fires, and core's task, note, email and admin hooks. Where none reaches, a forked file changes at a named seam: one hunk that fires one core-owned hook. The seams below are the only edits to forked files for this feature. The base is `3fab045d24`, the head at the time of writing `55f45e04db`.
+
+`git diff 3fab045d24 HEAD --stat -- src/Internal/Payments/Providers/PayPal/Wallet` shows 11 files, 43 insertions and 204 deletions. The 43 insertions are the five PHP seams below (9 + 8 + 8 + 8 + 10 lines, no deletions). The 204 deletions are the trims, listed after the seams. The `git log 3fab045d24..HEAD` commits that touched the fork tree are `394b793292` (the trims), `c249824a3e` (the order-context and paypal-order-created seams), `b54c17b0ec` (the capture-pending seam) and `55f45e04db` (the Troubleshooting and Overview JS seams).
+
+### The seams: five in PHP, two in JS (Rulings 65 and 67, R186 and R188)
+
+`git diff 3fab045d24 HEAD -- <file> | grep -c '^@@'` is 1 for each file.
+
+| # | File (under `src/Internal/Payments/Providers/PayPal/Wallet/` unless noted) | Hunk | What the seam does | The closest existing point, and why it is not enough | What would remove it |
+|---|------|------|--------------------|------------------------------------------------------|----------------------|
+| 1 | `WcGateway/Processor/OrderMetaTrait.php`, `add_paypal_meta()` | `@@ -36,6 +36,15 @@` (+9) | Fires `woocommerce_paypal_wallet_paypal_order_created( $wc_order, $order )` right after the PayPal order ID is written and before the save, so the module pins the order to the platform app that created it in the same save. | `woocommerce_paypal_payments_paypal_order_created` fires inside `OrderEndpoint::create()` and passes only the PayPal order; no WooCommerce order exists there to carry meta. | An extension action that passes both orders, fired in `add_paypal_meta()`. |
+| 2 | `WcGateway/Processor/OrderProcessor.php`, first statement of `process()` | `@@ -186,6 +186,14 @@` (+8) | Fires `woocommerce_paypal_wallet_order_context( $wc_order )` so the module selects the platform app pinned to the order before the processor's first PayPal call. | `woocommerce_paypal_payments_before_order_process` is fired by `PayPalGateway::process_payment()` and the `CheckoutOrderApproved` webhook handler only, not by other callers of `process()`, and not at all for refunds. | A "before first PayPal call for this order" action in the extension, fired by every processor. Seams 2 to 4 would collapse into one. |
+| 3 | `WcGateway/Processor/RefundProcessor.php`, first statement of `process()` | `@@ -106,6 +106,14 @@` (+8) | The same `woocommerce_paypal_wallet_order_context` action, for the refund call. | None: the extension has no hook before a refund. | As seam 2. |
+| 4 | `WcGateway/Helper/RefundFeesUpdater.php`, first statement of `update()` | `@@ -53,6 +53,14 @@` (+8) | The same action, for the fee lookup after a refund. | None. | As seam 2. |
+| 5 | `WcGateway/Processor/PaymentsStatusHandlingTrait.php`, the `PENDING` case | `@@ -107,6 +107,16 @@` (+10) | Fires `woocommerce_paypal_wallet_capture_pending( $wc_order, $capture )` before the order goes on hold, then falls through to the fork's on-hold branch; the module records the held capture. | `woocommerce_paypal_payments_order_captured` fires in the `COMPLETED` branch only; nothing fires for `PENDING`. | An extension action for a pending capture. |
+| 6 | `client/admin/client/paypal-wallet/app/Components/Screens/Settings/Tabs/TabOverview.js` (in `plugins/woocommerce/`) | `@@ -28,10 +28,17 @@` | Mounts `<CollectingPanel />` in the Overview tab; the panel renders only when `ppcpSettings.collecting` is present. The import sits next to the mount so the seam stays one hunk. | The settings app has no slot or registry for tab content. | A slot in the settings app's Overview tab. |
+| 7 | `client/admin/client/paypal-wallet/app/Components/Screens/Settings/Components/Settings/Blocks/Troubleshooting.js` (in `plugins/woocommerce/`) | `@@ -37,21 +37,29 @@` | When `ppcpSettings.collecting.webhooks_note` is set, the Webhooks block shows the note and drops Resubscribe and the webhook test, since WooCommerce manages the webhooks of a store the platform serves. | None. | A server flag in the settings app's data that hides the webhook controls. |
+
+Seams 2 to 4 share a hook, so the module re-enters the order's own app on every call (Ruling 83). It resets after `OrderProcessor` through the fork's existing `woocommerce_paypal_payments_after_order_processor`; refunds have no after-hook, so a PayPal call made later in the same request inherits the last order's app. That costs a wrong-app call only in a request that mixes orders pinned to different apps; while a store collects every pick is the merchant app, and the production design has one app. The void endpoint's order fetch has no seam (Ruling 86): void applies to authorizations, which are unreachable while the intent is forced to `CAPTURE` for a served store. If `AUTHORIZE` is ever allowed there, a void goes out with the wrong app.
+
+### The connect-surface trims (Task 3): not seams (Ruling 65)
+
+Task 3 (`394b793292`) removed the wallet's own connect surfaces, which a collecting store must not show. They are deletions of the fork's dead code, and `bin/paypal-wallet-fork/path-map.json` marks the two files `null`. The one-hunk rule applies to the seams only.
+
+| File (under `Wallet/`) | Hunks | Change |
+|------|------:|--------|
+| `WcGateway/Notice/ConnectAdminNotice.php` | deleted | The "connect" admin notice class. |
+| `Settings/Service/LoadingScreenService.php` | deleted | The CSS that hid WooCommerce Settings elements while the settings app loads. |
+| `WcGateway/WCGatewayModule.php` | 2 | Its import and its `NOTICES_FILTER` use. |
+| `WcGateway/services.php` | 4 | The `wcgateway.notice.connect` service and the connect-to-PayPal task configuration. |
+| `Settings/SettingsModule.php` | 2 | Its import and the `register()` call. |
+| `Settings/services.php` | 2 | Its import and the `settings.services.loading-screen-service` service. |
+
+The tests that pinned the loading screen went with it: four cases of `SettingsModuleRunTest`.
+
+### Core files outside `Wallet/`
+
+These are core's, not forked, and the removal reverts them. The shell wires `Collecting/` in; the rest are small additions to core surfaces.
+
+| File | Change |
+|------|--------|
+| `src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrap.php` | The shell: registers the owner-independent surfaces, the `wc paypal-wallet collect` command, `track_runtime_owner()` and the module filter. |
+| `src/Internal/Admin/Settings/PaymentsProviders/PayPal.php` | `get_details()` adds `_notice` from the `woocommerce_paypal_wallet_provider_notice` filter (Ruling 184: it references `Collecting\ConnectionState`, so the removal reverts it). |
+| `includes/admin/meta-boxes/views/html-order-items.php` | Fires `woocommerce_paypal_wallet_refund_locked` and disables the Refund button. |
+| `client/admin/client/settings-payments/components/payment-gateway-list-item/payment-gateway-list-item.tsx`, `provider-notice.tsx` (new), `settings-payments-main.scss`, and `packages/js/data/src/payment-settings/types.ts` and `index.ts` | The NOX `_notice` slot under a provider row, and the `PaymentsProviderNotice` type. |
+| `client/admin/client/core-profiler/pages/Plugins/Plugins.tsx` | The "Included" card for an entry the server marks `is_included`. |
+| `tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php`, `.../PayPal/PayPalWalletBootstrapTest.php`, the NOX list item test, `provider-notice.test.tsx`, `Plugins.test.tsx` | The tests of the above. |
+
+## Removing the collecting state
+
+The removal was tried on a scratch branch (`scratch/collecting-removal`) of the main checkout at `55f45e04db`, with the uncommitted documentation work stashed (`git stash push --include-untracked`) and restored afterwards (`git stash pop --index`). It is one deletion, one revert and the trims staying as they are. Every path of `git diff --name-status 3fab045d24 HEAD` (158 paths) falls in one of four classes.
+
+| Class | Paths | Action |
+|-------|------:|--------|
+| (a) The collecting trees: `src/Internal/Payments/Providers/PayPal/Collecting` (63 files), `tests/php/src/Internal/Payments/Providers/PayPal/Collecting` (61), `client/admin/client/paypal-wallet/collecting` (5) | 129 | `git rm -r` |
+| (b) New files outside the trees: `provider-notice.tsx` and `test/provider-notice.test.tsx` in `payment-gateway-list-item/` | 2 | `git rm` |
+| (c) Modified core and forked files: the shell and its test, `PayPal.php` and its test, `html-order-items.php`, the NOX list item and its test, `settings-payments-main.scss`, `types.ts`, `index.ts`, `Plugins.tsx` and its test, `TabOverview.js`, `Troubleshooting.js`, and the five Wallet seam files | 19 | `git checkout 3fab045d24 -- <paths>` |
+| (d) The connect-surface trims (Task 3): `path-map.json`, `SettingsModule.php`, `Settings/services.php`, `WCGatewayModule.php`, `WcGateway/services.php`, `SettingsModuleRunTest.php`; `ConnectAdminNotice.php` and `LoadingScreenService.php` deleted | 8 | Stay as they are |
+
+The commands, from the repository root:
+
+```bash
+P=plugins/woocommerce
+git checkout -b scratch/collecting-removal
+git rm -r -q $P/src/Internal/Payments/Providers/PayPal/Collecting $P/tests/php/src/Internal/Payments/Providers/PayPal/Collecting $P/client/admin/client/paypal-wallet/collecting
+git rm -q $P/client/admin/client/settings-payments/components/payment-gateway-list-item/provider-notice.tsx $P/client/admin/client/settings-payments/components/payment-gateway-list-item/test/provider-notice.test.tsx
+git checkout 3fab045d24 -- packages/js/data/src/index.ts packages/js/data/src/payment-settings/types.ts \
+  $P/client/admin/client/core-profiler/pages/Plugins/Plugins.tsx $P/client/admin/client/core-profiler/pages/Plugins/test/Plugins.test.tsx \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Settings/Components/Settings/Blocks/Troubleshooting.js \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Settings/Tabs/TabOverview.js \
+  $P/client/admin/client/settings-payments/components/payment-gateway-list-item/payment-gateway-list-item.tsx \
+  $P/client/admin/client/settings-payments/components/payment-gateway-list-item/test/payment-gateway-list-item.test.tsx \
+  $P/client/admin/client/settings-payments/settings-payments-main.scss \
+  $P/includes/admin/meta-boxes/views/html-order-items.php \
+  $P/src/Internal/Admin/Settings/PaymentsProviders/PayPal.php $P/tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php \
+  $P/src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrap.php $P/tests/php/src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrapTest.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Helper/RefundFeesUpdater.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Processor/{OrderMetaTrait,OrderProcessor,PaymentsStatusHandlingTrait,RefundProcessor}.php
+git diff --cached 3fab045d24 --stat
+# No collecting name is left in code (the Markdown documents are edited by hand, see below):
+git grep -il 'PayPal.Collecting\|woocommerce_paypal_wallet_\|wc_paypal_wallet_\|paypal-wallet/collecting' -- ':!*.md'
+
+cd $P
+# php -l over the PayPal tree and the reverted core files, in the PHPUnit container; prints nothing when every file passes
+pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli sh -c "find src/Internal/Payments/Providers/PayPal tests/php/src/Internal/Payments/Providers/PayPal src/Internal/Admin/Settings/PaymentsProviders/PayPal.php includes/admin/meta-boxes/views/html-order-items.php tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php -name '*.php' -exec php -l {} \; | grep -v '^No syntax errors'"
+pnpm test:php:env -- --group paypal-wallet
+pnpm test:php:env -- --filter 'PaymentsProvidersTest|PaymentsRestControllerTest|PaymentsSettingsTest|WC_Tests_Payment_Gateways|PayPalWalletBootstrapTest|ForkPlacementTest|SerializedClassesTest|PayPalTest|WalletPropertiesTest'
+```
+
+The `git diff --cached 3fab045d24 --stat` output of the dry run, verbatim: only class (d) remains.
+
+```text
+ .../bin/paypal-wallet-fork/path-map.json           |  4 +-
+ .../Settings/Service/LoadingScreenService.php      | 73 ------------------
+ .../PayPal/Wallet/Settings/SettingsModule.php      |  6 --
+ .../Providers/PayPal/Wallet/Settings/services.php  |  4 -
+ .../Wallet/WcGateway/Notice/ConnectAdminNotice.php | 87 ----------------------
+ .../PayPal/Wallet/WcGateway/WCGatewayModule.php    |  8 --
+ .../Providers/PayPal/Wallet/WcGateway/services.php | 26 -------
+ .../Wallet/Settings/SettingsModuleRunTest.php      | 71 +-----------------
+ 8 files changed, 3 insertions(+), 276 deletions(-)
+```
+
+`git grep` finds no reference left in code, and `php -l` passes on all 631 PHP files. The PHPUnit runs used the normal environment (the container mounts the checkout). The removal was committed on the scratch branch to leave the tree clean; then `git checkout poc/paypal-wallet-fork`, `git branch -D scratch/collecting-removal` and `git stash pop --index` restored the work, and the group gave its pre-removal count again. An earlier run of the same removal in a worktree, tested through a throwaway copy of the plugin inside the container, gave the same counts.
+
+| Run | Before (HEAD `55f45e04db`) | Removal state | After the restore | Reference |
+|-----|---------------------------|---------------|-------------------|-----------|
+| `--group paypal-wallet` | 2,487 tests, 7,485 assertions | 1,910 tests, 5,736 assertions, green | 2,487 / 7,485, green | `3fab045d24` baseline 1,914 / 5,744, less the four loading-screen cases deleted with the trim |
+| the mixed run (`PaymentsProvidersTest\|PaymentsRestControllerTest\|PaymentsSettingsTest\|WC_Tests_Payment_Gateways\|PayPalWalletBootstrapTest\|ForkPlacementTest\|SerializedClassesTest\|PayPalTest\|WalletPropertiesTest`) | 426 tests, 2,747 assertions | 384 tests, 2,671 assertions, green | 426 / 2,747, green | `3fab045d24` baseline 384 / 2,671 |
+
+The JS reverts were not run through Jest or the type check in the dry run; the removal is checked for PHP only.
+
+What a real removal also needs. The Markdown goes by hand: the three collecting sections of this file (and the convention bullets above), the "Core-owned names" section of `contract-appendix.md` (regenerate it with `contract-list.sh`, which then ends without it), and the collecting sentences of `bin/paypal-wallet-fork/README.md`; the `contract-list.sh` section and the `drift-report.sh` exclusion go with it. A store that is collecting when the removal ships keeps data the code no longer reads: the options and order and user meta listed under "The collecting state's stored and public names", a recurring `woocommerce_paypal_wallet_reconcile` Action Scheduler action with no handler, PayPal webhook subscriptions on the platform app that deliver to an endpoint that no longer verifies them, and the gateway left at `enabled = yes`. Before shipping, run `unsubscribe_webhooks()` on such stores, and decide whether a one-time update routine deletes the options and unschedules the action or the rows stay as inert data.
+
+## The collecting state's stored and public names
+
+Everything is core-owned and listed, generated, in the last section of `contract-appendix.md`. Nothing in `Collecting/` writes `woocommerce-ppcp-data-*`, `ppcp-webhook` or any other `woocommerce-ppcp-*` key (spec acceptance 6).
+
+**Options.** `woocommerce_paypal_wallet_collecting` (the payee, tracking ID, environment and whether the payee is bound; autoloaded), `woocommerce_paypal_wallet_platform` (the merchant ID once onboarding completes), `woocommerce_paypal_wallet_first_order` (written once with `add_option()`, autoloaded), `woocommerce_paypal_wallet_webhooks` (the transport's own subscription IDs per platform app, never `ppcp-webhook`), `wc_paypal_wallet_last_owner` (the shell: the last runtime owner, for the hand-back check), `wc_paypal_wallet_note_state` (the Inbox note; autoloaded), `wc_paypal_wallet_seller_status` (the last seller status for the order screen; not autoloaded, Ruling 184), `wc_paypal_wallet_profiler_card_served` (not autoloaded), `wc_paypal_wallet_settle_<order ID>` (settlement lock rows, `autoload no`), and `wc_paypal_wallet_last_webhook` (the last webhook event, stored under this name while the platform serves the store).
+
+**Transients.** `wc_paypal_wallet_bearer_<app>_*` and `wc_paypal_wallet_rate_<app>_*` per platform app, and `wc_paypal_wallet_reconcile_schedule_check`. The `ppcp-bearer` suffix inside the first two comes from the fork's fixed `PayPalBearer::CACHE_KEY`.
+
+**Order meta.** `_wc_paypal_wallet_order_app` (the app that created the PayPal order), `_wc_paypal_wallet_held_capture` (the reason of a held capture), `_wc_paypal_wallet_held_at`, `_wc_paypal_wallet_held_returned` and `_wc_paypal_wallet_capture_id`. **User meta.** `wc_paypal_wallet_dismissed_<surface>`, the latest wallet order the user had seen when dismissing.
+
+**Hooks (all `@since 11.3.0`).** Fired by the seams and core files: `woocommerce_paypal_wallet_order_context`, `_paypal_order_created`, `_capture_pending`, `_provider_notice` (a filter on the provider row) and `_refund_locked` (a filter on the Refund button). Fired by the module: `_first_order` and `_held_payment_returned`, which the emails listen on. `woocommerce_paypal_wallet_reconcile` is the Action Scheduler hook of the daily reconcile.
+
+**REST and script data.** The namespace `wc/v3/paypal-wallet` has five routes under `/collecting` (`GET /collecting`, `POST /collecting/payee`, `/check-status`, `/referral` and `/dismiss`), all behind `manage_woocommerce`. The settings app's data gains `ppcpSettings.collecting`, with `webhooks_note` for the Troubleshooting seam. WP-CLI: `wc paypal-wallet collect` and `wc paypal-wallet reconcile`. The AJAX action `wc_paypal_wallet_dismiss_notice` (a `wc_ajax` endpoint) stores a dismissal.
+
+**Container extensions while the platform serves the store.** `Collecting/extensions.php` decorates, among others: `settings.flag.is-connected` (true), `settings.environment`, `webhook.is-registered`, `sdk-v6.buttons-available` (false), `settings.settings-provider`, `settings.rest.settings`, `settings.rest.onboarding`, `api.bearer`, `api.host-resolver`, `api.endpoint.partners`, the three partner-referrals endpoints, `webhook.endpoint.controller`, `webhook.registrar`, `settings.rest.webhooks`, `webhook.endpoint.handler` and `wcgateway.processor.refunds`. While served, `settings.rest.onboarding` reports onboarding completed with `gatewaysSynced` true, and saves through it are no-ops (Ruling 119). That stops a gateway sync from saving the profile. It costs a stale gateway sync if the platform later connects first-party; the first-party state does not go through this path.
+
+**The one write from `Collecting/` into fork-owned state (Ruling 174).** `Collecting/State/GatewaySwitch::save_enabled()`, called by `CollectingState::enter()`, writes `enabled = yes` into `woocommerce_ppcp-gateway_settings` through the gateway's own settings API (`update_option()` on a gateway built without its constructor). Turning the gateway off stays the merchant's. Every other write of `Collecting/` goes to a core-owned name. The shell's own write of `woocommerce-ppcp-version` (`PayPalWalletBootstrap`, the fork's first-run write) predates this feature and is unchanged.
+
+## Deviations, consequences and follow-ups of the collecting state
+
+**A write the fork makes on a served store (Ruling 167).** `Wallet/SavePaymentMethods/SavePaymentMethodsModule.php`, lines 61 to 75: on `woocommerce_paypal_payments_gateway_migrate_on_update` (it fires when `woocommerce-ppcp-version` differs from the plugin's version), a store whose reference transactions are off gets `save_paypal_and_venmo` set to false in the wallet's settings. There is no collecting gate. It is the fork's own behavior and stays.
+
+**BC note for direct refund callers (Ruling 85).** While a refund is locked, `wcgateway.processor.refunds` throws the wallet's `RuntimeException`. `wc_refund_payment()` converts it to a `WP_Error` with the message; `process_refund()` is typed `bool` and cannot return one, so a third-party caller of `process_refund()` directly gets the exception. No core caller does.
+
+**The reconcile is module-bound (Rulings 94 and 178; deviation from spec §5).** A collecting store that disabled the gateway with held orders is reconciled only once the gateway is enabled again. The held-order surfaces stay registered, so the merchant still sees the orders and deadlines. The hand-back case is covered, because a served store boots. The module also has no handler for `MERCHANT.PARTNER-CONSENT.REVOKED`. Both are POC limits: building the fork's completion path without the container was out of scope.
+
+**The partners-endpoint constructor coupling.** `MerchantlessPartnersEndpoint` extends `PartnersEndpoint` and the `api.endpoint.partners` extension passes the fork's eight constructor arguments through. An extension change to that constructor breaks it at the next port; the drift report marks that file's commits. The fork's retry filter (`ppcp_retry_request_args` at priority 10 in `ApiClient/ApiModule.php`) drops the cached bearer; the module's `BearerRetryFilter` runs at 20 and the transport adds its own at `PHP_INT_MAX` for a single call. That filter is a seam candidate: a hook in the fork that names the app would end the ordering dependence.
+
+**POC hacks, each with its follow-up.**
+
+- `html-order-items.php` (Ruling 107): the `isset( $order )` guard stays because dropping it grows the PHPStan baseline; `$refund_locked` and the duplicated tooltip string stay. Follow-up: a proper refund-lock API in core, then delete the guard and the copy.
+- The NOX `_notice` slot (the provider row and `PaymentsProviderNotice`): a notice array on a provider entity, with no registry. Follow-up: a notices API on providers.
+- Plugins.tsx "Included" (Rulings 120, 121 and 127): `NoPermissions.tsx` is not covered, so a user who cannot install plugins sees the card as a disabled checkbox; "shown" means "served", so the record is written even when the profiler page is skipped; and the profiler's Tracks events list `paypal-wallet`. Follow-up: an `is_included` field in the profiler's data model, covering all three.
+- The profiler card goes through `rest_post_dispatch` (Ruling 118), limited to the obw and core-profiler free-extensions routes. Follow-up: a free-extensions filter in core.
+- Order Intent is hidden by an inline style pinned to the forked app's `ppcp--order-intent` class (Ruling 116), with a test that pins the class. Follow-up: hide it through settings-app data.
+
+**Follow-ups.**
+
+- Ruling 106: the D1 design's order-screen button and dismiss; the notice is text only.
+- Ruling 108: dismiss 403 and 500 handling, focus after a dismiss, the `onDismiss` prop and the disabled button's accessibility.
+- Ruling 124: `check-status` runs the full reconcile, one PayPal call per held order; a narrower onboarding-only check.
+- Ruling 128: a quick second "Complete setup" click can fetch a second referral, and the state is announced twice to a screen reader.
+
+**The Task 7 smoke (Jurassic Ninja store, sandbox).** The first run halted at the purchase after a defect and a log exposure; its fixes landed in `e97d231e90`, `91a49cc07a` and `d19f7de37a`. The re-run on `d19f7de37a` completed: the six constants, entering the collecting state, one webhook subscription per platform app and the gateway enabled all passed; the storefront served only the PayPal button with the platform app's client ID, the payee as `merchant-id`, `intent=capture` and no client-token request; a sandbox purchase through the block checkout produced an order on hold with `_wc_paypal_wallet_order_app` set to the merchant app and a capture `PENDING` with reason `UNILATERAL`; a corrupted bearer was refreshed by the 401 retry under the pinned app; no `ppcp` option changed and no token reached the logs. The webhook endpoint of the fork rejected deliveries until the collecting endpoint landed. The record is `data/collecting-run/smoke.md` in the session folder (git-ignored, with the runbook's access notes).
 
 ## Lint
 

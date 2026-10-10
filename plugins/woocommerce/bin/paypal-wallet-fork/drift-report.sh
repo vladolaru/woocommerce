@@ -46,8 +46,9 @@ for ref in "$SINCE" "$UNTIL"; do
 done
 NAMES="$(mktemp)"; DROPPED="$(mktemp)"; SHOWN="$(mktemp)"; trap 'rm -f "$NAMES" "$DROPPED" "$SHOWN"' EXIT
 # Contract names: the first backticked token of each list item in the appendix ("- `name`"). Prose, the section notes and the
-# extra backticked tokens in an item's trailing note are not names.
-{ grep -E '^- `' "$CONTRACT" || [ $? -eq 1 ]; } | sed -E 's/^- `([^`]+)`.*/\1/' | sort -u > "$NAMES"
+# extra backticked tokens in an item's trailing note are not names. The section "Core-owned names" lists names core added,
+# which the extension never contains, so only that section is left out.
+{ awk '/^## /{ skip = ($0 ~ /^## Core-owned names/) } !skip' "$CONTRACT" | grep -E '^- `' || [ $? -eq 1 ]; } | sed -E 's/^- `([^`]+)`.*/\1/' | sort -u > "$NAMES"
 emit_commits() {
   echo "(extension: \`$from\`)"
   echo
