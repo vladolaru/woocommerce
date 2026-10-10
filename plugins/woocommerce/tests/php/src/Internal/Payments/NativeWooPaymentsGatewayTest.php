@@ -222,6 +222,32 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should brand the gateway titles for a US account, not the store country, when the account data has no country.
+	 */
+	public function test_gateway_titles_use_us_without_an_account_country(): void {
+		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
+		$this->assertNotNull( $definition );
+		update_option( 'woocommerce_default_country', 'GB' );
+
+		// The account data is empty while the platform connection is down. Client 11.1.0 then titles the gateway for US
+		// (includes/class-wc-payment-gateway-wcpay.php:3604-3613; includes/class-wc-payments-account.php:2731-2734).
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
+		$gateway->handle_init();
+
+		$this->assertSame( 'Cash App Afterpay', $gateway->get_title() );
+		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+	}
+
+	/**
 	 * @testdox Should hide the gateway when the account's customer-supported currencies exclude the store currency
 	 */
 	public function test_gateway_availability_follows_account_customer_supported_currencies(): void {

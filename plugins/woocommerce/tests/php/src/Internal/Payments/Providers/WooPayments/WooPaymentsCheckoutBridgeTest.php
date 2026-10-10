@@ -1660,6 +1660,24 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should show the US test card, not the store country's, when the account data has no country.
+	 */
+	public function test_get_payment_fields_js_config_uses_the_us_test_card_without_an_account_country(): void {
+		update_option( 'woocommerce_default_country', 'GB' );
+		// Client 11.1.0 picks the test card for the account country, else US (includes/class-wc-payments-checkout.php:474-481;
+		// includes/class-wc-payments-account.php:2731-2734; includes/constants/class-country-test-cards.php:92-94).
+		$account_service = $this->create_account_service_for_bridge( true, array() );
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertStringContainsString( '4242 4242 4242 4242', $config['paymentMethodsConfig']['card']['testingInstructions'] );
+		$this->assertStringNotContainsString( '4000 0082 6000 0000', $config['paymentMethodsConfig']['card']['testingInstructions'] );
+	}
+
+	/**
 	 * @testdox Should enqueue core-owned checkout assets when rendering payment fields.
 	 */
 	public function test_payment_fields_enqueues_core_owned_assets_and_preserves_wcpay_config_filter(): void {

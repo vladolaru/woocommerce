@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEarlyFraudWarningEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
@@ -4000,6 +4001,31 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.refund.updated reads a missing account country as US, not the store country, for the FROD note.
+	 */
+	public function test_charge_refund_updated_insufficient_funds_without_account_country_uses_us(): void {
+		$order = $this->create_refundable_woopayments_order( '10.00' );
+		$this->set_woopayments_account_country( '' );
+		update_option( 'woocommerce_default_country', 'HK' );
+
+		$this->sut->process(
+			$this->create_refund_updated_event(
+				array(
+					'status'         => 'failed',
+					'failure_reason' => 'insufficient_funds',
+				)
+			)
+		);
+
+		$order = wc_get_order( $order->get_id() );
+
+		// Client 11.1.0 reads the account country, else US, for this note (includes/class-wc-payments-order-service.php:3066-3074;
+		// includes/class-wc-payments-account.php:2731-2734), so a Hong Kong store without an account country gets the FROD note.
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertOrderHasNoteContaining( $order, array( 'Refund of', 'failed', 'insufficient funds in your WooPayments balance', 'Future Refunds or Disputes (FROD) balance' ) );
+	}
+
+	/**
 	 * @testdox charge.refund.updated records canceled refunds and deletes the local refund.
 	 */
 	public function test_charge_refund_updated_canceled_marks_order_failed_and_deletes_refund(): void {
@@ -5488,19 +5514,41 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Set cached WooPayments account country data.
+	 * Cache a fresh live account with this country, readable through the account service while the platform is connected.
 	 *
-	 * @param string $country Account country.
+	 * @param string $country Account country, or '' for account data without one.
 	 */
 	private function set_woopayments_account_country( string $country ): void {
+		$data = array(
+			'account_id' => 'acct_123',
+			'is_live'    => true,
+		);
+		if ( '' !== $country ) {
+			$data['country'] = $country;
+		}
+
+		// The account service keeps the cache it already read in this request.
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		update_option(
 			'wcpay_account_data',
 			array(
-				'data' => array(
-					'account_id' => 'acct_123',
-					'country'    => $country,
-				),
+				'data'    => $data,
+				'fetched' => time(),
+				'errored' => false,
 			)
+		);
+		wc_get_container()->replace(
+			WooPaymentsApiClient::class,
+			new class() extends WooPaymentsApiClient {
+				/**
+				 * Report the platform as connected, so the account service reads the cached account.
+				 *
+				 * @return bool
+				 */
+				public function is_available(): bool {
+					return true;
+				}
+			}
 		);
 	}
 

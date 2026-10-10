@@ -1558,12 +1558,12 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the connected account country, falling back to the store base country.
+	 * Get the connected account country, or US when the account data has none.
 	 *
 	 * @return string
 	 */
 	private function get_account_country(): string {
-		return $this->get_account_service()->get_account_or_store_country();
+		return $this->get_account_service()->get_account_country_or_us();
 	}
 
 	/**

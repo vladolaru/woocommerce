@@ -141,28 +141,21 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use the store base-location option when the account country is uncached.
+	 * @testdox Should use US, not the store country, when the account country is uncached.
 	 */
-	public function test_account_country_falls_back_to_base_location_option_when_uncached(): void {
+	public function test_account_country_falls_back_to_us_when_uncached(): void {
 		update_option( 'woocommerce_default_country', 'DE:BE' );
-		$base_country_filter = static function (): string {
-			return 'FR';
-		};
-		$account_service     = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
-		add_filter( 'woocommerce_countries_base_country', $base_country_filter );
 
-		try {
-			$gateway = new NativeWooPaymentsGateway();
-			$method  = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'get_account_country' );
-			$method->setAccessible( true );
+		$gateway = new NativeWooPaymentsGateway();
+		$method  = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'get_account_country' );
+		$method->setAccessible( true );
 
-			$this->assertSame( 'DE', $method->invoke( $gateway ), 'An uncached account must use the unfiltered store base country.' );
-		} finally {
-			remove_filter( 'woocommerce_countries_base_country', $base_country_filter );
-		}
+		// Client 11.1.0 falls back to US (includes/class-wc-payment-gateway-wcpay.php:3604-3613).
+		$this->assertSame( 'US', $method->invoke( $gateway ), 'An uncached account must read as US, as in the client.' );
 	}
 
 	/**

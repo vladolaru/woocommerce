@@ -534,7 +534,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			'enabledBillingFields'                     => $this->get_enabled_billing_fields(),
 			'currency'                                 => $payment_context['currency'],
 			'cartTotal'                                => $payment_context['total'],
-			'storeCountry'                             => $this->get_account_country(),
+			'storeCountry'                             => $this->get_account_service()->get_account_country_or_us(),
 			'cartContainsSubscription'                 => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_styles_cache_version(),
 			'forceNetworkSavedCards'                   => $force_network_saved_cards,
@@ -1212,7 +1212,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 				null === $definition
 				|| ! $this->get_account_service()->is_payment_request_method_enabled( $payment_method_id )
 				|| ! $this->get_account_service()->is_capability_active( $definition->get_account_capability_key() )
-				|| ! $definition->is_available_for( $currency, $this->get_account_country() )
+				|| ! $definition->is_available_for( $currency, $this->get_account_service()->get_account_country_or_us() )
 			) {
 				continue;
 			}
@@ -1232,7 +1232,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 */
 	private function get_payment_method_config( WooPaymentsPaymentMethodDefinition $definition, bool $saved_cards_enabled ): array {
 		$is_reusable     = $this->payment_method_definition_supports( $definition, self::PAYMENT_METHOD_CAPABILITY_TOKENIZATION );
-		$account_country = $this->get_account_country();
+		$account_country = $this->get_account_service()->get_account_country_or_us();
 
 		return array(
 			'id'                => $definition->get_id(),
@@ -1459,7 +1459,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return __( 'Card', 'woocommerce' );
 		}
 
-		return $payment_method_definition->get_title( $this->get_account_country() );
+		return $payment_method_definition->get_title( $this->get_account_service()->get_account_country_or_us() );
 	}
 
 	/**
@@ -1473,7 +1473,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			return __( 'Pay securely using WooPayments.', 'woocommerce' );
 		}
 
-		return $payment_method_definition->get_description( $this->get_account_country() );
+		return $payment_method_definition->get_description( $this->get_account_service()->get_account_country_or_us() );
 	}
 
 	/**
@@ -1513,7 +1513,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_card_testing_instructions(): string {
-		$test_card_number = $this->get_test_card_for_country( $this->get_account_country() );
+		$test_card_number = $this->get_test_card_for_country( $this->get_account_service()->get_account_country_or_us() );
 		// The visible number names the button (client 11.1.0 replaces it with an aria-label), and a polite status
 		// announces the copy, as the Multibanco copy buttons do (WooPaymentsOrderSuccessPage).
 		$test_card_button = sprintf(
@@ -1562,34 +1562,11 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return array<string,string>
 	 */
 	private function get_card_brand_icon_labels(): array {
-		if ( 'FR' === $this->get_account_country() ) {
+		if ( 'FR' === $this->get_account_service()->get_account_country_or_us() ) {
 			return array_merge( self::CARD_BRAND_ICONS, self::FR_CARD_BRAND_ICONS );
 		}
 
 		return self::CARD_BRAND_ICONS;
-	}
-
-	/**
-	 * Get the connected account country, falling back to the store base country.
-	 *
-	 * @return string
-	 */
-	private function get_account_country(): string {
-		$account_data = $this->get_account_service()->get_cached_account_data();
-		$country      = isset( $account_data['country'] ) && is_scalar( $account_data['country'] )
-			? strtoupper( (string) $account_data['country'] )
-			: '';
-
-		if ( '' === $country && WC() && WC()->countries ) {
-			$country = strtoupper( (string) WC()->countries->get_base_country() );
-		}
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		return '' !== $country ? $country : 'US';
 	}
 
 	/**

@@ -83,6 +83,21 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should map a domestic-only method to US dollars, not the store country's currency, without an account country.
+	 */
+	public function test_maps_domestic_only_methods_to_us_dollars_without_an_account_country(): void {
+		$this->enable_methods( array( 'card', 'klarna' ) );
+		update_option( 'woocommerce_default_country', 'DE' );
+
+		// The client's domestic currency comes from the account country, else US (client 11.1.0
+		// `includes/class-wc-payment-gateway-wcpay.php:3507-3523`, `includes/class-wc-payments-account.php:2731-2734`).
+		$this->assertSame(
+			array( 'USD' => array( 'klarna' => 'Klarna' ) ),
+			$this->create_sut( true, '' )->get_currency_payment_methods_map()
+		);
+	}
+
+	/**
 	 * @testdox Should print the map on the Multi-Currency settings page only.
 	 */
 	public function test_prints_the_map_on_the_multi_currency_settings_page(): void {

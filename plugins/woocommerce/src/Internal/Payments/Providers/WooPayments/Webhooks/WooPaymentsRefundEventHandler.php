@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -64,6 +65,13 @@ class WooPaymentsRefundEventHandler {
 	private WooPaymentsOtherChargeRecorder $other_charge_recorder;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the handler.
 	 *
 	 * @internal
@@ -72,12 +80,14 @@ class WooPaymentsRefundEventHandler {
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
 	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder  Recorder of events on another charge.
+	 * @param WooPaymentsAccountService        $account_service        WooPayments account service.
 	 */
-	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
+	final public function init( OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsAccountService $account_service ): void {
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
 		$this->event_order_resolver   = $event_order_resolver;
 		$this->other_charge_recorder  = $other_charge_recorder;
+		$this->account_service        = $account_service;
 	}
 
 	/**
@@ -421,7 +431,7 @@ class WooPaymentsRefundEventHandler {
 			$order->get_currency()
 		);
 
-		if ( $this->is_frod_supported( $this->get_account_country() ) ) {
+		if ( $this->is_frod_supported( $this->account_service->get_account_country_or_us() ) ) {
 			$learn_more_url = 'https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds';
 			$note           = sprintf(
 				/* translators: 1: Formatted refund amount, 2: Learn more URL. */
@@ -721,31 +731,6 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function is_frod_supported( string $country_code ): bool {
 		return ! in_array( strtoupper( $country_code ), self::FROD_UNSUPPORTED_COUNTRIES, true );
-	}
-
-	/**
-	 * Get the connected account country from cached account data.
-	 *
-	 * @return string
-	 */
-	private function get_account_country(): string {
-		$account_data = get_option( 'wcpay_account_data', array() );
-		$country      = '';
-
-		if ( is_array( $account_data ) && isset( $account_data['data'] ) && is_array( $account_data['data'] ) && isset( $account_data['data']['country'] ) && is_scalar( $account_data['data']['country'] ) ) {
-			$country = strtoupper( (string) $account_data['data']['country'] );
-		}
-
-		if ( '' === $country && WC() && WC()->countries ) {
-			$country = strtoupper( (string) WC()->countries->get_base_country() );
-		}
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		return '' !== $country ? $country : 'US';
 	}
 
 	/**

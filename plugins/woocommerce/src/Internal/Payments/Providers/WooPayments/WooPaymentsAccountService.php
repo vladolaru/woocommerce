@@ -1102,27 +1102,20 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the connected account country, falling back to the store base country, then to US.
+	 * Get the connected account country, or US when the account data has none.
+	 *
+	 * Client 11.1.0 falls back to US, never to the store country (`includes/class-wc-payments-account.php:2731-2734`,
+	 * `includes/class-wc-payment-gateway-wcpay.php:3604-3613`).
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return string Uppercase country code.
 	 */
-	public function get_account_or_store_country(): string {
+	public function get_account_country_or_us(): string {
 		$account_data = $this->get_cached_account_data();
 		$country      = isset( $account_data['country'] ) && is_scalar( $account_data['country'] )
 			? strtoupper( (string) $account_data['country'] )
 			: '';
-
-		if ( '' === $country ) {
-			$base    = function_exists( 'wc_get_base_location' ) ? wc_get_base_location() : array();
-			$country = strtoupper( (string) ( $base['country'] ?? '' ) );
-		}
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
 
 		return '' !== $country ? $country : 'US';
 	}
@@ -1138,7 +1131,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_account_domestic_currency(): string {
-		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_or_store_country() );
+		$country_locale_data = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_country_locale_data( $this->get_account_country_or_us() );
 		$currency_code       = $country_locale_data['currency_code'] ?? null;
 
 		if ( ! is_string( $currency_code ) || '' === $currency_code ) {

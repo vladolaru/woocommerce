@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -679,7 +680,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'order_id'  => (string) $order->get_id(),
 			'order_key' => $order->get_order_key(),
 		);
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ) );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$handler->process( 'charge.refunded', $charge );
 
@@ -728,7 +729,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$handler    = new WooPaymentsRefundEventHandler();
 		$recorder->init( $notes );
-		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, wc_get_container()->get( WooPaymentsEventOrderResolver::class ), $recorder );
+		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, wc_get_container()->get( WooPaymentsEventOrderResolver::class ), $recorder, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$charge                   = $this->get_successful_refund_charge();
 		$charge['id']             = 'ch_cod';
 		$charge['payment_intent'] = 'pi_cod';
@@ -1037,7 +1038,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$handler = new WooPaymentsRefundEventHandler();
-		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ) );
+		$handler->init( $store, new WooPaymentsPersistenceVocabulary(), wc_get_container()->get( WooPaymentsEventOrderResolver::class ), wc_get_container()->get( WooPaymentsOtherChargeRecorder::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		$handler->process( 'charge.refunded', $this->get_successful_refund_charge() );
 
