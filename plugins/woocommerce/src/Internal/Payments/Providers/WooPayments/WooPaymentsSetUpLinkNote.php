@@ -99,13 +99,13 @@ class WooPaymentsSetUpLinkNote {
 	 * @return bool
 	 */
 	public function should_display_note(): bool {
+		if ( ! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids_for_account( $this->account_service ), true ) ) {
+			return false;
+		}
+
 		$account_data = $this->account_service->get_cached_account_data();
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 		$fee_ids      = array_map( 'strval', array_keys( $fees ) );
-
-		if ( ! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids_with_fees( $fees, WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ), true ) ) {
-			return false;
-		}
 
 		// The client drops Link from the enabled methods when card is not enabled, so only card-without-Link qualifies.
 		return $this->is_enabled_at_checkout( self::CARD, $fee_ids )

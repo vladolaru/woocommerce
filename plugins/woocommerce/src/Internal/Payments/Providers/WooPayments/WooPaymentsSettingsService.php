@@ -302,11 +302,11 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>
 	 */
 	public function get_settings(): array {
-		$settings                        = $this->get_gateway_settings();
-		$filtered_payment_method_catalog = $this->get_payment_method_registry()->get_available_payment_method_ids();
-		$account_fields                  = $this->get_account_backed_response_fields( $settings );
-		$available_payment_method_ids    = $this->get_available_payment_method_ids( $filtered_payment_method_catalog );
-		$enabled_payment_method_ids      = $this->sanitize_payment_method_ids(
+		$settings = $this->get_gateway_settings();
+		// The availability filter runs before any account read, as client 11.1.0 get_settings() does (class-wc-rest-payments-settings-controller.php:513-516).
+		$available_payment_method_ids = $this->get_available_payment_method_ids();
+		$account_fields               = $this->get_account_backed_response_fields( $settings );
+		$enabled_payment_method_ids   = $this->sanitize_payment_method_ids(
 			$this->get_array_setting( $settings, 'upe_enabled_payment_method_ids' ),
 			$available_payment_method_ids
 		);
@@ -918,30 +918,20 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get payment method IDs available to the connected account.
+	 * Get payment method IDs available to the connected account: the registry's available methods with account fees, of
+	 * which a retired method stays only while the account still holds its capability.
 	 *
-	 * @param string[]|null $filtered_catalog Optional pre-filtered payment method catalog.
 	 * @return string[]
 	 */
-	private function get_available_payment_method_ids( ?array $filtered_catalog = null ): array {
+	private function get_available_payment_method_ids(): array {
 		// Availability comes from the account's live fee structures only, like the plugin: no locally stored list and no card fallback. Empty fees (no account, or a genuinely feeless cache) means nothing is available — the plugin's settings enum is empty in the same state.
-		$filtered_catalog = $filtered_catalog ?? $this->get_payment_method_registry()->get_available_payment_method_ids();
-		$account_data     = $this->account_service->get_cached_account_data();
-		$fees             = is_array( $account_data['fees'] ?? null ) ? array_keys( $account_data['fees'] ) : array();
-		$available_ids    = array();
-		if ( ! empty( $fees ) ) {
-			$available_ids = $this->sanitize_payment_method_ids( $fees, self::SUPPORTED_PAYMENT_METHOD_IDS );
-			if ( in_array( 'card', $available_ids, true ) ) {
-				$available_ids[] = 'apple_pay';
-				$available_ids[] = 'google_pay';
-			}
-
-			$available_ids = $this->apply_payment_method_feature_policy( array_values( array_unique( $available_ids ) ) );
-			$available_ids = array_filter( $available_ids, fn( string $payment_method_id ): bool => $this->is_listable_payment_method( $payment_method_id ) );
-		}
+		$available_ids = $this->get_payment_method_registry()->get_available_payment_method_ids_for_account( $this->account_service );
 
 		return array_values(
-			array_intersect( $filtered_catalog, $available_ids )
+			array_filter(
+				$this->sanitize_payment_method_ids( $available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS ),
+				fn( string $payment_method_id ): bool => $this->is_listable_payment_method( $payment_method_id )
+			)
 		);
 	}
 
@@ -957,20 +947,6 @@ class WooPaymentsSettingsService {
 		return null === $definition
 			|| ! $definition->is_legacy()
 			|| $this->account_service->is_capability_active( $definition->get_account_capability_key() );
-	}
-
-	/**
-	 * Remove payment methods whose shared provider feature policy is disabled.
-	 *
-	 * @param string[] $payment_method_ids Payment method IDs.
-	 * @return string[]
-	 */
-	private function apply_payment_method_feature_policy( array $payment_method_ids ): array {
-		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
-			$payment_method_ids = array_values( array_diff( $payment_method_ids, array( 'amazon_pay' ) ) );
-		}
-
-		return $payment_method_ids;
 	}
 
 	/**

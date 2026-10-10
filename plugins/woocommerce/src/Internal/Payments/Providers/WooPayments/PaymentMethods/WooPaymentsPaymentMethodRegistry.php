@@ -7,6 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeaturePolicy;
+
 /**
  * Registry for native WooPayments payment method definitions.
  *
@@ -83,20 +86,21 @@ class WooPaymentsPaymentMethodRegistry {
 	 * Get the payment methods WooPayments offers on this store: the available methods the account has fees for.
 	 *
 	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Amazon Pay counts only while
-	 * its feature is on. Client 11.1.0 `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879)
-	 * over a registry that holds Amazon Pay only while its feature is on (PaymentMethodDefinitionRegistry.php:102-104).
+	 * its feature is on. Client 11.1.0 `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879),
+	 * which runs the availability filter before reading the account's fees, over a registry that holds Amazon Pay only
+	 * while its feature is on (PaymentMethodDefinitionRegistry.php:102-104).
 	 *
-	 * @param array<mixed> $account_fees       The account's fees, keyed by payment method ID.
-	 * @param bool         $amazon_pay_enabled Whether the Amazon Pay feature is on.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return string[]
 	 */
-	public function get_available_payment_method_ids_with_fees( array $account_fees, bool $amazon_pay_enabled ): array {
+	public function get_available_payment_method_ids_for_account( WooPaymentsAccountService $account_service ): array {
 		$available_ids = $this->get_available_payment_method_ids();
-		if ( ! $amazon_pay_enabled ) {
+		$account_data  = $account_service->get_cached_account_data();
+		$fee_ids       = is_array( $account_data['fees'] ?? null ) ? array_map( 'strval', array_keys( $account_data['fees'] ) ) : array();
+
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
 			$available_ids = array_values( array_diff( $available_ids, array( 'amazon_pay' ) ) );
 		}
-
-		$fee_ids = array_map( 'strval', array_keys( $account_fees ) );
 
 		if ( in_array( 'card', $fee_ids, true ) ) {
 			foreach ( array( 'google_pay', 'apple_pay' ) as $wallet_id ) {
