@@ -653,6 +653,7 @@ class PayPalTest extends WC_Unit_Test_Case {
 		$gateway  = $this->fake_ppcp_gateway();
 		$previous = $this->swap_wallet_container( $this->fake_container_with_connection_state( true, true ) );
 		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' ); // A fresh request without a persistent object cache knows of no missing option.
 		$queries  = array();
 		$recorder = static function ( $sql ) use ( &$queries ) {
 			$queries[] = (string) $sql;

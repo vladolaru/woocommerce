@@ -10,7 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\S
 /**
  * The names of the options the collecting state keeps, and typed readers for the array options.
  *
- * The readers never write: a missing or malformed option reads as an empty array.
+ * The readers never write: a missing or malformed option reads as an empty array. heal_autoload() is the one writer: it
+ * only sets the autoload flag back, and logs what it did.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -194,7 +195,8 @@ class Options {
 	 *
 	 * A tool that flips autoload makes the store read as dormant (the autoloaded set is the authority). This looks the
 	 * four names up, one query each, so it runs only where a merchant looks at the wallet or on a store the platform
-	 * serves that reads as dormant.
+	 * serves that reads as dormant. It logs a notice per healed name, and a warning per name whose flag write changed
+	 * nothing (a failed UPDATE, or another request healed it first).
 	 *
 	 * @since 11.3.0
 	 *
@@ -209,6 +211,8 @@ class Options {
 			if ( wp_set_option_autoload( $name, true ) ) {
 				$healed[] = $name;
 				wc_get_logger()->notice( sprintf( 'PayPal wallet option %s was stored without autoload; the flag was set again.', $name ), array( 'source' => 'woocommerce-paypal-wallet' ) );
+			} else {
+				wc_get_logger()->warning( sprintf( 'PayPal wallet option %s is outside the autoloaded set, and setting its autoload flag again changed nothing.', $name ), array( 'source' => 'woocommerce-paypal-wallet' ) );
 			}
 		}
 

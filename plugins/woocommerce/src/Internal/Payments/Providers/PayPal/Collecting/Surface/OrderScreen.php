@@ -39,7 +39,7 @@ class OrderScreen {
 	 * The order data box greys its paragraphs; the notice keeps the admin's notice text color, as on other screens. The
 	 * dismissible notice keeps the button's absolute position inside it; the button's own rule is WordPress's.
 	 */
-	private const NOTICE_STYLE = '#order_data .wc-paypal-wallet-order-notice p { color: inherit; } .wc-paypal-wallet-order-notice--dismissible { position: relative; padding-right: 38px; }';
+	private const NOTICE_STYLE = '#order_data .wc-paypal-wallet-order-notice p { color: inherit; } .wc-paypal-wallet-order-notice--dismissible { position: relative; padding-inline-end: 38px; }';
 
 	/**
 	 * The option reader.
@@ -151,7 +151,8 @@ class OrderScreen {
 
 	/**
 	 * The script that dismisses the notice: removes it, moves focus to the Status field, stores the dismissal, and puts
-	 * the notice back when the store refused or the request failed.
+	 * the notice back when the answer is not `{"success":true}`, which includes the empty 200 of an unhandled wc_ajax
+	 * action. The success message is spoken outside the chain that restores, so a throw there cannot bring it back.
 	 *
 	 * @return string
 	 */
@@ -173,9 +174,16 @@ class OrderScreen {
 			. 'parent.removeChild( notice );'
 			. 'if ( status ) { status.focus(); }'
 			. 'var speak = window.wp && window.wp.a11y && window.wp.a11y.speak ? window.wp.a11y.speak : function () {};'
+			. 'var onStored = function () { speak( messages.dismissed ); };'
+			. 'var onFailed = function () {'
+			. 'try { if ( parent.isConnected ) { parent.insertBefore( notice, next && next.parentNode === parent ? next : null ); button.focus(); } } catch ( error ) {}'
+			. 'try { speak( messages.failed, "assertive" ); } catch ( error ) {}'
+			. '};'
 			. 'window.fetch( notice.getAttribute( "data-dismiss-url" ), { method: "POST", credentials: "same-origin" } )'
-			. '.then( function ( response ) { if ( ! response.ok ) { throw new Error( String( response.status ) ); } speak( messages.dismissed ); } )'
-			. '.catch( function () { parent.insertBefore( notice, next ); button.focus(); speak( messages.failed, "assertive" ); } );'
+			. '.then( function ( response ) { if ( ! response.ok ) { throw new Error( String( response.status ) ); } return response.json(); } )'
+			. '.then( function ( body ) { if ( ! body || body.success !== true ) { throw new Error( "The dismissal was not stored." ); } } )'
+			. '.then( onStored, onFailed )'
+			. '.catch( function () {} );'
 			. '} );'
 			. '} )();';
 	}

@@ -14,7 +14,8 @@ type ProviderNoticeProps = {
 	notice?: PaymentsProviderNotice;
 };
 
-const FOCUSABLE = 'button, a[href], [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+	'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]):not([disabled])';
 
 /**
  * A notice under a provider row, such as the PayPal Wallet setup reminder.
@@ -22,7 +23,8 @@ const FOCUSABLE = 'button, a[href], [tabindex]:not([tabindex="-1"])';
  * This is the proof of concept slot of the provider list: the provider data
  * carries the title, text, action and dismissal, and the item renders them.
  * A dismissal hides the notice at once and stores it through the dismissal
- * URL; a refusal or a failed request brings the notice back.
+ * URL; it counts as stored only when the answer is `{ success: true }`, and
+ * anything else brings the notice back.
  *
  * @param {Object} props        Component props.
  * @param {Object} props.notice The provider's notice.
@@ -65,6 +67,20 @@ export const ProviderNotice = ( { notice }: ProviderNoticeProps ) => {
 			return;
 		}
 
+		const onStored = () => {
+			speak( __( 'Notice dismissed.', 'woocommerce' ) );
+		};
+		const onFailed = () => {
+			setIsDismissed( false );
+			setFailures( ( count ) => count + 1 );
+			speak(
+				__( 'The notice could not be dismissed.', 'woocommerce' ),
+				'assertive'
+			);
+		};
+
+		// An unhandled wc_ajax action answers 200 with an empty body, so only the JSON success flag means stored.
+		// onStored sits outside the chain onFailed watches, so a throw in it cannot bring the notice back.
 		window
 			.fetch( notice.dismiss_url, {
 				method: 'POST',
@@ -74,22 +90,24 @@ export const ProviderNotice = ( { notice }: ProviderNoticeProps ) => {
 				if ( ! response.ok ) {
 					throw new Error( String( response.status ) );
 				}
-				speak( __( 'Notice dismissed.', 'woocommerce' ) );
+				return response.json();
 			} )
-			.catch( () => {
-				setIsDismissed( false );
-				setFailures( ( count ) => count + 1 );
-				speak(
-					__( 'The notice could not be dismissed.', 'woocommerce' ),
-					'assertive'
-				);
-			} );
+			.then( ( body ) => {
+				if ( body?.success !== true ) {
+					throw new Error( 'The dismissal was not stored.' );
+				}
+			} )
+			.then( onStored, onFailed )
+			// A throw in an announcement leaves nothing to undo.
+			.catch( () => {} );
 	};
 
 	return (
 		<div className="woocommerce-list__item-notice" ref={ wrapper }>
 			<Notice
 				status="warning"
+				// After a restore, speak only the failure message, not the whole notice again.
+				spokenMessage={ failures > 0 ? '' : undefined }
 				isDismissible={ notice.dismissible }
 				onRemove={ dismiss }
 				actions={ [

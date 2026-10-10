@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Se
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\SettingsModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
@@ -1599,6 +1600,121 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->assertTrue( $this->sut->is_dormant() );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should keep the owner row of a served store whose request saw a stale autoloaded set, with no query beyond the heal's own.
+	 */
+	public function test_a_served_store_keeps_its_owner_row_when_another_request_healed_the_flag(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		// Autoload `on`, as the other request's heal left it, so this request's flag write finds nothing to change.
+		update_option( Options::COLLECTING, array( 'payee_email' => 'payee@example.com' ), true );
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION, true );
+		$this->build_sut( false );
+		// This request loaded the autoloaded set before another request set the flag back, so its view lacks the option.
+		$all = wp_load_alloptions();
+		unset( $all[ Options::COLLECTING ] );
+		wp_cache_set( 'alloptions', $all, 'options' );
+		wp_cache_delete( Options::COLLECTING, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$this->sut->maybe_boot();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_EXTENSION, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ), 'The row, and the hand-back it records, stay' );
+		$naming = static function ( string $name ) use ( $queries ): int {
+			return count(
+				array_filter(
+					$queries,
+					static function ( string $sql ) use ( $name ): bool {
+						return str_contains( $sql, $name );
+					}
+				)
+			);
+		};
+		$this->assertSame( 2, $naming( Options::COLLECTING ), 'The heal\'s lookup and its flag write, nothing more' );
+		$this->assertSame( 1, $naming( Options::PLATFORM ), 'The heal\'s lookup, nothing more' );
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should delete the owner row when the only state option is autoloaded but malformed, so the next request reads nothing.
+	 */
+	public function test_an_owner_row_beside_a_malformed_state_option_is_deleted(): void {
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option( Options::COLLECTING, array( 'tracking_id' => 'T' ) );
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
+		$this->build_sut( false );
+
+		$this->sut->maybe_boot();
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertFalse( get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, false ) );
+
+		// A second request: the row is gone, so the detector reads nothing.
+		$this->build_sut( false );
+		wp_load_alloptions();
+		wp_cache_delete( 'notoptions', 'options' );
+		$queries = array();
+		$record  = static function ( $sql ) use ( &$queries ) {
+			$queries[] = (string) $sql;
+			return $sql;
+		};
+		add_filter( 'query', $record );
+
+		try {
+			$this->sut->maybe_boot();
+		} finally {
+			remove_filter( 'query', $record );
+		}
+
+		foreach ( $queries as $sql ) {
+			foreach ( array( Options::COLLECTING, Options::PLATFORM, PayPalWalletBootstrap::LAST_OWNER_OPTION ) as $needle ) {
+				$this->assertFalse( str_contains( $sql, $needle ), "Unexpected query for $needle: $sql" );
+			}
+		}
+	}
+
+	/**
+	 * @group paypal-wallet-boot
+	 *
+	 * @testdox Should log a heal that throws as a warning and go on booting the store.
+	 */
+	public function test_a_failing_heal_does_not_stop_the_boot(): void {
+		$logger = ( new RecordingWcLogger( 'notice' ) )->install();
+		update_option( 'woocommerce_ppcp-gateway_settings', array( 'enabled' => 'yes' ) );
+		delete_option( 'woocommerce-ppcp-data-common' );
+		update_option(
+			Options::COLLECTING,
+			array(
+				'payee_email' => 'payee@example.com',
+				'tracking_id' => 'T',
+				'environment' => 'sandbox',
+				'payee_bound' => true,
+			)
+		);
+		update_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_NATIVE );
+		wp_set_option_autoload( Options::COLLECTING, false );
+		$this->build_sut( true, PayPalWalletRuntimeArbiter::OWNER_NATIVE, true );
+
+		$this->sut->maybe_boot();
+
+		$this->assertFalse( $this->sut->is_dormant(), 'The flag was set before the log line threw, so the store boots' );
+		$warnings = $logger->at( 'warning' );
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( 'RuntimeException', $warnings[0]['message'] );
+		$this->assertSame( array( 'source' => 'woocommerce-paypal-wallet' ), $warnings[0]['context'] );
 	}
 
 	/**

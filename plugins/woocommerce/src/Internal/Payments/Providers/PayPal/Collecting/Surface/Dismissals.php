@@ -96,7 +96,7 @@ class Dismissals {
 	 * @since 11.3.0
 	 *
 	 * @param array $request The request parameters: `_wpnonce`, `surface` (the row notice when absent), `order_id` for the order notice.
-	 * @return int 403 for a bad nonce or a user without the capability, 400 for an unknown surface or a missing order ID, 500 when the write did not round-trip, 200 when stored.
+	 * @return int 403 for a bad nonce or a user without the capability, 400 for an unknown surface or an order ID that is missing or not a plain positive integer, 500 when the write did not round-trip, 200 when stored.
 	 */
 	public function dismiss_from_request( array $request ): int {
 		$nonce = isset( $request['_wpnonce'] ) && is_string( $request['_wpnonce'] ) ? $request['_wpnonce'] : '';
@@ -111,7 +111,8 @@ class Dismissals {
 
 		$latest_order_id = 0;
 		if ( OrderScreen::SURFACE === $surface ) {
-			$latest_order_id = isset( $request['order_id'] ) && is_numeric( $request['order_id'] ) ? (int) $request['order_id'] : 0;
+			$order_id        = $request['order_id'] ?? null;
+			$latest_order_id = is_int( $order_id ) || ( is_string( $order_id ) && ctype_digit( $order_id ) ) ? (int) $order_id : 0;
 			if ( $latest_order_id <= 0 ) {
 				return 400;
 			}
@@ -121,7 +122,8 @@ class Dismissals {
 	}
 
 	/**
-	 * Record that a user dismissed a surface.
+	 * Record that a user dismissed a surface. The stored order ID never moves back, so a dismissal from a stale screen on
+	 * an older order keeps the newer one.
 	 *
 	 * @since 11.3.0
 	 *
@@ -139,11 +141,10 @@ class Dismissals {
 			$latest_order_id = ( new Options() )->first_order_id();
 		}
 
-		update_user_meta( $user_id, $key, $latest_order_id );
-
 		$stored = (int) get_user_meta( $user_id, $key, true );
+		update_user_meta( $user_id, $key, max( $stored, $latest_order_id ) );
 
-		return $stored === $latest_order_id;
+		return (int) get_user_meta( $user_id, $key, true ) >= $latest_order_id;
 	}
 
 	/**

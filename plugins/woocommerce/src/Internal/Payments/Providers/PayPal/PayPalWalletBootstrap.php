@@ -341,20 +341,36 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	/**
 	 * Heal a flipped autoload flag on a store the platform served, on its first request after the flip.
 	 *
-	 * The owner row is autoloaded and exists only on a store the platform serves (abandon() deletes it with the state), so
-	 * its presence with no platform state means a tool flipped the flag, or the options were deleted by hand. Both reads
-	 * come from the autoloaded set, so a healthy store pays nothing. When the heal restores neither state option the row
-	 * is deleted, so a store whose options are really gone pays the raw reads once. The Payments settings screen runs the
-	 * same heal for a store that has no row (OwnerIndependent).
+	 * The owner row is autoloaded. It implies a platform state was present and has not been abandoned since (abandon()
+	 * deletes it with the state), so the row present with no platform state means a tool flipped the flag, or the options
+	 * were deleted by hand. Both reads come from the autoloaded set, so a healthy store pays nothing. The row stays when a
+	 * collecting or platform option is found outside the autoloaded set (healed now, healed by another request, or a
+	 * flag write that failed), and is deleted otherwise, so a store whose state is really gone pays the raw reads once.
+	 * A failure is logged and never stops the boot. The Payments settings screen runs the same heal for a store that has
+	 * no row (OwnerIndependent).
 	 */
 	private function maybe_heal_autoload(): void {
-		$options = new Options();
-		if ( ! $options->has_autoloaded( self::LAST_OWNER_OPTION ) || ( new ConnectionState( $options ) )->has_platform_state() ) {
-			return;
-		}
-		$healed = $options->heal_autoload();
-		if ( ! in_array( Options::COLLECTING, $healed, true ) && ! in_array( Options::PLATFORM, $healed, true ) ) {
+		try {
+			$options = new Options();
+			if ( ! $options->has_autoloaded( self::LAST_OWNER_OPTION ) || ( new ConnectionState( $options ) )->has_platform_state() ) {
+				return;
+			}
+			$outside = array_filter(
+				array( Options::COLLECTING, Options::PLATFORM ),
+				static function ( string $name ) use ( $options ): bool {
+					return ! $options->has_autoloaded( $name );
+				}
+			);
+			$options->heal_autoload();
+			// The heal's own lookup cached each of these names, so this reads no row again.
+			foreach ( $outside as $name ) {
+				if ( null !== get_option( $name, null ) ) {
+					return;
+				}
+			}
 			delete_option( self::LAST_OWNER_OPTION );
+		} catch ( \Throwable $throwable ) {
+			wc_get_logger()->warning( sprintf( 'PayPal wallet autoload heal failed: %s: %s', get_class( $throwable ), $throwable->getMessage() ), array( 'source' => 'woocommerce-paypal-wallet' ) );
 		}
 	}
 

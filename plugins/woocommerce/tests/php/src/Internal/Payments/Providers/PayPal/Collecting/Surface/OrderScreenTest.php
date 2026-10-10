@@ -268,7 +268,7 @@ class OrderScreenTest extends WalletTestCase {
 
 		set_current_screen( wc_get_page_screen_id( 'shop-order' ) );
 		$this->sut->handle_admin_enqueue_scripts();
-		$this->assertSame( array( '#order_data .wc-paypal-wallet-order-notice p { color: inherit; } .wc-paypal-wallet-order-notice--dismissible { position: relative; padding-right: 38px; }' ), wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ) );
+		$this->assertSame( array( '#order_data .wc-paypal-wallet-order-notice p { color: inherit; } .wc-paypal-wallet-order-notice--dismissible { position: relative; padding-inline-end: 38px; }' ), wp_styles()->get_data( 'woocommerce_admin_styles', 'after' ) );
 
 		set_current_screen( 'front' );
 		wp_dequeue_style( 'woocommerce_admin_styles' );
@@ -342,6 +342,10 @@ class OrderScreenTest extends WalletTestCase {
 		$this->assertStringContainsString( '"The notice could not be dismissed."', $script );
 		$this->assertStringContainsString( 'order_status', $script, 'Focus moves to the Status field' );
 		$this->assertStringContainsString( 'credentials: "same-origin"', $script );
+		$this->assertStringContainsString( 'body.success !== true', $script, 'Stored only on {"success":true}, not on the empty 200 of an unhandled action' );
+		$this->assertStringContainsString( '.then( onStored, onFailed )', $script, 'A throw in the success message cannot restore' );
+		$this->assertStringContainsString( 'parent.insertBefore( notice, next && next.parentNode === parent ? next : null )', $script, 'The restore survives a sibling that left the DOM' );
+		$this->assertStringContainsString( 'if ( parent.isConnected )', $script, 'No restore into a detached parent' );
 	}
 
 	/**

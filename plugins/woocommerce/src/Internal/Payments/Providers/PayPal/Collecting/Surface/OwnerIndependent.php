@@ -33,7 +33,8 @@ use WC_Order;
  * The shell calls register() before any ownership check. It needs no container: it reads the autoloaded options
  * directly and builds the held-orders query only when the task is read. On a store that has no collecting or platform
  * option and no recorded first order, and where the wallet is not available, register() attaches nothing and runs no
- * query.
+ * query of its own (the availability check reads two options the request reads anyway). The exception is the Payments
+ * settings screen, where it hooks the autoload heal, which runs up to four option lookups on `admin_init`.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -135,9 +136,10 @@ class OwnerIndependent {
 	 * Hook the panel's routes and the profiler card on admin and REST requests where the wallet is available or the store
 	 * has history, then the surfaces, unless the store never had a wallet order or a collecting or platform state.
 	 *
-	 * A store with neither history nor an available wallet attaches nothing, and no query runs: the three options are
-	 * autoloaded and answered from the autoloaded set. The callbacks check again, because the state can change during the
-	 * request.
+	 * A store with neither history nor an available wallet attaches nothing, except the autoload heal on the Payments
+	 * settings screen (up to four option lookups on `admin_init`). The history check runs no query: the three options are
+	 * answered from the autoloaded set. The availability check reads two options the request reads anyway. The callbacks
+	 * check again, because the state can change during the request.
 	 *
 	 * The task is added on `init`: core builds the task lists on `init` at priority 4, so they exist by the default priority.
 	 *

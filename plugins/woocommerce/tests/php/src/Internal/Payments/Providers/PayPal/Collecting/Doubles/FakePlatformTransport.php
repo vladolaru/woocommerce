@@ -14,11 +14,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\E
 /**
  * A platform transport that answers canned values tagged by app and records every call.
  *
- * Options: `ready` (default true), `pick` (the app pick_order_app() answers; default null, which derives it from the platform option as the direct transport does: the platform app once the option holds a `merchant_id`, else the merchant app; a test about something other than the pick passes it explicitly), `environment`
- * (default `sandbox`), `partner_merchant_id` (default `PARTNER-FAKE`), `seller_status` (a SellerStatus, default an
- * incomplete one, or a RuntimeException to throw), `webhooks` (the subscription map, default empty), `verify` (default
- * true; a bool for every app, or a map of bools by app, where a missing app does not verify). The assertion header is
- * derived from the platform option, as the direct transport derives it.
+ * Options: `ready` (default true), `pick` (the app pick_order_app() answers; default null, which derives it from the
+ * platform option as the direct transport does: the platform app once the option holds a `merchant_id`, else the
+ * merchant app; a test about something other than the pick passes it explicitly), `environment` (default `sandbox`),
+ * `partner_merchant_id` (default `PARTNER-FAKE`), `seller_status` (a SellerStatus, default an incomplete one, or a
+ * RuntimeException to throw), `webhooks` (the subscription map, default empty), `verify` (default true; a bool for
+ * every app, or a map of bools by app, where a missing app does not verify). The assertion header is derived from the
+ * platform option, as the direct transport derives it.
  */
 final class FakePlatformTransport implements PlatformTransport {
 
@@ -97,7 +99,9 @@ final class FakePlatformTransport implements PlatformTransport {
 			return $this->options['pick'];
 		}
 
-		return '' !== (string) ( ( new Options() )->platform()['merchant_id'] ?? '' ) ? self::APP_PLATFORM : self::APP_MERCHANT_APP;
+		$merchant_id = ( new Options() )->platform()['merchant_id'] ?? '';
+
+		return is_string( $merchant_id ) && '' !== $merchant_id ? self::APP_PLATFORM : self::APP_MERCHANT_APP;
 	}
 
 	/**

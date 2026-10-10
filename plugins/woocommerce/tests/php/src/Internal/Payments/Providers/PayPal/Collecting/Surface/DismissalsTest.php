@@ -166,6 +166,44 @@ class DismissalsTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should answer 400 for an order notice dismissal whose order ID is not a plain positive integer: $label.
+	 * @testWith ["1e3", "an exponent"]
+	 *           ["12.9", "a decimal"]
+	 *           [" 12", "a leading space"]
+	 *           ["0", "zero"]
+	 *           ["-1", "a negative number"]
+	 *           [["12"], "an array"]
+	 *
+	 * @param mixed  $order_id The order ID as the request carries it.
+	 * @param string $label    What is wrong with it.
+	 */
+	public function test_dismiss_from_request_refuses_a_loose_order_id( $order_id, string $label ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
+		$request = array(
+			'_wpnonce' => wp_create_nonce( Dismissals::AJAX_ACTION ),
+			'surface'  => 'order-notice',
+			'order_id' => $order_id,
+		);
+
+		$this->assertSame( 400, $this->sut->dismiss_from_request( $request ), $label );
+		$this->assertSame( '', get_user_meta( get_current_user_id(), 'wc_paypal_wallet_dismissed_order-notice', true ), 'Nothing stored' );
+	}
+
+	/**
+	 * @testdox Should keep the newer stored order ID and answer 200 when the notice is dismissed again on an older order.
+	 */
+	public function test_dismiss_from_request_on_an_older_order_keeps_the_newer_one(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'shop_manager' ) );
+		wp_set_current_user( $user_id );
+		$nonce = wp_create_nonce( Dismissals::AJAX_ACTION );
+		$this->assertSame( 200, $this->sut->dismiss_from_request( $this->request( $nonce, 'order-notice', '30' ) ) );
+
+		$this->assertSame( 200, $this->sut->dismiss_from_request( $this->request( $nonce, 'order-notice', '25' ) ), 'A stale tab on an older order' );
+		$this->assertSame( '30', get_user_meta( $user_id, 'wc_paypal_wallet_dismissed_order-notice', true ) );
+		$this->assertTrue( $this->sut->is_dismissed( 'order-notice', $user_id, 30 ), 'The newer order stays covered' );
+	}
+
+	/**
 	 * @testdox Should build a wc_ajax dismiss URL that carries the nonce, the surface and the order ID.
 	 */
 	public function test_dismiss_url(): void {

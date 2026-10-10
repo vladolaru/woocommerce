@@ -330,8 +330,8 @@ class CollectingState {
 	 * A takeover or a disabled gateway keeps the state while orders are still held for the payee, so they can be
 	 * settled later; the state is deleted once none are held. A first-party connection always deletes it, and the
 	 * platform connection with it, held orders or not: first-party credentials win over everything. An unknown reason is
-	 * refused. Deleting the state also deletes the platform apps' cached tokens and the recorded runtime owner, which only
-	 * a store the platform serves has.
+	 * refused. Deleting the state also deletes the platform apps' cached tokens and the owner row, which implies a platform
+	 * state was present and has not been abandoned since.
 	 *
 	 * @since 11.3.0
 	 *
