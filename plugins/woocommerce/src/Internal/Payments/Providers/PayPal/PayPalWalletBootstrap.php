@@ -185,14 +185,17 @@ class PayPalWalletBootstrap implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Queue one reconcile, unless one is already queued.
+	 * Queue one hand-back reconcile, unless one is already queued.
+	 *
+	 * The run carries its own arguments, so the daily recurring action (no arguments) does not count as a queued one:
+	 * Action Scheduler's unique check compares hook, group and arguments (K7).
 	 *
 	 * @internal
 	 * @since 11.3.0
 	 */
 	public function queue_hand_back_reconcile(): void {
 		if ( function_exists( 'as_enqueue_async_action' ) ) {
-			as_enqueue_async_action( Reconciler::HOOK, array(), Reconciler::GROUP, true );
+			as_enqueue_async_action( Reconciler::HOOK, Reconciler::HAND_BACK_ARGS, Reconciler::GROUP, true );
 		}
 	}
 

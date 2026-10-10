@@ -361,6 +361,20 @@ class ReconcilerTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should read the hand-back run's arguments as a first run that checks onboarding, like the daily run.
+	 */
+	public function test_hand_back_run_checks_onboarding(): void {
+		$this->set_collecting();
+		$sut = $this->sut( new SellerStatus( '', true, false, true ) );
+
+		$summary = $sut->handle_woocommerce_paypal_wallet_reconcile( ...Reconciler::HAND_BACK_ARGS );
+
+		$this->assertCount( 1, $this->transport->calls_to( 'seller_status' ) );
+		$this->assertSame( 'incomplete', $summary['onboarding'] );
+		delete_option( Options::SELLER_STATUS );
+	}
+
+	/**
 	 * The number of held orders left.
 	 *
 	 * @return int

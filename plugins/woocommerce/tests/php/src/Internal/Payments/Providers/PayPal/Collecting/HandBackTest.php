@@ -88,12 +88,39 @@ class HandBackTest extends WalletTestCase {
 	}
 
 	/**
-	 * Whether a reconcile is queued.
+	 * Remove every queued run of the reconcile, so no action is left for the next test.
+	 */
+	public function tearDown(): void {
+		as_unschedule_all_actions( Reconciler::HOOK, null, Reconciler::GROUP );
+		parent::tearDown();
+	}
+
+	/**
+	 * Whether a hand-back reconcile is queued.
 	 *
 	 * @return bool
 	 */
 	private function reconcile_queued(): bool {
-		return as_has_scheduled_action( Reconciler::HOOK, array(), Reconciler::GROUP );
+		return as_has_scheduled_action( Reconciler::HOOK, Reconciler::HAND_BACK_ARGS, Reconciler::GROUP );
+	}
+
+	/**
+	 * The IDs of the queued runs of the reconcile that are waiting.
+	 *
+	 * @param array|null $args Only the runs queued with these arguments, or every run when null.
+	 * @return int[]
+	 */
+	private function pending_reconciles( ?array $args = null ): array {
+		$query = array(
+			'hook'   => Reconciler::HOOK,
+			'group'  => Reconciler::GROUP,
+			'status' => \ActionScheduler_Store::STATUS_PENDING,
+		);
+		if ( null !== $args ) {
+			$query['args'] = $args;
+		}
+
+		return array_map( 'intval', (array) as_get_scheduled_actions( $query, 'ids' ) );
 	}
 
 	/**
@@ -108,6 +135,52 @@ class HandBackTest extends WalletTestCase {
 		$this->assertSame( PayPalWalletRuntimeArbiter::OWNER_NATIVE, get_option( PayPalWalletBootstrap::LAST_OWNER_OPTION ) );
 		$this->assertTrue( $this->reconcile_queued() );
 		$this->assertFalse( $this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner(), 'The next request is not a hand-back' );
+	}
+
+	/**
+	 * @testdox Should queue the hand-back reconcile next to the daily recurring one, which must not suppress it.
+	 */
+	public function test_hand_back_queues_a_reconcile_beside_the_daily_one(): void {
+		$this->set_collecting();
+		as_schedule_recurring_action( time() + DAY_IN_SECONDS, DAY_IN_SECONDS, Reconciler::HOOK, array(), Reconciler::GROUP );
+		$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+
+		$this->assertTrue( $this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner() );
+
+		$this->assertCount( 1, $this->pending_reconciles( Reconciler::HAND_BACK_ARGS ), 'Exactly one hand-back run is queued' );
+		$this->assertCount( 1, $this->pending_reconciles( array() ), 'The daily action is left alone' );
+		$this->assertCount( 2, $this->pending_reconciles() );
+	}
+
+	/**
+	 * @testdox Should queue only one hand-back reconcile when the store is handed back twice before the first one runs.
+	 */
+	public function test_second_hand_back_queues_no_second_reconcile(): void {
+		$this->set_collecting();
+		as_schedule_recurring_action( time() + DAY_IN_SECONDS, DAY_IN_SECONDS, Reconciler::HOOK, array(), Reconciler::GROUP );
+
+		foreach ( array( 1, 2 ) as $round ) {
+			$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+			$this->assertTrue( $this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner(), "Hand-back $round" );
+		}
+
+		$this->assertCount( 1, $this->pending_reconciles( Reconciler::HAND_BACK_ARGS ) );
+		$this->assertCount( 2, $this->pending_reconciles() );
+	}
+
+	/**
+	 * @testdox Should leave a queued continuation alone and still queue the hand-back reconcile, and the reverse.
+	 */
+	public function test_hand_back_run_and_continuation_do_not_collide(): void {
+		$this->set_collecting();
+		as_enqueue_async_action( Reconciler::HOOK, array( 25, true ), Reconciler::GROUP );
+		$this->set_wallet_option( PayPalWalletBootstrap::LAST_OWNER_OPTION, PayPalWalletRuntimeArbiter::OWNER_EXTENSION );
+
+		$this->bootstrap( PayPalWalletRuntimeArbiter::OWNER_NATIVE )->track_runtime_owner();
+
+		$this->assertCount( 1, $this->pending_reconciles( Reconciler::HAND_BACK_ARGS ) );
+		$this->assertCount( 1, $this->pending_reconciles( array( 25, true ) ) );
+		$this->assertNotSame( Reconciler::HAND_BACK_ARGS, array( 0, true ), 'A continuation is never read as the hand-back run' );
 	}
 
 	/**

@@ -47,6 +47,15 @@ final class Reconciler {
 	public const GROUP = 'wc-paypal-wallet';
 
 	/**
+	 * The arguments of the run queued when the extension hands the wallet back to core: the first run, which checks
+	 * onboarding. They differ from the daily action's (none) and from every continuation's (which carry `true`), so the
+	 * hand-back run is not suppressed by the recurring action under a unique enqueue, and two hand-back runs are one.
+	 *
+	 * @since 11.3.0
+	 */
+	public const HAND_BACK_ARGS = array( 0, false );
+
+	/**
 	 * The most held orders one run settles: each costs a PayPal read, and a run can serve a REST request. The rest goes to
 	 * an async continuation.
 	 *
