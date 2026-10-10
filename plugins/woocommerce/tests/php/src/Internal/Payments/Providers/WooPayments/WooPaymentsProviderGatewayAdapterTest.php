@@ -8911,24 +8911,37 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @dataProvider refusals_before_the_refund_runs_data
 	 *
 	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the gateway returns before PaymentProcessingService
-	 * takes the row (NativeWooPaymentsGateway::process_refund()), so the row must not stay for a later call.
+	 * takes the row (NativeWooPaymentsGateway::process_refund()), so the row must not stay for a later call. Codex review
+	 * 206 F2: the invalid-amount refusal is pinned on its own.
 	 *
 	 * @param string $refusal Why the gateway refuses.
 	 */
 	public function test_refund_refused_before_it_runs_forgets_its_row( string $refusal ): void {
-		$order = 'uncaptured' === $refusal ? $this->create_refund_hold_order() : $this->create_woopayments_order( '43.21' );
+		$order = 'no charge' === $refusal ? $this->create_woopayments_order( '43.21' ) : $this->create_refund_hold_order();
 		if ( 'uncaptured' === $refusal ) {
 			$order->update_meta_data( '_intention_status', 'requires_capture' );
 			$order->save();
 		}
 		$row = $this->create_refund_row( $order, 2.00, 'requested_by_customer' );
 		$this->announce_gateway_refund( $row );
+		if ( 'invalid amount' === $refusal ) {
+			// The order total drops below the kept row's amount before the gateway call.
+			$order = wc_get_order( $order->get_id() );
+			$order->set_total( '1.00' );
+			$order->save();
+		}
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_refund_hold_provider( new FakeWooPaymentsHttpClient() ) );
 
 		$result = $gateway->process_refund( $order->get_id(), 2.00, 'requested_by_customer' );
 
+		$codes = array(
+			'uncaptured'     => 'uncaptured-payment',
+			'invalid amount' => 'invalid-amount',
+			'no charge'      => 'order_payment_refund_missing_charge',
+		);
 		$this->assertWPError( $result );
+		$this->assertSame( $codes[ $refusal ], $result->get_error_code() );
 		$this->assertNull( $this->use_runtime_refund_capture()->consume( wc_get_order( $order->get_id() ), 2.00 ), 'No later call takes the row.' );
 	}
 
@@ -8939,8 +8952,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 */
 	public function refusals_before_the_refund_runs_data(): array {
 		return array(
-			'an uncaptured payment' => array( 'uncaptured' ),
-			'no charge to refund'   => array( 'no charge' ),
+			'an uncaptured payment'           => array( 'uncaptured' ),
+			'an amount above the order total' => array( 'invalid amount' ),
+			'no charge to refund'             => array( 'no charge' ),
 		);
 	}
 
