@@ -609,17 +609,26 @@ class WooPaymentsSettingsService {
 				$enabled_methods_update['requested'],
 				$enabled_methods_update['available']
 			);
+			$removed_payment_method_ids          = array_diff( $previous_enabled_payment_method_ids, $enabled_payment_method_ids );
+			$added_payment_method_ids            = array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids );
 			// Client 11.1.0 records these before saving (class-wc-rest-payments-settings-controller.php:740-760).
 			$tracks_properties = static fn( string $payment_method_id ): array => array(
 				'payment_method_id' => $payment_method_id,
 				'capability_id'     => self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null,
 			);
-			foreach ( array_diff( $previous_enabled_payment_method_ids, $enabled_payment_method_ids ) as $payment_method_id ) {
+			foreach ( $removed_payment_method_ids as $payment_method_id ) {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_disabled', $tracks_properties( $payment_method_id ) );
 			}
-			foreach ( array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids ) as $payment_method_id ) {
+			foreach ( $added_payment_method_ids as $payment_method_id ) {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
 				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
+			}
+			// Card's gateway is the WooPayments gateway: adding or removing card turns it on or off, as the client enables and
+			// disables each changed method's gateway (class-wc-rest-payments-settings-controller.php:766-790).
+			if ( in_array( 'card', $added_payment_method_ids, true ) ) {
+				$settings['enabled'] = 'yes';
+			} elseif ( in_array( 'card', $removed_payment_method_ids, true ) ) {
+				$settings['enabled'] = 'no';
 			}
 			$settings['upe_enabled_payment_method_ids'] = $enabled_payment_method_ids;
 		}

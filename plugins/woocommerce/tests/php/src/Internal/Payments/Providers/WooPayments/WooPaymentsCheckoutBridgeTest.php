@@ -1589,6 +1589,27 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should build no payment methods for a stored empty list of enabled methods (client 11.1.0 `get_enabled_payment_method_config()`, `class-wc-payments-checkout.php:291-320`, builds them from the enabled list).
+	 */
+	public function test_get_payment_fields_js_config_builds_no_methods_for_an_empty_enabled_list(): void {
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array( 'country' => 'RO' ),
+			array(
+				'saved_cards'                    => 'yes',
+				'upe_enabled_payment_method_ids' => array(),
+			)
+		);
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+
+		$this->assertSame( array(), $config['paymentMethodsConfig'] );
+	}
+
+	/**
 	 * @testdox Should hide the card save option on a renewal-only cart (client 11.1.0 `class-wc-payments-checkout.php:616`).
 	 *
 	 * The client shows the save option only when the cart has no subscription item, and its is_subscription_item_in_cart()

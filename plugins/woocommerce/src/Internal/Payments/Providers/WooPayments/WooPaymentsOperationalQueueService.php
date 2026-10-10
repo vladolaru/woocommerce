@@ -965,7 +965,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private function get_store_setup_details(): array {
 		$settings                         = $this->get_gateway_settings();
 		$payment_methods_available        = $this->get_payment_methods_available();
-		$payment_methods_enabled          = $this->get_payment_methods_enabled( $settings, $payment_methods_available );
+		$payment_methods_enabled          = $this->get_payment_methods_enabled();
 		$payment_methods_disabled         = array_values( array_diff( $payment_methods_available, $payment_methods_enabled ) );
 		$provider_capabilities_enabled    = $this->map_payment_methods_to_capabilities( $payment_methods_enabled );
 		$provider_capabilities_disabled   = $this->map_payment_methods_to_capabilities( $payment_methods_disabled );
@@ -1073,19 +1073,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get enabled payment method IDs.
+	 * Get enabled payment method IDs as stored, card when none were ever stored, as client 11.1.0
+	 * `get_upe_enabled_payment_method_ids()` reads them through WC_Settings_API (class-wc-payment-gateway-wcpay.php:4682-4689).
 	 *
-	 * @param array<string,mixed> $settings  Gateway settings.
-	 * @param string[]            $available Available payment method IDs.
 	 * @return string[]
 	 */
-	private function get_payment_methods_enabled( array $settings, array $available ): array {
-		$enabled = $settings['upe_enabled_payment_method_ids'] ?? array();
-		if ( ! is_array( $enabled ) || empty( $enabled ) ) {
-			$enabled = in_array( 'card', $available, true ) ? array( 'card' ) : array();
-		}
+	private function get_payment_methods_enabled(): array {
+		$enabled = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
 
-		return $this->sanitize_string_list( $enabled );
+		return $this->sanitize_string_list( '' === $enabled ? array( 'card' ) : $enabled );
 	}
 
 	/**

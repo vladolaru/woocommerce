@@ -1158,8 +1158,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 			);
 		}
 
-		$enabled_method_ids = $this->get_enabled_payment_method_ids();
-		if ( ! empty( $enabled_method_ids ) && ! in_array( 'card', $enabled_method_ids, true ) ) {
+		if ( ! in_array( 'card', $this->get_enabled_payment_method_ids(), true ) ) {
 			return array();
 		}
 
@@ -1280,7 +1279,9 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_ids(): array {
-		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', null );
+		// Card when none were ever stored; a stored empty list stays empty (client 11.1.0 get_upe_enabled_payment_method_ids()).
+		$method_ids = $this->get_account_service()->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		$method_ids = '' === $method_ids ? array( 'card' ) : $method_ids;
 
 		$normalized = array();
 		foreach ( is_array( $method_ids ) ? $method_ids : array() as $method_id ) {

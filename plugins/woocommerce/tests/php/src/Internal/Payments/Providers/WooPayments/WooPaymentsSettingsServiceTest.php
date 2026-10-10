@@ -3,7 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -2706,6 +2713,69 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Removing card through the settings route disables the WooPayments gateway (client 11.1.0 `class-wc-rest-payments-settings-controller.php:781-790`).
+	 */
+	public function test_settings_route_disables_the_gateway_when_card_is_removed(): void {
+		$this->store_card_and_ideal_enabled();
+
+		try {
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'ideal' ) ) );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertSame( array( 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
+			$this->assertSame( 'no', $stored['enabled'] );
+		} finally {
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
+	 * @testdox Card is no longer offered at checkout once the settings route removes it (client 11.1.0 `class-wc-payment-gateway-wcpay.php:897-906`).
+	 */
+	public function test_card_is_not_offered_after_the_settings_route_removes_it(): void {
+		$this->store_card_and_ideal_enabled();
+
+		try {
+			$this->assertTrue( $this->create_card_gateway()->is_available(), 'Card is offered before the save.' );
+
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'ideal' ) ) );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$this->assertFalse( $this->create_card_gateway()->is_available() );
+		} finally {
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
+	 * @testdox Adding card back through the settings route enables the WooPayments gateway (client 11.1.0 `class-wc-rest-payments-settings-controller.php:766-780`).
+	 */
+	public function test_settings_route_enables_the_gateway_when_card_is_added(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'no',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'ideal' ),
+			)
+		);
+		$this->set_card_and_ideal_account_data();
+		$this->make_builtin_active();
+
+		try {
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
+			$this->assertSame( 'yes', $stored['enabled'] );
+		} finally {
+			$this->clear_builtin_active();
+		}
+	}
+
+	/**
 	 * @testdox Should keep split gateway availability aligned with canonical enabled methods.
 	 */
 	public function test_update_settings_projects_enabled_methods_to_split_gateways(): void {
@@ -3019,6 +3089,121 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'errored' => false,
 			)
 		);
+	}
+
+	/**
+	 * Store a connected account with active card and iDEAL capabilities and fees for both.
+	 */
+	private function set_card_and_ideal_account_data(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'       => 'acct_native_test',
+					'is_live'          => true,
+					'country'          => 'US',
+					'capabilities'     => array(
+						'card_payments'  => 'active',
+						'ideal_payments' => 'active',
+					),
+					'fees'             => array(
+						'card'  => array(),
+						'ideal' => array(),
+					),
+					'store_currencies' => array(
+						'default'   => 'usd',
+						'supported' => array( 'usd', 'eur' ),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+	}
+
+	/**
+	 * Store an enabled gateway with card and iDEAL on, for an account that has both, with the built-in WooPayments active.
+	 */
+	private function store_card_and_ideal_enabled(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+			)
+		);
+		$this->set_card_and_ideal_account_data();
+		$this->make_builtin_active();
+	}
+
+	/**
+	 * Make the built-in WooPayments the payments owner in the active tier, where the gateway is offered at checkout.
+	 */
+	private function make_builtin_active(): void {
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+	}
+
+	/**
+	 * Undo make_builtin_active() and the REST server the settings route was served from.
+	 */
+	private function clear_builtin_active(): void {
+		$this->clear_rest_server();
+		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+	}
+
+	/**
+	 * Save settings through the WooPayments settings REST route, served by this test's settings service.
+	 *
+	 * @param array<string,mixed> $params Request body.
+	 * @return \WP_REST_Response
+	 */
+	private function post_settings( array $params ): \WP_REST_Response {
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
+		$controller = new WooPaymentsMerchantRestController();
+		$controller->init( $this->getMockBuilder( WooPaymentsService::class )->getMock(), $this->sut, $arbiter );
+		$server = $this->create_rest_server_with_routes(
+			array(
+				static function () use ( $controller ): void {
+					$controller->register_routes( true );
+				},
+			),
+			true
+		);
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
+		$request->set_body_params( $params );
+
+		return $server->dispatch( $request );
+	}
+
+	/**
+	 * Build the card gateway over a processing-ready provider and an account with an active card capability.
+	 *
+	 * @return NativeWooPaymentsGateway
+	 */
+	private function create_card_gateway(): NativeWooPaymentsGateway {
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+
+		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
+		$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $this->create_account_service() );
+
+		return $gateway;
 	}
 
 	/**
