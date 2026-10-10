@@ -1566,7 +1566,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $entries_while_off );
 		$this->assertSame( 0, $redactions_while_off, 'Nothing is redacted while logging is off.' );
-		$this->assertGreaterThan( 0, $transport_log->redactions, 'With logging on, the logged values are redacted.' );
+		$this->assertSame( 4, $transport_log->redactions, 'With logging on, the params, the response body, and the error message and code are each redacted once.' );
 		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ), 'The request line is written.' );
 		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API RESPONSE (' ) ), 'The response line is written.' );
 		$this->assertNotEmpty( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'The error line is written.' );
@@ -1925,6 +1925,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$_SERVER['HTTP_REFERER'] = 'https://shop.example.test/checkout/order-pay/123/?key=wc_order_context';
 
 		try {
+			// The error envelope is the one client 11.1.0 parses: error.code, error.message, error.type
+			// (includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871).
 			$logger = $this->log_transport_request(
 				array( 'note' => 'context' ),
 				array(
@@ -1990,8 +1992,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				return $logger;
 			}
 		);
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
+		$http_client          = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id = 123;
+		// A synthetic transport sentinel, not a recorded platform answer: the test checks only that the answer comes back.
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
@@ -2010,6 +2013,126 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'id' => 'sub_answered' ), $result );
 		$this->assertSame( 1, $http_client->request_count );
 		$this->assertCount( 1, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'API REQUEST (' ) ), 'The request line before the failure is written.' );
+	}
+
+	/**
+	 * @testdox A log handler that throws on the error line of a 500 answer still lets the platform error reach the caller.
+	 *
+	 * The refund hold records an ambiguous refund answer only when send_refund() catches a WooPaymentsApiException
+	 * (WooPaymentsProviderGatewayAdapter::send_refund()), so a log handler's own exception must never replace it. The error
+	 * envelope is the one client 11.1.0 parses: error.code, error.message, error.type
+	 * (includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871).
+	 */
+	public function test_failing_log_handler_on_the_error_line_lets_the_platform_error_reach_the_caller(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger = new class() extends RecordingWcLogger {
+			/**
+			 * Throw on the platform error line, record every other line.
+			 *
+			 * @param string              $level   Level.
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 * @throws \RuntimeException On the platform error line.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				if ( 'error' === $level && false !== strpos( (string) $message, '(api_error)' ) ) {
+					throw new \RuntimeException( 'Log handler failed.' );
+				}
+
+				parent::log( $level, $message, $context );
+			}
+		};
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ) {
+				return $logger;
+			}
+		);
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id  = 123;
+		$http_client->response = array(
+			'response' => array( 'code' => 500 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode(
+				array(
+					'error' => array(
+						'code'    => 'api_error',
+						'message' => 'An unknown error occurred.',
+						'type'    => 'api_error',
+					),
+				)
+			),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		$caught = null;
+
+		try {
+			$sut->send_site_request( array( 'note' => 'server error' ), 'subscriptions', 'POST' );
+		} catch ( \Throwable $throwable ) {
+			$caught = $throwable;
+		} finally {
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertInstanceOf( WooPaymentsApiException::class, $caught, 'The platform error reaches the caller, not the log handler\'s exception.' );
+		$this->assertSame( 500, $caught->get_http_code() );
+		$this->assertTrue( $caught->has_ambiguous_outcome(), 'A 500 answer stays ambiguous, so the refund hold records it.' );
+		$this->assertSame( 1, $http_client->request_count );
+	}
+
+	/**
+	 * @testdox A settings read that throws after the platform answered leaves the answer as it is and writes the read-failure line.
+	 *
+	 * The gate reads the gateway settings again for the response line. WooPaymentsAccountService catches a failing read,
+	 * writes its read-failure line and treats logging as off, so the failure never reaches the platform request.
+	 */
+	public function test_settings_read_that_throws_after_the_answer_never_fails_the_request(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		$logger       = $this->install_recording_logger();
+		$answered     = false;
+		$on_answer    = static function ( $response ) use ( &$answered ) {
+			$answered = true;
+
+			return $response;
+		};
+		$failing_read = static function ( $value ) use ( &$answered ) {
+			if ( $answered ) {
+				throw new \RuntimeException( 'Settings read failed.' );
+			}
+
+			return $value;
+		};
+		add_filter( 'wcpay_api_request_response', $on_answer );
+		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $failing_read );
+		$http_client          = new FakeWooPaymentsHttpClient();
+		$http_client->blog_id = 123;
+		// A synthetic transport sentinel, not a recorded platform answer: the test checks only that the answer comes back.
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => wp_json_encode( array( 'id' => 'sub_read_failure' ) ),
+		);
+		$sut                   = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$result = $sut->send_site_request( array( 'note' => 'read failure' ), 'subscriptions', 'POST' );
+		} finally {
+			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $failing_read );
+			remove_filter( 'wcpay_api_request_response', $on_answer );
+			remove_filter( 'wcpay_dev_mode', '__return_false' );
+			remove_all_filters( 'woocommerce_logging_class' );
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		}
+
+		$this->assertSame( array( 'id' => 'sub_read_failure' ), $result );
+		$this->assertSame( 1, $http_client->request_count );
+		$read_failures = array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] && 'Native WooPayments could not read the gateway settings; treating it as missing.' === $entry['message'] );
+		$this->assertNotEmpty( $read_failures, 'The read-failure line is written.' );
+		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ), 'The request line before the answer is written.' );
 	}
 
 	/**

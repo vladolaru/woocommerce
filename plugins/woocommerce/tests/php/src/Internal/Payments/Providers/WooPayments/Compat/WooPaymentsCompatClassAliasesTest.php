@@ -102,6 +102,35 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A retry email name an autoloader can load is left to it.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_retry_email_name_an_autoloader_provides_is_left_to_it(): void {
+		// The retry email extends a WooCommerce email class, which loads with the mailer.
+		WC()->mailer();
+		$asked    = array();
+		$provided = get_class( new class() {} );
+		$loader   = static function ( string $class_name ) use ( &$asked, $provided ): void {
+			$asked[] = $class_name;
+			if ( 'WC_Payments_Email_Failed_Authentication_Retry' === $class_name ) {
+				class_alias( $provided, $class_name );
+			}
+		};
+		spl_autoload_register( $loader );
+
+		try {
+			WooPaymentsCompatClassAliases::register( WooPaymentsFailedAuthenticationRetryEmail::class );
+		} finally {
+			spl_autoload_unregister( $loader );
+		}
+
+		$this->assertContains( 'WC_Payments_Email_Failed_Authentication_Retry', $asked );
+		$this->assertTrue( is_a( $provided, 'WC_Payments_Email_Failed_Authentication_Retry', true ), 'The class the autoloader supplied is kept.' );
+		$this->assertFalse( is_a( WooPaymentsFailedAuthenticationRetryEmail::class, 'WC_Payments_Email_Failed_Authentication_Retry', true ), 'Native does not alias the name over it.' );
+	}
+
+	/**
 	 * Provide every extension class name, the class whose registration declares it, and the class it aliases.
 	 *
 	 * @return array<string,array{class-string,string,class-string}>
