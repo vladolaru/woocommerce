@@ -143,7 +143,7 @@ class WooPaymentsRefundAmbiguityService {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
-		if ( '' !== $record['found_refund_id'] && $this->settle_found_refund_on_order( $order, $record ) ) {
+		if ( '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record ) ) {
 			return array( 'action' => self::ACTION_SEND );
 		}
 
@@ -227,6 +227,7 @@ class WooPaymentsRefundAmbiguityService {
 		$this->clear_record( $order );
 
 		$refund_id = (string) ( $refund['id'] ?? '' );
+		$this->log_cleared( $order, array( 'key' => $key ), sprintf( 'resending its request under the held key returned refund %s', $refund_id ) );
 		if ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			return null;
 		}
@@ -540,29 +541,22 @@ class WooPaymentsRefundAmbiguityService {
 	}
 
 	/**
-	 * Settle a hold that found its refund from the order's own refunds, before reading the charge's refunds.
+	 * Clear a hold that found its refund when the order can no longer refund the found amount, before reading the
+	 * charge's refunds.
 	 *
-	 * A manual refund row the merchant created after the failure, for exactly the found amount, records the found refund:
-	 * it is linked to it and the hold cleared (monitor ruling 2026-10-10 13:20). Otherwise, when the order can no longer
-	 * refund the found amount, the hold protects nothing and is cleared with a warning. This call's own row, the newest,
-	 * counts for neither.
+	 * The hold then protects nothing: whatever recorded the earlier refund, refunding its amount is no longer possible
+	 * (Opus review F2, monitor ruling 2026-10-10 13:20). This call's own row, the newest, does not count. A manual row
+	 * that records the found refund is linked only after the lookup, once its status and the order's rows are known.
 	 *
 	 * @param WC_Order            $order  Order being refunded.
 	 * @param array<string,mixed> $record The order's record, holding a found refund.
 	 * @return bool Whether the hold was cleared, so this call sends under its own key.
 	 */
-	private function settle_found_refund_on_order( WC_Order $order, array $record ): bool {
+	private function clear_found_refund_the_order_cannot_refund( WC_Order $order, array $record ): bool {
 		$rows        = $this->get_earlier_refund_rows( $order );
 		$currency    = (string) $order->get_currency();
 		$found_id    = (string) $record['found_refund_id'];
 		$found_minor = (int) $record['found_amount'];
-
-		$manual_row = self::find_manual_record_row( $rows, $currency, $found_minor, (int) $record['failed_at'] );
-		if ( null !== $manual_row ) {
-			$this->link_manual_record_row( $order, $record, $manual_row, $found_id );
-
-			return true;
-		}
 
 		$other_minor = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
