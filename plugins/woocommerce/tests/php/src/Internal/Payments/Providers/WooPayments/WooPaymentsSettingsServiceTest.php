@@ -564,6 +564,42 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should list Amazon Pay as available on the settings screen only while its feature is on (client 11.1.0 `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *
+	 * @param string $flag   The Amazon Pay feature flag option value.
+	 * @param bool   $listed Whether Amazon Pay should be listed.
+	 */
+	public function test_get_settings_lists_amazon_pay_only_while_its_feature_is_on( string $flag, bool $listed ): void {
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'       => 'active',
+						'amazon_pay_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'       => array(),
+						'amazon_pay' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$available = $this->sut->get_settings()['available_payment_method_ids'];
+
+		$this->assertSame( $listed, in_array( 'amazon_pay', $available, true ) );
+		$this->assertContains( 'card', $available );
+	}
+
+	/**
 	 * @testdox Public settings filters the registry catalog before deriving fee-backed availability.
 	 */
 	public function test_get_settings_filters_catalog_before_reading_fee_backed_availability(): void {
