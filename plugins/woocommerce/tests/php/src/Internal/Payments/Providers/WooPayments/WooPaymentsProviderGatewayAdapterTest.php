@@ -7678,6 +7678,65 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox When the order can no longer refund the found amount, a manual row recording the found refund is linked before the hold clears, unless the found refund is already recorded: $order_state.
+	 *
+	 * Monitor ruling 2026-10-10 14:10 (L1): the usual reason the order cannot refund the found amount is that the merchant
+	 * recorded it with Refund manually; clearing the hold without linking that row left the found refund unrecorded, so its
+	 * late webhook would record it a second time. A found refund a webhook row already records is not claimed again (D1).
+	 *
+	 * @dataProvider manual_record_before_the_backstop_data
+	 *
+	 * @param string $order_state    What the order holds.
+	 * @param bool   $webhook_row    Whether a webhook row already records the found refund.
+	 * @param string $found_currency Currency of the found refund; a row in the order's currency records only a refund in it.
+	 */
+	public function test_backstop_links_the_manual_record_before_clearing( string $order_state, bool $webhook_row, string $found_currency = 'usd' ): void {
+		unset( $order_state );
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'       => time() - 1000,
+				'last_failed_at'  => time() - 1000,
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+				'found_currency'  => $found_currency,
+			)
+		);
+		$this->link_local_refund_row( $order, $webhook_row ? 29.45 : 35.00, 're_f458_other_refund' );
+		if ( $webhook_row ) {
+			$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
+		}
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_l1', 'key_f458_not_read', 200 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+		$trail                = self::request_trail( $http_client );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 1, $trail, 'The backstop clears the hold with no lookup.' );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[0] );
+		$this->assertSame( 're_f458_after_l1', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( $webhook_row || 'usd' !== $found_currency ? '' : self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Orders that can no longer refund the found amount.
+	 *
+	 * @return array<string,array{0:string,1:bool,2?:string}>
+	 */
+	public function manual_record_before_the_backstop_data(): array {
+		return array(
+			'a manual record only'                     => array( 'a manual record only', false ),
+			'a manual record and a webhook row for it' => array( 'a manual record and a webhook row for it', true ),
+			'a found refund in another currency'       => array( 'a found refund in another currency', false, 'eur' ),
+		);
+	}
+
+	/**
 	 * @testdox A found amount exactly equal to what the order can still refund keeps the hold, so a refund of that amount links the found refund with no request.
 	 *
 	 * Final review T1: the backstop clears the hold only when the found amount is more than the order can still refund;
@@ -7925,6 +7984,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->seed_refund_hold(
 			$order,
 			array(
+				'currency'       => 'eur',
 				'failed_at'      => time() - 1000,
 				'last_failed_at' => time() - 1000,
 			)
@@ -7941,6 +8001,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRefundAmbiguityService::REFUSAL_EARLIER_FOUND, $result->get_error_code() );
 		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
 		$this->assertSame( '', wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'A row in the order currency cannot record a refund in another.' );
+		$this->assertSame( 'usd', self::refund_hold_of( $order )['found_currency'] ?? null, 'The hold keeps the found refund\'s own currency for the backstop.' );
 	}
 
 	/**

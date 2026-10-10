@@ -404,6 +404,7 @@ class WooPaymentsRefundAmbiguityService {
 		if ( $refund_id !== $record['found_refund_id'] ) {
 			$record['found_refund_id'] = $refund_id;
 			$record['found_amount']    = $refund_amount;
+			$record['found_currency']  = strtolower( (string) ( $refund['currency'] ?? '' ) );
 			$order->update_meta_data( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, $record );
 			$order->save_meta_data();
 			$order->add_order_note(
@@ -465,7 +466,7 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.
-	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int}|null
+	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int,found_currency:string}|null
 	 */
 	private function read_record( WC_Order $order, string $charge_id ): ?array {
 		$stored = $order->get_meta( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, true );
@@ -501,6 +502,7 @@ class WooPaymentsRefundAmbiguityService {
 			'last_failed_at'  => max( $failed_at, (int) ( $stored['last_failed_at'] ?? 0 ) ),
 			'found_refund_id' => (string) ( $stored['found_refund_id'] ?? '' ),
 			'found_amount'    => (int) ( $stored['found_amount'] ?? 0 ),
+			'found_currency'  => strtolower( (string) ( $stored['found_currency'] ?? ( $stored['currency'] ?? '' ) ) ),
 		);
 	}
 
@@ -539,8 +541,9 @@ class WooPaymentsRefundAmbiguityService {
 	 * charge's refunds.
 	 *
 	 * The hold then protects nothing: whatever recorded the earlier refund, refunding its amount is no longer possible
-	 * (Opus review F2, monitor ruling 2026-10-10 13:20). This call's own row, the newest, does not count. A manual row
-	 * that records the found refund is linked only after the lookup, once its status and the order's rows are known.
+	 * (Opus review F2, monitor ruling 2026-10-10 13:20). The row this call links, by the ID the runtime handed over, does
+	 * not count. When a manual row records the found refund (the usual reason the order cannot refund it), it is linked
+	 * first, unless the found refund is already recorded on the order (monitor ruling 2026-10-10 14:10, L1).
 	 *
 	 * @param WC_Order            $order      Order being refunded.
 	 * @param array<string,mixed> $record     The order's record, holding a found refund.
@@ -555,6 +558,15 @@ class WooPaymentsRefundAmbiguityService {
 
 		$other_minor = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
+			$manual_row = strtolower( $currency ) === (string) ( $record['found_currency'] ?? '' ) && ! $this->is_recorded_on_order( $order, $found_id )
+				? self::find_manual_record_row( $rows, $currency, $found_minor, (int) $record['failed_at'] )
+				: null;
+			if ( null !== $manual_row ) {
+				$this->link_manual_record_row( $order, $record, $manual_row, $found_id );
+
+				return true;
+			}
+
 			$this->clear_record( $order );
 			$this->log_cleared( $order, $record, sprintf( 'the order can no longer refund the %1$d %2$s of the found refund %3$s, so the hold protects nothing and this call sends under its own key', $found_minor, strtolower( $currency ), $found_id ) );
 
