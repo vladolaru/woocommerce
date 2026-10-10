@@ -258,7 +258,7 @@ Everything is core-owned and listed, generated, in the last section of `contract
 
 **POC hacks, each with its follow-up.**
 
-- `html-order-items.php` (Ruling 107): the `isset( $order )` guard stays because dropping it grows the PHPStan baseline; `$refund_locked` and the duplicated tooltip string stay. Follow-up: a proper refund-lock API in core, then delete the guard and the copy.
+- `html-order-items.php` (Ruling 107): the `isset( $order )` guard stays because dropping it grows the PHPStan baseline; `$refund_locked` and the duplicated tooltip string stay. The locked button points `aria-describedby` at a `screen-reader-text` span (`wc-paypal-wallet-refund-locked`) that repeats the tooltip, printed on the same line as the button so a regular order's markup does not change. Follow-up: a proper refund-lock API in core, then delete the guard and the copy.
 - The NOX `_notice` slot (the provider row and `PaymentsProviderNotice`): a notice array on a provider entity, with no registry. The demo found that the providers route dropped it, so `PaymentsRestController.php` carries a `_notice` entry in its provider schema, one hunk in a core file outside `Collecting/`. Follow-up: a notices API on providers, and a proper extension point for provider data in that controller, then delete the schema entry.
 - While the platform serves the store, `Collecting/Gating/PlatformServedGates` drops the cards and to-dos that send the payee to a PayPal sign-up or account, through the wallet's existing `woocommerce_paypal_payments_features_list` and `_todos_list` filters: Save PayPal and Venmo and Installments (features), Working Capital and Installments (to-dos). Pay Later messaging and its to-dos stay, because they open the settings app's own tab and have no sign-up. Follow-up: none needed; a store with first-party credentials is unchanged.
 - Plugins.tsx "Included" (Rulings 120, 121 and 127): `NoPermissions.tsx` is not covered, so a user who cannot install plugins sees the card as a disabled checkbox; "shown" means "served", so the record is written even when the profiler page is skipped; and the profiler's Tracks events list `paypal-wallet`. Follow-up: an `is_included` field in the profiler's data model, covering all three.
@@ -267,7 +267,6 @@ Everything is core-owned and listed, generated, in the last section of `contract
 
 **Follow-ups.**
 
-- Ruling 108: focus after a dismiss, the `onDismiss` prop and the disabled button's accessibility.
 - Ruling 124: `check-status` now checks onboarding first and settles one batch of at most 25 held orders (finding I6); an onboarding-only check stays a possible follow-up.
 - Ruling 128: a quick second "Complete setup" click can fetch a second referral, and the state is announced twice to a screen reader.
 - Ruling 146 (M2): no code calls `subscribe_webhooks()` or `unsubscribe_webhooks()`; subscribing is an operator step (`wp eval`). A store that entered the collecting state through the profiler or the panel gets no PayPal events, so completion and settlement wait for the daily reconcile or "Check status", while the settings app's Troubleshooting note says WooCommerce manages the webhooks. Abandon, completion and takeover leave the subscriptions delivering.

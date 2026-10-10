@@ -1,13 +1,15 @@
 /**
  * External dependencies
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { PaymentsProviderNotice } from '@woocommerce/data';
 
 /**
  * Internal dependencies
  */
 import { ProviderNotice } from '../provider-notice';
+
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
 const notice: PaymentsProviderNotice = {
 	title: 'Complete setup to receive your payment',
@@ -20,6 +22,8 @@ const notice: PaymentsProviderNotice = {
 
 describe( 'ProviderNotice', () => {
 	const originalFetch = window.fetch;
+
+	beforeEach( () => jest.clearAllMocks() );
 
 	afterEach( () => {
 		window.fetch = originalFetch;
@@ -43,18 +47,8 @@ describe( 'ProviderNotice', () => {
 		expect( action ).not.toHaveClass( 'is-link' );
 	} );
 
-	it( 'calls the dismiss handler and hides the notice', () => {
-		const onDismiss = jest.fn();
-		render( <ProviderNotice notice={ notice } onDismiss={ onDismiss } /> );
-
-		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
-
-		expect( onDismiss ).toHaveBeenCalledTimes( 1 );
-		expect( screen.queryByText( notice.title ) ).not.toBeInTheDocument();
-	} );
-
-	it( 'requests the dismissal URL when no handler is given', () => {
-		const fetchMock = jest.fn().mockResolvedValue( {} );
+	it( 'requests the dismissal URL and hides the notice', () => {
+		const fetchMock = jest.fn().mockResolvedValue( { ok: true } );
 		window.fetch = fetchMock;
 		render( <ProviderNotice notice={ notice } /> );
 
@@ -65,6 +59,70 @@ describe( 'ProviderNotice', () => {
 			credentials: 'same-origin',
 		} );
 		expect( screen.queryByText( notice.title ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'restores the notice and announces the failure when the store refuses the dismissal', async () => {
+		const speak = jest.requireMock( '@wordpress/a11y' ).speak as jest.Mock;
+		window.fetch = jest
+			.fn()
+			.mockResolvedValue( { ok: false, status: 403 } );
+		render( <ProviderNotice notice={ notice } /> );
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
+
+		expect( await screen.findByText( notice.title ) ).toBeInTheDocument();
+		expect( speak ).toHaveBeenCalledWith(
+			'The notice could not be dismissed.',
+			'assertive'
+		);
+		expect( screen.getByRole( 'button', { name: 'Close' } ) ).toHaveFocus();
+	} );
+
+	it( 'restores the notice when the request fails', async () => {
+		window.fetch = jest.fn().mockRejectedValue( new Error( 'offline' ) );
+		render( <ProviderNotice notice={ notice } /> );
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
+
+		expect( await screen.findByText( notice.title ) ).toBeInTheDocument();
+	} );
+
+	it( 'announces the dismissal and moves focus to the row actions', async () => {
+		const speak = jest.requireMock( '@wordpress/a11y' ).speak as jest.Mock;
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+		render(
+			<div className="woocommerce-list__item">
+				<div className="woocommerce-list__item-after__actions">
+					<button>Menu</button>
+				</div>
+				<ProviderNotice notice={ notice } />
+			</div>
+		);
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
+
+		expect( screen.getByRole( 'button', { name: 'Menu' } ) ).toHaveFocus();
+		await waitFor( () =>
+			expect( speak ).toHaveBeenCalledWith( 'Notice dismissed.' )
+		);
+		expect( screen.queryByText( notice.title ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'moves focus to the row actions, not to an earlier link in the row', () => {
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+		render(
+			<div className="woocommerce-list__item">
+				<a href="#manage">Manage</a>
+				<div className="woocommerce-list__item-after__actions">
+					<button>Menu</button>
+				</div>
+				<ProviderNotice notice={ notice } />
+			</div>
+		);
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
+
+		expect( screen.getByRole( 'button', { name: 'Menu' } ) ).toHaveFocus();
 	} );
 
 	it( 'shows no dismiss button when the notice is not dismissible', () => {

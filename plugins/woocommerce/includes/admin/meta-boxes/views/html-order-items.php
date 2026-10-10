@@ -334,7 +334,8 @@ if ( wc_tax_enabled() ) {
 			 */
 			$refund_locked = isset( $order ) && (bool) apply_filters( 'woocommerce_paypal_wallet_refund_locked', false, $order );
 			?>
-			<button type="button" class="button refund-items"<?php echo $refund_locked ? ' disabled title="' . esc_attr__( 'Refunds are available once PayPal Wallet setup is complete', 'woocommerce' ) . '"' : ''; ?>><?php esc_html_e( 'Refund', 'woocommerce' ); ?></button>
+			<button type="button" class="button refund-items"<?php echo $refund_locked ? ' disabled aria-describedby="wc-paypal-wallet-refund-locked" title="' . esc_attr__( 'Refunds are available once PayPal Wallet setup is complete', 'woocommerce' ) . '"' : ''; ?>><?php esc_html_e( 'Refund', 'woocommerce' ); ?></button><?php echo $refund_locked ? '<span id="wc-paypal-wallet-refund-locked" class="screen-reader-text">' . esc_html__( 'Refunds are available once PayPal Wallet setup is complete', 'woocommerce' ) . '</span>' : ''; ?>
+
 		<?php endif; ?>
 		<?php
 			// Allow adding custom buttons.

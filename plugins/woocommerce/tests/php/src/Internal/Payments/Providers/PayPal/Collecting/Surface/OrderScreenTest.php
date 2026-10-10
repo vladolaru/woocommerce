@@ -357,7 +357,7 @@ class OrderScreenTest extends WalletTestCase {
 
 		$html = $this->items_html( $order );
 
-		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
+		$this->assert_refund_button_is_locked( $html );
 	}
 
 	/**
@@ -388,7 +388,7 @@ class OrderScreenTest extends WalletTestCase {
 
 		$html = $this->items_html( $order );
 
-		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
+		$this->assert_refund_button_is_locked( $html );
 	}
 
 	/**
@@ -406,6 +406,16 @@ class OrderScreenTest extends WalletTestCase {
 
 		$html = $this->items_html( $order );
 
-		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
+		$this->assert_refund_button_is_locked( $html );
+	}
+
+	/**
+	 * Asserts the Refund button is disabled, with the tooltip and a description that screen readers reach.
+	 *
+	 * @param string $html The order items view.
+	 */
+	private function assert_refund_button_is_locked( string $html ): void {
+		$this->assertMatchesRegularExpression( '/<button type="button" class="button refund-items" disabled(="disabled")? aria-describedby="wc-paypal-wallet-refund-locked" title="' . preg_quote( self::TIP, '/' ) . '">Refund<\/button>/', $html );
+		$this->assertStringContainsString( '<span id="wc-paypal-wallet-refund-locked" class="screen-reader-text">' . self::TIP . '</span>', $html );
 	}
 }
