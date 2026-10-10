@@ -378,9 +378,10 @@ class PayPal extends PaymentGateway {
 	private function is_paypal_onboarded( WC_Payment_Gateway $payment_gateway ): ?bool {
 		// A store that sells with PayPal Wallet before it has a PayPal account is not onboarded, so the row reads "Action needed" from the first request.
 		// Once the platform connects the merchant it is, although the wallet's first-party connection stays empty.
+		// The placeholder of a collecting store whose gateway is off reads as onboarded too, so the row offers Enable, which resumes collecting (K8).
 		$wallet_state = $this->get_wallet_state( $payment_gateway );
 		if ( ConnectionState::COLLECTING === $wallet_state || ConnectionState::PLATFORM_CONNECTED === $wallet_state ) {
-			return ConnectionState::PLATFORM_CONNECTED === $wallet_state;
+			return ConnectionState::PLATFORM_CONNECTED === $wallet_state || $payment_gateway instanceof DormantPayPalGateway;
 		}
 
 		$container = $this->get_paypal_container( $payment_gateway );

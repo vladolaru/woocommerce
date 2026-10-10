@@ -174,8 +174,9 @@ class CollectingState {
 	 * Enter the collecting state with a fresh payee and tracking ID.
 	 *
 	 * A platform-connected store is refused: it already has a merchant ID. A bound payee has been paid, so a different
-	 * payee, or the same one in another environment, is refused; entering the same payee again changes nothing and writes
-	 * nothing. Entering the same unbound payee in the same environment keeps its tracking ID, so a referral the merchant
+	 * payee, or the same one in another environment, is refused; entering the same payee again only turns the gateway
+	 * back on, so a store whose merchant turned it off resumes collecting (K8), and writes nothing to the collecting
+	 * option. Entering the same unbound payee in the same environment keeps its tracking ID, so a referral the merchant
 	 * already opened still matches. Entering turns the wallet gateway on, through its own settings, so the store takes
 	 * PayPal payments; turning it off stays the merchant's.
 	 *
@@ -201,6 +202,7 @@ class CollectingState {
 		$same    = $this->is_collecting() && $this->payee_email() === $payee_email && $this->string_value( $current, 'environment' ) === $environment;
 		if ( $this->is_collecting() && $this->is_payee_bound() ) {
 			if ( $same ) {
+				$this->gateway->turn_on();
 				return;
 			}
 			throw new RuntimeException( 'The payee is already bound; it cannot be replaced or moved to another environment.' );

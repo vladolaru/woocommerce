@@ -3,7 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use WC_AJAX;
 use WC_Unit_Test_Case;
 
@@ -69,6 +74,56 @@ class DormantPayPalGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Store a collecting option the way a store keeps it after the merchant turned the gateway off with an order held.
+	 *
+	 * @return array The stored option.
+	 */
+	private function keep_a_collecting_option(): array {
+		$collecting = array(
+			'payee_email' => 'payee@example.com',
+			'tracking_id' => str_repeat( 'a', 32 ),
+			'environment' => 'sandbox',
+			'payee_bound' => true,
+		);
+		update_option( Options::COLLECTING, $collecting, true );
+
+		return $collecting;
+	}
+
+	/**
+	 * Store a platform connection the way a store keeps it after the merchant turned the gateway off.
+	 *
+	 * @return array The stored option.
+	 */
+	private function keep_a_platform_option(): array {
+		$platform = array(
+			'merchant_id'  => 'M2',
+			'tracking_id'  => str_repeat( 'b', 32 ),
+			'payee_email'  => 'payee@example.com',
+			'connected_at' => 1700000000,
+			'environment'  => 'sandbox',
+		);
+		update_option( Options::PLATFORM, $platform, true );
+
+		return $platform;
+	}
+
+	/**
+	 * Build the shell with an arbiter that says core owns the wallet, and register its listeners.
+	 *
+	 * @return PayPalWalletBootstrap
+	 */
+	private function registered_shell(): PayPalWalletBootstrap {
+		$arbiter = $this->getMockBuilder( PayPalWalletRuntimeArbiter::class )->onlyMethods( array( 'should_native_register' ) )->getMock();
+		$arbiter->method( 'should_native_register' )->willReturn( true );
+		$shell = new PayPalWalletBootstrap();
+		$shell->init( $arbiter );
+		$shell->register();
+
+		return $shell;
+	}
+
+	/**
 	 * @testdox Should carry the PayPal gateway ID, a translated title, no fields and no supported features.
 	 */
 	public function test_identifies_as_the_paypal_wallet_placeholder(): void {
@@ -97,6 +152,41 @@ class DormantPayPalGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_needs_setup(): void {
 		$this->assertTrue( $this->sut->needs_setup() );
+	}
+
+	/**
+	 * @testdox Should still need setup, and refuse to be turned back on, on a store with neither a collecting nor a platform option.
+	 */
+	public function test_a_store_with_neither_option_cannot_be_turned_back_on(): void {
+		delete_option( Options::COLLECTING );
+		delete_option( Options::PLATFORM );
+
+		$this->assertFalse( $this->sut->can_be_turned_back_on() );
+		$this->assertTrue( $this->sut->needs_setup() );
+	}
+
+	/**
+	 * @testdox Should need no setup while a platform connection is kept, so the Payments list can turn the gateway back on (Ruling 166).
+	 */
+	public function test_needs_no_setup_while_a_platform_option_is_kept(): void {
+		$this->keep_a_platform_option();
+
+		$this->assertTrue( $this->sut->can_be_turned_back_on() );
+		$this->assertFalse( $this->sut->needs_setup() );
+		$this->assertSame( 'no', $this->sut->get_option( 'enabled' ), 'It still reads as disabled' );
+		$this->assertFalse( $this->sut->is_available(), 'It is still never offered at checkout' );
+	}
+
+	/**
+	 * @testdox Should need no setup while a collecting option is kept, so the Payments list can turn the gateway back on (K8).
+	 */
+	public function test_needs_no_setup_while_a_collecting_option_is_kept(): void {
+		$this->keep_a_collecting_option();
+
+		$this->assertTrue( $this->sut->can_be_turned_back_on() );
+		$this->assertFalse( $this->sut->needs_setup() );
+		$this->assertSame( 'no', $this->sut->get_option( 'enabled' ), 'It still reads as disabled' );
+		$this->assertFalse( $this->sut->is_available(), 'It is still never offered at checkout' );
 	}
 
 	/**
@@ -205,5 +295,147 @@ class DormantPayPalGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'needs_setup', $response['data'] ?? null, 'The list reads needs_setup as "send the merchant to setup"' );
 		$this->assertSame( $before, $this->read_stored_settings(), 'The shared settings option must stay byte-identical' );
 		$this->assertSame( 'no', $this->sut->enabled );
+	}
+
+	/**
+	 * @testdox Should let the Payments list's enable toggle turn the gateway back on while a collecting option is kept, keeping the other settings and the collecting option (K8).
+	 */
+	public function test_enable_toggle_turns_the_gateway_on_while_a_collecting_option_is_kept(): void {
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled' => 'no',
+				'title'   => 'PayPal',
+			)
+		);
+		// The row first: with no order held, turning the gateway off with a collecting option kept would abandon it.
+		$collecting = $this->keep_a_collecting_option();
+		$this->sut  = new DormantPayPalGateway();
+
+		$response = $this->run_enable_toggle();
+
+		$this->assertTrue( $response['success'] ?? null, 'The toggle must succeed' );
+		$this->assertTrue( $response['data'] ?? null, 'The list reads true as "now enabled"' );
+		$stored = get_option( self::SETTINGS_OPTION );
+		$this->assertSame( 'yes', $stored['enabled'] );
+		$this->assertSame( 'PayPal', $stored['title'], 'The other settings are kept' );
+		$this->assertSame( $collecting, get_option( Options::COLLECTING ), 'Same payee, tracking ID and bound flag' );
+	}
+
+	/**
+	 * @testdox Should write nothing but the enabled flag turned on while a collecting option is kept.
+	 */
+	public function test_writes_only_the_enabled_flag_while_a_collecting_option_is_kept(): void {
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled' => 'no',
+				'title'   => 'PayPal',
+			)
+		);
+		// The row first: with no order held, turning the gateway off with a collecting option kept would abandon it.
+		$this->keep_a_collecting_option();
+		$this->sut = new DormantPayPalGateway();
+		$before    = $this->read_stored_settings();
+
+		$_POST['woocommerce_ppcp-gateway_title'] = 'Changed'; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Simulating a form post.
+
+		$this->assertFalse( $this->sut->update_option( 'enabled', 'no' ) );
+		$this->assertFalse( $this->sut->update_option( 'title', 'Changed' ) );
+		$this->assertFalse( $this->sut->process_admin_options() );
+		$this->assertSame( $before, $this->read_stored_settings(), 'The shared settings option must stay byte-identical' );
+	}
+
+	/**
+	 * @testdox Should end a disable and re-enable round trip with an order held collecting again for the same payee, the order still held.
+	 */
+	public function test_disable_and_re_enable_round_trip_resumes_collecting_with_the_held_order(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( 'ppcp-gateway' );
+		$order->update_meta_data( RefundLock::HELD_CAPTURE_META_KEY, 'UNILATERAL' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$collecting = $this->keep_a_collecting_option();
+		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		$shell = $this->registered_shell();
+		$this->assertFalse( $shell->is_dormant(), 'Precondition: a collecting store with the gateway on boots' );
+
+		// The merchant turns PayPal off in the Payments list: WooCommerce's toggle saves the gateway row with enabled "no".
+		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->assertSame( $collecting, get_option( Options::COLLECTING ), 'The held order keeps the collecting option' );
+		$this->assertTrue( $shell->is_dormant(), 'A collecting store with the gateway off is dormant' );
+		$this->assertContains( DormantPayPalGateway::class, $shell->register_dormant_gateway( array() ), 'The list shows the placeholder' );
+
+		// The merchant turns it on again from the placeholder row.
+		$this->sut = new DormantPayPalGateway();
+		$response  = $this->run_enable_toggle();
+
+		$this->assertTrue( $response['success'] ?? null );
+		$this->assertSame( 'yes', get_option( self::SETTINGS_OPTION )['enabled'] );
+		$this->assertFalse( $shell->is_dormant(), 'The next request boots the served store again' );
+		$this->assertSame( $collecting, get_option( Options::COLLECTING ), 'Still collecting for the same payee, tracking ID and bound flag' );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertTrue( ( new HeldOrders() )->is_held( $reloaded ), 'The order is still held' );
+		$this->assertSame( 'on-hold', $reloaded->get_status() );
+		$this->assertSame( 1, ( new HeldOrders() )->count() );
+	}
+
+	/**
+	 * @testdox Should end a disable and re-enable round trip of a platform-connected store platform connected again, with the platform option untouched (Ruling 166).
+	 */
+	public function test_disable_and_re_enable_round_trip_of_a_platform_connected_store(): void {
+		$platform = $this->keep_a_platform_option();
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled' => 'yes',
+				'title'   => 'PayPal',
+			)
+		);
+		$shell = $this->registered_shell();
+		$this->assertFalse( $shell->is_dormant(), 'Precondition: a platform-connected store with the gateway on boots' );
+
+		// The merchant turns PayPal off in the Payments list: WooCommerce's toggle saves the gateway row with enabled "no".
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled' => 'no',
+				'title'   => 'PayPal',
+			)
+		);
+		$this->assertSame( $platform, get_option( Options::PLATFORM ), 'Turning the gateway off keeps the platform connection' );
+		$this->assertTrue( $shell->is_dormant(), 'A platform-connected store with the gateway off is dormant' );
+		$this->assertContains( DormantPayPalGateway::class, $shell->register_dormant_gateway( array() ), 'The list shows the placeholder' );
+
+		// The merchant turns it on again from the placeholder row.
+		$this->sut = new DormantPayPalGateway();
+		$response  = $this->run_enable_toggle();
+
+		$this->assertTrue( $response['success'] ?? null, 'The toggle must succeed' );
+		$this->assertTrue( $response['data'] ?? null );
+		$stored = get_option( self::SETTINGS_OPTION );
+		$this->assertSame( 'yes', $stored['enabled'] );
+		$this->assertSame( 'PayPal', $stored['title'], 'The other settings are kept' );
+		$this->assertFalse( $shell->is_dormant(), 'The next request boots the platform-connected store again' );
+		$this->assertSame( $platform, get_option( Options::PLATFORM ), 'The platform connection is untouched' );
+		$this->assertFalse( get_option( Options::COLLECTING ), 'No collecting option appears' );
+	}
+
+	/**
+	 * @testdox Should leave a store with neither a collecting nor a platform option as it was: the toggle is refused and the row is byte-identical.
+	 */
+	public function test_enable_toggle_changes_nothing_on_a_store_with_neither_option(): void {
+		delete_option( Options::COLLECTING );
+		delete_option( Options::PLATFORM );
+		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->sut = new DormantPayPalGateway();
+		$before    = $this->read_stored_settings();
+
+		$response = $this->run_enable_toggle();
+
+		$this->assertFalse( $response['success'] ?? null );
+		$this->assertSame( 'needs_setup', $response['data'] ?? null );
+		$this->assertFalse( $this->sut->update_option( 'enabled', 'yes' ), 'A direct write saves nothing either' );
+		$this->assertSame( $before, $this->read_stored_settings() );
 	}
 }

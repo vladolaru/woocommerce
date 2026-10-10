@@ -137,7 +137,7 @@ echo 'Script data:'
 echo
 { grep -rhoE "window\.ppcpSettings\.[a-z_]+" "$CORE_PP/Collecting" --include='*.php' || [ $? -eq 1 ]; } | sed -E 's/^window\.//' | list
 echo
-echo 'Writes into the extension'"'"'s shared state: the only one from `Collecting/` is `GatewaySwitch::save_enabled()`, which sets `enabled = yes` in `woocommerce_ppcp-gateway_settings` through the gateway'"'"'s own settings API when a store enters the collecting state. Nothing in `Collecting/` writes `woocommerce-ppcp-data-*` or `ppcp-webhook`.'
+echo 'Writes into the extension'"'"'s shared state: the only one from `Collecting/` is `GatewaySwitch::save_enabled()`, which sets `enabled = yes` in `woocommerce_ppcp-gateway_settings` through the gateway'"'"'s own settings API. `CollectingState::enter()` calls it when a store enters the collecting state, and the shell'"'"'s `DormantPayPalGateway::update_option()` calls it when the merchant turns the gateway back on for a store the platform serves, collecting or platform connected (a re-enable, not an entry into the collecting state). Nothing in `Collecting/` writes `woocommerce-ppcp-data-*` or `ppcp-webhook`.'
 
 exec 1>&3 3>&-
 if [ "$OUT" = "-" ]; then

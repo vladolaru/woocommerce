@@ -7,6 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\GatewaySwitch;
+use RuntimeException;
 use WC_Payment_Gateway;
 
 /**
@@ -14,7 +17,12 @@ use WC_Payment_Gateway;
  *
  * A dormant wallet is not built, so its gateway does not exist. This placeholder gives the Payments settings list
  * a "PayPal Wallet" row with a setup button until a merchant connects. It shares the wallet gateway's ID
- * and so its stored settings, which the wallet owns: this class only reads them and never writes them.
+ * and so its stored settings, which the wallet owns: this class reads them and saves nothing itself; the one write,
+ * turning the gateway on for a store the platform serves, goes through GatewaySwitch.
+ *
+ * A store the platform serves (collecting, or platform connected) whose merchant turned the gateway off is dormant too.
+ * Its row offers Enable instead of the setup button, and enabling turns the wallet gateway on, so the next request
+ * serves the store again: collecting for the same payee, or platform connected (K8, Rulings 165 and 166).
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -64,17 +72,28 @@ final class DormantPayPalGateway extends WC_Payment_Gateway {
 	}
 
 	/**
-	 * Never write to the shared settings option, which the wallet owns.
+	 * Never write to the shared settings option, which the wallet owns, except to turn the gateway back on for a store the
+	 * platform serves. That write is WooCommerce's enable toggle; it goes through the wallet gateway's own settings.
 	 *
 	 * @param string $key   Option key.
 	 * @param mixed  $value Value to set.
 	 *
-	 * @return bool Always false: nothing was saved.
+	 * @return bool Whether the gateway was turned on; false for every other write, which saves nothing.
 	 */
 	public function update_option( $key, $value = '' ) {
-		unset( $key, $value );
+		if ( 'enabled' !== $key || 'yes' !== $value || ! $this->can_be_turned_back_on() ) {
+			return false;
+		}
 
-		return false;
+		try {
+			( new GatewaySwitch() )->turn_on();
+		} catch ( RuntimeException $failure ) {
+			// GatewaySwitch logged the cause; the list reloads and still shows the gateway off.
+			unset( $failure );
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
@@ -87,12 +106,25 @@ final class DormantPayPalGateway extends WC_Payment_Gateway {
 	}
 
 	/**
-	 * The placeholder always needs setup, so the Payments settings list offers a setup button instead of an enable toggle.
+	 * The placeholder needs setup, so the Payments settings list offers a setup button instead of an enable toggle,
+	 * unless the gateway can be turned back on.
 	 *
 	 * @return bool
 	 */
 	public function needs_setup() {
-		return true;
+		return ! $this->can_be_turned_back_on();
+	}
+
+	/**
+	 * Whether the platform serves the store (a collecting payee or a platform merchant ID is kept), so turning the gateway
+	 * on serves it again. The placeholder stands in only while such a store's gateway is off. Reads only.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return bool
+	 */
+	public function can_be_turned_back_on(): bool {
+		return ( new ConnectionState() )->is_served_by_platform();
 	}
 
 	/**

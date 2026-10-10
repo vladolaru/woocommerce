@@ -477,6 +477,63 @@ class PayPalTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should offer Enable on the placeholder row of a $state store whose gateway is off, and read the row as before once it is on (K8, Ruling 166).
+	 * @testWith ["collecting"]
+	 *           ["platform"]
+	 *
+	 * @param string $state The kept option: a collecting payee or a platform connection.
+	 */
+	public function test_the_row_of_a_platform_served_store_offers_enable_while_off( string $state ): void {
+		$this->pin_native_ownership();
+		delete_option( 'woocommerce-ppcp-data-common' );
+		$option = 'collecting' === $state ? 'woocommerce_paypal_wallet_collecting' : 'woocommerce_paypal_wallet_platform';
+		$value  = 'collecting' === $state
+			? array(
+				'payee_email' => 'payee@example.com',
+				'payee_bound' => true,
+			)
+			: array(
+				'merchant_id' => 'M2',
+				'payee_email' => 'payee@example.com',
+				'environment' => 'sandbox',
+			);
+		update_option( $option, $value, true );
+		$placeholder      = new DormantPayPalGateway();
+		$gateway          = $this->fake_ppcp_gateway();
+		$gateway->enabled = 'yes';
+
+		$previous = $this->swap_wallet_container( null );
+		try {
+			$off = $this->sut->get_details( $placeholder );
+			// Once on, the next request boots the wallet, whose own first-party connection is empty.
+			$this->swap_wallet_container( $this->fake_container_with_connection_state( false, false ) );
+			$on = $this->sut->get_details( $gateway );
+		} finally {
+			delete_option( $option );
+			$this->swap_wallet_container( $previous );
+		}
+
+		// The list shows Enable for a row that is off and needs neither setup nor onboarding.
+		$this->assertFalse( $off['state']['enabled'] );
+		$this->assertFalse( $off['state']['needs_setup'] );
+		$this->assertTrue( $off['state']['account_connected'] );
+		$this->assertTrue( $off['onboarding']['state']['started'] );
+		$this->assertTrue( $off['onboarding']['state']['completed'] );
+		$this->assertSame( PayPalWalletBootstrap::get_settings_url(), $off['management']['_links']['settings']['href'] );
+
+		$this->assertTrue( $on['state']['enabled'] );
+		if ( 'collecting' === $state ) {
+			$this->assertFalse( $on['state']['account_connected'], 'Collecting again: the row reads Action needed' );
+			$this->assertFalse( $on['onboarding']['state']['completed'] );
+		} else {
+			$this->assertTrue( $on['state']['account_connected'], 'Platform connected again: a normal connected row (K3)' );
+			$this->assertFalse( $on['state']['needs_setup'] );
+			$this->assertTrue( $on['onboarding']['state']['completed'] );
+			$this->assertTrue( $on['state']['test_mode'], 'The platform connection\'s sandbox' );
+		}
+	}
+
+	/**
 	 * @testdox Should leave the settings and onboarding URLs of the extension's gateway untouched.
 	 */
 	public function test_non_placeholder_urls_are_unchanged(): void {

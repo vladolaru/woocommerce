@@ -52,6 +52,19 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
+	 * Store the gateway row turned off, with extra settings, without the shell's disable listener, which would abandon
+	 * the state over the real held-orders query; the tests that need the abandon call it themselves.
+	 *
+	 * @param array $extra Settings to store beside `enabled`.
+	 */
+	private function turn_the_gateway_off( array $extra = array() ): void {
+		remove_all_actions( 'update_option_' . self::GATEWAY_SETTINGS );
+		$settings            = array_merge( (array) get_option( self::GATEWAY_SETTINGS, array() ), $extra );
+		$settings['enabled'] = 'no';
+		update_option( self::GATEWAY_SETTINGS, $settings );
+	}
+
+	/**
 	 * @testdox Should write exactly the payee, a 32-character hex tracking ID, the environment and an unbound flag on enter.
 	 */
 	public function test_enter_writes_the_collecting_option(): void {
@@ -242,9 +255,9 @@ class CollectingStateTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should do nothing, and write nothing, when entering the same payee again after it is bound.
+	 * @testdox Should write nothing to the collecting option when entering the same payee again after it is bound.
 	 */
-	public function test_enter_with_the_same_bound_payee_is_a_no_op(): void {
+	public function test_enter_with_the_same_bound_payee_keeps_the_collecting_option(): void {
 		$this->sut->enter( 'payee@example.com', 'sandbox' );
 		$this->sut->bind_payee();
 		$before  = get_option( Options::COLLECTING );
@@ -253,7 +266,85 @@ class CollectingStateTest extends WalletTestCase {
 		$this->sut->enter( 'payee@example.com', 'sandbox' );
 
 		$this->assertSame( $before, get_option( Options::COLLECTING ), 'The bound state keeps its tracking ID and flag' );
-		$this->assertCount( 0, $updates, 'A repeated enter must not write' );
+		$this->assertCount( 0, $updates, 'A repeated enter must not write the collecting option' );
+	}
+
+	/**
+	 * @testdox Should turn a disabled gateway back on, keeping its other settings, when entering the same bound payee again (K8).
+	 */
+	public function test_enter_with_the_same_bound_payee_turns_the_gateway_back_on(): void {
+		$held = $this->state_with_held_orders( 1 );
+		$held->enter( 'payee@example.com', 'sandbox' );
+		$held->bind_payee();
+		$this->turn_the_gateway_off( array( 'title' => 'Kept' ) );
+		$held->abandon( CollectingState::ABANDON_DISABLED );
+		$before = get_option( Options::COLLECTING );
+		$this->assertTrue( $held->is_collecting(), 'Precondition: the held order keeps the collecting option' );
+
+		$held->enter( 'payee@example.com', 'sandbox' );
+
+		$after = get_option( self::GATEWAY_SETTINGS );
+		$this->assertSame( 'yes', $after['enabled'], 'Re-entering the bound payee resumes collecting' );
+		$this->assertSame( 'Kept', $after['title'] );
+		$this->assertSame( $before, get_option( Options::COLLECTING ), 'Same payee, tracking ID and bound flag' );
+	}
+
+	/**
+	 * @testdox Should write no gateway row when entering the same bound payee while the gateway is already on.
+	 */
+	public function test_enter_with_the_same_bound_payee_is_idempotent_for_an_enabled_gateway(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$before  = get_option( self::GATEWAY_SETTINGS );
+		$updated = $this->spy_filter( 'update_option_' . self::GATEWAY_SETTINGS );
+
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+
+		$this->assertSame( $before, get_option( self::GATEWAY_SETTINGS ) );
+		$this->assertCount( 0, $updated, 'An unchanged row is not written' );
+	}
+
+	/**
+	 * @testdox Should leave a disabled gateway off when a different payee is refused while the payee is bound.
+	 */
+	public function test_refused_bound_enter_leaves_a_disabled_gateway_off(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$this->turn_the_gateway_off();
+
+		foreach ( array( array( 'other@example.com', 'sandbox' ), array( 'payee@example.com', 'production' ) ) as $args ) {
+			try {
+				$this->sut->enter( ...$args );
+				$this->fail( 'enter() must refuse ' . implode( ' / ', $args ) );
+			} catch ( RuntimeException $exception ) {
+				$this->assertSame( 'no', get_option( self::GATEWAY_SETTINGS )['enabled'], 'A refused enter does not turn the gateway on' );
+			}
+		}
+	}
+
+	/**
+	 * @testdox Should throw and leave the collecting option as it was when the gateway cannot be turned back on for the same bound payee.
+	 */
+	public function test_enter_with_the_same_bound_payee_throws_when_the_gateway_cannot_be_turned_on(): void {
+		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$this->sut->bind_payee();
+		$before  = get_option( Options::COLLECTING );
+		$failing = new class() extends GatewaySwitch {
+			/**
+			 * Fail as a change to the gateway class would.
+			 */
+			protected function save_enabled(): void {
+				throw new Error( 'init_form_fields() drifted' );
+			}
+		};
+		$sut     = new CollectingState( new Options(), new FixedHeldOrders( 1 ), $failing );
+
+		$this->expectException( WalletRuntimeException::class );
+		try {
+			$sut->enter( 'payee@example.com', 'sandbox' );
+		} finally {
+			$this->assertSame( $before, get_option( Options::COLLECTING ) );
+		}
 	}
 
 	/**
