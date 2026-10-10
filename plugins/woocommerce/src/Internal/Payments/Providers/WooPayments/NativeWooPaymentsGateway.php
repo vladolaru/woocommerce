@@ -1560,11 +1560,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function is_available_for_current_subscription_context(): bool {
-		$is_subscription_context = false;
-		if ( class_exists( 'WC_Subscriptions_Cart' ) && $this->is_subscriptions_enabled() ) {
-			$is_subscription_context = \WC_Subscriptions_Cart::cart_contains_subscription()
-				|| ( function_exists( 'wcs_cart_contains_renewal' ) && (bool) wcs_cart_contains_renewal() );
-		}
+		$is_subscription_context = WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 
 		if ( ! $is_subscription_context && isset( $_GET['change_payment_method'] ) && function_exists( 'wcs_is_subscription' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$is_subscription_context = (bool) wcs_is_subscription( absint( $_GET['change_payment_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
