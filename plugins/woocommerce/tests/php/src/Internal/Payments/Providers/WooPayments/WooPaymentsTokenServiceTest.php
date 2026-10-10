@@ -1562,17 +1562,25 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 retrieves Amazon Pay on an all-gateway read only while its gateway exists and is enabled
-	 * (`includes/class-wc-payments-token-service.php:338-354`), and registers that gateway only while the feature is on
-	 * (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`). Core's token data store
-	 * leaves out tokens of an unregistered gateway (`includes/data-stores/class-wc-payment-token-data-store.php:259-273`).
+	 * (`includes/class-wc-payments-token-service.php:338-354`, the check at `:347-349`), and registers that gateway only
+	 * while the feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 * Core's token data store leaves out tokens of an unregistered gateway
+	 * (`includes/data-stores/class-wc-payment-token-data-store.php:259-273`).
 	 *
-	 * @testdox Should not retrieve or save Amazon Pay methods on an all-gateway read while the Amazon Pay feature is off.
+	 * @testdox Should retrieve and keep one Amazon Pay token on all-gateway reads only while the Amazon Pay feature is on.
+	 * @dataProvider amazon_pay_feature_states
+	 *
+	 * @param string   $flag              The Amazon Pay feature flag option value.
+	 * @param string[] $gateway_ids       Registered gateway IDs.
+	 * @param bool     $retrieved         Whether Amazon Pay is fetched and its token returned.
+	 * @param int[]    $saved_after_reads Saved tokens after each of the two reads.
 	 */
-	public function test_reconcile_skips_amazon_pay_while_its_feature_is_off(): void {
+	public function test_reconcile_retrieves_amazon_pay_only_while_its_feature_is_on( string $flag, array $gateway_ids, bool $retrieved, array $saved_after_reads ): void {
 		global $wpdb;
 
-		update_option( '_wcpay_feature_amazon_pay', '0' );
-		$this->register_card_gateway_id();
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		$this->register_gateway_ids( $gateway_ids );
+		$this->register_token_class_map();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -1590,21 +1598,33 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card', 'amazon_pay' ) ) );
+		// The account ID follows the recorded Fixtures/rec-t60-test-drive-account.json `account`.
+		$account_service = $this->create_account_service_with_enabled_methods( array( 'card', 'amazon_pay' ), array( 'account_id' => 'acct_native_test' ) );
+		$this->create_service( array(), null, $customer_service, $account_service );
 
 		$count_tokens = static fn(): int => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_payment_tokens WHERE user_id = %d", $user_id ) );
 		$returned     = array();
 		$saved_counts = array();
 		foreach ( array( 1, 2 ) as $read ) {
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
-			foreach ( apply_filters( 'woocommerce_get_customer_payment_tokens', array(), $user_id, '' ) as $token ) {
-				$returned[] = $token->get_token();
-			}
+			$returned       = array_map( static fn( \WC_Payment_Token $token ): string => $token->get_token(), array_values( WC_Payment_Tokens::get_customer_tokens( $user_id ) ) );
 			$saved_counts[] = $count_tokens();
 		}
 
-		$this->assertSame( array( 0, 0 ), $saved_counts, 'Neither read saves an Amazon Pay token.' );
-		$this->assertNotContains( 'pm_amazon', $returned, 'No Amazon Pay token is returned while its gateway is not registered.' );
+		$this->assertSame( $saved_after_reads, $saved_counts, 'Saved Amazon Pay tokens after each read.' );
+		$this->assertSame( $retrieved, in_array( 'pm_amazon', $returned, true ), 'Whether the second read returns the Amazon Pay token.' );
+		$this->assertSame( $retrieved, isset( $customer_service->fetch_counts['amazon_pay'] ), 'Whether Amazon Pay is fetched from the platform.' );
+	}
+
+	/**
+	 * Amazon Pay feature states: the flag and the gateways WooCommerce registers in each.
+	 *
+	 * @return array<string,array{string,string[],bool,int[]}>
+	 */
+	public function amazon_pay_feature_states(): array {
+		return array(
+			'feature on'  => array( '1', array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ), true, array( 1, 1 ) ),
+			'feature off' => array( '0', array( WooPaymentsPersistenceVocabulary::GATEWAY_ID ), false, array( 0, 0 ) ),
+		);
 	}
 
 	/**
@@ -2284,6 +2304,36 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Register gateways with the given IDs, as a native request does before any token read.
+	 *
+	 * WC_Payment_Token_Data_Store::get_tokens() only returns tokens whose gateway is registered.
+	 *
+	 * @param string[] $gateway_ids Gateway IDs to register.
+	 */
+	private function register_gateway_ids( array $gateway_ids ): void {
+		$this->gateway_initializer = static function ( \WC_Payment_Gateways $wc_payment_gateways ) use ( $gateway_ids ): void {
+			$gateways = array();
+			foreach ( $gateway_ids as $gateway_id ) {
+				$gateways[] = new class( $gateway_id ) extends \WC_Payment_Gateway {
+					/**
+					 * Constructor.
+					 *
+					 * @param string $gateway_id Gateway ID.
+					 */
+					public function __construct( string $gateway_id ) {
+						$this->id = $gateway_id;
+					}
+				};
+			}
+
+			$wc_payment_gateways->payment_gateways = $gateways;
+		};
+		add_action( 'wc_payment_gateways_initialized', $this->gateway_initializer, 100 );
+		WC()->payment_gateways()->payment_gateways = array();
+		WC()->payment_gateways()->init();
+	}
+
+	/**
 	 * Register a gateway with the card gateway ID, as a native request does before any token read.
 	 *
 	 * WC_Payment_Token_Data_Store::get_tokens() only returns tokens whose gateway is registered.
@@ -2573,16 +2623,20 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an account service double reporting enabled payment method IDs.
 	 *
-	 * @param string[] $enabled_method_ids Enabled payment method IDs.
+	 * @param string[]                 $enabled_method_ids Enabled payment method IDs.
+	 * @param array<string,mixed>|null $account_data       Cached account data to report, or null to leave that read unmocked.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service_with_enabled_methods( array $enabled_method_ids ): WooPaymentsAccountService {
+	private function create_account_service_with_enabled_methods( array $enabled_method_ids, ?array $account_data = null ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_gateway_setting' ) )
+			->onlyMethods( null === $account_data ? array( 'is_test_mode_enabled', 'get_gateway_setting' ) : array( 'is_test_mode_enabled', 'get_gateway_setting', 'get_cached_account_data' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account_service->method( 'get_gateway_setting' )->willReturn( $enabled_method_ids );
+		if ( null !== $account_data ) {
+			$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+		}
 
 		return $account_service;
 	}
