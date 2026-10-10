@@ -5519,6 +5519,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $country Account country, or '' for account data without one.
 	 */
 	private function set_woopayments_account_country( string $country ): void {
+		// Account fields as recorded in ../Fixtures/rec-t60-test-drive-account.json `account` (`account_id`, `is_live`, `country`).
+		// Varied: `is_live` is true, so the account service accepts the cache without turning on onboarding test mode
+		// (WooPaymentsAccountService::is_valid_cached_account()), and `country` is left out for account data without one.
 		$data = array(
 			'account_id' => 'acct_123',
 			'is_live'    => true,
@@ -5529,6 +5532,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		// The account service keeps the cache it already read in this request.
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		// The option envelope client 11.1.0 Database_Cache writes (class-database-cache.php:377-382; an entry without
+		// consecutive_errors reads as zero, :367).
 		update_option(
 			'wcpay_account_data',
 			array(

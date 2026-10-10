@@ -429,6 +429,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// capability); varied: a Belgian account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
 				'country'      => 'BE',
@@ -498,6 +500,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// capability); varied: a Dutch account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
 				'country'      => 'NL',
@@ -1055,6 +1059,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// capability); varied: only the card capability this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
 				'country'      => 'US',
