@@ -338,6 +338,15 @@ class WooPaymentsRefundAmbiguityService {
 
 		$is_same_amount = $request['amount'] === $refund_amount && strtolower( (string) $order->get_currency() ) === $refund_currency;
 		if ( ! $this->is_recorded_on_order( $order, $refund_id ) ) {
+			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
+			// own (monitor rulings 2026-10-10 13:20 and 13:35).
+			$manual_row = self::find_manual_record_row( $this->get_earlier_refund_rows( $order ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] );
+			if ( null !== $manual_row ) {
+				$this->link_manual_record_row( $order, $record, $manual_row, $refund_id );
+
+				return array( 'action' => self::ACTION_SEND );
+			}
+
 			if ( $is_same_amount ) {
 				$this->clear_record( $order );
 				$this->log_cleared( $order, $record, sprintf( 'its refund %s went through for this amount and is not recorded on the order, so it answers this call with no new refund', $refund_id ) );
@@ -543,41 +552,19 @@ class WooPaymentsRefundAmbiguityService {
 	 * @return bool Whether the hold was cleared, so this call sends under its own key.
 	 */
 	private function settle_found_refund_on_order( WC_Order $order, array $record ): bool {
-		$refunds     = $this->get_fresh_refunds( $order );
-		$own_row_id  = array() === $refunds ? 0 : max( array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $refunds ) );
+		$rows        = $this->get_earlier_refund_rows( $order );
 		$currency    = (string) $order->get_currency();
 		$found_id    = (string) $record['found_refund_id'];
 		$found_minor = (int) $record['found_amount'];
-		$other_minor = 0;
-		$manual_row  = null;
-		foreach ( $refunds as $refund ) {
-			if ( $own_row_id === $refund->get_id() ) {
-				continue;
-			}
 
-			$amount_minor = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency );
-			$other_minor += $amount_minor;
-			$created      = $refund->get_date_created();
-			if (
-				null === $manual_row
-				&& ! $refund->get_refunded_payment()
-				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
-				&& null !== $created && $created->getTimestamp() >= (int) $record['failed_at']
-				&& $found_minor === $amount_minor
-			) {
-				$manual_row = $refund;
-			}
-		}
-
+		$manual_row = self::find_manual_record_row( $rows, $currency, $found_minor, (int) $record['failed_at'] );
 		if ( null !== $manual_row ) {
-			$manual_row->update_meta_data( '_wcpay_refund_id', $found_id );
-			$manual_row->save_meta_data();
-			$this->clear_record( $order );
-			$this->log_cleared( $order, $record, sprintf( 'the manual refund #%1$d the merchant recorded after the failure is for the found refund %2$s, so it is linked to it and this call sends under its own key', $manual_row->get_id(), $found_id ) );
+			$this->link_manual_record_row( $order, $record, $manual_row, $found_id );
 
 			return true;
 		}
 
+		$other_minor = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
 			$this->clear_record( $order );
 			$this->log_cleared( $order, $record, sprintf( 'the order can no longer refund the %1$d %2$s of the found refund %3$s, so the hold protects nothing and this call sends under its own key', $found_minor, strtolower( $currency ), $found_id ) );
@@ -586,6 +573,66 @@ class WooPaymentsRefundAmbiguityService {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Get the order's local refunds other than this call's own row, the newest, read again past the request cache.
+	 *
+	 * @param WC_Order $order Order being refunded.
+	 * @return WC_Order_Refund[]
+	 */
+	private function get_earlier_refund_rows( WC_Order $order ): array {
+		$refunds    = $this->get_fresh_refunds( $order );
+		$own_row_id = array() === $refunds ? 0 : max( array_map( static fn( WC_Order_Refund $refund ): int => $refund->get_id(), $refunds ) );
+
+		return array_values( array_filter( $refunds, static fn( WC_Order_Refund $refund ): bool => $own_row_id !== $refund->get_id() ) );
+	}
+
+	/**
+	 * Find the manual refund row that records the earlier attempt's refund: not refunded through the gateway, with no
+	 * provider refund ID, created after the failure, for exactly the refund's amount. The oldest one takes the link.
+	 *
+	 * @param WC_Order_Refund[] $rows         The order's refunds other than this call's own row.
+	 * @param string            $currency     Order currency.
+	 * @param int               $amount_minor The refund's amount in minor units.
+	 * @param int               $failed_at    Unix time of the first ambiguous failure.
+	 * @return WC_Order_Refund|null
+	 */
+	private static function find_manual_record_row( array $rows, string $currency, int $amount_minor, int $failed_at ): ?WC_Order_Refund {
+		$oldest     = null;
+		$oldest_key = null;
+		foreach ( $rows as $refund ) {
+			$created = $refund->get_date_created();
+			if (
+				! $refund->get_refunded_payment()
+				&& '' === (string) $refund->get_meta( '_wcpay_refund_id', true )
+				&& null !== $created && $created->getTimestamp() >= $failed_at
+				&& WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ) === $amount_minor
+			) {
+				$key = array( $created->getTimestamp(), $refund->get_id() );
+				if ( null === $oldest_key || $key < $oldest_key ) {
+					$oldest     = $refund;
+					$oldest_key = $key;
+				}
+			}
+		}
+
+		return $oldest;
+	}
+
+	/**
+	 * Link the earlier attempt's refund to the manual row that records it, and clear the hold.
+	 *
+	 * @param WC_Order            $order      Order being refunded.
+	 * @param array<string,mixed> $record     The order's record.
+	 * @param WC_Order_Refund     $manual_row Manual refund row.
+	 * @param string              $refund_id  The earlier attempt's refund.
+	 */
+	private function link_manual_record_row( WC_Order $order, array $record, WC_Order_Refund $manual_row, string $refund_id ): void {
+		$manual_row->update_meta_data( '_wcpay_refund_id', $refund_id );
+		$manual_row->save_meta_data();
+		$this->clear_record( $order );
+		$this->log_cleared( $order, $record, sprintf( 'the manual refund #%1$d the merchant recorded after the failure is for its refund %2$s, so it is linked to it and this call sends under its own key', $manual_row->get_id(), $refund_id ) );
 	}
 
 	/**

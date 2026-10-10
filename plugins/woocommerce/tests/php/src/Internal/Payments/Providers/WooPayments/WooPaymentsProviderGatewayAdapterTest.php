@@ -7669,6 +7669,106 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A manual record of the earlier refund made before any lookup takes the link, so a deliberate same-amount refund sends fresh and the order's refunds match the money.
+	 *
+	 * Monitor rulings 2026-10-10 13:20 and 13:35 (the review's row 3 variant): the merchant recorded the earlier refund
+	 * with Refund manually, so linking it to this call's row instead would show the amount refunded twice while the
+	 * customer got it once.
+	 */
+	public function test_manual_record_made_before_any_lookup_lets_a_same_amount_refund_send(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => time() - 1000,
+				'last_failed_at' => time() - 1000,
+			)
+		);
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_deliberate_555', 'key_f458_not_read', 555 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 5.55 );
+		$trail                = self::request_trail( $http_client );
+		$order                = wc_get_order( $order->get_id() );
+
+		$this->assertTrue( $result );
+		$this->assertCount( 2, $trail );
+		$this->assertSame( self::refund_list_trail(), $trail[0] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertNotSame( 'POST refunds ' . self::F458_KEY_555, $trail[1], 'The deliberate refund sends under its own key.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row records the earlier refund.' );
+		$this->assertSame( 're_f458_deliberate_555', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+		$linked = array_map( static fn( WC_Order_Refund $refund ): string => (string) $refund->get_meta( '_wcpay_refund_id', true ), $order->get_refunds() );
+		sort( $linked );
+		$this->assertSame( array( self::F458_REFUND_555, 're_f458_deliberate_555' ), $linked, 'Each refund row records one provider refund.' );
+		$this->assertSame( 11.10, (float) $order->get_total_refunded(), 'The order shows the 11.10 the customer got back.' );
+	}
+
+	/**
+	 * @testdox A manual record of the earlier refund also settles a call for another amount, which then sends instead of being refused.
+	 *
+	 * Monitor ruling 2026-10-10 13:35: the check runs on any lookup match that is not recorded, not only a same-amount one.
+	 */
+	public function test_manual_record_settles_a_call_for_another_amount(): void {
+		$order = $this->create_refund_hold_order();
+		$this->seed_refund_hold( $order );
+		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_partial_200', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 're_f458_partial_200', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+		$this->assertSame( array(), self::note_texts_containing( $order, 'is not yet recorded on this order' ), 'No row 4 note: the refund is recorded.' );
+	}
+
+	/**
+	 * @testdox When several manual rows could record the earlier refund, the oldest takes the link.
+	 *
+	 * Monitor ruling 2026-10-10 13:35.
+	 */
+	public function test_oldest_manual_row_records_the_earlier_refund(): void {
+		$failed_at = time() - 1000;
+		$order     = $this->create_refund_hold_order();
+		$this->seed_refund_hold(
+			$order,
+			array(
+				'failed_at'      => $failed_at,
+				'last_failed_at' => $failed_at,
+			)
+		);
+		$older = $this->create_refund_row( $order, 5.55, 'Recorded first' );
+		$older->set_date_created( $failed_at + 10 );
+		$older->save();
+		$newer                  = $this->create_refund_row( $order, 5.55, 'Recorded again' );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json( 200, $this->recorded_refund_list() ),
+			self::http_json( 200, $this->recorded_refund_answer( 're_f458_after_two_rows', 'key_f458_not_read', 200 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_refund( $provider, $order, 2.00 );
+
+		$this->assertTrue( $result );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $older->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', wc_get_order( $newer->get_id() )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
 	 * @testdox An unrecorded earlier refund in another currency than the order's is not taken for this call's amount.
 	 *
 	 * The same-amount check compares the currency too: 5.55 USD is not 5.55 EUR, so the call is refused as row 4 instead
