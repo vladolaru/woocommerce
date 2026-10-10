@@ -1516,12 +1516,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get shopper-facing card brand labels for the connected account country.
+	 * Get shopper-facing card brand labels for the store base country.
+	 *
+	 * Client 11.1.0 adds Cartes Bancaires for stores based in France (`client/utils/card-brands.ts:43-50`).
 	 *
 	 * @return array<string,string>
 	 */
 	private function get_card_brand_icon_labels(): array {
-		if ( 'FR' === $this->get_account_country() ) {
+		if ( 'FR' === WC()->countries->get_base_country() ) {
 			return array_merge( self::CARD_BRAND_ICONS, self::FR_CARD_BRAND_ICONS );
 		}
 

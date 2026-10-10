@@ -1438,22 +1438,33 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show Cartes Bancaires in the checkout gateway icon for France merchants.
+	 * @testdox Should show Cartes Bancaires in the checkout gateway icon for a store based in France, whatever the account country.
+	 *
+	 * Client 11.1.0 decides the brand from the store base country it sends as storeCountry (client/utils/card-brands.ts:43-50,
+	 * includes/class-wc-payments-checkout.php:270).
+	 *
+	 * @testWith ["FR", "US", "+ 4"]
+	 *           ["US", "FR", "+ 3"]
+	 *
+	 * @param string $store_country   Store base country.
+	 * @param string $account_country Account country.
+	 * @param string $more_count      The count of brands beyond the three shown.
 	 */
-	public function test_gateway_icon_includes_cartes_bancaires_for_france_merchants(): void {
+	public function test_gateway_icon_shows_cartes_bancaires_for_stores_based_in_france( string $store_country, string $account_country, string $more_count ): void {
+		update_option( 'woocommerce_default_country', $store_country );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'get_cached_account_data' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
-		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'FR' ) );
+		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => $account_country ) );
 
 		$gateway = new NativeWooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, null, $account_service );
 
 		$icon = $gateway->get_icon();
 
-		$this->assertStringContainsString( '<span class="payment-methods--logos-count">+ 4</span>', $icon );
+		$this->assertStringContainsString( '<span class="payment-methods--logos-count">' . $more_count . '</span>', $icon );
 	}
 
 	/**

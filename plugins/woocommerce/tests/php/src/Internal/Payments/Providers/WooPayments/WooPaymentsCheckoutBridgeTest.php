@@ -1635,9 +1635,38 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Cartes Bancaires card branding for France merchants.
+	 * @testdox Should send the store base country as storeCountry and show Cartes Bancaires for a store based in France.
 	 */
-	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_france_merchants(): void {
+	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_stores_based_in_france(): void {
+		update_option( 'woocommerce_default_country', 'FR' );
+		$account_service = $this->create_account_service_for_bridge(
+			true,
+			array(
+				'country' => 'US',
+			)
+		);
+
+		$bridge = new WooPaymentsCheckoutBridge();
+		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+
+		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$icons  = $config['paymentMethodsConfig']['card']['cardBrandIcons'];
+
+		// Client 11.1.0 sends the store base country (includes/class-wc-payments-checkout.php:270) and decides the brand from it
+		// (client/utils/card-brands.ts:43-50).
+		$this->assertSame( 'FR', $config['storeCountry'] );
+		$this->assertContains( 'cartes_bancaires', array_column( $icons, 'id' ) );
+		$this->assertContains( 'Cartes Bancaires', array_column( $icons, 'alt' ) );
+		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-color.svg', $icons[4]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/unionpay-color.svg', $icons[5]['src'] );
+		$this->assertStringContainsString( '/assets/images/payment-methods/cartes_bancaires-color.svg', $icons[6]['src'] );
+	}
+
+	/**
+	 * @testdox Should leave Cartes Bancaires out for a French account on a store based outside France.
+	 */
+	public function test_get_payment_fields_js_config_leaves_cartes_bancaires_out_for_stores_based_outside_france(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
 		$account_service = $this->create_account_service_for_bridge(
 			true,
 			array(
@@ -1649,14 +1678,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
 
 		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
-		$icons  = $config['paymentMethodsConfig']['card']['cardBrandIcons'];
 
-		$this->assertSame( 'FR', $config['storeCountry'] );
-		$this->assertContains( 'cartes_bancaires', array_column( $icons, 'id' ) );
-		$this->assertContains( 'Cartes Bancaires', array_column( $icons, 'alt' ) );
-		$this->assertStringContainsString( '/assets/images/payment-methods/jcb-color.svg', $icons[4]['src'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods/unionpay-color.svg', $icons[5]['src'] );
-		$this->assertStringContainsString( '/assets/images/payment-methods/cartes_bancaires-color.svg', $icons[6]['src'] );
+		$this->assertSame( 'US', $config['storeCountry'] );
+		$this->assertNotContains( 'cartes_bancaires', array_column( $config['paymentMethodsConfig']['card']['cardBrandIcons'], 'id' ) );
 	}
 
 	/**
