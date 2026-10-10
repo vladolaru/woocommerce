@@ -626,6 +626,33 @@ class WooPaymentsApiClient {
 	}
 
 	/**
+	 * List a charge's refunds, newest first.
+	 *
+	 * The platform proxies Stripe's refunds list for the connected account, so the body is Stripe's list object: `data`
+	 * (the refunds, with their metadata, unexpanded) and `has_more`. A GET carries no idempotency key, so a transport
+	 * failure is not retried.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @param int    $limit     Most refunds to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the charge ID is invalid or the request fails.
+	 */
+	public function list_charge_refunds( string $charge_id, int $limit = 100 ): array {
+		$this->validate_route_word_id( $charge_id );
+
+		return $this->request(
+			array(
+				'charge' => $charge_id,
+				'limit'  => $limit,
+			),
+			'refunds',
+			'GET'
+		);
+	}
+
+	/**
 	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
 	 *
 	 * Historical order readers use this instead of inheriting the store's current mode.

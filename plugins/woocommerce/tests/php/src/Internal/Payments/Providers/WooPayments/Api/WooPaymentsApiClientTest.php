@@ -2524,6 +2524,114 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Listing a charge's refunds sends the recorded GET refunds request and returns the platform's list unchanged.
+	 *
+	 * Recorded on a local WPCOM platform (`Fixtures/rec-f458-refund-list.json`): the platform proxies Stripe's refunds
+	 * list for the charge, newest first, each item unexpanded and carrying the metadata the store sent, and `has_more`
+	 * is the only sign that a page is incomplete (`count` is the page size).
+	 *
+	 * @dataProvider recorded_refund_list_data
+	 *
+	 * @param string $pair REC F458 (a) fixture pair key.
+	 */
+	public function test_list_charge_refunds_sends_the_recorded_request_and_returns_the_list( string $pair ): void {
+		$recorded                  = $this->load_recorded_refund_list_entry( $pair );
+		list( $sut, $http_client ) = $this->make_sut( true, $recorded['response']['body'] );
+
+		$result = $sut->list_charge_refunds( (string) $recorded['request']['query']['charge'], (int) $recorded['request']['query']['limit'] );
+
+		$this->assertSame( $recorded['response']['body'], $result );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertNull( $http_client->last_body );
+		$this->assertArrayNotHasKey( 'Idempotency-Key', $http_client->last_headers, 'A list read carries no idempotency key.' );
+		$this->assertStringStartsWith( '/sites/123/wcpay/refunds?', $http_client->last_path );
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
+		$this->assertSame(
+			array_map( static fn( $value ): string => true === $value ? '1' : (string) $value, $recorded['request']['query'] ),
+			$query,
+			"The $pair request must send the recorded query args, in order."
+		);
+	}
+
+	/**
+	 * Recorded refund list pairs: a complete page and a page with more to read.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function recorded_refund_list_data(): array {
+		return array(
+			'complete page, limit 100' => array( 'list_limit_100_complete' ),
+			'incomplete page, limit 2' => array( 'list_limit_2_has_more' ),
+		);
+	}
+
+	/**
+	 * @testdox Listing a charge's refunds makes one attempt on a transport failure and reports it as ambiguous.
+	 *
+	 * A GET carries no idempotency key, so the transport retry loop allows no retry; the caller decides what a failed
+	 * read means.
+	 */
+	public function test_list_charge_refunds_makes_one_attempt_on_a_transport_failure(): void {
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ),
+			new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ),
+		);
+		$sut                    = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->list_charge_refunds( 'ch_3UOv4vBzWlxcwgpP0ALlMGAw' );
+			$this->fail( 'Expected the transport failure to surface.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertTrue( $sut->is_ambiguous_request_failure( $exception ) );
+		}
+
+		$this->assertSame( 1, $http_client->request_count );
+	}
+
+	/**
+	 * @testdox Listing a charge's refunds refuses an invalid charge ID before sending anything.
+	 */
+	public function test_list_charge_refunds_rejects_invalid_charge_id(): void {
+		$http_client = new FakeWooPaymentsHttpClient();
+		$sut         = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ) );
+
+		try {
+			$sut->list_charge_refunds( 'ch_a&charge=ch_b' );
+			$this->fail( 'Expected an invalid charge ID to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
+			$this->assertSame( 0, $http_client->request_count );
+		}
+	}
+
+	/**
+	 * Load one recorded F458 (a) refund list entry by pair key.
+	 *
+	 * @param string $pair Fixture pair key.
+	 * @return array{request:array{query:array<string,mixed>},response:array{body:array<string,mixed>}}
+	 */
+	private function load_recorded_refund_list_entry( string $pair ): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/rec-f458-refund-list.json' );
+		$this->assertIsString( $fixture );
+		$decoded = json_decode( $fixture, true );
+		$this->assertIsArray( $decoded );
+
+		foreach ( $decoded['entries'] as $entry ) {
+			if ( is_array( $entry ) && ( $entry['pair'] ?? '' ) === $pair ) {
+				return $entry;
+			}
+		}
+
+		$this->fail( "REC F458 (a) fixture has no entry for pair '$pair'." );
+	}
+
+	/**
 	 * @testdox Should reject invalid customer IDs before interpolating customer payment method requests.
 	 */
 	public function test_get_payment_methods_rejects_invalid_customer_id(): void {
