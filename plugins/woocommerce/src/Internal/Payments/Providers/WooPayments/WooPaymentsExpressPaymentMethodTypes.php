@@ -348,6 +348,12 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
+		// Manual capture keeps only card and Link at checkout (client 11.1.0 class-wc-payment-gateway-wcpay.php:4761-4768).
+		$manual_capture = $account_service->get_gateway_setting( 'manual_capture', 'no' );
+		if ( ! empty( $manual_capture ) && 'no' !== $manual_capture ) {
+			return false;
+		}
+
 		if ( self::is_tax_based_on_billing_address() && 'pay_for_order' !== $context ) {
 			return false;
 		}
