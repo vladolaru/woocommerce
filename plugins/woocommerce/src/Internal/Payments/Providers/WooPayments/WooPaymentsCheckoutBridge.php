@@ -788,7 +788,7 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		if ( empty( $config['isChangingPayment'] ) && $this->are_express_checkout_handlers_loaded() ) {
-			$config = array_merge( $config, $this->get_express_checkout_enabled_config( $base['currency'] ), $this->get_pay_for_order_config() );
+			$config = array_merge( $config, $this->get_express_checkout_enabled_config( $base['currency'] ), WooPaymentsOrderPayAccess::get_pay_for_order_page_params() );
 		}
 
 		$base['config'] = $config;
@@ -886,24 +886,6 @@ class WooPaymentsCheckoutBridge implements RegisterHooksInterface {
 		}
 
 		return $is_checkout || has_block( 'woocommerce/checkout' ) ? 'checkout' : '';
-	}
-
-	/**
-	 * Get the client's order-pay keys for a pay-for-order link whose key lets the visitor pay the order.
-	 *
-	 * Client 11.1.0 `add_pay_for_order_params_to_js_config()` (class-wc-payments-express-checkout-button-display-handler.php:183-224)
-	 * checks only that a key is present; WooPaymentsOrderPayAccess::get_pay_for_order_page_params() requires the order's.
-	 * The visitor's email goes into the page only when WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() allows it.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_pay_for_order_config(): array {
-		$config = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
-		if ( ! empty( $config ) && ! WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ) {
-			$config['billing_email'] = '';
-		}
-
-		return $config;
 	}
 
 	/**

@@ -933,8 +933,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$order  = array() === $params ? false : wc_get_order( $params['order_id'] );
 		if ( ! $order instanceof \WC_Order || ! WooPaymentsOrderPayAccess::store_api_states_order_total( $order ) ) {
 			$params = array();
-		} elseif ( ! WooPaymentsOrderPayAccess::may_put_shopper_email_in_page() ) {
-			$params['billing_email'] = '';
 		}
 
 		$this->pay_for_order_params = $params;

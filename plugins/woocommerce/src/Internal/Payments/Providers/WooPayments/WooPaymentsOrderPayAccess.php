@@ -66,7 +66,8 @@ final class WooPaymentsOrderPayAccess {
 	 * Get the order-pay params for the current order's pay page, when its pay link lets the current user pay the order.
 	 *
 	 * Client 11.1.0 add_pay_for_order_params_to_js_config() (class-wc-payments-express-checkout-button-display-handler.php:184-222)
-	 * checks only that a key is present; here the key must be the order's.
+	 * checks only that a key is present; here the key must be the order's. The billing email is left empty on a page a page
+	 * cache could serve to another visitor (see may_put_shopper_email_in_page()).
 	 *
 	 * @return array<string,mixed> Order ID, pay_for_order flag, order key and billing email, or an empty array.
 	 */
@@ -92,7 +93,7 @@ final class WooPaymentsOrderPayAccess {
 			'order_id'      => $order->get_id(),
 			'pay_for_order' => $pay_for_order,
 			'key'           => $order->get_order_key(),
-			'billing_email' => self::get_billing_email_for_current_visitor( $order ),
+			'billing_email' => self::may_put_shopper_email_in_page() ? self::get_billing_email_for_current_visitor( $order ) : '',
 		);
 	}
 
