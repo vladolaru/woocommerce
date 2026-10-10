@@ -199,15 +199,27 @@ class StripeBillingInvoiceService {
 				$this->logger->log( sprintf( 'Invoice for subscription #%s has already been paid.', $subscription->get_id() ) );
 			}
 
-			if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() && is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
-				$subscription->set_requires_manual_renewal( false );
-				$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-
-				// The subscription renews with the payment method that paid this order.
-				wc_get_container()->get( NativeWooPaymentsGateway::class )->update_failing_payment_method( $subscription, $order );
-				$subscription->save();
+			if ( is_callable( array( $subscription, 'is_manual' ) ) && $subscription->is_manual() ) {
+				$this->adopt_order_payment_method( $subscription, $order );
 			}
 		}
+	}
+
+	/**
+	 * Make a manual subscription renew automatically with the payment method that paid an order.
+	 *
+	 * @param WC_Order $subscription Manual subscription.
+	 * @param WC_Order $order        Order whose payment method the subscription takes.
+	 */
+	private function adopt_order_payment_method( WC_Order $subscription, WC_Order $order ): void {
+		if ( ! is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
+			return;
+		}
+
+		$subscription->set_requires_manual_renewal( false );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		wc_get_container()->get( NativeWooPaymentsGateway::class )->update_failing_payment_method( $subscription, $order );
+		$subscription->save();
 	}
 
 	/**
