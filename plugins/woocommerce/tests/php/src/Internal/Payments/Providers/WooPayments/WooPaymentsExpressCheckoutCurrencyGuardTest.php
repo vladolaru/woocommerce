@@ -130,6 +130,30 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 			$this->assertSame( 400, $exception->getCode() );
 		}
 		$this->assertSame( 1, $this->count_payment_info_errors() );
+		$this->assertStringContainsString( 'element currency: usd, order currency: eur', $this->log_lines[0]['message'] );
+	}
+
+	/**
+	 * @testdox Should still reject a mismatch, but keep a currency header that is not a currency code out of the log line.
+	 *
+	 * Any caller can send the header; only a three-letter code is copied into the store's log.
+	 */
+	public function test_keeps_a_header_that_is_not_a_currency_code_out_of_the_log(): void {
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( 'EUR' );
+
+		$request = $this->create_request( $this->ece_headers( "usd\nforged log line" ) );
+
+		try {
+			$this->sut->assert_currency_matches_element( $order, $request );
+			$this->fail( 'Expected a RouteException for the currency mismatch.' );
+		} catch ( RouteException $exception ) {
+			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
+		}
+		$this->assertSame( 1, $this->count_payment_info_errors() );
+		foreach ( $this->log_lines as $line ) {
+			$this->assertStringNotContainsString( 'forged log line', $line['message'] );
+		}
 	}
 
 	/**

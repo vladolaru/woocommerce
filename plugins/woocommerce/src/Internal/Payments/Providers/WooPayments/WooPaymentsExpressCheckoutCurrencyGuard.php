@@ -85,11 +85,12 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 			return;
 		}
 
+		// Any caller can send the header, so only a currency code goes into the store's log.
 		wc_get_logger()->error(
 			sprintf(
 				'Express checkout currency mismatch at order placement. Order: %d, element currency: %s, order currency: %s.',
 				$order->get_id(),
-				$expected,
+				1 === preg_match( '/^[a-z]{3}$/', $expected ) ? $expected : '(not a currency code)',
 				$actual
 			),
 			array( 'source' => 'payment-info' )
