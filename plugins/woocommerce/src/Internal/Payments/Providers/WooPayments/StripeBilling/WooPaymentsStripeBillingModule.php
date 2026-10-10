@@ -35,6 +35,11 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	public const TOGGLE_OPTION = '_wcpay_feature_stripe_billing';
 
 	/**
+	 * Option that turns on the subscriptions bundled in WooPayments, the flavor that runs without WooCommerce Subscriptions (client 11.1.0 `WC_Payments_Features::WCPAY_SUBSCRIPTIONS_FLAG_NAME`).
+	 */
+	public const BUNDLED_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
+
+	/**
 	 * Runtime ownership arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -177,6 +182,15 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	 */
 	public function is_stripe_billing_enabled(): bool {
 		return $this->loaded && $this->is_toggle_on();
+	}
+
+	/**
+	 * Tell whether the store has the bundled WooPayments subscriptions turned on, whether or not the module loaded.
+	 *
+	 * @return bool
+	 */
+	public function is_bundled_subscriptions_flag_on(): bool {
+		return '1' === get_option( self::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' );
 	}
 
 	/**

@@ -247,7 +247,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * @return mixed
 	 */
 	public function add_manual_migration_tool( $tools ) {
-		if ( ! is_array( $tools ) || '1' === get_option( '_wcpay_feature_subscriptions', '0' ) || ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
+		if ( ! is_array( $tools ) || wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_bundled_subscriptions_flag_on() || ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
 			return $tools;
 		}
 
