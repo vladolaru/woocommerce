@@ -585,30 +585,54 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_settings_lists_amazon_pay_only_while_its_feature_is_on( string $flag, bool $listed ): void {
 		update_option( '_wcpay_feature_amazon_pay', $flag );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'   => 'acct_native_test',
-					'is_live'      => true,
-					'capabilities' => array(
-						'card_payments'       => 'active',
-						'amazon_pay_payments' => 'active',
-					),
-					'fees'         => array(
-						'card'       => array(),
-						'amazon_pay' => array(),
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
+		$this->store_card_and_amazon_pay_account_data();
 
 		$available = $this->sut->get_settings()['available_payment_method_ids'];
 
 		$this->assertSame( $listed, in_array( 'amazon_pay', $available, true ) );
 		$this->assertContains( 'card', $available );
+	}
+
+	/**
+	 * @testdox Should leave Amazon Pay out of the catalog the availability filter receives while its feature is off (client 11.1.0 `PaymentMethodDefinitionRegistry.php:97-105` registers it only while the feature is on, and `class-wc-payment-gateway-wcpay.php:4851-4864` filters that catalog).
+	 */
+	public function test_availability_filter_receives_no_amazon_pay_while_its_feature_is_off(): void {
+		update_option( '_wcpay_feature_amazon_pay', '0' );
+		$this->store_card_and_amazon_pay_account_data();
+		$received = array();
+		$record   = static function ( array $payment_method_ids ) use ( &$received ): array {
+			$received = $payment_method_ids;
+
+			return $payment_method_ids;
+		};
+		add_filter( 'wcpay_upe_available_payment_methods', $record );
+
+		try {
+			$this->sut->get_settings();
+		} finally {
+			remove_filter( 'wcpay_upe_available_payment_methods', $record );
+		}
+
+		$this->assertContains( 'card', $received );
+		$this->assertNotContains( 'amazon_pay', $received );
+	}
+
+	/**
+	 * @testdox Should keep Amazon Pay available when an availability filter callback adds it while its feature is off (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4864-4879` keeps what the filter returns, then intersects with the fees).
+	 */
+	public function test_availability_filter_can_add_amazon_pay_while_its_feature_is_off(): void {
+		update_option( '_wcpay_feature_amazon_pay', '0' );
+		$this->store_card_and_amazon_pay_account_data();
+		$add_amazon_pay = static fn( array $payment_method_ids ): array => array_values( array_unique( array_merge( $payment_method_ids, array( 'amazon_pay' ) ) ) );
+		add_filter( 'wcpay_upe_available_payment_methods', $add_amazon_pay );
+
+		try {
+			$available = $this->sut->get_settings()['available_payment_method_ids'];
+		} finally {
+			remove_filter( 'wcpay_upe_available_payment_methods', $add_amazon_pay );
+		}
+
+		$this->assertContains( 'amazon_pay', $available );
 	}
 
 	/**
@@ -673,8 +697,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$settings = $service->get_settings();
 
-		$this->assertSame( 'availability_filter', $events[0] );
-		$this->assertSame( 'account_fees', $events[1] );
+		// The Amazon Pay feature reads the account first, as the client's registry does before any filter runs
+		// (client 11.1.0 PaymentMethodDefinitionRegistry.php:97-105); the fees are read after the one filter run.
+		$this->assertSame( array( 'account_fees', 'availability_filter', 'account_fees' ), array_slice( $events, 0, 3 ) );
 		$this->assertSame( 1, count( array_keys( $events, 'availability_filter', true ) ) );
 		$this->assertSame( array( 'card', 'apple_pay', 'google_pay' ), $settings['available_payment_method_ids'] );
 	}
@@ -3152,6 +3177,31 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 					'store_currencies'     => array(
 						'default'   => 'usd',
 						'supported' => array( 'usd' ),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+	}
+
+	/**
+	 * Store a connected account with active card and Amazon Pay capabilities and fees for both.
+	 */
+	private function store_card_and_amazon_pay_account_data(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_native_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'       => 'active',
+						'amazon_pay_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'       => array(),
+						'amazon_pay' => array(),
 					),
 				),
 				'fetched' => time(),

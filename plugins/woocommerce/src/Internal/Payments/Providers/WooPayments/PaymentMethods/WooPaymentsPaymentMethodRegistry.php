@@ -70,37 +70,31 @@ class WooPaymentsPaymentMethodRegistry {
 	public function get_available_payment_method_ids(): array {
 		$this->initialize_definitions();
 
-		/**
-		 * Filters the payment methods available to WooPayments.
-		 *
-		 * @param string[] $payment_method_ids Available payment method IDs.
-		 *
-		 * @since 11.0.0
-		 */
-		$payment_method_ids = apply_filters( 'wcpay_upe_available_payment_methods', array_keys( $this->definitions ) );
-
-		return array_values( $payment_method_ids );
+		return $this->filter_available_payment_method_ids( array_keys( $this->definitions ) );
 	}
 
 	/**
 	 * Get the payment methods WooPayments offers on this store: the available methods the account has fees for.
 	 *
-	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Amazon Pay counts only while
-	 * its feature is on. Client 11.1.0 `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879),
-	 * which runs the availability filter before reading the account's fees, over a registry that holds Amazon Pay only
-	 * while its feature is on (PaymentMethodDefinitionRegistry.php:102-104).
+	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Client 11.1.0
+	 * `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879) runs the availability filter
+	 * over a registry that holds Amazon Pay only while its feature is on (PaymentMethodDefinitionRegistry.php:97-105),
+	 * then reads the account's fees. The filter has the final say, so a callback may add Amazon Pay back.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return string[]
 	 */
 	public function get_available_payment_method_ids_for_account( WooPaymentsAccountService $account_service ): array {
-		$available_ids = $this->get_available_payment_method_ids();
+		$this->initialize_definitions();
+
+		$catalog = array_keys( $this->definitions );
+		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
+			$catalog = array_values( array_diff( $catalog, array( 'amazon_pay' ) ) );
+		}
+
+		$available_ids = $this->filter_available_payment_method_ids( $catalog );
 		$account_data  = $account_service->get_cached_account_data();
 		$fee_ids       = is_array( $account_data['fees'] ?? null ) ? array_map( 'strval', array_keys( $account_data['fees'] ) ) : array();
-
-		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
-			$available_ids = array_values( array_diff( $available_ids, array( 'amazon_pay' ) ) );
-		}
 
 		if ( in_array( 'card', $fee_ids, true ) ) {
 			foreach ( array( 'google_pay', 'apple_pay' ) as $wallet_id ) {
@@ -111,6 +105,25 @@ class WooPaymentsPaymentMethodRegistry {
 		}
 
 		return array_values( array_intersect( $available_ids, $fee_ids ) );
+	}
+
+	/**
+	 * Run the availability filter over a payment method catalog.
+	 *
+	 * @param string[] $catalog Payment method IDs.
+	 * @return string[]
+	 */
+	private function filter_available_payment_method_ids( array $catalog ): array {
+		/**
+		 * Filters the payment methods available to WooPayments.
+		 *
+		 * @param string[] $payment_method_ids Available payment method IDs.
+		 *
+		 * @since 11.0.0
+		 */
+		$payment_method_ids = apply_filters( 'wcpay_upe_available_payment_methods', $catalog );
+
+		return array_values( $payment_method_ids );
 	}
 
 	/**
