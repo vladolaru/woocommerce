@@ -103,7 +103,7 @@ class WooPaymentsSetUpLinkNote {
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 		$fee_ids      = array_map( 'strval', array_keys( $fees ) );
 
-		if ( ! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids_with_fees( $fees ), true ) ) {
+		if ( ! in_array( self::LINK, $this->payment_method_registry->get_available_payment_method_ids_with_fees( $fees, WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ), true ) ) {
 			return false;
 		}
 

@@ -577,6 +577,35 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report Amazon Pay as available only while its feature flag is on (client 11.1.0 `PaymentMethodDefinitionRegistry.php:102-104` registers it only then).
+	 * @testWith ["1", true]
+	 *           ["0", false]
+	 *
+	 * @param string $flag     The Amazon Pay feature flag option value.
+	 * @param bool   $expected Whether Amazon Pay is reported as available.
+	 */
+	public function test_store_setup_sync_reports_amazon_pay_only_while_its_feature_is_on( string $flag, bool $expected ): void {
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		$account_service = $this->create_account_service(
+			array(
+				'fees' => array(
+					'card'       => array(),
+					'amazon_pay' => array(),
+				),
+			)
+		);
+
+		try {
+			$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), $account_service );
+		} finally {
+			delete_option( '_wcpay_feature_amazon_pay' );
+		}
+
+		$this->assertSame( $expected, in_array( 'amazon_pay', $snapshot['payment_methods']['available'], true ) );
+	}
+
+	/**
 	 * @testdox Should report a stored empty list of enabled payment methods as empty (client 11.1.0 `get_upe_enabled_payment_method_ids()`, `class-wc-payment-gateway-wcpay.php:4682-4689`, sent at `class-wc-payments-account.php:2909`).
 	 */
 	public function test_store_setup_sync_reports_a_stored_empty_enabled_list_as_empty(): void {

@@ -82,15 +82,21 @@ class WooPaymentsPaymentMethodRegistry {
 	/**
 	 * Get the payment methods WooPayments offers on this store: the available methods the account has fees for.
 	 *
-	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Client 11.1.0
-	 * `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879).
+	 * Apple Pay and Google Pay are charged at card fees, so they count while card has fees. Amazon Pay counts only while
+	 * its feature is on. Client 11.1.0 `get_upe_available_payment_methods()` (class-wc-payment-gateway-wcpay.php:4848-4879)
+	 * over a registry that holds Amazon Pay only while its feature is on (PaymentMethodDefinitionRegistry.php:102-104).
 	 *
-	 * @param array<mixed> $account_fees The account's fees, keyed by payment method ID.
+	 * @param array<mixed> $account_fees       The account's fees, keyed by payment method ID.
+	 * @param bool         $amazon_pay_enabled Whether the Amazon Pay feature is on.
 	 * @return string[]
 	 */
-	public function get_available_payment_method_ids_with_fees( array $account_fees ): array {
+	public function get_available_payment_method_ids_with_fees( array $account_fees, bool $amazon_pay_enabled ): array {
 		$available_ids = $this->get_available_payment_method_ids();
-		$fee_ids       = array_map( 'strval', array_keys( $account_fees ) );
+		if ( ! $amazon_pay_enabled ) {
+			$available_ids = array_values( array_diff( $available_ids, array( 'amazon_pay' ) ) );
+		}
+
+		$fee_ids = array_map( 'strval', array_keys( $account_fees ) );
 
 		if ( in_array( 'card', $fee_ids, true ) ) {
 			foreach ( array( 'google_pay', 'apple_pay' ) as $wallet_id ) {

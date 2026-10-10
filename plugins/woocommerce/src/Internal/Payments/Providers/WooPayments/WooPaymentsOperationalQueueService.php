@@ -1069,7 +1069,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		$account_data = $this->account_service->get_cached_account_data();
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 
-		return $this->sanitize_string_list( wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_with_fees( $fees ) );
+		return $this->sanitize_string_list( wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_with_fees( $fees, WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) );
 	}
 
 	/**
