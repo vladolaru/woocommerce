@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Request;
@@ -489,7 +490,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_filtered_fees_list_params( WP_REST_Request $request ): array {
-		WooPaymentsTransactionsListRequest::register_legacy_alias();
+		WooPaymentsCompatClassAliases::register( WooPaymentsTransactionsListRequest::class );
 		$fees_request = new WooPaymentsTransactionsListRequest();
 		foreach ( $this->get_fees_list_params( $request ) as $key => $value ) {
 			$fees_request->set_param( (string) $key, $value );
@@ -600,7 +601,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 
 		$params = $this->filter_empty_params( $params );
 
-		WooPaymentsTransactionsListRequest::register_legacy_alias();
+		WooPaymentsCompatClassAliases::register( WooPaymentsTransactionsListRequest::class );
 		$transactions_request = new WooPaymentsTransactionsListRequest();
 		foreach ( $params as $key => $value ) {
 			$transactions_request->set_param( (string) $key, $value );

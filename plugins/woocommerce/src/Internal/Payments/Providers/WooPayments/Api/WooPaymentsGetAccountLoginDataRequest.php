@@ -46,17 +46,6 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Register the legacy WooPayments request alias when the extension is absent.
-	 */
-	public static function register_legacy_aliases(): void {
-		parent::register_legacy_aliases();
-
-		if ( ! class_exists( 'WCPay\Core\Server\Request\Get_Account_Login_Data', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Request\Get_Account_Login_Data' );
-		}
-	}
-
-	/**
 	 * Preserve the legacy redirect URL setter, which only accepts URLs in the allowed redirect hosts.
 	 *
 	 * @param string $redirect_url URL to navigate back to from the dashboard.

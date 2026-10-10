@@ -24,23 +24,6 @@ class WooPaymentsDepositsListRequest extends WooPaymentsPaginatedListRequest {
 	protected $hook = 'wcpay_list_deposits_request';
 
 	/**
-	 * Register the legacy request FQCN as an alias when the WooPayments extension is absent.
-	 */
-	public static function register_legacy_alias(): void {
-		self::register_legacy_base_aliases();
-
-		$legacy_classes = array(
-			'WCPay\Core\Server\Request\List_Deposits',
-		);
-
-		foreach ( $legacy_classes as $legacy_class ) {
-			if ( ! class_exists( $legacy_class, false ) ) {
-				class_alias( self::class, $legacy_class );
-			}
-		}
-	}
-
-	/**
 	 * Create a request from REST request data.
 	 *
 	 * @param WP_REST_Request $request REST request.

@@ -36,15 +36,6 @@ class WooPaymentsResponse implements ArrayAccess {
 	}
 
 	/**
-	 * Register the legacy response alias when the WooPayments extension is absent.
-	 */
-	public static function register_legacy_alias(): void {
-		if ( ! class_exists( 'WCPay\Core\Server\Response', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Response' );
-		}
-	}
-
-	/**
 	 * Check whether a response key exists.
 	 *
 	 * @param mixed $offset Response key.

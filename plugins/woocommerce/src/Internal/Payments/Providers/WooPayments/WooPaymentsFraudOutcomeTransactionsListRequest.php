@@ -26,17 +26,6 @@ class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginate
 	);
 
 	/**
-	 * Register the legacy request FQCN as an alias when the WooPayments extension is absent.
-	 */
-	public static function register_legacy_alias(): void {
-		self::register_legacy_base_aliases();
-
-		if ( ! class_exists( 'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Request\List_Fraud_Outcome_Transactions' );
-		}
-	}
-
-	/**
 	 * Create a request from REST request data.
 	 *
 	 * @param WP_REST_Request $request REST request.

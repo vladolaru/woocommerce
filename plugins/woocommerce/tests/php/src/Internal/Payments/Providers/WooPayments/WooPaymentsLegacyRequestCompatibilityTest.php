@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountLoginDataRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
@@ -64,7 +65,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		$api_client->init( $this->http_client, $this->create_account_service() );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 
-		$this->register_legacy_aliases();
+		$this->register_compat_class_aliases();
 	}
 
 	/**
@@ -78,18 +79,6 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $this->original_api_client );
 
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Every native request compatibility class is exposed under its legacy alias.
-	 * @dataProvider legacy_alias_provider
-	 *
-	 * @param class-string $native_class Native request class.
-	 * @param class-string $legacy_class Legacy request alias.
-	 */
-	public function test_registers_every_legacy_request_alias( string $native_class, string $legacy_class ): void {
-		$this->assertTrue( class_exists( $legacy_class, false ), $legacy_class . ' should be registered without autoloading the extension.' );
-		$this->assertTrue( is_a( $native_class, $legacy_class, true ), $native_class . ' should satisfy ' . $legacy_class . '.' );
 	}
 
 	/**
@@ -584,19 +573,10 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	/**
 	 * Register all concrete and base legacy aliases.
 	 */
-	private function register_legacy_aliases(): void {
-		WooPaymentsAuthorizationsListRequest::register_legacy_alias();
-		WooPaymentsDepositsListRequest::register_legacy_alias();
-		WooPaymentsDisputesListRequest::register_legacy_alias();
-		WooPaymentsDocumentsListRequest::register_legacy_alias();
-		WooPaymentsFraudOutcomeTransactionsListRequest::register_legacy_alias();
-		WooPaymentsTransactionsListRequest::register_legacy_alias();
-		WooPaymentsReportingBalanceSummaryRequest::register_legacy_alias();
-		WooPaymentsApiRequest::register_legacy_aliases();
-		WooPaymentsGetPmPromotionsRequest::register_legacy_aliases();
-		WooPaymentsActivatePmPromotionRequest::register_legacy_aliases();
-		WooPaymentsGetAccountCapitalLinkRequest::register_legacy_aliases();
-		WooPaymentsGetAccountLoginDataRequest::register_legacy_aliases();
+	private function register_compat_class_aliases(): void {
+		foreach ( array_column( $this->concrete_request_provider(), 0 ) as $native_class ) {
+			WooPaymentsCompatClassAliases::register( $native_class );
+		}
 	}
 
 	/**

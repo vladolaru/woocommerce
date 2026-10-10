@@ -24,17 +24,6 @@ class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListReque
 	protected $hook = 'wcpay_list_authorizations_request';
 
 	/**
-	 * Register the legacy request FQCN as an alias when the WooPayments extension is absent.
-	 */
-	public static function register_legacy_alias(): void {
-		self::register_legacy_base_aliases();
-
-		if ( ! class_exists( 'WCPay\Core\Server\Request\List_Authorizations', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Request\List_Authorizations' );
-		}
-	}
-
-	/**
 	 * Create a request from REST request data.
 	 *
 	 * @param WP_REST_Request $request REST request.

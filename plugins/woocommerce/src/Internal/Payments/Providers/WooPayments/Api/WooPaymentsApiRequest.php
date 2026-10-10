@@ -55,17 +55,6 @@ class WooPaymentsApiRequest extends WooPaymentsPaginatedListRequest {
 	}
 
 	/**
-	 * Register legacy request aliases when the WooPayments extension is absent.
-	 */
-	public static function register_legacy_aliases(): void {
-		self::register_legacy_base_aliases();
-
-		if ( ! class_exists( 'WCPay\Core\Server\Request\Get_Request', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Request\Get_Request' );
-		}
-	}
-
-	/**
 	 * Get the WooPayments API path.
 	 *
 	 * @return string

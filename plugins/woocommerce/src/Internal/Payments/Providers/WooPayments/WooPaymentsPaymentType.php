@@ -145,15 +145,6 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	}
 
 	/**
-	 * Register the legacy WooPayments payment type class name when the extension is absent.
-	 */
-	public static function register_legacy_alias(): void {
-		if ( ! class_exists( 'WCPay\\Constants\\Payment_Type' ) ) {
-			class_alias( self::class, 'WCPay\\Constants\\Payment_Type' );
-		}
-	}
-
-	/**
 	 * Get a cached payment type instance.
 	 *
 	 * @param string $name Payment type constant name.

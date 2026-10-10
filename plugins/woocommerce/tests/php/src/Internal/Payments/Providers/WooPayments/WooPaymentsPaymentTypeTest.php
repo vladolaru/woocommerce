@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use WC_Unit_Test_Case;
 
@@ -16,7 +17,7 @@ class WooPaymentsPaymentTypeTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		WooPaymentsPaymentType::register_legacy_alias();
+		WooPaymentsCompatClassAliases::register( WooPaymentsPaymentType::class );
 	}
 
 	/**

@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
@@ -2604,7 +2605,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	private function request_with_legacy_filter( array $params, string $api, string $method, string $hook ): array {
-		WooPaymentsApiRequest::register_legacy_aliases();
+		WooPaymentsCompatClassAliases::register( WooPaymentsApiRequest::class );
 
 		$request = WooPaymentsApiRequest::create( $params, $api, $method );
 
@@ -2624,23 +2625,7 @@ class WooPaymentsApiClient {
 	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
-		if ( $request instanceof WooPaymentsGetPmPromotionsRequest ) {
-			WooPaymentsGetPmPromotionsRequest::register_legacy_aliases();
-		} elseif ( $request instanceof WooPaymentsActivatePmPromotionRequest ) {
-			WooPaymentsActivatePmPromotionRequest::register_legacy_aliases();
-		} elseif ( $request instanceof WooPaymentsGetAccountCapitalLinkRequest ) {
-			WooPaymentsGetAccountCapitalLinkRequest::register_legacy_aliases();
-		} elseif ( $request instanceof WooPaymentsGetAccountLoginDataRequest ) {
-			WooPaymentsGetAccountLoginDataRequest::register_legacy_aliases();
-		} elseif ( $request instanceof WooPaymentsAuthorizationsListRequest ) {
-			WooPaymentsAuthorizationsListRequest::register_legacy_alias();
-		} elseif ( $request instanceof WooPaymentsDocumentsListRequest ) {
-			WooPaymentsDocumentsListRequest::register_legacy_alias();
-		} elseif ( $request instanceof WooPaymentsReportingBalanceSummaryRequest ) {
-			WooPaymentsReportingBalanceSummaryRequest::register_legacy_alias();
-		} else {
-			WooPaymentsApiRequest::register_legacy_aliases();
-		}
+		WooPaymentsCompatClassAliases::register_for_request( $request );
 
 		/**
 		 * Filters a WooPayments API request before native transport dispatch.

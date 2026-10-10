@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use WC_Order;
 
@@ -334,7 +335,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return array<string,mixed>
 	 */
 	public static function metadata_from_order( WC_Order $order, string $payment_type = 'single', string $subscription_payment = 'no' ): array {
-		WooPaymentsPaymentType::register_legacy_alias();
+		WooPaymentsCompatClassAliases::register( WooPaymentsPaymentType::class );
 
 		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';

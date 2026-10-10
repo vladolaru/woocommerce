@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsCompatClassAliases;
 use WP_REST_Request;
 
 /**
@@ -47,24 +48,6 @@ abstract class WooPaymentsPaginatedListRequest {
 	 * Constructor.
 	 */
 	final public function __construct() {
-	}
-
-	/**
-	 * Register legacy base request aliases when the WooPayments extension is absent.
-	 */
-	protected static function register_legacy_base_aliases(): void {
-		WooPaymentsResponse::register_legacy_alias();
-
-		$legacy_classes = array(
-			'WCPay\Core\Server\Request',
-			'WCPay\Core\Server\Request\Paginated',
-		);
-
-		foreach ( $legacy_classes as $legacy_class ) {
-			if ( ! class_exists( $legacy_class, false ) ) {
-				class_alias( self::class, $legacy_class );
-			}
-		}
 	}
 
 	/**
@@ -336,7 +319,7 @@ abstract class WooPaymentsPaginatedListRequest {
 	 * @return WooPaymentsResponse
 	 */
 	protected function format_default_response( $response ): WooPaymentsResponse {
-		WooPaymentsResponse::register_legacy_alias();
+		WooPaymentsCompatClassAliases::register( WooPaymentsResponse::class );
 
 		return new WooPaymentsResponse( $response );
 	}

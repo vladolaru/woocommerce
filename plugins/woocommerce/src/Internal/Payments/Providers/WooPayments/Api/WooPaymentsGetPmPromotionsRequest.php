@@ -41,17 +41,6 @@ class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Register the legacy WooPayments request alias when the extension is absent.
-	 */
-	public static function register_legacy_aliases(): void {
-		parent::register_legacy_aliases();
-
-		if ( ! class_exists( 'WCPay\Core\Server\Request\Get_PM_Promotions', false ) ) {
-			class_alias( self::class, 'WCPay\Core\Server\Request\Get_PM_Promotions' );
-		}
-	}
-
-	/**
 	 * Preserve the legacy raw-response flag for consumers that inspect the request.
 	 *
 	 * @return bool
