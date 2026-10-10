@@ -69,6 +69,30 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A wcpay_metadata_from_order callback cannot drop or change the order id and key; its other changes stand.
+	 *
+	 * The kept charge key's lookup and the webhook order resolver find the order by these two keys. Client 11.1.0
+	 * returns the filter result whole (src/Internal/Service/OrderService.php:133).
+	 */
+	public function test_metadata_filter_cannot_drop_or_change_the_order_id_and_key(): void {
+		$order           = wc_create_order();
+		$metadata_filter = static function (): array {
+			return array(
+				'order_id' => 999999,
+				'custom'   => 'kept',
+			);
+		};
+		add_filter( 'wcpay_metadata_from_order', $metadata_filter );
+
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
+
+		$this->assertSame( $order->get_id(), $metadata['order_id'] ?? null, 'The order id must be the order\'s own.' );
+		$this->assertSame( $order->get_order_key(), $metadata['order_key'] ?? null, 'The order key must be the order\'s own.' );
+		$this->assertSame( 'kept', $metadata['custom'] ?? null, 'A key the callback added must stand.' );
+		$this->assertArrayNotHasKey( 'customer_email', $metadata, 'A key the callback removed must stay removed.' );
+	}
+
+	/**
 	 * Matches WCPay\Internal\Service\OrderService::get_payment_metadata() in WooPayments 11.1.0.
 	 *
 	 * @testdox Intent metadata preserves WooPayments 11.1 customer-name delimiter spaces for incomplete billing names.

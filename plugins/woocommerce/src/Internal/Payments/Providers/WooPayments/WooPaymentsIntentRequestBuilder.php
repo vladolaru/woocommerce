@@ -367,7 +367,14 @@ class WooPaymentsIntentRequestBuilder {
 		 */
 		$metadata = apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
 
-		return is_array( $metadata ) ? $metadata : array();
+		// The kept charge key's lookup and the webhook order resolver find the order by these two keys, so a callback cannot change them.
+		return array_merge(
+			is_array( $metadata ) ? $metadata : array(),
+			array(
+				'order_id'  => $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			)
+		);
 	}
 
 	/**
