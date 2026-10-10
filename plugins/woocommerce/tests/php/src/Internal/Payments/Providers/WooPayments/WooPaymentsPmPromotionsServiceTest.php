@@ -127,6 +127,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		if ( $filter_it_out ) {
 			add_filter( 'wcpay_upe_available_payment_methods', $filter );
 		}
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
 				'card'             => array(),
@@ -405,6 +406,9 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Build a minimal valid promotion fixture.
+	 *
+	 * It carries the string fields client 11.1.0 requires of a platform promotion, with a spotlight or badge type
+	 * (`validate_promotion()`, class-wc-payments-pm-promotions-service.php:643-655).
 	 *
 	 * @param string $id                Promotion ID.
 	 * @param string $promo_id          Promotion group ID.
