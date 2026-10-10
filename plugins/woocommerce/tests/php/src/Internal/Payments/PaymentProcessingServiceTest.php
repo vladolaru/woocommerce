@@ -3538,6 +3538,116 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $operation that releases the authorization of an order already paid leaves the order paid, with one note and one warning naming the event and the amount.
+	 *
+	 * Register row 459 (owner, N-356 item 2): the late-failure guard keeps skipping the status change on a paid order, as
+	 * client 11.1.0 does through order_prepared_for_processing() (includes/class-wc-payments-order-service.php:2747-2754,
+	 * capture expiry at :522-525), but the skipped event is now recorded. The cancel comes from the payment details REST
+	 * route, and the expired capture from the completed transition, on an order the merchant already marked paid; the
+	 * provider answers are PaymentIntents (https://docs.stripe.com/api/payment_intents/object) for the 10.00 authorization.
+	 * A second delivery of the same event logs again and adds no second note.
+	 *
+	 * @dataProvider provide_late_releases_of_paid_orders
+	 *
+	 * @param string           $operation  Operation: capture or cancel.
+	 * @param array<int,mixed> $answers    Platform answers to one operation.
+	 * @param string           $event_type Lifecycle event the operation maps to.
+	 * @param string           $phrase     What the note says happened to the amount.
+	 */
+	public function test_late_release_of_a_paid_order_is_recorded_without_changing_the_order( string $operation, array $answers, string $event_type, string $phrase ): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_transaction_id( 'pi_paid_auth' );
+		$order->update_meta_data( '_intent_id', 'pi_paid_auth' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$order->update_status( 'processing' );
+
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array_merge( $answers, $answers );
+		$provider               = $this->timeout_transport_provider( $http_client );
+		$fake_logger            = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $fake_logger ) {
+				return $fake_logger;
+			}
+		);
+
+		foreach ( array( 1, 2 ) as $delivery ) {
+			unset( $delivery );
+			'capture' === $operation
+				? $this->sut->capture( PaymentOperationContext::for_capture( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider )
+				: $this->sut->cancel( PaymentOperationContext::for_cancel( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		}
+		remove_all_filters( 'woocommerce_logging_class' );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'processing', $order->get_status(), 'The guard still keeps the paid status.' );
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, $phrase )
+			)
+		);
+		$this->assertCount( 1, $notes, 'One note records the skipped event, however often it arrives.' );
+		$this->assertStringContainsString( '10.00', (string) $notes[0]->content, 'The note names the authorized amount.' );
+		$warnings = array_values(
+			array_filter(
+				$fake_logger->entries,
+				static fn( array $entry ): bool => 'warning' === $entry['level'] && 'order-payments' === ( $entry['context']['source'] ?? '' ) && ( $entry['context']['event_type'] ?? '' ) === $event_type
+			)
+		);
+		$this->assertCount( 2, $warnings, 'Each skipped delivery leaves one warning line.' );
+		$this->assertSame( '10.00', $warnings[0]['context']['amount'] ?? null );
+		$this->assertSame( 'USD', $warnings[0]['context']['currency'] ?? null );
+		$this->assertStringContainsString( $event_type, $warnings[0]['message'] );
+	}
+
+	/**
+	 * Operations that release the authorization of a paid order: a cancel the platform confirms, and a capture refused
+	 * because the authorization expired (the re-fetched intent is canceled, client 11.1.0
+	 * includes/class-wc-payment-gateway-wcpay.php:4014).
+	 *
+	 * @return array<string,array{string,array<int,mixed>,string,string}>
+	 */
+	public function provide_late_releases_of_paid_orders(): array {
+		$canceled_intent = $this->json_transport_response(
+			200,
+			array(
+				'id'       => 'pi_paid_auth',
+				'object'   => 'payment_intent',
+				'status'   => 'canceled',
+				'amount'   => 1000,
+				'currency' => 'usd',
+			)
+		);
+
+		return array(
+			'cancel'          => array( 'cancel', array( $canceled_intent ), PaymentLifecycleEvent::STATUS_CANCELED, 'was canceled, so that amount was released' ),
+			'capture expired' => array(
+				'capture',
+				array(
+					// Stripe's refusal to capture an expired authorization (https://docs.stripe.com/error-codes#charge-expired-for-capture), passed through by the platform.
+					$this->json_transport_response(
+						400,
+						array(
+							'error' => array(
+								'type'    => 'invalid_request_error',
+								'code'    => 'charge_expired_for_capture',
+								'message' => 'The charge has expired and can no longer be captured.',
+							),
+						)
+					),
+					$canceled_intent,
+				),
+				PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED,
+				'expired before it was captured, so that amount was never collected',
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should support non-Stripe redirect providers through neutral outcomes.
 	 */
 	public function test_process_checkout_supports_non_stripe_redirect_provider(): void {

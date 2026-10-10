@@ -192,6 +192,7 @@ class OrderPaymentLifecycleService {
 		$completed_event_order = PaymentLifecycleEvent::STATUS_COMPLETED === $event->get_status() ? $this->get_fresh_order_from_data_store( $order ) : $order;
 
 		if ( $this->should_skip_late_failure_event( $order, $event ) ) {
+			$this->record_skipped_late_release( $order, $event, $persistence_vocabulary );
 			return self::RESULT_NOTE_NOT_ADDED;
 		}
 
@@ -318,6 +319,68 @@ class OrderPaymentLifecycleService {
 
 		return $order->has_status( wc_get_is_paid_statuses() )
 			|| $fresh_order->has_status( wc_get_is_paid_statuses() );
+	}
+
+	/**
+	 * Record a cancel or capture-expired event skipped on a paid order: one order note and one warning, nothing else.
+	 *
+	 * The provider confirmed the authorization was released or expired uncaptured, yet the order stays paid, so the note
+	 * and the log line name the event and the amount, the order total the authorization was for. A redelivered event logs
+	 * again but adds no second note. Client 11.1.0 skips these events silently (class-wc-payments-order-service.php:2747-2754).
+	 *
+	 * @param WC_Order                               $order                  Order object.
+	 * @param PaymentLifecycleEvent                  $event                  Skipped lifecycle event.
+	 * @param ProviderPersistenceVocabularyInterface $persistence_vocabulary Provider persistence vocabulary.
+	 */
+	private function record_skipped_late_release( WC_Order $order, PaymentLifecycleEvent $event, ProviderPersistenceVocabularyInterface $persistence_vocabulary ): void {
+		$status = $event->get_status();
+		if ( ! in_array( $status, array( PaymentLifecycleEvent::STATUS_CANCELED, PaymentLifecycleEvent::STATUS_CAPTURE_EXPIRED ), true ) ) {
+			return;
+		}
+
+		$is_cancel         = PaymentLifecycleEvent::STATUS_CANCELED === $status;
+		$amount            = (string) $order->get_total();
+		$currency          = (string) $order->get_currency();
+		$payment_reference = (string) $event->get_payment_reference();
+
+		wc_get_logger()->warning(
+			sprintf(
+				'A %1$s payment event for order #%2$d was skipped because the order is already paid, so its status was not changed. The authorization of %3$s %4$s %5$s.',
+				$status,
+				$order->get_id(),
+				$amount,
+				$currency,
+				$is_cancel ? 'was released' : 'expired and was never captured'
+			),
+			array(
+				'source'            => 'order-payments',
+				'order_id'          => $order->get_id(),
+				'event_type'        => $status,
+				'payment_reference' => $payment_reference,
+				'amount'            => $amount,
+				'currency'          => $currency,
+			)
+		);
+
+		$identity = '' === $payment_reference ? '' : sprintf( 'skipped_late_release:%s:%s', $status, $payment_reference );
+		if ( '' !== $identity && 0 < $this->order_payment_notes->find_by_identity( $order, $identity, $persistence_vocabulary ) ) {
+			return;
+		}
+
+		$formatted_amount = wc_price( (float) $order->get_total(), array( 'currency' => $currency ) );
+		$note             = $is_cancel
+			? sprintf(
+				/* translators: %s: authorized amount. */
+				__( 'The payment authorization of %s was canceled, so that amount was released to the customer. The order is already paid, so its status was not changed.', 'woocommerce' ),
+				$formatted_amount
+			)
+			: sprintf(
+				/* translators: %s: authorized amount. */
+				__( 'The payment authorization of %s expired before it was captured, so that amount was never collected. The order is already paid, so its status was not changed.', 'woocommerce' ),
+				$formatted_amount
+			);
+
+		$this->order_payment_notes->add( $order, $note, $identity, $persistence_vocabulary );
 	}
 
 	/**

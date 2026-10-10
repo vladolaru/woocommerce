@@ -720,6 +720,38 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A late failed payment event on a paid order is skipped with no record: only a released or expired authorization is noted.
+	 *
+	 * Register row 459 (owner, N-356 item 2) records skipped cancel and capture-expired events; a failed attempt moved no
+	 * money on the paid order, so it stays skipped silently, as in client 11.1.0.
+	 */
+	public function test_late_failed_event_on_a_paid_order_leaves_no_record(): void {
+		$order = $this->create_woopayments_order();
+		$order->set_transaction_id( 'pi_paid' );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$this->apply_event(
+			$order,
+			new PaymentLifecycleEvent(
+				PaymentLifecycleEvent::STATUS_FAILED,
+				'pi_failed_late',
+				array( '_intention_status' => 'requires_payment_method' ),
+				array(),
+				'Late payment failure.',
+				'late_payment_failure'
+			)
+		);
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertSame( array(), array_values( array_filter( $notes, static fn( $note ): bool => false !== strpos( (string) $note->content, 'payment authorization of' ) ) ) );
+		$this->assertSame(
+			array(),
+			array_values( array_filter( $this->captured_logs, static fn( array $log ): bool => 'warning' === $log['level'] && 'order-payments' === ( $log['context']['source'] ?? '' ) ) )
+		);
+	}
+
+	/**
 	 * @testdox Late failure events re-read persisted order state before mutating a stale caller instance.
 	 */
 	public function test_late_failure_event_does_not_mutate_stale_order_when_persisted_order_is_paid(): void {
