@@ -76,10 +76,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	 * @since 11.0.0
 	 */
 	public function should_offer_confirmation( WC_Order $order ): bool {
-		$payment_method = (string) $order->get_payment_method();
-
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method
-			|| str_starts_with( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
+		return WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() );
 	}
 
 	/**

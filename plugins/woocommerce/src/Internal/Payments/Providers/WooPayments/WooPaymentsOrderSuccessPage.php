@@ -460,7 +460,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		$gateway_id = (string) $order->get_payment_method();
-		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) ) {
 			return $payment_method_title;
 		}
 

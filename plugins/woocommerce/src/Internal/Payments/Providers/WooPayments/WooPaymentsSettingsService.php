@@ -1032,7 +1032,7 @@ class WooPaymentsSettingsService {
 
 			$has_woopayments_gateway = array_filter(
 				$gateway_ids,
-				fn( string $gateway_id ): bool => $this->is_woopayments_gateway_id( $gateway_id )
+				fn( string $gateway_id ): bool => WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id )
 			);
 			if ( empty( $has_woopayments_gateway ) ) {
 				continue;
@@ -1134,16 +1134,6 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Tell whether a gateway ID belongs to WooPayments.
-	 *
-	 * @param string $gateway_id Gateway ID.
-	 * @return bool
-	 */
-	private function is_woopayments_gateway_id( string $gateway_id ): bool {
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
-	}
-
-	/**
 	 * Get the duplicate-detection payment method ID for a gateway ID.
 	 *
 	 * @param string $gateway_id Gateway ID.
@@ -1185,7 +1175,7 @@ class WooPaymentsSettingsService {
 			return $this->account_service->is_payment_request_enabled();
 		}
 
-		if ( $this->is_woopayments_gateway_id( $gateway_id ) ) {
+		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) ) {
 			return false;
 		}
 

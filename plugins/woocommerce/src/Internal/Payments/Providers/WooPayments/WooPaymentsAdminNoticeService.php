@@ -239,7 +239,7 @@ class WooPaymentsAdminNoticeService {
 				array_filter(
 					array_keys( WC()->payment_gateways()->payment_gateways() ),
 					static function ( string $gateway_id ): bool {
-						return WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $gateway_id && 0 !== strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
+						return ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id );
 					}
 				)
 			);

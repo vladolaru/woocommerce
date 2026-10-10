@@ -166,7 +166,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->is_native_woopayments_order( $order ) || $order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || $order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
 			return;
 		}
 
@@ -205,7 +205,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
 
-		if ( ! $this->is_native_woopayments_order( $fresh_order ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $fresh_order->get_payment_method() ) ) {
 			return;
 		}
 
@@ -529,18 +529,6 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		return '' !== $this->get_query_string( 'setup_intent' )
 			&& '' !== $this->get_query_string( 'setup_intent_client_secret' )
 			&& 'succeeded' === $this->get_query_string( 'redirect_status' );
-	}
-
-	/**
-	 * Tell whether an order belongs to the native WooPayments gateway family.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	private function is_native_woopayments_order( WC_Order $order ): bool {
-		$payment_method = (string) $order->get_payment_method();
-
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method || str_starts_with( $payment_method, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
 	}
 
 	/**

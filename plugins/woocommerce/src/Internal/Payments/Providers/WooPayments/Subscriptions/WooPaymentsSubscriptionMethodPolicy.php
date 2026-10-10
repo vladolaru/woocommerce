@@ -136,16 +136,4 @@ final class WooPaymentsSubscriptionMethodPolicy {
 	public static function is_reusable_gateway_id( string $gateway_id ): bool {
 		return in_array( $gateway_id, self::get_reusable_gateway_ids(), true );
 	}
-
-	/**
-	 * Tell whether a gateway ID belongs to native WooPayments.
-	 *
-	 * @param string $gateway_id Gateway ID.
-	 * @return bool
-	 *
-	 * @since 11.0.0
-	 */
-	public static function is_native_gateway_id( string $gateway_id ): bool {
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id || 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
-	}
 }

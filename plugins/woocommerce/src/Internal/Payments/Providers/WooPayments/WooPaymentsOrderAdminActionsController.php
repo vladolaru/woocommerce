@@ -243,11 +243,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_authorized_woopayments_order( WC_Order $order, bool $require_unpaid ): bool {
-		$gateway_id = (string) $order->get_payment_method();
-		$is_gateway = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway_id
-			|| str_starts_with( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
-
-		if ( ! $is_gateway || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || 'requires_capture' !== (string) $order->get_meta( '_intention_status', true ) ) {
 			return false;
 		}
 

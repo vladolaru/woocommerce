@@ -129,34 +129,4 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 			'unrelated gateway'          => array( 'other_gateway', false ),
 		);
 	}
-
-	/**
-	 * @testdox Should recognize native WooPayments split gateways without matching unrelated prefixes.
-	 * @dataProvider provider_native_gateway_ids
-	 *
-	 * @param string $gateway_id Gateway ID.
-	 * @param bool   $is_native  Whether the gateway belongs to native WooPayments.
-	 */
-	public function test_is_native_gateway_id_classifies_woopayments_methods( string $gateway_id, bool $is_native ): void {
-		if ( ! class_exists( WooPaymentsSubscriptionMethodPolicy::class ) ) {
-			$this->fail( 'The shared WooPayments subscription method policy does not exist.' );
-		}
-
-		$this->assertSame( $is_native, WooPaymentsSubscriptionMethodPolicy::is_native_gateway_id( $gateway_id ) );
-	}
-
-	/**
-	 * Native gateway ID scenarios.
-	 *
-	 * @return array<string,array{string,bool}>
-	 */
-	public function provider_native_gateway_ids(): array {
-		return array(
-			'base card gateway'  => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, true ),
-			'Amazon Pay gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
-			'split gateway'      => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'ideal', true ),
-			'unrelated prefix'   => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID . 'ish', false ),
-			'unrelated gateway'  => array( 'other_gateway', false ),
-		);
-	}
 }

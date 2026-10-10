@@ -1306,7 +1306,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$gateway_id = $subscription->get_payment_method();
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_native_gateway_id( $gateway_id ) || WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) || WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
 			return;
 		}
 
