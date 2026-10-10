@@ -146,6 +146,52 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
+	 * On the storefront the client's Amazon Pay gateway is unavailable while it needs setup (client 11.1.0
+	 * class-wc-payment-gateway-wcpay.php:946, needs_setup() at :851-858): without an account, without the account's `status` or
+	 * `payments_enabled` (class-wc-payments-account.php:360-365), or with payments disabled. Its cart extension then lists no Amazon
+	 * Pay (class-wc-payments-express-checkout-store-api-extension.php:81-93).
+	 *
+	 * @testdox Should list Amazon Pay in the Store API cart data only for an account that needs no setup: $scenario.
+	 * @testWith ["a complete account", [], true]
+	 *           ["no status", ["status"], false]
+	 *           ["no payments_enabled", ["payments_enabled"], false]
+	 *
+	 * @param string   $scenario       Scenario description.
+	 * @param string[] $missing_fields Account fields left out.
+	 * @param bool     $listed         Whether Amazon Pay should be listed.
+	 */
+	public function test_get_cart_extension_data_lists_amazon_pay_only_for_an_account_that_needs_no_setup( string $scenario, array $missing_fields, bool $listed ): void {
+		unset( $scenario );
+		// Account fields as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
+		$account_data = array(
+			'account_id'                       => 'acct_store_api_test',
+			'status'                           => 'complete',
+			'payments_enabled'                 => true,
+			'country'                          => 'US',
+			'capabilities'                     => array( 'amazon_pay_payments' => 'active' ),
+			'ece_confirmation_tokens_disabled' => false,
+		);
+		$service      = $this->create_real_service(
+			array(
+				'enabled'                           => 'yes',
+				'payment_request'                   => 'no',
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+				'express_checkout_product_methods'  => array( 'amazon_pay' ),
+				'express_checkout_cart_methods'     => array( 'amazon_pay' ),
+				'express_checkout_checkout_methods' => array( 'amazon_pay' ),
+			),
+			array_diff_key( $account_data, array_flip( $missing_fields ) )
+		);
+		$this->sut    = new WooPaymentsExpressCheckoutStoreApiExtension();
+		$this->sut->init( new StaticWooPaymentsRuntimeArbiter( true ), $service );
+
+		$this->assertSame(
+			array( 'express_checkout_methods' => $listed ? array( 'amazon_pay' ) : array() ),
+			$this->sut->get_cart_extension_data()
+		);
+	}
+
+	/**
 	 * @testdox Should expose the reference-compatible Store API extension schema.
 	 */
 	public function test_get_cart_extension_schema_returns_express_checkout_methods_schema(): void {
@@ -472,15 +518,17 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	/**
 	 * Create a real express checkout service over mocked account settings.
 	 *
-	 * @param array<string,mixed> $settings Gateway settings.
+	 * @param array<string,mixed> $settings     Gateway settings.
+	 * @param array<string,mixed> $account_data Cached account data.
 	 * @return WooPaymentsExpressCheckoutService
 	 */
-	private function create_real_service( array $settings ): WooPaymentsExpressCheckoutService {
+	private function create_real_service( array $settings, array $account_data = array( 'country' => 'US' ) ): WooPaymentsExpressCheckoutService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => 'US' ) );
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account_service->method( 'is_payment_request_enabled' )->willReturn( 'yes' === ( $settings['payment_request'] ?? 'no' ) );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback

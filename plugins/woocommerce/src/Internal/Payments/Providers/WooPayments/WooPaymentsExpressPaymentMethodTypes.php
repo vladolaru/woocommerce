@@ -402,7 +402,9 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		if ( isset( $account_data['payments_enabled'] ) && ! wc_string_to_bool( $account_data['payments_enabled'] ) ) {
+		// The Amazon Pay gateway needs no setup: an account with a status and payments enabled (client 11.1.0
+		// class-wc-payment-gateway-wcpay.php:946, needs_setup() at :851-858, account status data at class-wc-payments-account.php:360-365).
+		if ( array() === $account_data || ! isset( $account_data['status'], $account_data['payments_enabled'] ) || ! $account_data['payments_enabled'] ) {
 			return false;
 		}
 

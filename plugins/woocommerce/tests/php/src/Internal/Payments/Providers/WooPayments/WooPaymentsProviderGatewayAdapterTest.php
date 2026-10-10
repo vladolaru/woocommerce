@@ -8913,10 +8913,12 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);
+		// A connected account with a status and payments enabled, as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array_merge(
 				array(
 					'country'          => 'US',
+					'status'           => 'complete',
 					'payments_enabled' => true,
 					'capabilities'     => array(
 						'amazon_pay_payments' => 'active',

@@ -2244,10 +2244,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Account data under which the client runs its express checkout handlers and can use Amazon Pay.
+	 * Account data under which the client runs its express checkout handlers and can use Amazon Pay, with the status and
+	 * payments flag recorded in Fixtures/rec-t60-test-drive-account.json `account`.
 	 */
 	private const EXPRESS_ACCOUNT_DATA = array(
 		'country'          => 'US',
+		'status'           => 'complete',
 		'payments_enabled' => true,
 		'capabilities'     => array( 'amazon_pay_payments' => 'active' ),
 		'fees'             => array( 'amazon_pay' => array( 'base' => array( 'currency' => 'usd' ) ) ),

@@ -2239,6 +2239,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$account_data = array_merge(
 			array(
 				'country'          => 'US',
+				// A connected account's status, as recorded in Fixtures/rec-t60-test-drive-account.json `account.status`.
+				'status'           => 'complete',
 				'payments_enabled' => true,
 				'capabilities'     => array(
 					'amazon_pay_payments' => 'active',
