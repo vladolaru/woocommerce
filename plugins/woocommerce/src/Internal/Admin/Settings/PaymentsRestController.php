@@ -1077,6 +1077,53 @@ class PaymentsRestController extends RestApiControllerBase {
 					'readonly'    => true,
 				),
 				'_incentive'     => $this->get_schema_for_incentive(),
+				// POC hack: the PayPal Wallet row's setup notice. A proper extension point for provider data is the follow-up.
+				'_notice'        => array(
+					'type'        => 'object',
+					'description' => esc_html__( 'A setup notice shown under the provider row, when the provider has one.', 'woocommerce' ),
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
+					'properties'  => array(
+						'title'        => array(
+							'type'        => 'string',
+							'description' => esc_html__( 'The title of the notice.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+						'text'         => array(
+							'type'        => 'string',
+							'description' => esc_html__( 'The text of the notice.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+						'action_label' => array(
+							'type'        => 'string',
+							'description' => esc_html__( 'The label of the notice action.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+						'action_url'   => array(
+							'type'        => 'string',
+							'format'      => 'uri',
+							'description' => esc_html__( 'The URL of the notice action.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+						'dismissible'  => array(
+							'type'        => 'boolean',
+							'description' => esc_html__( 'Whether the notice can be dismissed.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+						'dismiss_url'  => array(
+							'type'        => 'string',
+							'format'      => 'uri',
+							'description' => esc_html__( 'The URL that dismisses the notice, when it can be dismissed.', 'woocommerce' ),
+							'context'     => array( 'view', 'edit' ),
+							'readonly'    => true,
+						),
+					),
+				),
 				'_links'         => array(
 					'type'       => 'object',
 					'context'    => array( 'view', 'edit' ),

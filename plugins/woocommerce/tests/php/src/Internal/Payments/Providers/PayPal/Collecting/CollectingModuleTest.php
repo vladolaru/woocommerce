@@ -107,7 +107,7 @@ class CollectingModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report success from run and add the intent and merchant-features filters late.
+	 * @testdox Should report success from run and add the intent, merchant-features, features-list and to-dos-list filters late.
 	 */
 	public function test_run_adds_the_gate_filters(): void {
 		$container = new ContainerDouble(
@@ -118,6 +118,8 @@ class CollectingModuleTest extends WalletTestCase {
 
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_order_intent', 'handle_woocommerce_paypal_payments_order_intent' ) );
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_rest_common_merchant_features', 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_features_list', 'handle_woocommerce_paypal_payments_features_list' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_todos_list', 'handle_woocommerce_paypal_payments_todos_list' ) );
 	}
 
 	/**

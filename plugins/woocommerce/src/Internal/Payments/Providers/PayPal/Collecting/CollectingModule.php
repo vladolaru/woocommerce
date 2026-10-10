@@ -93,6 +93,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 		$gates = new PlatformServedGates( $connection_state );
 		add_filter( 'woocommerce_paypal_payments_order_intent', array( $gates, 'handle_woocommerce_paypal_payments_order_intent' ), self::GATE_PRIORITY );
 		add_filter( 'woocommerce_paypal_payments_rest_common_merchant_features', array( $gates, 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ), self::GATE_PRIORITY );
+		add_filter( 'woocommerce_paypal_payments_features_list', array( $gates, 'handle_woocommerce_paypal_payments_features_list' ), self::GATE_PRIORITY );
+		add_filter( 'woocommerce_paypal_payments_todos_list', array( $gates, 'handle_woocommerce_paypal_payments_todos_list' ), self::GATE_PRIORITY );
 
 		// The order screen applies this filter to false, so the module answers it with the refund lock's own decision. Early, so a later callback can still unlock.
 		add_filter( 'woocommerce_paypal_wallet_refund_locked', array( new RefundLock( $connection_state ), 'handle_woocommerce_paypal_wallet_refund_locked' ), self::REFUND_LOCK_PRIORITY, 2 );

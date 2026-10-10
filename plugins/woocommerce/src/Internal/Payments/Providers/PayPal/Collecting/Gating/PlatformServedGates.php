@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
  *
  * The platform captures every payment for the merchant and cannot keep a buyer's vault token for them, so a collecting
  * or platform-connected store always captures and never offers to save PayPal or Venmo. A store with first-party
- * credentials is left alone.
+ * credentials is left alone. The settings app's feature and to-do lists also lose the items that invite a PayPal sign-up.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -75,5 +75,49 @@ class PlatformServedGates {
 		$features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ] = array( 'enabled' => false );
 
 		return $features;
+	}
+
+	/**
+	 * Drop the feature cards that invite a PayPal sign-up while the platform serves the store.
+	 *
+	 * Save PayPal and Venmo and Installments show a "Sign up" button to a PayPal page for an account the payee does not
+	 * have. Pay Later messaging has no sign-up button and stays.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $features The feature definitions, keyed by feature ID.
+	 *
+	 * @return mixed The features without those cards, or the value unchanged when it is not an array or the platform does
+	 *               not serve the store.
+	 */
+	public function handle_woocommerce_paypal_payments_features_list( $features ) {
+		if ( ! is_array( $features ) || ! $this->connection_state->is_served_by_platform() ) {
+			return $features;
+		}
+		unset( $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ], $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ] );
+
+		return $features;
+	}
+
+	/**
+	 * Drop the to-dos that send the payee to their own PayPal account while the platform serves the store.
+	 *
+	 * Working Capital and Installments link to PayPal pages that need an account the payee does not have. The to-dos that
+	 * open a tab of the settings app stay.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $todos The to-do definitions, keyed by ID.
+	 *
+	 * @return mixed The to-dos without those items, or the value unchanged when it is not an array or the platform does not
+	 *               serve the store.
+	 */
+	public function handle_woocommerce_paypal_payments_todos_list( $todos ) {
+		if ( ! is_array( $todos ) || ! $this->connection_state->is_served_by_platform() ) {
+			return $todos;
+		}
+		unset( $todos['apply_for_working_capital'], $todos['enable_installments'] );
+
+		return $todos;
 	}
 }

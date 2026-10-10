@@ -123,6 +123,7 @@ These are core's, not forked, and the removal reverts them. The shell wires `Col
 |------|--------|
 | `src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrap.php` | The shell: registers the owner-independent surfaces, the `wc paypal-wallet collect` command, `track_runtime_owner()` and the module filter. |
 | `src/Internal/Admin/Settings/PaymentsProviders/PayPal.php` | `get_details()` adds `_notice` from the `woocommerce_paypal_wallet_provider_notice` filter (Ruling 184: it references `Collecting\ConnectionState`, so the removal reverts it). |
+| `src/Internal/Admin/Settings/PaymentsRestController.php` | One hunk in `get_schema_for_payment_provider()`: a `_notice` object (`title`, `text`, `action_label`, `action_url`, `dismissible`, `dismiss_url`) so the providers route keeps the notice `PayPal.php` adds. The route keeps only the keys its schema names. A POC hack, listed under its follow-up below. |
 | `includes/admin/meta-boxes/views/html-order-items.php` | Fires `woocommerce_paypal_wallet_refund_locked` and disables the Refund button. |
 | `client/admin/client/settings-payments/components/payment-gateway-list-item/payment-gateway-list-item.tsx`, `provider-notice.tsx` (new), `settings-payments-main.scss`, and `packages/js/data/src/payment-settings/types.ts` and `index.ts` | The NOX `_notice` slot under a provider row, and the `PaymentsProviderNotice` type. |
 | `client/admin/client/core-profiler/pages/Plugins/Plugins.tsx` | The "Included" card for an entry the server marks `is_included`. |
@@ -130,13 +131,13 @@ These are core's, not forked, and the removal reverts them. The shell wires `Col
 
 ## Removing the collecting state
 
-The removal was tried on a scratch branch (`scratch/collecting-removal`) of the main checkout at `55f45e04db`, with the uncommitted documentation work stashed (`git stash push --include-untracked`) and restored afterwards (`git stash pop --index`). It is one deletion, one revert and the trims staying as they are. Every path of `git diff --name-status 3fab045d24 HEAD` (158 paths) falls in one of four classes.
+The removal was tried on a scratch branch (`scratch/collecting-removal`) of the main checkout at `55f45e04db`, with the uncommitted documentation work stashed (`git stash push --include-untracked`) and restored afterwards (`git stash pop --index`). It is one deletion, one revert and the trims staying as they are. Every path of `git diff --name-status 3fab045d24 HEAD` (158 paths at that head; the counts in the table include the later demo fix, which adds one test file and one modified core file) falls in one of four classes.
 
 | Class | Paths | Action |
 |-------|------:|--------|
-| (a) The collecting trees: `src/Internal/Payments/Providers/PayPal/Collecting` (63 files), `tests/php/src/Internal/Payments/Providers/PayPal/Collecting` (61), `client/admin/client/paypal-wallet/collecting` (5) | 129 | `git rm -r` |
+| (a) The collecting trees: `src/Internal/Payments/Providers/PayPal/Collecting` (63 files), `tests/php/src/Internal/Payments/Providers/PayPal/Collecting` (62), `client/admin/client/paypal-wallet/collecting` (5) | 130 | `git rm -r` |
 | (b) New files outside the trees: `provider-notice.tsx` and `test/provider-notice.test.tsx` in `payment-gateway-list-item/` | 2 | `git rm` |
-| (c) Modified core and forked files: the shell and its test, `PayPal.php` and its test, `html-order-items.php`, the NOX list item and its test, `settings-payments-main.scss`, `types.ts`, `index.ts`, `Plugins.tsx` and its test, `TabOverview.js`, `Troubleshooting.js`, and the five Wallet seam files | 19 | `git checkout 3fab045d24 -- <paths>` |
+| (c) Modified core and forked files: the shell and its test, `PayPal.php` and its test, `PaymentsRestController.php`, `html-order-items.php`, the NOX list item and its test, `settings-payments-main.scss`, `types.ts`, `index.ts`, `Plugins.tsx` and its test, `TabOverview.js`, `Troubleshooting.js`, and the five Wallet seam files | 20 | `git checkout 3fab045d24 -- <paths>` |
 | (d) The connect-surface trims (Task 3): `path-map.json`, `SettingsModule.php`, `Settings/services.php`, `WCGatewayModule.php`, `WcGateway/services.php`, `SettingsModuleRunTest.php`; `ConnectAdminNotice.php` and `LoadingScreenService.php` deleted | 8 | Stay as they are |
 
 The commands, from the repository root:
@@ -155,6 +156,7 @@ git checkout 3fab045d24 -- packages/js/data/src/index.ts packages/js/data/src/pa
   $P/client/admin/client/settings-payments/settings-payments-main.scss \
   $P/includes/admin/meta-boxes/views/html-order-items.php \
   $P/src/Internal/Admin/Settings/PaymentsProviders/PayPal.php $P/tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php \
+  $P/src/Internal/Admin/Settings/PaymentsRestController.php \
   $P/src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrap.php $P/tests/php/src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrapTest.php \
   $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Helper/RefundFeesUpdater.php \
   $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Processor/{OrderMetaTrait,OrderProcessor,PaymentsStatusHandlingTrait,RefundProcessor}.php
@@ -164,7 +166,7 @@ git grep -il 'PayPal.Collecting\|woocommerce_paypal_wallet_\|wc_paypal_wallet_\|
 
 cd $P
 # php -l over the PayPal tree and the reverted core files, in the PHPUnit container; prints nothing when every file passes
-pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli sh -c "find src/Internal/Payments/Providers/PayPal tests/php/src/Internal/Payments/Providers/PayPal src/Internal/Admin/Settings/PaymentsProviders/PayPal.php includes/admin/meta-boxes/views/html-order-items.php tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php -name '*.php' -exec php -l {} \; | grep -v '^No syntax errors'"
+pnpm wp-env:test run --env-cwd='wp-content/plugins/woocommerce' cli sh -c "find src/Internal/Payments/Providers/PayPal tests/php/src/Internal/Payments/Providers/PayPal src/Internal/Admin/Settings/PaymentsProviders/PayPal.php src/Internal/Admin/Settings/PaymentsRestController.php includes/admin/meta-boxes/views/html-order-items.php tests/php/src/Internal/Admin/Settings/PaymentsProviders/PayPalTest.php -name '*.php' -exec php -l {} \; | grep -v '^No syntax errors'"
 pnpm test:php:env -- --group paypal-wallet
 pnpm test:php:env -- --filter 'PaymentsProvidersTest|PaymentsRestControllerTest|PaymentsSettingsTest|WC_Tests_Payment_Gateways|PayPalWalletBootstrapTest|ForkPlacementTest|SerializedClassesTest|PayPalTest|WalletPropertiesTest'
 ```
@@ -206,7 +208,7 @@ Everything is core-owned and listed, generated, in the last section of `contract
 
 **Hooks (all `@since 11.3.0`).** Fired by the seams and core files: `woocommerce_paypal_wallet_order_context`, `_paypal_order_created`, `_capture_pending`, `_provider_notice` (a filter on the provider row) and `_refund_locked` (a filter on the Refund button). Fired by the module: `_first_order` and `_held_payment_returned`, which the emails listen on. `woocommerce_paypal_wallet_reconcile` is the Action Scheduler hook of the daily reconcile.
 
-**REST and script data.** The namespace `wc/v3/paypal-wallet` has five routes under `/collecting` (`GET /collecting`, `POST /collecting/payee`, `/check-status`, `/referral` and `/dismiss`), all behind `manage_woocommerce`. The settings app's data gains `ppcpSettings.collecting`, with `webhooks_note` for the Troubleshooting seam. WP-CLI: `wc paypal-wallet collect` and `wc paypal-wallet reconcile`. The AJAX action `wc_paypal_wallet_dismiss_notice` (a `wc_ajax` endpoint) stores a dismissal.
+**REST and script data.** The namespace `wc/v3/paypal-wallet` has five routes under `/collecting` (`GET /collecting`, `POST /collecting/payee`, `/check-status`, `/referral` and `/dismiss`), all behind `manage_woocommerce`. The providers route `POST /wc-admin/settings/payments/providers` gains an optional `_notice` object on a provider (read-only, `title`, `text`, `action_label`, `action_url`, `dismissible`, `dismiss_url`). The settings app's data gains `ppcpSettings.collecting`, with `webhooks_note` for the Troubleshooting seam. WP-CLI: `wc paypal-wallet collect` and `wc paypal-wallet reconcile`. The AJAX action `wc_paypal_wallet_dismiss_notice` (a `wc_ajax` endpoint) stores a dismissal.
 
 **Container extensions while the platform serves the store.** `Collecting/extensions.php` decorates, among others: `settings.flag.is-connected` (true), `settings.environment`, `webhook.is-registered`, `sdk-v6.buttons-available` (false), `settings.settings-provider`, `settings.rest.settings`, `settings.rest.onboarding`, `api.bearer`, `api.host-resolver`, `api.endpoint.partners`, the three partner-referrals endpoints, `webhook.endpoint.controller`, `webhook.registrar`, `settings.rest.webhooks`, `webhook.endpoint.handler` and `wcgateway.processor.refunds`. While served, `settings.rest.onboarding` reports onboarding completed with `gatewaysSynced` true, and saves through it are no-ops (Ruling 119). That stops a gateway sync from saving the profile. It costs a stale gateway sync if the platform later connects first-party; the first-party state does not go through this path.
 
@@ -225,7 +227,8 @@ Everything is core-owned and listed, generated, in the last section of `contract
 **POC hacks, each with its follow-up.**
 
 - `html-order-items.php` (Ruling 107): the `isset( $order )` guard stays because dropping it grows the PHPStan baseline; `$refund_locked` and the duplicated tooltip string stay. Follow-up: a proper refund-lock API in core, then delete the guard and the copy.
-- The NOX `_notice` slot (the provider row and `PaymentsProviderNotice`): a notice array on a provider entity, with no registry. Follow-up: a notices API on providers.
+- The NOX `_notice` slot (the provider row and `PaymentsProviderNotice`): a notice array on a provider entity, with no registry. The demo found that the providers route dropped it, so `PaymentsRestController.php` carries a `_notice` entry in its provider schema, one hunk in a core file outside `Collecting/`. Follow-up: a notices API on providers, and a proper extension point for provider data in that controller, then delete the schema entry.
+- While the platform serves the store, `Collecting/Gating/PlatformServedGates` drops the cards and to-dos that send the payee to a PayPal sign-up or account, through the wallet's existing `woocommerce_paypal_payments_features_list` and `_todos_list` filters: Save PayPal and Venmo and Installments (features), Working Capital and Installments (to-dos). Pay Later messaging and its to-dos stay, because they open the settings app's own tab and have no sign-up. Follow-up: none needed; a store with first-party credentials is unchanged.
 - Plugins.tsx "Included" (Rulings 120, 121 and 127): `NoPermissions.tsx` is not covered, so a user who cannot install plugins sees the card as a disabled checkbox; "shown" means "served", so the record is written even when the profiler page is skipped; and the profiler's Tracks events list `paypal-wallet`. Follow-up: an `is_included` field in the profiler's data model, covering all three.
 - The profiler card goes through `rest_post_dispatch` (Ruling 118), limited to the obw and core-profiler free-extensions routes. Follow-up: a free-extensions filter in core.
 - Order Intent is hidden by an inline style pinned to the forked app's `ppcp--order-intent` class (Ruling 116), with a test that pins the class. Follow-up: hide it through settings-app data.
