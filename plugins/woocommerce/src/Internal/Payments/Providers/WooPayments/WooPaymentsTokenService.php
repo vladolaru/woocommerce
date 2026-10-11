@@ -282,7 +282,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	public function handle_woocommerce_payment_token_deleted( $token_id, $token ): void {
 		unset( $token_id );
 
-		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+		if ( ! $this->is_supported_woopayments_token( $token ) ) {
 			return;
 		}
 
@@ -312,7 +312,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	public function handle_woocommerce_payment_token_set_default( $token_id, $token ): void {
 		unset( $token_id );
 
-		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+		if ( ! $this->is_supported_woopayments_token( $token ) ) {
 			return;
 		}
 
@@ -362,7 +362,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+			if ( ! $this->is_supported_woopayments_token( $token ) ) {
 				unset( $tokens[ $token_key ] );
 				continue;
 			}
@@ -410,7 +410,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return $item;
 		}
 
-		if ( $this->is_supported_native_woopayments_token( $payment_token ) ) {
+		if ( $this->is_supported_woopayments_token( $payment_token ) ) {
 			if ( $payment_token instanceof WooPaymentsSepaToken ) {
 				$item['method']['last4'] = $payment_token->get_last4();
 				$item['method']['brand'] = esc_html__( 'SEPA IBAN', 'woocommerce' );
@@ -433,7 +433,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			}
 		}
 
-		if ( ! $this->is_native_woopayments_card_token( $payment_token ) ) {
+		if ( ! $this->is_woopayments_card_token( $payment_token ) ) {
 			return $item;
 		}
 
@@ -499,7 +499,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		$token = WC_Payment_Tokens::get( $token_id_int );
-		if ( ! $token instanceof WC_Payment_Token || ! $this->is_supported_native_woopayments_token( $token ) ) {
+		if ( ! $token instanceof WC_Payment_Token || ! $this->is_supported_woopayments_token( $token ) ) {
 			return '';
 		}
 
@@ -525,7 +525,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return null;
 		}
 
-		if ( ! $this->is_supported_native_woopayments_token( $token ) || $user_id !== $token->get_user_id() ) {
+		if ( ! $this->is_supported_woopayments_token( $token ) || $user_id !== $token->get_user_id() ) {
 			return null;
 		}
 
@@ -572,7 +572,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 
 		$token = WC_Payment_Tokens::get( $token_id_int );
 
-		return $token instanceof WC_Payment_Token && $this->is_supported_native_woopayments_token( $token )
+		return $token instanceof WC_Payment_Token && $this->is_supported_woopayments_token( $token )
 			? $this->get_payment_method_type_for_token( $token )
 			: '';
 	}
@@ -586,7 +586,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return string Stripe payment method type, or empty string when unsupported.
 	 */
 	public function get_payment_method_type_for_token( WC_Payment_Token $token ): string {
-		if ( ! $this->is_supported_native_woopayments_token( $token ) ) {
+		if ( ! $this->is_supported_woopayments_token( $token ) ) {
 			return '';
 		}
 
@@ -632,10 +632,10 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			);
 		}
 
-		$existing_native_token = $this->get_existing_native_token_for_user( $payment_method_id, $user_id );
-		if ( $existing_native_token instanceof WC_Payment_Token ) {
+		$existing_token = $this->get_existing_token_for_user( $payment_method_id, $user_id );
+		if ( $existing_token instanceof WC_Payment_Token ) {
 			return array(
-				'token'                  => $existing_native_token,
+				'token'                  => $existing_token,
 				'payment_method_details' => $include_existing_token_details ? $this->get_bound_payment_method_details( $payment_method_id ) : array(),
 			);
 		}
@@ -650,7 +650,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			);
 		}
 
-		$existing_token = $this->get_existing_token_for_user( $payment_method_id, $user_id, $gateway_id );
+		$existing_token = $this->get_existing_token_for_gateway( $payment_method_id, $user_id, $gateway_id );
 		if ( $existing_token instanceof WC_Payment_Token ) {
 			return array(
 				'token'                  => $existing_token,
@@ -1025,7 +1025,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			foreach ( $tokens as $token ) {
 				if (
 					$token instanceof WC_Payment_Token
-					&& $this->is_supported_native_woopayments_token( $token )
+					&& $this->is_supported_woopayments_token( $token )
 					&& in_array( $this->get_payment_method_type_for_token( $token ), $retrieved_payment_method_types, true )
 				) {
 					$stored_tokens[ (string) $token->get_token() ] = $token;
@@ -1216,27 +1216,27 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Check if a token is a locally supported native WooPayments card token.
+	 * Check if a token is a locally supported WooPayments card token.
 	 *
 	 * @param mixed $token Payment token candidate.
 	 * @return bool
 	 */
-	private function is_native_woopayments_card_token( $token ): bool {
+	private function is_woopayments_card_token( $token ): bool {
 		return $token instanceof WC_Payment_Token_CC && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $token->get_gateway_id();
 	}
 
 	/**
-	 * Check if a token is a locally supported native WooPayments reusable token.
+	 * Check if a token is a locally supported WooPayments reusable token.
 	 *
 	 * @param mixed $token Payment token candidate.
 	 * @return bool
 	 */
-	private function is_supported_native_woopayments_token( $token ): bool {
+	private function is_supported_woopayments_token( $token ): bool {
 		if ( ! $token instanceof WC_Payment_Token ) {
 			return false;
 		}
 
-		if ( $this->is_native_woopayments_card_token( $token ) ) {
+		if ( $this->is_woopayments_card_token( $token ) ) {
 			return true;
 		}
 
@@ -1350,9 +1350,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param int    $user_id           User ID.
 	 * @return WC_Payment_Token|null
 	 */
-	private function get_existing_native_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
+	private function get_existing_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
 		foreach ( array_unique( array_values( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE ) ) as $gateway_id ) {
-			$token = $this->get_existing_token_for_user( $payment_method_id, $user_id, $gateway_id );
+			$token = $this->get_existing_token_for_gateway( $payment_method_id, $user_id, $gateway_id );
 			if ( $token instanceof WC_Payment_Token ) {
 				return $token;
 			}
@@ -1369,10 +1369,10 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param string $gateway_id        Gateway ID.
 	 * @return WC_Payment_Token|null
 	 */
-	private function get_existing_token_for_user( string $payment_method_id, int $user_id, string $gateway_id ): ?WC_Payment_Token {
+	private function get_existing_token_for_gateway( string $payment_method_id, int $user_id, string $gateway_id ): ?WC_Payment_Token {
 		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, $gateway_id );
 		foreach ( $tokens as $token ) {
-			if ( $token instanceof WC_Payment_Token && $this->is_supported_native_woopayments_token( $token ) && $payment_method_id === (string) $token->get_token() ) {
+			if ( $token instanceof WC_Payment_Token && $this->is_supported_woopayments_token( $token ) && $payment_method_id === (string) $token->get_token() ) {
 				return $token;
 			}
 		}
