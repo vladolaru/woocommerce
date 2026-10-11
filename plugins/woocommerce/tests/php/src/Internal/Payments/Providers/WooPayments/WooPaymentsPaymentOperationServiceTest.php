@@ -1057,6 +1057,67 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox When the unresolved key was sent with two customers and a response filter empties the earlier payment's customer, the order keeps its customer and nothing more is charged.
+	 *
+	 * Either request under the kept key may be the one Stripe ran: the order holds cus_b, the customer of the second request,
+	 * and the account list finds the payment it made. A `wcpay_api_request_response` callback empties the intent's customer;
+	 * an empty customer names none, so the outcome writes no customer and the order keeps cus_b.
+	 */
+	public function test_earlier_payment_with_an_empty_filtered_customer_keeps_the_order_customer(): void {
+		$order          = $this->create_woopayments_order();
+		$failed_at      = time() - 1000;
+		$last_failed_at = time() - 500;
+		$order->update_meta_data( '_stripe_customer_id', 'cus_b' );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
+		$order->update_meta_data(
+			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
+			array(
+				'order_id'       => $order->get_id(),
+				'customers'      => array( 'cus_a', 'cus_b' ),
+				'failed_at'      => $failed_at,
+				'last_failed_at' => $last_failed_at,
+			)
+		);
+		$order->save();
+		$http_client            = self::create_routed_http_client(
+			array(
+				'created%5Bgte%5D' => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'customer' => 'cus_b' ) ) ) ),
+			)
+		);
+		$http_client->responses = array( self::stripe_idempotency_error( 'key_first' ) );
+		add_filter(
+			'wcpay_api_request_response',
+			static function ( $response ) {
+				$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+				if ( is_array( $body ) && 'list' === ( $body['object'] ?? '' ) ) {
+					foreach ( array_keys( $body['data'] ) as $index ) {
+						$body['data'][ $index ]['customer'] = '';
+					}
+					$response['body'] = wp_json_encode( $body );
+				}
+
+				return $response;
+			}
+		);
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_b' );
+		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
+
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ),
+			$provider
+		);
+
+		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
+		$this->assertSame( 'cus_b', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame(
+			array( 'POST intentions key_first', self::account_list_trail( $failed_at, $last_failed_at ) ),
+			self::request_trail( $http_client ),
+			'Only the refused kept key and the account list reach the platform; the new card is not charged.'
+		);
+	}
+
+	/**
 	 * @testdox An ambiguity record written without a latest failure time bounds the account list by its one failure time, so the earlier payment is still found.
 	 *
 	 * Records written before the window had an end carry only `failed_at`. Reading a missing latest time as 0 would end

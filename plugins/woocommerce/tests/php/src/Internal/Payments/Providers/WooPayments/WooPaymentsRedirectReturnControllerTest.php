@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -30,6 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRedirectReturnController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Utilities\OrderUtil;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Throwable;
@@ -1806,6 +1808,87 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array( sprintf( 'WooPayments redirect intent seti_bound did not match order %d.', $order->get_id() ) ),
 			array_column( $logger->error_calls, 'message' )
+		);
+	}
+
+	/**
+	 * @testdox A zero-total return is rejected when a response filter turns the SetupIntent's customer into $_dataName.
+	 *
+	 * The SetupIntent of the test above, read through the real API client, belongs to another customer; a
+	 * `wcpay_api_request_response` callback replaces its `customer` with a value that is not a customer ID. The return cannot
+	 * tell whose SetupIntent it is, so it is refused as a mismatch, as when that value used to be cast to '1'.
+	 *
+	 * @dataProvider malformed_setup_intent_customer_provider
+	 *
+	 * @param mixed $customer Customer value the filter returns.
+	 */
+	public function test_handle_wp_rejects_zero_total_setup_intent_whose_filtered_customer_is_not_a_string( $customer ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( '0.00', $user_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_order' );
+		$order->save();
+		$subscription = new WC_Order();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_subscription' );
+		$subscription->update_meta_data( '_stripe_customer_id', 'cus_order' );
+		$subscription->save();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode(
+				array(
+					'id'             => 'seti_bound',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_foreign',
+					'payment_method' => 'pm_foreign',
+				)
+			),
+		);
+		add_filter(
+			'wcpay_api_request_response',
+			static function ( $response ) use ( $customer ) {
+				$body             = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+				$body['customer'] = $customer;
+				$response['body'] = wp_json_encode( $body );
+
+				return $response;
+			}
+		);
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$this->sut = $this->create_controller( true, $this->create_confirmation_service( $api_client ), $api_client, null, $this->create_customer_service( $user_id, '' ) );
+		$this->set_setup_intent_return_request( $order, 'seti_bound' );
+
+		$location     = $this->handle_wp_expecting_redirect();
+		$reloaded     = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+
+		$this->assertSame( add_query_arg( 'upe_process_redirect_order_id_mismatched', 'yes', wc_get_checkout_url() ), $location );
+		$this->assertSame( 1, $http_client->request_count );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_order', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $reloaded->get_payment_tokens() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'pm_subscription', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_order', $subscription->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( array(), $subscription->get_payment_tokens() );
+	}
+
+	/**
+	 * Customer values a response filter can return that are not customer IDs.
+	 *
+	 * @return array<string,array{0:mixed}>
+	 */
+	public function malformed_setup_intent_customer_provider(): array {
+		return array(
+			'true'       => array( true ),
+			'an integer' => array( 42 ),
 		);
 	}
 

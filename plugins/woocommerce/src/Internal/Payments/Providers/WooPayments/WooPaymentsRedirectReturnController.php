@@ -595,14 +595,16 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Tell whether a SetupIntent's customer can be the order's customer.
 	 *
 	 * The order's customer is its `_stripe_customer_id`, else its user's stored customer. Like add_payment_method(),
-	 * this rejects only a real mismatch between two known customer IDs.
+	 * this rejects only a real mismatch between two known customer IDs; a missing or null customer is unknown.
 	 *
 	 * @param array<string,mixed> $intent SetupIntent response.
 	 * @param WC_Order            $order  Order object.
 	 * @return bool
 	 */
 	private function setup_intent_customer_matches_order( array $intent, WC_Order $order ): bool {
-		$intent_customer = WooPaymentsIntentCodec::result_customer_id( $intent, '' );
+		// A response filter can leave another scalar; it is compared as its string, so true or 42 matches no known customer.
+		$customer        = $intent['customer'] ?? null;
+		$intent_customer = is_scalar( $customer ) && ! is_string( $customer ) ? (string) $customer : WooPaymentsIntentCodec::result_customer_id( $intent, '' );
 		$order_customer  = (string) $order->get_meta( '_stripe_customer_id', true );
 		if ( '' === $order_customer && 0 < $order->get_user_id() ) {
 			$order_customer = (string) $this->customer_service->get_persisted_customer_id_by_user_id( $order->get_user_id() );
