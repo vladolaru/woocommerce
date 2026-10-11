@@ -95,12 +95,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 			add_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) );
 		}
 
-		if ( false === has_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
-			add_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) );
+		if ( false === has_filter( 'woocommerce_login_redirect', array( $this, 'consume_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_login_redirect', array( $this, 'consume_login_redirect_url' ) );
 		}
 
-		if ( false === has_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
-			add_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) );
+		if ( false === has_filter( 'woocommerce_registration_redirect', array( $this, 'consume_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_registration_redirect', array( $this, 'consume_login_redirect_url' ) );
 		}
 	}
 
@@ -130,12 +130,12 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Return the stashed express checkout URL as the login redirect.
+	 * Return the stashed express checkout URL as the login redirect, clearing its cookie.
 	 *
 	 * @param string $redirect Default redirect URL.
 	 * @return string
 	 */
-	public function get_login_redirect_url( $redirect ) {
+	public function consume_login_redirect_url( $redirect ) {
 		$has_cookie = array_key_exists( 'wcpay_express_checkout_redirect_url', $_COOKIE );
 		$url        = $has_cookie ? $this->validate_redirect_target( wp_unslash( $_COOKIE['wcpay_express_checkout_redirect_url'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The helper validates the unslashed target.
 

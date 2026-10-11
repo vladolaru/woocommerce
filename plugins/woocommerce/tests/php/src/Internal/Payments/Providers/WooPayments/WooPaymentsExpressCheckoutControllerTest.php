@@ -688,7 +688,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should return the stashed express checkout URL as the login redirect.
 	 */
-	public function test_get_login_redirect_url_uses_stashed_cookie(): void {
+	public function test_consume_login_redirect_url_uses_stashed_cookie(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$checkout_url                                   = home_url( '/checkout/' );
@@ -698,7 +698,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				$checkout_url,
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 		} finally {
 			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
@@ -709,14 +709,14 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep the default login redirect without a stashed URL.
 	 */
-	public function test_get_login_redirect_url_keeps_default_without_cookie(): void {
+	public function test_consume_login_redirect_url_keeps_default_without_cookie(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
 
 		$this->assertSame(
 			home_url( '/my-account/' ),
-			$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+			$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 		);
 	}
 
@@ -727,7 +727,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param string $target      Valid cookie redirect target.
 	 * @param bool   $allow_host Whether the target host is explicitly allowed.
 	 */
-	public function test_get_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host ): void {
+	public function test_consume_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host ): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = $target;
@@ -751,7 +751,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$this->assertSame( $target, $this->sut->get_login_redirect_url( home_url( '/my-account/' ) ) );
+			$this->assertSame( $target, $this->sut->consume_login_redirect_url( home_url( '/my-account/' ) ) );
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
 			if ( $allow_host && null !== $allowed_hosts ) {
@@ -784,7 +784,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param mixed             $fallback              Caller-provided fallback.
 	 * @param array<int,string> $expected_cookie_values Expected target-cookie writes.
 	 */
-	public function test_get_login_redirect_url_preserves_non_string_fallback( bool $has_cookie, $cookie_value, $fallback, array $expected_cookie_values ): void {
+	public function test_consume_login_redirect_url_preserves_non_string_fallback( bool $has_cookie, $cookie_value, $fallback, array $expected_cookie_values ): void {
 		$this->sut = $this->create_controller( true, true );
 
 		if ( $has_cookie ) {
@@ -804,7 +804,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_set_cookie_enabled', $capture_cookie, 10, 3 );
 
 		try {
-			$result = $this->sut->get_login_redirect_url( $fallback );
+			$result = $this->sut->consume_login_redirect_url( $fallback );
 
 			$this->assertSame( $expected_cookie_values, $cookie_values );
 			$this->assertSame( $fallback, $result );
@@ -829,7 +829,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject an external stashed express checkout URL and clear its cookie.
 	 */
-	public function test_get_login_redirect_url_rejects_external_stashed_url(): void {
+	public function test_consume_login_redirect_url_rejects_external_stashed_url(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://evil.example/phish';
@@ -846,7 +846,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				home_url( '/my-account/' ),
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
@@ -858,7 +858,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a non-string stashed express checkout URL and clear its cookie.
 	 */
-	public function test_get_login_redirect_url_rejects_non_string_cookie_value(): void {
+	public function test_consume_login_redirect_url_rejects_non_string_cookie_value(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = array( 'https://evil.example/phish' );
@@ -875,7 +875,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				home_url( '/my-account/' ),
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
@@ -887,7 +887,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a scheme-relative external stashed express checkout URL and clear its cookie.
 	 */
-	public function test_get_login_redirect_url_rejects_scheme_relative_stashed_url(): void {
+	public function test_consume_login_redirect_url_rejects_scheme_relative_stashed_url(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = '//evil.example/phish';
@@ -904,7 +904,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				home_url( '/my-account/' ),
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
@@ -916,7 +916,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve an external stashed URL when its host is explicitly allowed.
 	 */
-	public function test_get_login_redirect_url_preserves_external_stashed_url_for_allowed_host(): void {
+	public function test_consume_login_redirect_url_preserves_external_stashed_url_for_allowed_host(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://evil.example/phish';
@@ -930,7 +930,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				'https://evil.example/phish',
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 		} finally {
 			remove_filter( 'allowed_redirect_hosts', $allowed_hosts );
@@ -942,7 +942,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve a relative stashed express checkout URL.
 	 */
-	public function test_get_login_redirect_url_preserves_relative_stashed_url(): void {
+	public function test_consume_login_redirect_url_preserves_relative_stashed_url(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = '/checkout/';
@@ -951,7 +951,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame(
 				'/checkout/',
-				$this->sut->get_login_redirect_url( home_url( '/my-account/' ) )
+				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
 			);
 		} finally {
 			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
