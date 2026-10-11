@@ -93,7 +93,7 @@ final class GatewayIds {
 	public const OXXO = 'ppcp-oxxo-gateway';
 
 	/**
-	 * The extension's Pay with Crypto gateway.
+	 * The Pay with Crypto gateway (restored in core from the extension's local alternative payment methods module).
 	 */
 	public const PWC = 'ppcp-pwc';
 }

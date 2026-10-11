@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Surface
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\DormantPayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayWithCrypto\PayWithCryptoModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\Migration\MigrationManager;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\SettingsModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
@@ -1260,6 +1261,24 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $modules, $result );
 		$this->assertNotContains( CollectingModule::class, array_map( 'get_class', $result ) );
+	}
+
+	/**
+	 * @testdox Should load the Pay with Crypto module while the pwc_enabled flag filter says yes, and leave it out when it says no.
+	 */
+	public function test_the_module_list_holds_the_pay_with_crypto_module_by_flag(): void {
+		$modules_file = WC_ABSPATH . 'src/Internal/Payments/Providers/PayPal/Wallet/modules.php';
+
+		add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled', '__return_true' );
+		$with_flag = array_map( 'get_class', ( require $modules_file )() );
+		remove_all_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled' );
+
+		add_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled', '__return_false' );
+		$without_flag = array_map( 'get_class', ( require $modules_file )() );
+		remove_all_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled' );
+
+		$this->assertContains( PayWithCryptoModule::class, $with_flag );
+		$this->assertNotContains( PayWithCryptoModule::class, $without_flag );
 	}
 
 	/**

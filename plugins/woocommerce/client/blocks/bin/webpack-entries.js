@@ -403,6 +403,7 @@ const entries = {
 	// The entry names are the file names PHP enqueues (AssetGetter: "<module>-<type>-<path>"); keep them.
 	paypalWallet: {
 		'ppcp-blocks-js-checkout-block': `${ paypalWalletDir }/blocks/checkout-block.js`,
+		'ppcp-local-alternative-payment-methods-js-pwc-payment-method': `${ paypalWalletDir }/pay-with-crypto/pwc-payment-method.js`,
 		'ppcp-blocks-js-ProductPayLaterMessagesBlock-product-paylater-block': `${ paypalWalletBlocksDir }/product-pay-later-messages/index.js`,
 		'ppcp-blocks-js-ProductSmartButtonsBlock-product-smart-buttons-block': `${ paypalWalletBlocksDir }/product-smart-buttons/index.js`,
 		'ppcp-blocks-css-gateway': `${ paypalWalletDir }/blocks/css/gateway.scss`,

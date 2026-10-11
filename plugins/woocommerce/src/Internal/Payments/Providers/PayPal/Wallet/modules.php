@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoi
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterBlock\PayLaterBlockModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterConfigurator\PayLaterConfiguratorModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayLaterWCBlocks\PayLaterWCBlocksModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayWithCrypto\PayWithCryptoModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SavePaymentMethods\SavePaymentMethodsModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\SdkV6\SdkV6Module;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionModule;
@@ -84,6 +85,17 @@ return static function (): array {
 	 */
 	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled', getenv( 'PCP_VAULT_COMPONENT_ENABLED' ) !== '0' ) ) { // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag name is part of the shared contract.
 		$modules[] = new VaultComponentModule();
+	}
+
+	/**
+	 * Filters whether the Pay with Crypto module is loaded.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param bool $enabled Whether the module is enabled; false only when the PCP_PWC_ENABLED environment variable is "0".
+	 */
+	if ( apply_filters( 'woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled', getenv( 'PCP_PWC_ENABLED' ) !== '0' ) ) { // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- The extension's flag name is part of the shared contract.
+		$modules[] = new PayWithCryptoModule();
 	}
 
 	/**

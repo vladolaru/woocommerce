@@ -49,6 +49,11 @@ class FeaturesDefinition {
 	public const FEATURE_CONTACT_MODULE = 'contact_module';
 
 	/**
+	 * Whether Pay With Crypto Feature is supported.
+	 */
+	public const FEATURE_PAY_WITH_CRYPTO = 'pwc';
+
+	/**
 	 * Whether the Vault Component feature is enabled.
 	 * Renders paypal.Vault() inline on checkout for returning customers.
 	 */

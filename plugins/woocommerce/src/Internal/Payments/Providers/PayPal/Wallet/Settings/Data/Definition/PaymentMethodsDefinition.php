@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayWithCrypto\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
@@ -234,5 +235,24 @@ class PaymentMethodsDefinition {
 		 * @param array $group The payment method definitions of the group; empty by default.
 		 */
 		return apply_filters( 'woocommerce_paypal_payments_gateway_group_apm', array() );
+	}
+
+	/**
+	 * Get default titles and descriptions for APM gateways.
+	 * Single source of truth for all APM gateway metadata. The wallet keeps the Pay with Crypto entry only.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return array Array of default settings keyed by gateway ID.
+	 */
+	public static function get_apm_defaults(): array {
+		return array(
+			PWCGateway::ID => array(
+				'method_title'       => __( 'Pay with Crypto', 'woocommerce' ),
+				'method_description' => __( 'A PayPal-powered checkout option letting customers pay with cryptocurrency. You receive funds in USD, settled directly to your PayPal balance — no crypto exposure, no chargeback risk.', 'woocommerce' ),
+				'title'              => __( 'Pay with Crypto', 'woocommerce' ),
+				'description'        => __( 'Pay with top wallets and coins.', 'woocommerce' ),
+			),
+		);
 	}
 }

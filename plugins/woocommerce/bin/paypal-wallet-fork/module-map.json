@@ -5,6 +5,7 @@
 	"ppcp-blocks": "Blocks",
 	"ppcp-button": "Button",
 	"ppcp-compat": "Compat",
+	"ppcp-local-alternative-payment-methods": "PayWithCrypto",
 	"ppcp-order-endpoints": "OrderEndpoints",
 	"ppcp-paylater-block": "PayLaterBlock",
 	"ppcp-paylater-configurator": "PayLaterConfigurator",
