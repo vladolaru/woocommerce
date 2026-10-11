@@ -180,8 +180,9 @@ class WooPaymentsRefundEventHandler {
 			}
 
 			// A linked refund whose created note is on the order, in any wording that counts as the same note, is complete: the
-			// gateway's refund, an earlier delivery of this event or the WooPayments extension before the switch wrote it, and the
-			// event returns (client 11.1.0 class-wc-payments-webhook-processing-service.php:1120-1130).
+			// gateway's refund, an earlier delivery of this event or the WooPayments extension before the switch wrote it, and
+			// every writer here saves the refund status and metadata before the note. The event then returns (client 11.1.0
+			// class-wc-payments-webhook-processing-service.php:1120-1130).
 			// A link without that note was saved alone, after the platform refunded but the local writes failed, or for a
 			// manual refund matched to an earlier attempt; the event writes the note and metadata on that row.
 			$linked_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
@@ -319,9 +320,6 @@ class WooPaymentsRefundEventHandler {
 	 * @param bool            $is_pending     Whether the provider refund is pending.
 	 */
 	private function add_note_and_metadata_for_created_refund( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, string $balance_txn_id, bool $is_pending ): void {
-		$note_candidates = $this->get_created_refund_note_candidates( $order, $wc_refund, $refund_id, $is_pending );
-		$this->add_refund_order_note_once( $order, $note_candidates[0], $refund_id, $is_pending ? 'created_pending' : 'created_successful', $note_candidates );
-
 		$order->update_meta_data( '_wcpay_refund_status', $is_pending ? 'pending' : 'successful' );
 		$wc_refund->update_meta_data( '_wcpay_refund_id', $refund_id );
 		if ( '' !== $balance_txn_id ) {
@@ -330,6 +328,10 @@ class WooPaymentsRefundEventHandler {
 
 		$wc_refund->save_meta_data();
 		$order->save();
+
+		// The note goes last, so a note on the order means the refund's status and metadata were saved.
+		$note_candidates = $this->get_created_refund_note_candidates( $order, $wc_refund, $refund_id, $is_pending );
+		$this->add_refund_order_note_once( $order, $note_candidates[0], $refund_id, $is_pending ? 'created_pending' : 'created_successful', $note_candidates );
 	}
 
 	/**

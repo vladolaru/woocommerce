@@ -617,11 +617,12 @@ class PaymentProcessingService {
 		foreach ( $order_meta as $meta_key => $meta_value ) {
 			$reloaded_order->update_meta_data( (string) $meta_key, $meta_value );
 		}
+		$reloaded_order->save_meta_data();
 
+		// The note goes last, so a note on the order means the refund's metadata was saved.
 		if ( '' !== $refund_note ) {
 			$this->maybe_add_refund_note( $reloaded_order, $refund_note, $refund_note_identity, $refund_note_equivalents, $persistence_vocabulary );
 		}
-		$reloaded_order->save_meta_data();
 	}
 
 	/**

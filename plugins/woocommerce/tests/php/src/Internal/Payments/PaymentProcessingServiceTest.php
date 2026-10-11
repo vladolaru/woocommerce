@@ -2673,6 +2673,65 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A refund whose note hook throws has already saved the order's refund status and the refund's metadata.
+	 */
+	public function test_process_refund_saves_refund_metadata_before_the_note(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		// An earlier refund attempt on the order failed.
+		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->save();
+		$refund = wc_create_refund(
+			array(
+				'order_id'       => $order->get_id(),
+				'amount'         => 2.50,
+				'reason'         => 'Adjustment',
+				'refund_payment' => false,
+			)
+		);
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$note        = 'A refund of $2.50 was successfully processed using WooPayments. Reason: Adjustment. (<code>re_native</code>)';
+		$provider    = new RecordingProvider(
+			new PaymentOutcome(
+				PaymentOutcome::STATUS_COMPLETED,
+				're_native',
+				'',
+				'',
+				'',
+				array(
+					PaymentOutcome::DATA_ORDER_META  => array( '_wcpay_refund_status' => 'successful' ),
+					PaymentOutcome::DATA_REFUND_META => array(
+						'_wcpay_refund_id'             => 're_native',
+						'_wcpay_refund_transaction_id' => 'txn_refund',
+					),
+					PaymentOutcome::DATA_REFUND_NOTE => $note,
+					PaymentOutcome::DATA_REFUND_NOTE_IDENTITY => 'refund:re_native:created_successful',
+					PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS => array( $note ),
+				)
+			)
+		);
+		$hook_throws = 0;
+		$throwing    = static function () use ( &$hook_throws ): void {
+			++$hook_throws;
+			throw new RuntimeException( 'A note hook failed.' );
+		};
+		add_action( 'woocommerce_order_note_added', $throwing );
+
+		try {
+			$result = $this->sut->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ), $provider );
+		} finally {
+			remove_action( 'woocommerce_order_note_added', $throwing );
+		}
+		// Read past the order caches: an unsaved change on a cached order object must not pass for a saved one.
+		$order  = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$refund = wc_get_order( $refund->get_id() );
+
+		$this->assertTrue( $result, 'The platform refunded, so the refund succeeds although its note hook failed.' );
+		$this->assertSame( 1, $hook_throws, 'The refund note reached the throwing hook.' );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'txn_refund', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+	}
+
+	/**
 	 * @testdox A refund outcome adopts an equivalent note and backfills its provider-neutral structural identity.
 	 */
 	public function test_process_refund_adopts_equivalent_note_and_backfills_structural_identity(): void {

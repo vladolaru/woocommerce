@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -1128,9 +1129,16 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund the platform made whose local effects failed keeps only its link, and charge.refunded completes it: one success note, the refund status and the transaction ID, no second refund row.
+	 * @testdox A refund the platform made whose local effects failed keeps only its link, and a $event_status charge.refunded completes it: one note, the refund status and the transaction ID, no second refund row.
+	 *
+	 * @testWith ["succeeded", "successful", "was successfully processed"]
+	 *           ["pending", "pending", "is pending"]
+	 *
+	 * @param string $event_status    Refund status the event carries.
+	 * @param string $expected_status Order refund status the event writes.
+	 * @param string $note_text       Status words of the created note the event adds.
 	 */
-	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed(): void {
+	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed( string $event_status, string $expected_status, string $note_text ): void {
 		$order = $this->create_refundable_order();
 		// An earlier refund attempt on the order failed.
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
@@ -1160,19 +1168,53 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 're_123', $refund->get_meta( '_wcpay_refund_id', true ), 'The failed effects leave only the link.' );
 		$this->assertSame( '', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
 
-		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['status'] = $event_status;
+		$this->sut->process( 'charge.refunded', $charge );
 
 		$order   = wc_get_order( $order->get_id() );
 		$refunds = $order->get_refunds();
 		$this->assertCount( 1, $refunds );
 		$this->assertSame( $refund->get_id(), $refunds[0]->get_id() );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( $expected_status, $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( 'txn_123', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$success_notes = array_filter(
+		$created_notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => str_contains( $note->content, 're_123' ) && str_contains( $note->content, 'successfully processed' )
+			static fn( $note ): bool => str_contains( $note->content, 're_123' ) && str_contains( $note->content, $note_text )
 		);
-		$this->assertCount( 1, $success_notes );
+		$this->assertCount( 1, $created_notes );
+	}
+
+	/**
+	 * @testdox When a woocommerce_order_note_added callback throws while charge.refunded completes a link-only refund, the refund status and transaction ID are already saved.
+	 */
+	public function test_charge_refunded_saves_the_refund_effects_before_the_note(): void {
+		$order = $this->create_refundable_order();
+		// An earlier refund attempt on the order failed.
+		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->save();
+		// The link alone, as PaymentProcessingService::persist_refund_reconciliation_context() leaves it.
+		$refund = $this->create_local_refund( $order );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		$refund->save_meta_data();
+		$throwing = static function (): void {
+			throw new \RuntimeException( 'A note hook failed.' );
+		};
+		add_action( 'woocommerce_order_note_added', $throwing );
+
+		try {
+			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+			$this->fail( 'The throwing note hook fails the delivery.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'A note hook failed.', $exception->getMessage() );
+		} finally {
+			remove_action( 'woocommerce_order_note_added', $throwing );
+		}
+
+		// Read past the order caches: an unsaved change on a cached order object must not pass for a saved one.
+		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'txn_123', $order->get_refunds()[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
 	}
 
 	/**
