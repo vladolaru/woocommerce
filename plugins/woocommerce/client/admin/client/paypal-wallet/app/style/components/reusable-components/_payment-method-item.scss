@@ -89,6 +89,11 @@
 		.ppcp--method-toggle-wrapper {
 			display: flex;
 			align-items: center;
+
+			// A toggle locked on an enabled card (PayPal: the Payments list owns it) still shows on or off, dimmed.
+			.components-form-toggle.is-disabled {
+				opacity: 0.5;
+			}
 		}
 
 		.ppcp--method-toggle-note {
