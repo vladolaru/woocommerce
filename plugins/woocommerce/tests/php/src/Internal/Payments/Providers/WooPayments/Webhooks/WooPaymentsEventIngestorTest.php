@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
@@ -2528,11 +2527,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			array(
 				'Payment has been disputed for',
 				'&#36;</span>50.00',
-				'with reason "Transaction unauthorized"',
-				'Response due by October 3, 2026',
-				'path=%2Fpayments%2Ftransactions%2Fdetails',
-				'id=ch_3UJbTlBzWlxcwgpP0vNaexjT',
-				'transaction_id=txn_123',
+				'with reason &quot;Transaction unauthorized&quot;',
+				'<a href="' . $this->get_expected_dispute_url( 'ch_3UJbTlBzWlxcwgpP0vNaexjT' ) . '" target="_blank" rel="noopener noreferrer">Response due by October 3, 2026</a>.',
 			)
 		);
 		$this->assertSame( '', $order->get_meta( '_dispute_id', true ) );
@@ -2611,7 +2607,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			array(
 				'A payment inquiry has been raised for',
 				'&#36;</span>50.00',
-				'with reason "Transaction unauthorized"',
+				'with reason &quot;Transaction unauthorized&quot;',
 				'Response due by July 1, 2026',
 				'path=%2Fpayments%2Ftransactions%2Fdetails',
 				'id=ch_123',
@@ -2696,7 +2692,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '">dispute overview</a> for more details. (Dispute ID: du_123)' );
+		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_update_url( 'ch_123' ) . '">dispute overview</a> for more details. (Dispute ID: du_123)' );
 	}
 
 	/**
@@ -6085,20 +6081,36 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get the expected dispute URL.
+	 * Get the dispute details URL as the WooPayments extension puts it in its created and closed dispute notes: unescaped,
+	 * with the charge ID only.
+	 *
+	 * Client 11.1.0 class-wc-payments-order-service.php:2681-2690 (compose_dispute_url()).
 	 *
 	 * @param string $charge_id Charge ID.
 	 * @return string
 	 */
 	private function get_expected_dispute_url( string $charge_id ): string {
-			return esc_url(
-				Utils::wc_payments_legacy_admin_url(
-					rawurlencode( '/payments/transactions/details' ),
-					array(
-						'id' => $charge_id,
-					)
-				)
-			);
+		return add_query_arg(
+			array(
+				'page' => 'wc-admin',
+				'path' => rawurlencode( '/payments/transactions/details' ),
+				'id'   => $charge_id,
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	/**
+	 * Get the dispute details URL as the WooPayments extension puts it in its dispute update notes: unescaped, with the
+	 * path not encoded and the charge ID only.
+	 *
+	 * Client 11.1.0 class-wc-payments-webhook-processing-service.php:825-832.
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @return string
+	 */
+	private function get_expected_dispute_update_url( string $charge_id ): string {
+		return add_query_arg( array( 'id' => $charge_id ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) );
 	}
 
 	/**

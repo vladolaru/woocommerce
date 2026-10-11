@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -145,14 +146,12 @@ class WooPaymentsDisputeEventHandler {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
 		}
 
-		$balance_transaction_id = (string) $order->get_meta( '_wcpay_payment_transaction_id', true );
-
 		if ( 'charge.dispute.created' === $event_type ) {
-			$this->process_dispute_created( $order, $event_object, $charge_id, $balance_transaction_id );
+			$this->process_dispute_created( $order, $event_object, $charge_id );
 		} elseif ( 'charge.dispute.closed' === $event_type ) {
-			$this->process_dispute_closed( $order, $event_object, $charge_id, $balance_transaction_id );
+			$this->process_dispute_closed( $order, $event_object, $charge_id );
 		} else {
-			$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id, $balance_transaction_id );
+			$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id );
 		}
 
 		$this->dispute_cache_service->delete_dispute_caches();
@@ -163,10 +162,9 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @param WC_Order            $order        Order object.
 	 * @param array<string,mixed> $event_object Dispute object.
-	 * @param string              $charge_id              Charge ID.
-	 * @param string              $balance_transaction_id Balance transaction ID.
+	 * @param string              $charge_id    Charge ID.
 	 */
-	private function process_dispute_created( WC_Order $order, array $event_object, string $charge_id, string $balance_transaction_id ): void {
+	private function process_dispute_created( WC_Order $order, array $event_object, string $charge_id ): void {
 		$evidence   = $this->get_required_array( $event_object, 'evidence_details' );
 		$dispute_id = isset( $event_object['id'] ) ? $this->get_required_string( $event_object, 'id' ) : '';
 		$status     = $this->get_required_string( $event_object, 'status' );
@@ -174,7 +172,7 @@ class WooPaymentsDisputeEventHandler {
 		$amount     = $this->get_formatted_dispute_amount( $order, $this->get_required_int( $event_object, 'amount' ) );
 		$reason     = $this->get_dispute_reason_description( $this->get_required_string( $event_object, 'reason' ) );
 		$due_by     = $this->get_dispute_due_by_date( $this->get_required_int( $evidence, 'due_by' ) );
-		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id, $dispute_id );
+		$note       = $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $dispute_id );
 		$note_type  = $is_inquiry ? 'created_inquiry' : 'created_dispute';
 
 		$this->run_under_dispute_lock(
@@ -182,7 +180,7 @@ class WooPaymentsDisputeEventHandler {
 			'charge.dispute.created',
 			$event_object,
 			$charge_id,
-			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ): bool {
+			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $charge_id, $amount, $reason, $due_by, $is_inquiry ): bool {
 				return $this->add_dispute_order_note_once(
 					$order,
 					$note,
@@ -195,7 +193,7 @@ class WooPaymentsDisputeEventHandler {
 					},
 					// Notes written before the dispute ID was appended carry none;
 					// a redelivered event must still match such a note.
-					array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
+					array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry ) )
 				);
 			}
 		);
@@ -206,14 +204,13 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @param WC_Order            $order        Order object.
 	 * @param array<string,mixed> $event_object Dispute object.
-	 * @param string              $charge_id              Charge ID.
-	 * @param string              $balance_transaction_id Balance transaction ID.
+	 * @param string              $charge_id    Charge ID.
 	 */
-	private function process_dispute_closed( WC_Order $order, array $event_object, string $charge_id, string $balance_transaction_id ): void {
+	private function process_dispute_closed( WC_Order $order, array $event_object, string $charge_id ): void {
 		$status     = $this->get_required_string( $event_object, 'status' );
 		$dispute_id = $this->get_required_string( $event_object, 'id' );
 		$is_inquiry = 0 === strpos( $status, 'warning_' );
-		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id, $dispute_id );
+		$note       = $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $dispute_id );
 		$note_type  = $is_inquiry ? 'closed_inquiry' : 'closed_dispute';
 
 		$this->run_under_dispute_lock(
@@ -221,7 +218,7 @@ class WooPaymentsDisputeEventHandler {
 			'charge.dispute.closed',
 			$event_object,
 			$charge_id,
-			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry, $balance_transaction_id )
+			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry )
 		);
 	}
 
@@ -236,10 +233,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string              $note_type              Note type.
 	 * @param string              $charge_id              Charge ID.
 	 * @param bool                $is_inquiry             Whether the dispute is an inquiry.
-	 * @param string              $balance_transaction_id Balance transaction ID.
 	 * @return bool True when the close was applied.
 	 */
-	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry, string $balance_transaction_id ): bool {
+	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry ): bool {
 		// A callback of its own, so removing it cannot remove a site's own '__return_false' on these emails.
 		$disable_email = static fn(): bool => false;
 
@@ -298,7 +294,7 @@ class WooPaymentsDisputeEventHandler {
 			},
 			// Notes written before the dispute ID was appended carry none;
 			// a redelivered event must still match such a note.
-			array( $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id ) )
+			array( $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry ) )
 		);
 	}
 
@@ -309,10 +305,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @param array<string,mixed> $event_object           Dispute object.
 	 * @param string              $event_type             Event type.
 	 * @param string              $charge_id              Charge ID.
-	 * @param string              $balance_transaction_id Balance transaction ID.
 	 * @return bool True when a new update note was applied.
 	 */
-	private function process_dispute_updated( WC_Order $order, array $event_object, string $event_type, string $charge_id, string $balance_transaction_id ): bool {
+	private function process_dispute_updated( WC_Order $order, array $event_object, string $event_type, string $charge_id ): bool {
 		$dispute_id = isset( $event_object['id'] ) && is_scalar( $event_object['id'] ) ? (string) $event_object['id'] : '';
 		$status     = $this->get_required_string( $event_object, 'status' );
 
@@ -330,22 +325,23 @@ class WooPaymentsDisputeEventHandler {
 				$note_type = 'updated';
 		}
 
-		$note = $this->append_dispute_id_to_note(
-			sprintf(
-				/* translators: %1: the dispute message, %2: the dispute details URL */
-				__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
-				$message,
-				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-			),
-			$dispute_id
+		// As client 11.1.0 writes it (class-wc-payments-webhook-processing-service.php:825-845): the link is not escaped and
+		// carries the charge ID only, so a note the extension wrote counts as the same note, and the other way round.
+		$note_without_id = sprintf(
+			/* translators: %1: the dispute message, %2: the dispute details URL */
+			__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
+			$message,
+			add_query_arg( array( 'id' => $charge_id ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) )
 		);
+		$note = $this->append_dispute_id_to_note( $note_without_id, $dispute_id );
 
 		return $this->run_under_dispute_lock(
 			$order,
 			$event_type,
 			$event_object,
 			$charge_id,
-			fn( WC_Order $order ): bool => $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type ),
+			// Notes written before the dispute ID was appended carry none; a redelivered event must still match such a note.
+			fn( WC_Order $order ): bool => $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type, null, array( $note_without_id ) ),
 			$message
 		);
 	}
@@ -523,30 +519,28 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string $reason                 Reason description.
 	 * @param string $due_by                 Due date.
 	 * @param bool   $is_inquiry             Whether the dispute is an inquiry.
-	 * @param string $balance_transaction_id Balance transaction ID.
 	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_created_note( string $charge_id, string $amount, string $reason, string $due_by, bool $is_inquiry, string $balance_transaction_id = '', string $dispute_id = '' ): string {
+	private function get_dispute_created_note( string $charge_id, string $amount, string $reason, string $due_by, bool $is_inquiry, string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
-			$note = sprintf(
-				/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to the inquiry; %4 dispute details URL */
-				__( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
-				$amount,
-				esc_html( $reason ),
-				esc_html( $due_by ),
-				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-			);
+			/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to the inquiry */
+			$format = __( 'A payment inquiry has been raised for %1$s with reason "%2$s". <a>Response due by %3$s</a>.', 'woocommerce' );
 		} else {
-			$note = sprintf(
-				/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to dispute; %4 dispute details URL */
-				__( 'Payment has been disputed for %1$s with reason "%2$s". <a href="%4$s" target="_blank" rel="noopener noreferrer">Response due by %3$s</a>.', 'woocommerce' ),
-				$amount,
-				esc_html( $reason ),
-				esc_html( $due_by ),
-				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-			);
+			/* translators: %1: the disputed amount and currency; %2: the dispute reason; %3 the deadline date for responding to dispute */
+			$format = __( 'Payment has been disputed for %1$s with reason "%2$s". <a>Response due by %3$s</a>.', 'woocommerce' );
 		}
+
+		// As client 11.1.0 writes it (class-wc-payments-order-service.php:2455-2504): the text is escaped around the link, and the
+		// link, compose_dispute_url() (:2681-2690), is not escaped and carries the charge ID only. A note the extension wrote
+		// then counts as the same note, and the other way round.
+		$note = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%4$s" target="_blank" rel="noopener noreferrer">' ) ),
+			$amount,
+			esc_html( $reason ),
+			esc_html( $due_by ),
+			$this->get_dispute_url( $charge_id )
+		);
 
 		return $this->append_dispute_id_to_note( $note, $dispute_id );
 	}
@@ -557,26 +551,25 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string $charge_id              Charge ID.
 	 * @param string $status                 Dispute status.
 	 * @param bool   $is_inquiry             Whether the dispute is an inquiry.
-	 * @param string $balance_transaction_id Balance transaction ID.
 	 * @param string $dispute_id             Dispute ID, appended so a charge's several disputes each get a distinct note.
 	 * @return string
 	 */
-	private function get_dispute_closed_note( string $charge_id, string $status, bool $is_inquiry, string $balance_transaction_id = '', string $dispute_id = '' ): string {
+	private function get_dispute_closed_note( string $charge_id, string $status, bool $is_inquiry, string $dispute_id = '' ): string {
 		if ( $is_inquiry ) {
-			$note = sprintf(
-				/* translators: %1: the dispute status; %2: dispute details URL */
-				__( 'Payment inquiry has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">payment status</a> for more details.', 'woocommerce' ),
-				esc_html( $status ),
-				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-			);
+			/* translators: %1: the dispute status */
+			$format = __( 'Payment inquiry has been closed with status %1$s. See <a>payment status</a> for more details.', 'woocommerce' );
 		} else {
-			$note = sprintf(
-				/* translators: %1: the dispute status; %2: dispute details URL */
-				__( 'Dispute has been closed with status %1$s. See <a href="%2$s" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.', 'woocommerce' ),
-				esc_html( $status ),
-				esc_url( $this->get_dispute_url( $charge_id, $balance_transaction_id ) )
-			);
+			/* translators: %1: the dispute status */
+			$format = __( 'Dispute has been closed with status %1$s. See <a>dispute overview</a> for more details.', 'woocommerce' );
 		}
+
+		// As client 11.1.0 writes it (class-wc-payments-order-service.php:2516-2558): the text is escaped around the link, and the
+		// link, compose_dispute_url() (:2681-2690), is not escaped and carries the charge ID only.
+		$note = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $format, array( 'a' => '<a href="%2$s" target="_blank" rel="noopener noreferrer">' ) ),
+			esc_html( $status ),
+			$this->get_dispute_url( $charge_id )
+		);
 
 		return $this->append_dispute_id_to_note( $note, $dispute_id );
 	}
@@ -636,21 +629,13 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Get the dispute details URL.
 	 *
-	 * @param string $charge_id              Charge ID.
-	 * @param string $balance_transaction_id Balance transaction ID.
+	 * @param string $charge_id Charge ID.
 	 * @return string
 	 */
-	private function get_dispute_url( string $charge_id, string $balance_transaction_id = '' ): string {
-		$params = array(
-			'id' => $charge_id,
-		);
-		if ( '' !== $balance_transaction_id ) {
-			$params['transaction_id'] = $balance_transaction_id;
-		}
-
+	private function get_dispute_url( string $charge_id ): string {
 		return Utils::wc_payments_legacy_admin_url(
 			rawurlencode( '/payments/transactions/details' ),
-			$params
+			array( 'id' => $charge_id )
 		);
 	}
 
