@@ -109,7 +109,7 @@ class WooPaymentsIntentCodec {
 		$error_key = 'si' === $intent_type ? 'last_setup_error' : 'last_payment_error';
 		$error     = is_array( $intention[ $error_key ] ?? null ) ? $intention[ $error_key ] : array();
 
-		$error_code                                 = isset( $error['code'] ) ? (string) $error['code'] : ( 'si' === $intent_type ? 'wcpay_native_setup_intent_failed' : 'wcpay_native_charge_failed' );
+		$error_code                                 = isset( $error['code'] ) ? (string) $error['code'] : ( 'si' === $intent_type ? 'wcpay_setup_intent_failed' : 'wcpay_charge_failed' );
 		$error_type                                 = isset( $error['type'] ) && is_string( $error['type'] ) ? $error['type'] : '';
 		$decline_code                               = isset( $error['decline_code'] ) && is_string( $error['decline_code'] ) ? $error['decline_code'] : '';
 		$error_message                              = isset( $error['message'] ) ? (string) $error['message'] : '';
@@ -245,7 +245,7 @@ class WooPaymentsIntentCodec {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE    => 'legacy_cancel_authorization_failed',
+				PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_cancel_authorization_failed',
 				PaymentOutcome::DATA_ERROR_MESSAGE => $message,
 			)
 		);
@@ -260,7 +260,7 @@ class WooPaymentsIntentCodec {
 	 * @return PaymentOutcome
 	 */
 	public static function failed_transport_outcome( string $operation, WooPaymentsApiException $exception, string $provider_payment_id = '' ): PaymentOutcome {
-		$error_code = '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_native_transport_failed';
+		$error_code = '' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_transport_failed';
 
 		if ( '' === $provider_payment_id ) {
 			// Keep the declined intent id from the error envelope so the failed
