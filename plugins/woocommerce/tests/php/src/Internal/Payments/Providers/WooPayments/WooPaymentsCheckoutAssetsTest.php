@@ -1275,10 +1275,55 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue core-owned checkout assets when rendering payment fields.
+	 * The checkout script reads the config printed in the form's `data-wcpay-config` after WooCommerce re-renders the payment
+	 * fields (`client/legacy/js/frontend/woopayments-checkout.js:205`), as the client's script reads the refreshed
+	 * `paymentMethodsConfig`, `currency` and `cartTotal` (client 11.1.0 includes/class-wc-payments-checkout.php:353); the
+	 * amount decides between a payment and a setup Payment Element.
+	 *
+	 * @testdox Should enqueue core-owned checkout assets and print the $surface amount, currency and identity in the rendered form.
+	 * @testWith ["checkout page"]
+	 *           ["order-pay page"]
+	 *
+	 * @param string $surface Checkout surface.
 	 */
-	public function test_payment_fields_enqueues_core_owned_assets_and_preserves_wcpay_config_filter(): void {
+	public function test_payment_fields_enqueues_core_owned_assets_and_preserves_wcpay_config_filter( string $surface ): void {
 		$account_service = $this->create_account_service( true );
+		$customer_id     = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+		if ( 'order-pay page' === $surface ) {
+			$order = wc_create_order( array( 'customer_id' => $customer_id ) );
+			$order->set_currency( 'EUR' );
+			$order->set_total( '56.78' );
+			$order->save();
+			set_query_var( 'order-pay', $order->get_id() );
+			$_GET['key'] = $order->get_order_key();
+			$expected    = array(
+				'cartTotal'  => 5678,
+				'currency'   => 'EUR',
+				'gatewayId'  => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'isOrderPay' => true,
+				'orderId'    => $order->get_id(),
+			);
+		} else {
+			WC()->cart->add_to_cart(
+				\WC_Helper_Product::create_simple_product(
+					true,
+					array(
+						'regular_price' => '12.34',
+						'price'         => '12.34',
+					)
+				)->get_id(),
+				1
+			);
+			WC()->cart->calculate_totals();
+			$expected = array(
+				'cartTotal'  => 1234,
+				'currency'   => 'USD',
+				'gatewayId'  => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'isOrderPay' => null,
+				'orderId'    => null,
+			);
+		}
 
 		$assets = new WooPaymentsCheckoutAssets();
 		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
@@ -1292,10 +1337,21 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$gateway = $this->create_card_gateway( $assets );
-		ob_start();
-		$gateway->form();
-		$output = (string) ob_get_clean();
-		delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
+		try {
+			ob_start();
+			$gateway->form();
+			$output = (string) ob_get_clean();
+		} finally {
+			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
+			set_query_var( 'order-pay', '' );
+			WC()->cart->empty_cart();
+		}
+
+		$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', $output, $matches ) );
+		$printed = json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true );
+		foreach ( $expected as $key => $value ) {
+			$this->assertSame( $value, $printed[ $key ] ?? null, "The form prints {$key}." );
+		}
 
 		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
 		// Core's tokenization-form.js hides `.wc-payment-form` while a saved method is selected, so it must wrap the card element.

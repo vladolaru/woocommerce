@@ -697,12 +697,13 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
 		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		$alipay_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'alipay' ) );
 		$provider                = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
-		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway, $alipay_gateway ) );
 
 		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 		$integrations = $integration->get_payment_method_integrations();
@@ -711,6 +712,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			array(
 				'woocommerce_payments',
 				'woocommerce_payments_klarna',
+				'woocommerce_payments_alipay',
 			),
 			array_map(
 				static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
@@ -719,6 +721,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		);
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[0]->get_payment_method_script_handles() );
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[1]->get_payment_method_script_handles() );
+		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integrations[2]->get_payment_method_script_handles() );
 	}
 
 	/**
