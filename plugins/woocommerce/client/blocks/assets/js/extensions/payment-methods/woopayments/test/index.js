@@ -3223,7 +3223,7 @@ describe( 'wc-payment-method-woopayments', () => {
 				},
 			} ),
 		} ) );
-		// Error shape of the update_order_status AJAX action (WooPaymentsCheckoutAjaxController::get_update_order_status_response()).
+		// Error shape of the update_order_status AJAX action (WooPaymentsCheckoutAjaxController::confirm_order_payment()).
 		window.fetch = jest.fn().mockResolvedValue( {
 			json: jest.fn().mockResolvedValue( {
 				error: {

@@ -114,7 +114,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Handle the WooPayments-compatible order-status update action.
 	 */
 	public function handle_update_order_status(): void {
-		$response    = $this->get_update_order_status_response( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$response    = $this->confirm_order_payment( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		$status_code = $this->extract_status_code( $response );
 
 		wp_send_json( $response, $status_code );
@@ -124,7 +124,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Handle the WooPayments-compatible setup-intent creation action.
 	 */
 	public function handle_create_setup_intent(): void {
-		$response    = $this->get_create_setup_intent_response( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$response    = $this->create_setup_intent_for_request( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		$status_code = $this->extract_status_code( $response );
 		$data        = isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : array();
 
@@ -136,12 +136,12 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the WooPayments-compatible order-status response.
+	 * Confirm the payment the shopper authenticated for an order and build the AJAX response.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 * @return array<string,mixed>
 	 */
-	public function get_update_order_status_response( array $request ): array {
+	public function confirm_order_payment( array $request ): array {
 		if ( ! $this->can_handle_callbacks() ) {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
 		}
@@ -212,12 +212,12 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the WooPayments-compatible setup-intent creation response.
+	 * Create and confirm a SetupIntent from the request and build the AJAX response.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 * @return array<string,mixed>
 	 */
-	public function get_create_setup_intent_response( array $request ): array {
+	public function create_setup_intent_for_request( array $request ): array {
 		if ( ! $this->can_handle_callbacks() ) {
 			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 409 );
 		}

@@ -362,7 +362,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function send_order_status_callback( WC_Order $order ): array {
-		return wc_get_container()->get( WooPaymentsCheckoutAjaxController::class )->get_update_order_status_response(
+		return wc_get_container()->get( WooPaymentsCheckoutAjaxController::class )->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 				'order_id'    => $order->get_id(),
