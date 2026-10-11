@@ -30,6 +30,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_contains_no_order_effect_data(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: the succeeded PaymentIntent in Fixtures/rec-t3-basic-card.json (entries[0]), with charges as a Stripe list
+			// object and an expanded balance_transaction, reduced to the fields the codec reads.
 			array(
 				'id'             => 'pi_neutral',
 				'status'         => 'succeeded',
@@ -68,6 +70,9 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_maps_processing_intent_to_authorized_outcome(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: a processing PaymentIntent, reduced to the fields the client deserializer reads
+			// (client 11.1.0 class-wc-payments-api-client.php:2403-2409); client 11.1.0 class-wc-payments-order-service.php:410
+			// treats processing as authorized.
 			array(
 				'id'             => 'pi_sepa',
 				'status'         => 'processing',
@@ -86,6 +91,9 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_uses_supplied_customer_action_redirect(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: a requires_action PaymentIntent with no next_action body, which the client deserializer reads as an empty
+			// next action (client 11.1.0 class-wc-payments-api-client.php:2404); client 11.1.0 class-wc-payment-gateway-wcpay.php:2107
+			// sends any next action other than a URL redirect or Multibanco details to the confirmation hash.
 			array(
 				'id'                   => 'pi_action',
 				'status'               => 'requires_action',
@@ -166,6 +174,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		try {
 			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				// Shape: next_action.redirect_to_url.url, the field client 11.1.0 class-wc-payment-gateway-wcpay.php:2094 reads.
 				array(
 					'id'          => 'pi_ideal',
 					'status'      => 'requires_action',
@@ -199,6 +208,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_uses_supplied_order_received_url_for_multibanco(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: the multibanco_display_details next action client 11.1.0 class-wc-payment-gateway-wcpay.php:2099-2106 reads,
+			// reduced to its reference; the codec reads only the next-action type.
 			array(
 				'id'          => 'pi_multibanco',
 				'status'      => 'requires_action',
@@ -220,6 +231,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_uses_charge_payment_method_before_credential_fallback(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: charges.data[].payment_method as in Fixtures/rec-t3-basic-card.json (entries[0]), reduced to that one field.
 			array(
 				'id'      => 'pi_charge_pm',
 				'status'  => 'succeeded',
@@ -238,6 +250,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_intent_mapping_separates_localized_shopper_message_from_raw_provider_message(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: last_payment_error from Fixtures/rec-1-intention-declines.json (entries[2]: card_error, card_declined,
+			// insufficient_funds), with a synthetic diagnostic message.
 			array(
 				'id'                 => 'pi_declined',
 				'status'             => 'requires_payment_method',
@@ -265,6 +279,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	public function test_failed_intent_mapping_preserves_grounded_platform_message(): void {
 		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
 		$outcome          = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: the platform's own card-testing refusal, which carries no Stripe error type; client 11.1.0
+			// class-wc-payments-api-client.php:2952 reads the code, and class-wc-payments-utils.php:770 keeps an untyped error's message.
 			array(
 				'id'                 => 'pi_card_testing_prevention',
 				'status'             => 'requires_payment_method',
@@ -288,6 +304,8 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_intent_mapping_redacts_unknown_provider_message(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Synthetic: provider_internal_failure stands for any code the message catalog does not know; a non-card error type
+			// gets the generic message, as client 11.1.0 class-wc-payments-utils.php:797-798 does.
 			array(
 				'id'                 => 'pi_unknown_failure',
 				'status'             => 'requires_payment_method',
@@ -328,6 +346,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		try {
 			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				// Deliberately malformed: type and decline_code are arrays, which no platform response carries.
 				array(
 					'id'                 => 'pi_malformed_failure',
 					'status'             => 'requires_payment_method',
