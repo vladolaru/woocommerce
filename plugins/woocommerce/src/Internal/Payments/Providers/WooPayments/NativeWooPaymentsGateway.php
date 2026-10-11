@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Exception;
 use Throwable;
@@ -898,7 +898,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Process a scheduled subscription renewal payment.
+	 * Charge a renewal order's saved payment method with the customer absent.
+	 *
+	 * The supported way for an extension to charge an order's saved WooPayments token off-session, with or without
+	 * WooCommerce Subscriptions; the WooPayments extension's gateway has the same method. The charge runs under this
+	 * gateway's ID. WooCommerce Subscriptions renewals reach the same charge through the subscriptions controller.
 	 *
 	 * @param float    $amount        Renewal amount.
 	 * @param WC_Order $renewal_order Renewal order.
@@ -907,339 +911,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *                   a PHP Error, so the scheduled action fails as on the client.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order ): void {
-		unset( $amount );
-
-		if ( ! $renewal_order instanceof WC_Order ) {
-			return;
-		}
-
-		// Stripe charges the renewals of Stripe Billing subscriptions itself; the invoice webhooks record them.
-		if ( $this->get_stripe_billing_module()->is_stripe_billed_order( $renewal_order ) ) {
-			return;
-		}
-
-		$token = $this->get_payment_token_from_order( $renewal_order );
-		if ( ! $token instanceof WC_Payment_Token && ! $this->is_network_saved_cards_enabled() ) {
-			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
-		}
-
-		// Deliberate divergence: on a network forcing network-wide saved cards, the
-		// extension proceeds with a null token and lets the platform resolve the
-		// network card. Native has no network-card machinery, so a tokenless renewal
-		// fails honestly here instead of sending a charge with no payment method.
-		if ( ! $token instanceof WC_Payment_Token ) {
-			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
-			// Client 11.1.0 trait:415.
-			$this->get_logger()->error( 'There is no saved payment token for order #' . $renewal_order->get_id() );
-			$renewal_order->update_status( 'failed' );
-			return;
-		}
-
-		$provider_data = array(
-			'scheduled_subscription_payment'    => true,
-			'saved_payment_method_display_name' => $token->get_display_name(),
-		);
-		$mandate       = $this->get_renewal_order_mandate( $renewal_order );
-		if ( '' !== $mandate ) {
-			$provider_data['renewal_mandate'] = $mandate;
-		}
-
-		$customer_id = $this->get_renewal_order_customer_id( $renewal_order );
-		if ( '' !== $customer_id ) {
-			$renewal_order->update_meta_data( '_stripe_customer_id', $customer_id );
-			$renewal_order->save_meta_data();
-		}
-
-		try {
-			$outcome = $this->get_processing_service()->process_checkout_outcome(
-				PaymentOperationContext::for_checkout(
-					$renewal_order,
-					$this->id,
-					'',
-					array(
-						'payment_token'       => (string) $token->get_id(),
-						'save_payment_method' => false,
-					),
-					$provider_data
-				),
-				$this->get_provider()
-			);
-		} catch ( PaymentOutcomeApplyException $exception ) {
-			// The processing service logged the failure and tried to save the payment reference on the renewal; see was_reconciliation_context_persisted().
-			$failure = $exception->get_failure();
-			$outcome = $exception->get_outcome();
-			$this->get_logger()->log_throwable(
-				'Error applying the WooPayments subscription renewal payment.',
-				$failure,
-				array( 'order_id' => $renewal_order->get_id() )
-			);
-
-			// Client trait:426 catches only API_Exception, so a PHP Error fails the scheduled action and leaves the renewal
-			// pending (monitor ruling 2026-10-04 on renewal apply errors). A requires-action outcome still runs its hooks below.
-			if ( ! $failure instanceof Exception && PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION !== $outcome->get_status() ) {
-				throw $failure;
-			}
-		}
-
-		$this->maybe_handle_subscription_customer_action_required( $renewal_order, $outcome );
-	}
-
-	/**
-	 * Handle a scheduled renewal that requires customer authentication.
-	 *
-	 * @param WC_Order       $renewal_order Renewal order.
-	 * @param PaymentOutcome $outcome       Provider payment outcome.
-	 * @return void
-	 * @throws Throwable When a requires-action hook callback throws; the renewal is left as it was.
-	 */
-	private function maybe_handle_subscription_customer_action_required( WC_Order $renewal_order, PaymentOutcome $outcome ): void {
-		if ( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION !== $outcome->get_status() ) {
-			return;
-		}
-
-		$data      = $outcome->get_data();
-		$meta      = isset( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ) && is_array( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] )
-			? $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]
-			: array();
-		$charge_id = isset( $data['charge_id'] )
-			? (string) $data['charge_id']
-			: ( isset( $meta['_charge_id'] ) ? (string) $meta['_charge_id'] : '' );
-
-		try {
-			/**
-			 * Fires when a native WooPayments payment requires customer authentication.
-			 *
-			 * This intentionally keeps the standalone WooPayments plugin's action name
-			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_woopayments_*`
-			 * prefix, for parity: extensions hooked to the plugin's action keep working on the
-			 * native runtime. Do not rename it — see the class doc block for the rationale.
-			 *
-			 * @param WC_Order $renewal_order     The renewal order that requires authentication.
-			 * @param string   $intent_id         The provider payment intent ID.
-			 * @param string   $payment_method_id The provider payment method ID.
-			 * @param string   $customer_id       The provider customer ID.
-			 * @param string   $charge_id         The provider charge ID.
-			 * @param string   $currency          The order currency.
-			 *
-			 * @since 11.0.0
-			 */
-			do_action(
-				'woocommerce_woocommerce_payments_payment_requires_action',
-				$renewal_order,
-				$outcome->get_provider_payment_id(),
-				$outcome->get_payment_method_id(),
-				$outcome->get_customer_id(),
-				$charge_id,
-				$renewal_order->get_currency()
-			);
-		} catch ( Throwable $exception ) {
-			// Client gw:1921 does not catch, so the scheduled action fails and the renewal stays pending
-			// (monitor ruling 2026-10-04 (2)); the line is written whatever the logging setting. A callback can let a
-			// platform error out, so the line carries its class and the platform's codes, not its message.
-			$this->get_logger()->log_throwable_always(
-				'Failed to run WooPayments subscription renewal authentication hooks.',
-				$exception,
-				array(
-					'order_id'  => $renewal_order->get_id(),
-					'intent_id' => $outcome->get_provider_payment_id(),
-				)
-			);
-
-			throw $exception;
-		}
-
-		if ( ! $renewal_order->has_status( 'failed' ) ) {
-			$renewal_order->update_status( 'failed' );
-		}
-
-		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $outcome, $charge_id );
-		if ( '' !== $failure_note && ! $this->order_has_note_containing( $renewal_order, $failure_note ) ) {
-			$renewal_order->add_order_note( $failure_note );
-		}
-	}
-
-	/**
-	 * Get the failed-renewal note for customer-action-required outcomes.
-	 *
-	 * @param WC_Order       $renewal_order Renewal order.
-	 * @param PaymentOutcome $outcome       Provider payment outcome.
-	 * @param string         $charge_id     Provider charge ID.
-	 * @return string Order note.
-	 */
-	private function get_subscription_customer_action_failure_note( WC_Order $renewal_order, PaymentOutcome $outcome, string $charge_id ): string {
-		$transaction_id = '' !== $charge_id ? $charge_id : $outcome->get_provider_payment_id();
-		if ( '' === $transaction_id ) {
-			return '';
-		}
-
-		return wp_kses_post(
-			sprintf(
-				/* translators: %1$s: the failed payment amount, %2$s: WooPayments, %3$s: transaction ID. */
-				__( 'A payment of %1$s <strong>failed</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' ),
-				WooPaymentsCurrencyUtils::format_price_in_currency( (float) $renewal_order->get_total(), $renewal_order->get_currency() ),
-				'WooPayments',
-				esc_html( $transaction_id )
-			)
-		);
-	}
-
-	/**
-	 * Tell whether an order already has a note containing the expected text.
-	 *
-	 * @param WC_Order $order         Order object.
-	 * @param string   $expected_note Expected note text.
-	 * @return bool
-	 */
-	private function order_has_note_containing( WC_Order $order, string $expected_note ): bool {
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $note ) {
-			if ( str_contains( (string) $note->content, $expected_note ) ) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Get the mandate ID from the subscription parent order for a renewal order.
-	 *
-	 * @param WC_Order $renewal_order Renewal order.
-	 * @return string Mandate ID, or an empty string when not available.
-	 */
-	private function get_renewal_order_mandate( WC_Order $renewal_order ): string {
-		$parent_order = $this->get_subscription_parent_order_for_renewal( $renewal_order );
-		if ( ! $parent_order instanceof WC_Order ) {
-			return '';
-		}
-
-		return (string) $parent_order->get_meta( '_stripe_mandate_id', true );
-	}
-
-	/**
-	 * Get the WooPayments customer ID from the renewal order, current subscription, or subscription parent order.
-	 *
-	 * @param WC_Order $renewal_order Renewal order.
-	 * @return string Customer ID, or an empty string when not available.
-	 */
-	private function get_renewal_order_customer_id( WC_Order $renewal_order ): string {
-		$customer_id = (string) $renewal_order->get_meta( '_stripe_customer_id', true );
-		if ( '' !== $customer_id ) {
-			return $customer_id;
-		}
-
-		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
-		if ( $subscription instanceof WC_Order ) {
-			$customer_id = (string) $subscription->get_meta( '_stripe_customer_id', true );
-			if ( '' !== $customer_id ) {
-				return $customer_id;
-			}
-		}
-
-		$parent_order = $this->get_subscription_parent_order_for_renewal( $renewal_order );
-		if ( ! $parent_order instanceof WC_Order ) {
-			return '';
-		}
-
-		return (string) $parent_order->get_meta( '_stripe_customer_id', true );
-	}
-
-	/**
-	 * Get the subscription parent order associated with a renewal order.
-	 *
-	 * @param WC_Order $renewal_order Renewal order.
-	 * @return WC_Order|null Parent order, or null when not available.
-	 */
-	private function get_subscription_parent_order_for_renewal( WC_Order $renewal_order ): ?WC_Order {
-		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
-		if ( ! $subscription instanceof WC_Order ) {
-			return null;
-		}
-
-		$parent_order = wc_get_order( (int) $subscription->get_parent_id() );
-		if ( ! $parent_order instanceof WC_Order ) {
-			return null;
-		}
-
-		return $parent_order;
-	}
-
-	/**
-	 * Recover a renewal order's missing payment token from the parent order.
-	 *
-	 * A renewal can arrive without a token — the subscription's token row was deleted,
-	 * or a migration dropped the link. Failing the renewal outright loses revenue the
-	 * merchant can still collect: the original order's payment method ID identifies a
-	 * charge-able saved method. Ports the WooPayments extension's repair.
-	 *
-	 * @param WC_Order $renewal_order Renewal order missing its token.
-	 * @return WC_Payment_Token|null The restored token, or null when repair is impossible.
-	 * @throws Throwable When the repair raises a PHP Error.
-	 */
-	private function maybe_repair_renewal_order_payment_token( WC_Order $renewal_order ): ?WC_Payment_Token {
-		$subscription = $this->get_subscription_for_renewal_order( $renewal_order );
-		if ( ! $subscription instanceof WC_Order ) {
-			return null;
-		}
-
-		$parent_order = wc_get_order( (int) $subscription->get_parent_id() );
-		if ( ! $parent_order instanceof WC_Order ) {
-			return null;
-		}
-
-		$payment_method_id = (string) $parent_order->get_meta( '_payment_method_id', true );
-		if ( '' === $payment_method_id ) {
-			return null;
-		}
-
-		try {
-			// The parent order is only a source for the payment method ID, never a
-			// write target: attaching the token to it would fan the token out to every
-			// subscription that order created, silently re-pointing sibling
-			// subscriptions the customer has since moved to a different card.
-			$token = $this->get_token_service()->get_or_create_token_for_user( $payment_method_id, (int) $subscription->get_customer_id() );
-			if ( ! $token instanceof WC_Payment_Token ) {
-				return null;
-			}
-
-			$this->get_token_service()->attach_token_to_order( $renewal_order, $token );
-
-			$subscription_token = $this->get_payment_token_from_order( $subscription );
-			if ( ! $subscription_token instanceof WC_Payment_Token || $token->get_id() !== $subscription_token->get_id() ) {
-				$subscription->add_payment_token( $token );
-				$subscription->add_order_note(
-					sprintf(
-						/* translators: %s: payment method display name. */
-						__( 'The saved payment method for this subscription was missing, so WooPayments restored %s from the original order to complete the renewal.', 'woocommerce' ),
-						$token->get_display_name()
-					)
-				);
-			}
-
-			$renewal_order->add_order_note( __( 'Recovered missing subscription payment method token from the parent order.', 'woocommerce' ) );
-
-			return $token;
-		} catch ( Throwable $exception ) {
-			$this->get_logger()->log_throwable(
-				'Error repairing subscription renewal payment token for order #' . $renewal_order->get_id() . '.',
-				$exception,
-				array( 'order_id' => $renewal_order->get_id() )
-			);
-
-			// Client trait:538 catches only Exception, so a PHP Error fails the scheduled action and leaves the
-			// renewal pending (monitor ruling 2026-10-04 (3)).
-			if ( ! $exception instanceof Exception ) {
-				throw $exception;
-			}
-
-			return null;
-		}
+		$this->get_subscriptions_controller()->scheduled_subscription_payment( $amount, $renewal_order, $this->id );
 	}
 
 	/**
@@ -1255,24 +927,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the subscription associated with a renewal order.
-	 *
-	 * @param WC_Order $renewal_order Renewal order.
-	 * @return WC_Order|null Subscription order, or null when not available.
-	 */
-	private function get_subscription_for_renewal_order( WC_Order $renewal_order ): ?WC_Order {
-		$subscriptions = array();
-		if ( function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
-			$subscriptions = wcs_get_subscriptions_for_renewal_order( $renewal_order->get_id() );
-		}
-
-		$subscriptions = is_array( $subscriptions ) ? $subscriptions : array();
-		$subscription  = reset( $subscriptions );
-
-		return $subscription instanceof WC_Order ? $subscription : null;
-	}
-
-	/**
 	 * Copy the successful renewal token to the failing subscription.
 	 *
 	 * @param WC_Order $subscription  Subscription order.
@@ -1280,17 +934,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	public function update_failing_payment_method( $subscription, $renewal_order ): void {
-		if ( ! $subscription instanceof WC_Order || ! $renewal_order instanceof WC_Order ) {
-			return;
-		}
-
-		$token = $this->get_payment_token_from_order( $renewal_order );
-		if ( ! $token instanceof WC_Payment_Token ) {
-			$renewal_order->add_order_note( __( 'Unable to update subscription payment method: No valid payment token or method found.', 'woocommerce' ) );
-			return;
-		}
-
-		$this->get_token_service()->attach_token_to_order( $subscription, $token );
+		$this->get_subscriptions_controller()->update_failing_payment_method( $subscription, $renewal_order );
 	}
 
 	/**
@@ -1302,26 +946,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	public function maybe_force_subscription_to_manual( $subscription ): void {
-		if ( ! $subscription instanceof WC_Order || ! is_callable( array( $subscription, 'set_requires_manual_renewal' ) ) ) {
-			return;
-		}
-
-		$gateway_id = $subscription->get_payment_method();
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) || WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
-			return;
-		}
-
-		$payment_method_type = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
-		$subscription->update_meta_data( '_wcpay_original_payment_method_id', $gateway_id );
-		$subscription->set_requires_manual_renewal( true );
-		$subscription->save();
-		$subscription->add_order_note(
-			sprintf(
-				/* translators: %s: payment method type. */
-				__( 'Subscription set to manual renewal because %s is a non-reusable payment method.', 'woocommerce' ),
-				$payment_method_type
-			)
-		);
+		$this->get_subscriptions_controller()->maybe_force_subscription_to_manual( $subscription );
 	}
 
 	/**
@@ -2389,6 +2014,15 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
+	 * Get the subscriptions controller, which charges renewals for every WooPayments gateway.
+	 *
+	 * @return WooPaymentsSubscriptionsController
+	 */
+	private function get_subscriptions_controller(): WooPaymentsSubscriptionsController {
+		return wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+	}
+
+	/**
 	 * Get the native WooPayments customer service.
 	 *
 	 * @return WooPaymentsCustomerService
@@ -2873,7 +2507,10 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Register gateway-specific subscription handlers.
+	 * Attach the subscriptions controller's hooks when this gateway owns renewals.
+	 *
+	 * The controller also attaches them on `plugins_loaded` on connected and active stores; whichever runs first attaches
+	 * them, once per request.
 	 *
 	 * @return void
 	 */
@@ -2882,7 +2519,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		WooPaymentsSubscriptionRenewalHooks::attach( $this );
+		WooPaymentsSubscriptionsController::attach( $this->get_subscriptions_controller() );
 	}
 
 	/**
@@ -2926,16 +2563,6 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$email_classes['WC_Payments_Email_Failed_Authentication_Retry'] = $failed_authentication_retry;
 
 		return $email_classes;
-	}
-
-	/**
-	 * Get the saved payment token from an order.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return WC_Payment_Token|null
-	 */
-	private function get_payment_token_from_order( WC_Order $order ): ?WC_Payment_Token {
-		return $this->get_token_service()->get_active_token_for_order( $order );
 	}
 
 	/**

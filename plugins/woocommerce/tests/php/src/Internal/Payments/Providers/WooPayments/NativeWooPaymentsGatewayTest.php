@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
@@ -53,7 +53,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->reset_container_replacements();
 		wc_get_container()->reset_all_resolved();
 
-		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
 		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
@@ -459,43 +459,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->handle_init();
 
 		$this->assertSame( self::stripe_billing_subscription_supports()['toggle on'][1], $this->get_subscription_supports( $gateway ) );
-	}
-
-	/**
-	 * @testdox A renewal of a Stripe-billed subscription is not charged here, toggle on or off; a tokenized subscription's renewal still is (client `trait-wc-payment-gateway-wcpay-subscriptions.php:405-407`, `:1243-1258`).
-	 * @testWith ["0", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
-	 *           ["1", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", false]
-	 *           ["1", "", true]
-	 *
-	 * @param string $toggle                Stripe Billing toggle option value.
-	 * @param string $wcpay_subscription_id Stripe subscription ID of the subscription, empty when it is tokenized.
-	 * @param bool   $expect_charge         Whether the renewal is charged.
-	 */
-	public function test_renewals_of_stripe_billed_subscriptions_are_not_charged( string $toggle, string $wcpay_subscription_id, bool $expect_charge ): void {
-		$this->load_stripe_billing_module( $toggle );
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription( $user_id, $wcpay_subscription_id );
-		$renewal      = \WC_Helper_Order::create_order( $user_id );
-		$renewal->add_payment_token( $this->create_card_token( $user_id ) );
-		$renewal->set_status( 'pending' );
-		$renewal->save();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $renewal->get_id() ]['renewal'][] = $subscription->get_id();
-		$note_count = count( wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
-		$service    = new RecordingPaymentProcessingService();
-		$gateway    = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );
-
-		$gateway->scheduled_subscription_payment( 10.0, wc_get_order( $renewal->get_id() ) );
-
-		if ( $expect_charge ) {
-			$this->assertSame( $renewal->get_id(), $service->last_checkout_context ? $service->last_checkout_context->get_order_id() : 0, 'A tokenized renewal is charged.' );
-			return;
-		}
-
-		$this->assertSame( 0, $service->checkout_attempt_count, 'A Stripe-billed renewal must not be charged.' );
-		$saved = wc_get_order( $renewal->get_id() );
-		$this->assertSame( 'pending', $saved->get_status() );
-		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 	}
 
 	/**

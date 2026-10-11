@@ -24,7 +24,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFailedTransactionRateLimiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService;
@@ -38,16 +37,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentContext as StoreApiPaymentContext;
 use Automattic\WooCommerce\StoreApi\Payments\PaymentResult as StoreApiPaymentResult;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPublicFraudServices;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -123,7 +119,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
 		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
 		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
-		$subscription_handlers = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$subscription_handlers = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$subscription_handlers->setAccessible( true );
 		$subscription_handlers->setValue( null, false );
 		$classic_checkout_fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
@@ -1633,11 +1629,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$this->assertSame( 10, has_action( 'woocommerce_checkout_subscription_created', array( $gateway, 'maybe_force_subscription_to_manual' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) ) );
+		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+
+		$this->assertSame( 10, has_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $controller, 'scheduled_subscription_payment' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'update_failing_payment_method' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $controller, 'update_failing_payment_method' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'add_subscription_payment_meta' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_subscription_validate_payment_meta', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'validate_subscription_payment_meta' ) ) );
 		$this->assertSame( 10, has_action( 'wcs_save_other_payment_meta', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'save_meta_in_order_tokens' ) ) );
@@ -1653,10 +1651,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ) ) );
 		$this->assertSame( 10, has_action( 'wp_ajax_wcpay_get_user_payment_tokens', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'ajax_get_user_payment_tokens' ) ) );
 
-		remove_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'scheduled_subscription_payment' ) );
-		remove_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) );
-		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $gateway, 'update_failing_payment_method' ) );
-		remove_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $gateway, 'update_failing_payment_method' ) );
+		remove_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'scheduled_subscription_payment' ) );
+		remove_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $controller, 'scheduled_subscription_payment' ) );
+		remove_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'update_failing_payment_method' ) );
+		remove_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $controller, 'update_failing_payment_method' ) );
 	}
 
 	/**
@@ -1677,10 +1675,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+
 		$this->assertContains( 'subscriptions', $gateway->supports );
-		$this->assertFalse( has_action( 'woocommerce_checkout_subscription_created', array( $gateway, 'maybe_force_subscription_to_manual' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway->id, array( $gateway, 'scheduled_subscription_payment' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $gateway, 'scheduled_subscription_payment' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway->id, array( $controller, 'scheduled_subscription_payment' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $controller, 'scheduled_subscription_payment' ) ) );
 	}
 
 	/**
@@ -1827,204 +1827,12 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				$callbacks,
 				static function ( array $callback ): bool {
 					return is_array( $callback['function'] ?? null )
-						&& $callback['function'][0] instanceof NativeWooPaymentsGateway
+						&& $callback['function'][0] instanceof WooPaymentsSubscriptionsController
 						&& 'scheduled_subscription_payment' === ( $callback['function'][1] ?? null );
 				}
 			);
 
 			$this->assertCount( 1, $matches, 'Expected one base gateway renewal callback for ' . $gateway_id . '.' );
-		}
-	}
-
-	/**
-	 * @testdox Should process Amazon Pay scheduled subscription renewals through the gateway handler.
-	 */
-	public function test_amazon_pay_scheduled_subscription_payment_hook_reaches_gateway_handler(): void {
-		$this->make_builtin_own_payments();
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$order->set_customer_id( $user_id );
-		$active_token = $this->create_card_token( $user_id, 'pm_amazon_renewal' );
-		$order->add_payment_token( $active_token );
-		$order->save();
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new class() extends NativeWooPaymentsGateway {
-			/**
-			 * Tell whether subscriptions support is available.
-			 *
-			 * @return bool
-			 */
-			public function is_subscriptions_enabled(): bool {
-				return true;
-			}
-		};
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		/**
-		 * Fires a scheduled WooPayments Amazon Pay subscription renewal payment.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', 12.0, wc_get_order( $order->get_id() ) );
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame(
-			array(
-				'scheduled_subscription_payment'    => true,
-				'saved_payment_method_display_name' => $active_token->get_display_name(),
-			),
-			$service->last_checkout_context->get_provider_data()
-		);
-	}
-
-	/**
-	 * @testdox Unusable saved renewal methods fail through the payment lifecycle with an actionable note.
-	 */
-	public function test_scheduled_subscription_payment_fails_unusable_saved_method_with_actionable_note(): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$token   = $this->create_card_token( $user_id, 'pm_unusable_saved_method' );
-		$order->set_customer_id( $user_id );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->add_payment_token( $token );
-		$order->update_meta_data( '_payment_method_id', 'pm_unusable_saved_method' );
-		$order->save();
-
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Last API request.
-			 *
-			 * @var array<string,mixed>
-			 */
-			public array $last_request_data = array();
-
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @throws WooPaymentsApiException Always, to model the unusable saved method.
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $idempotency_key );
-				$this->last_request_data = $request_data;
-
-				throw new WooPaymentsApiException( 'Provider diagnostic for pm_unusable_saved_method.', 'payment_method_no_longer_available', 400, 'invalid_request_error', '', array(), 'pi_unusable_saved_method' );
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_renewal' );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
-		wc_get_container()->replace( WooPaymentsCustomerService::class, $customer_service );
-		wc_get_container()->reset_all_resolved();
-
-		$status_changes         = 0;
-		$status_change_callback = static function ( int $order_id, string $from, string $to ) use ( $order, &$status_changes ): void {
-			unset( $from );
-			if ( $order->get_id() === $order_id && 'failed' === $to ) {
-				++$status_changes;
-			}
-		};
-		add_action(
-			'woocommerce_order_status_changed',
-			$status_change_callback,
-			10,
-			3
-		);
-
-		try {
-			$gateway = new NativeWooPaymentsGateway();
-			$gateway->init(
-				wc_get_container()->get( PaymentProcessingService::class ),
-				wc_get_container()->get( WooPaymentsProvider::class )
-			);
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-			$order            = wc_get_order( $order->get_id() );
-			$notes            = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-			$actionable_notes = array_filter(
-				$notes,
-				static fn( $note ): bool => false !== strpos( (string) $note->content, 'the saved payment method <strong>' . $token->get_display_name() . '</strong> can no longer be used' )
-			);
-			$raw_notes        = array_filter(
-				$notes,
-				static fn( $note ): bool => false !== strpos( (string) $note->content, 'Provider diagnostic' ) || false !== strpos( (string) $note->content, 'pm_unusable_saved_method' )
-			);
-
-			$this->assertInstanceOf( WC_Order::class, $order );
-			$this->assertSame( 'failed', $order->get_status() );
-			$this->assertSame( 1, $status_changes );
-			$this->assertCount( 1, $actionable_notes );
-			$this->assertCount( 0, $raw_notes );
-			$this->assertArrayNotHasKey( 'saved_payment_method_display_name', $api_client->last_request_data );
-			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
-			$this->assertSame( 'pm_unusable_saved_method', $order->get_meta( '_payment_method_id', true ) );
-			$order->update_meta_data( '_intention_status', 'processing' );
-			$order->save_meta_data();
-			$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
-
-			wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
-				array(
-					'id'   => 'evt_unusable_method_replay',
-					'type' => 'payment_intent.payment_failed',
-					'data' => array(
-						'object' => array(
-							'id'                 => 'pi_unusable_saved_method',
-							'status'             => 'requires_payment_method',
-							'currency'           => 'usd',
-							'payment_method'     => 'pm_unusable_saved_method',
-							'metadata'           => array(
-								'order_id'  => (string) $order->get_id(),
-								'order_key' => $order->get_order_key(),
-							),
-							'last_payment_error' => array(
-								'code'           => 'payment_method_no_longer_available',
-								'message'        => 'Raw provider diagnostic for pm_unusable_saved_method.',
-								'payment_method' => array(
-									'id'   => 'pm_unusable_saved_method',
-									'type' => 'card',
-								),
-							),
-						),
-					),
-				)
-			);
-			$order            = wc_get_order( $order->get_id() );
-			$notes            = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
-			$actionable_notes = array_filter(
-				$notes,
-				static fn( $note ): bool => false !== strpos( (string) $note->content, 'the saved payment method <strong>' . $token->get_display_name() . '</strong> can no longer be used' )
-			);
-			$raw_notes        = array_filter(
-				$notes,
-				static fn( $note ): bool => false !== strpos( (string) $note->content, 'Raw provider diagnostic' ) || false !== strpos( (string) $note->content, 'pm_unusable_saved_method' )
-			);
-
-			$this->assertInstanceOf( WC_Order::class, $order );
-			$this->assertSame( 'failed', $order->get_status() );
-			$this->assertSame( 1, $status_changes );
-			$this->assertSame( 'pi_unusable_saved_method', $order->get_meta( '_intent_id', true ) );
-			$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
-			$this->assertCount( 1, $actionable_notes );
-			$this->assertCount( 0, $raw_notes );
-		} finally {
-			remove_action( 'woocommerce_order_status_changed', $status_change_callback, 10 );
-			delete_transient( 'wcpay_processed_event_' . md5( 'evt_unusable_method_replay' ) );
-			$this->reset_container_replacements();
-			wc_get_container()->reset_all_resolved();
 		}
 	}
 
@@ -2152,348 +1960,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '', $customer_rule['email_template_customer'] );
 		$this->assertSame( 'WC_Payments_Email_Failed_Authentication_Retry', $admin_rule['email_template_admin'] );
-	}
-
-	/**
-	 * @testdox Should process scheduled subscription payments with the saved renewal token.
-	 */
-	public function test_scheduled_subscription_payment_uses_saved_renewal_token(): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$order->set_customer_id( $user_id );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_old_renewal' ) );
-		$active_token = $this->create_card_token( $user_id, 'pm_renewal' );
-		$order->add_payment_token( $active_token );
-		$order->save();
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, $this->create_unhooked_token_service() );
-
-		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame(
-			array(
-				'payment_token'       => (string) $active_token->get_id(),
-				'save_payment_method' => false,
-			),
-			$service->last_checkout_context->get_payment_data()
-		);
-		$this->assertSame(
-			array(
-				'scheduled_subscription_payment'    => true,
-				'saved_payment_method_display_name' => $active_token->get_display_name(),
-			),
-			$service->last_checkout_context->get_provider_data()
-		);
-	}
-
-	/**
-	 * @testdox Should charge tokenized renewals while the Stripe Billing module is not loaded, even with the Stripe Billing options set.
-	 */
-	public function test_scheduled_subscription_payment_uses_tokenized_renewal_when_deprecated_stripe_billing_flags_remain(): void {
-		update_option( '_wcpay_feature_subscriptions', '1' );
-		update_option( '_wcpay_feature_stripe_billing', '1' );
-
-		try {
-			$user_id = self::factory()->user->create();
-			$order   = $this->create_order();
-			$order->set_customer_id( $user_id );
-			$active_token = $this->create_card_token( $user_id, 'pm_tokenized_renewal' );
-			$order->add_payment_token( $active_token );
-			$order->save();
-
-			$service = new RecordingPaymentProcessingService();
-			$gateway = new NativeWooPaymentsGateway();
-			$gateway->init( $service, new WooPaymentsProvider() );
-
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-
-			$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-			$this->assertSame(
-				array(
-					'payment_token'       => (string) $order->get_payment_tokens()[0],
-					'save_payment_method' => false,
-				),
-				$service->last_checkout_context->get_payment_data()
-			);
-			$this->assertSame(
-				array(
-					'scheduled_subscription_payment'    => true,
-					'saved_payment_method_display_name' => $active_token->get_display_name(),
-				),
-				$service->last_checkout_context->get_provider_data()
-			);
-		} finally {
-			delete_option( '_wcpay_feature_subscriptions' );
-			delete_option( '_wcpay_feature_stripe_billing' );
-		}
-	}
-
-	/**
-	 * @testdox Should use the current subscription customer when processing a scheduled renewal.
-	 */
-	public function test_scheduled_subscription_payment_uses_current_subscription_customer(): void {
-		$user_id      = self::factory()->user->create();
-		$parent_order = $this->create_order();
-		$subscription = $this->create_order();
-		$renewal      = $this->create_order();
-
-		$parent_order->update_meta_data( '_stripe_customer_id', 'cus_parent_stale' );
-		$parent_order->update_meta_data( '_stripe_mandate_id', 'mandate_parent' );
-		$parent_order->save();
-		$subscription->set_parent_id( $parent_order->get_id() );
-		$subscription->update_meta_data( '_stripe_customer_id', 'cus_subscription_current' );
-		$subscription->save();
-		$renewal->set_customer_id( $user_id );
-		$active_token = $this->create_card_token( $user_id, 'pm_renewal' );
-		$renewal->add_payment_token( $active_token );
-		$renewal->save();
-
-		$this->ensure_wcs_renewal_subscriptions_double();
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-		try {
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $renewal->get_id() ) );
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$renewal = wc_get_order( $renewal->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $renewal );
-		$this->assertSame( 'cus_subscription_current', $renewal->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame(
-			array(
-				'scheduled_subscription_payment'    => true,
-				'saved_payment_method_display_name' => $active_token->get_display_name(),
-				'renewal_mandate'                   => 'mandate_parent',
-			),
-			$service->last_checkout_context->get_provider_data()
-		);
-	}
-
-	/**
-	 * @testdox Should fail scheduled renewals and fire the preserved action when customer authentication is required.
-	 */
-	public function test_scheduled_subscription_payment_fails_and_fires_requires_action_hook(): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$order->set_customer_id( $user_id );
-		$order->set_currency( 'USD' );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_requires_action' ) );
-		$order->save();
-
-		$service  = new class( new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_requires_action',
-			'#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce',
-			'pm_requires_action',
-			'cus_requires_action',
-			array(
-				'charge_id' => 'ch_requires_action',
-				'meta'      => array(
-					'_charge_id' => 'ch_legacy_meta',
-				),
-			)
-		) ) extends RecordingPaymentProcessingService {
-			/**
-			 * Outcome returned by process_checkout_outcome.
-			 *
-			 * @var PaymentOutcome
-			 */
-			private PaymentOutcome $outcome;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param PaymentOutcome $outcome Outcome returned by process_checkout_outcome.
-			 */
-			public function __construct( PaymentOutcome $outcome ) {
-				$this->outcome = $outcome;
-			}
-
-			/**
-			 * Process checkout payment and return the neutral outcome.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Provider.
-			 * @return PaymentOutcome
-			 */
-			public function process_checkout_outcome( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				$this->last_checkout_context = $context;
-
-				return $this->outcome;
-			}
-		};
-		$received = array();
-		add_action(
-			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function ( WC_Order $hook_order, string $intent_id, string $payment_method_id, string $customer_id, string $charge_id, string $currency ) use ( &$received ): void {
-				$received = array(
-					'hook_order'        => $hook_order,
-					'intent_id'         => $intent_id,
-					'payment_method_id' => $payment_method_id,
-					'customer_id'       => $customer_id,
-					'charge_id'         => $charge_id,
-					'currency'          => $currency,
-				);
-			},
-			10,
-			6
-		);
-
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( $order->get_id(), $received['hook_order']->get_id() );
-		$this->assertSame( 'pi_requires_action', $received['intent_id'] );
-		$this->assertSame( 'pm_requires_action', $received['payment_method_id'] );
-		$this->assertSame( 'cus_requires_action', $received['customer_id'] );
-		$this->assertSame( 'ch_requires_action', $received['charge_id'] );
-		$this->assertSame( 'USD', $received['currency'] );
-	}
-
-	/**
-	 * @testdox A customer-action hook callback that throws a $throwable_class leaves the renewal pending and fails the scheduled action.
-	 *
-	 * Client 11.1.0 `gw:1921` runs the hook without a catch, so the throwable reaches Action Scheduler before
-	 * `mark_payment_failed()`. The gateway logs it whatever the logging setting.
-	 *
-	 * @testWith ["RuntimeException"]
-	 *           ["TypeError"]
-	 *
-	 * @param string $throwable_class Class the hook callback throws.
-	 */
-	public function test_scheduled_subscription_payment_rethrows_when_requires_action_hook_throws( string $throwable_class ): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$order->set_customer_id( $user_id );
-		$order->set_currency( 'USD' );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_requires_action' ) );
-		$order->save();
-
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_requires_action',
-			'#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce',
-			'pm_requires_action',
-			'cus_requires_action',
-			array(
-				'meta' => array(
-					'_charge_id' => 'ch_requires_action',
-				),
-			)
-		);
-
-		$thrown = new $throwable_class( 'email callback failed' );
-		add_action(
-			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function () use ( $thrown ): void {
-				throw $thrown;
-			}
-		);
-		$logger = RecordingWcLogger::install();
-
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$caught = null;
-		try {
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-		} catch ( \Throwable $throwable ) {
-			$caught = $throwable;
-		}
-
-		$this->assertSame( $thrown, $caught, 'The hook failure reaches the scheduled action.' );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Failed to run WooPayments subscription renewal authentication hooks.' === $line[1] ) );
-		$this->assertCount( 1, $lines, 'The failure is logged whatever the logging setting.' );
-		$this->assertSame( $throwable_class, $logger->contexts[ $lines[0] ]['exception'] ?? '' );
-	}
-
-	/**
-	 * @testdox A customer-action hook callback that throws $_dataName is logged by the platform's status and code, never a message.
-	 *
-	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not WooCommerce's own text.
-	 *
-	 * @dataProvider hook_platform_failures
-	 *
-	 * @param bool $wrapped Whether the callback wraps the platform error in its own exception.
-	 */
-	public function test_requires_action_hook_failure_log_leaves_out_platform_text( bool $wrapped ): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$order->set_customer_id( $user_id );
-		$order->set_currency( 'USD' );
-		$order->add_payment_token( $this->create_card_token( $user_id, 'pm_requires_action' ) );
-		$order->save();
-
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_requires_action',
-			'#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce',
-			'pm_requires_action',
-			'cus_requires_action',
-			array(
-				'meta' => array(
-					'_charge_id' => 'ch_requires_action',
-				),
-			)
-		);
-
-		$platform_error = self::make_provider_error();
-		$thrown         = $wrapped ? new \RuntimeException( 'Reminder email failed: ' . $platform_error->getMessage(), 0, $platform_error ) : $platform_error;
-		add_action(
-			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function () use ( $thrown ): void {
-				throw $thrown;
-			}
-		);
-		$logger = RecordingWcLogger::install();
-
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$caught = null;
-		try {
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-		} catch ( \Throwable $throwable ) {
-			$caught = $throwable;
-		}
-
-		$this->assertSame( $thrown, $caught, 'The hook failure still reaches the scheduled action.' );
-		$context = $this->get_logged_context( $logger, 'Failed to run WooPayments subscription renewal authentication hooks.' );
-		$this->assertSame( array( get_class( $thrown ), 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
-		$this->assertSame( array( $order->get_id(), 'pi_requires_action' ), array( $context['order_id'], $context['intent_id'] ) );
-		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
-	 * Platform errors a hook callback can throw.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function hook_platform_failures(): array {
-		return array(
-			'a platform error'               => array( false ),
-			'its own exception wrapping one' => array( true ),
-		);
 	}
 
 	/**
@@ -4381,94 +3847,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assert_succeeded_intent_defense( $order->get_id(), $result, $return_url, $note_count, 'Provider effect write failed', 'RuntimeException', $logger, 'pending' );
 		$this->assertSame( 'pi_unrecorded', wc_get_order( $order->get_id() )->get_transaction_id(), 'The charge must stay reconcilable.' );
-	}
-
-	/**
-	 * @testdox Should keep a renewal's provider outcome when applying it fails.
-	 *
-	 * Scheduled renewals have no checkout to answer, so the handed-back failure must not escape into Action Scheduler.
-	 */
-	public function test_scheduled_subscription_payment_keeps_outcome_when_applying_it_fails(): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
-		$order->set_customer_id( $user_id );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->add_payment_token( $token );
-		$order->save();
-		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_downstream', '', 'pm_renewal_card' ),
-			'post_lifecycle_effects',
-			new \RuntimeException( 'Renewal display details failed' )
-		);
-		$gateway  = new NativeWooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
-
-		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'completed', $order->get_status() );
-		$this->assertSame( 'pi_renewal_downstream', $order->get_transaction_id() );
-	}
-
-	/**
-	 * @testdox A PHP error applying a $outcome_status renewal outcome is rethrown: $rethrown; the renewal ends $expected_status.
-	 *
-	 * Client 11.1.0 catches only API_Exception around the renewal payment (`trait-wc-payment-gateway-wcpay-subscriptions.php:426`),
-	 * so a PHP error escapes to Action Scheduler, which fails the action.
-	 * The gateway logs it whatever the logging setting and rethrows it; the charge stays reconcilable on the renewal. A renewal
-	 * that needs customer action is the exception: it still runs the requires-action handling, which fails the renewal and
-	 * fires the authentication hook, as the client does for that outcome (gw:1921), instead of the scheduled action failing.
-	 *
-	 * @testWith ["completed", true, "pending"]
-	 *           ["requires_customer_action", false, "failed"]
-	 *
-	 * @param string $outcome_status  Provider outcome status.
-	 * @param bool   $rethrown        Whether the PHP error reaches Action Scheduler.
-	 * @param string $expected_status Renewal status afterwards.
-	 */
-	public function test_scheduled_subscription_payment_rethrows_php_error_applying_outcome( string $outcome_status, bool $rethrown, string $expected_status ): void {
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
-		$order->set_customer_id( $user_id );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->add_payment_token( $token );
-		$order->save();
-		$error    = new \TypeError( 'Argument #1 must be of type array, null given' );
-		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( $outcome_status, 'pi_renewal_error', '', 'pm_renewal_card' ),
-			'operation_effects',
-			$error
-		);
-		$gateway  = new NativeWooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
-		$logger              = RecordingWcLogger::install();
-		$authentication_hook = 0;
-		add_action(
-			'woocommerce_woocommerce_payments_payment_requires_action',
-			static function () use ( &$authentication_hook ): void {
-				++$authentication_hook;
-			}
-		);
-
-		$thrown = null;
-		try {
-			$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-		} catch ( \Throwable $throwable ) {
-			$thrown = $throwable;
-		}
-
-		$this->assertSame( $rethrown ? $error : null, $thrown, $rethrown ? 'The PHP error must reach Action Scheduler.' : 'A requires-action renewal must not fail the scheduled action.' );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( $expected_status, $order->get_status() );
-		$this->assertSame( 'pi_renewal_error', $order->get_transaction_id() );
-		$this->assertSame( $rethrown ? 0 : 1, $authentication_hook );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error applying the WooPayments subscription renewal payment' ) ) );
-		$this->assertCount( 1, $lines, 'The PHP error is logged whatever the logging setting.' );
-		$this->assertSame( 'error', $lines[0][0] );
 	}
 
 	/**
@@ -7304,75 +6682,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform error applying a renewal payment is logged with its status and code, never its message.
-	 */
-	public function test_renewal_apply_failure_log_leaves_out_platform_text(): void {
-		self::enable_woopayments_debug_logging();
-		$user_id = self::factory()->user->create();
-		$order   = $this->create_order();
-		$token   = $this->create_card_token( $user_id, 'pm_renewal_card' );
-		$order->set_customer_id( $user_id );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->add_payment_token( $token );
-		$order->save();
-		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_renewal_platform_error', '', 'pm_renewal_card' ),
-			'post_lifecycle_effects',
-			self::make_provider_error()
-		);
-		$gateway  = new NativeWooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
-		$logger = RecordingWcLogger::install();
-
-		$gateway->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
-
-		$context = $this->get_logged_context( $logger, 'Error applying the WooPayments subscription renewal payment.' );
-		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
-		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
-	 * @testdox A platform error during the renewal token repair is logged with its status and code, never its message.
-	 */
-	public function test_renewal_token_repair_log_leaves_out_platform_text(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		self::enable_woopayments_debug_logging();
-		$customer_id = self::factory()->user->create();
-		$parent      = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
-		$parent->save();
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->save();
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->save();
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( self::make_provider_error() );
-		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
-		$logger  = RecordingWcLogger::install();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider() );
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$context = $this->get_logged_context( $logger, 'Error repairing subscription renewal payment token for order #' . $renewal->get_id() . '.' );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
-		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
 	 * @testdox A failed synchronous refund is logged with a listed error code, never the platform's message.
 	 *
 	 * Client 11.1.0 logs the failure note (gw:2994), which carries the platform's message; the note itself is unchanged.
@@ -7730,26 +7039,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a token service built from the container's dependencies, with no hooks registered.
-	 *
-	 * @return WooPaymentsTokenService
-	 */
-	private function create_unhooked_token_service(): WooPaymentsTokenService {
-		$container     = wc_get_container();
-		$token_service = new WooPaymentsTokenService();
-		$token_service->init(
-			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			new StaticWooPaymentsRuntimeArbiter( false ),
-			$container->get( WooPaymentsApiClient::class ),
-			$container->get( WooPaymentsCustomerService::class ),
-			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderDataService::class )
-		);
-
-		return $token_service;
-	}
-
-	/**
 	 * Create a saved WooPayments card token.
 	 *
 	 * @param int    $user_id           User ID.
@@ -7921,309 +7210,6 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public detector contract.
 		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
-	}
-
-	/**
-	 * @testdox Should repair a renewal order's missing token from the parent order and charge it.
-	 */
-	public function test_scheduled_subscription_payment_repairs_missing_token_from_parent_order(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$customer_id = self::factory()->user->create();
-
-		$parent = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
-		$parent->save();
-
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->set_payment_method( 'woocommerce_payments' );
-		$subscription->save();
-
-		$token = new \WC_Payment_Token_CC();
-		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$token->set_user_id( $customer_id );
-		$token->set_token( 'pm_repair_123' );
-		$token->set_card_type( 'visa' );
-		$token->set_last4( '4242' );
-		$token->set_expiry_month( '12' );
-		$token->set_expiry_year( '2030' );
-		$token->save();
-
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->set_total( '10.00' );
-		$renewal->save();
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context, 'The repaired token must let the renewal charge proceed.' );
-		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
-
-		$renewal_fresh = wc_get_order( $renewal->get_id() );
-		$this->assertNotSame( 'failed', $renewal_fresh->get_status() );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $renewal_fresh->get_payment_tokens() ), 'The restored token must land on the renewal order itself.' );
-		$renewal_notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
-		$this->assertContains( 'Recovered missing subscription payment method token from the parent order.', $renewal_notes );
-
-		$subscription_fresh = wc_get_order( $subscription->get_id() );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription_fresh->get_payment_tokens() ), 'The subscription must get the restored token so the next renewal does not need repair.' );
-		$subscription_notes = implode( ' | ', array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $subscription->get_id() ) ) ) );
-		$this->assertStringContainsString( 'restored', $subscription_notes );
-	}
-
-	/**
-	 * @testdox Should still fail the renewal when the parent order has no payment method to restore.
-	 */
-	public function test_scheduled_subscription_payment_fails_when_repair_finds_nothing(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$customer_id = self::factory()->user->create();
-
-		$parent = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->save();
-
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->save();
-
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->save();
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-		$this->enable_debug_logging();
-		$logger = RecordingWcLogger::install();
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$this->assertNull( $service->last_checkout_context );
-		$renewal_fresh = wc_get_order( $renewal->get_id() );
-		$this->assertSame( 'failed', $renewal_fresh->get_status() );
-		// Client 11.1.0 trait:415.
-		$this->assertContains( array( 'error', 'There is no saved payment token for order #' . $renewal->get_id(), 'woopayments' ), $logger->lines );
-	}
-
-	/**
-	 * @testdox When the token repair throws a $throwable_class, the renewal ends $status and the throwable propagates: $propagates.
-	 *
-	 * Client 11.1.0 trait:538 catches only exceptions: an exception fails the renewal for a missing token (trait:413-418),
-	 * a PHP Error reaches the scheduled action and leaves the renewal pending.
-	 *
-	 * @testWith ["RuntimeException", "failed", false]
-	 *           ["TypeError", "pending", true]
-	 *
-	 * @param string $throwable_class Class the repair throws.
-	 * @param string $status          Renewal status afterwards.
-	 * @param bool   $propagates      Whether the throwable leaves scheduled_subscription_payment().
-	 */
-	public function test_scheduled_subscription_payment_token_repair_failure( string $throwable_class, string $status, bool $propagates ): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$customer_id = self::factory()->user->create();
-
-		$parent = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
-		$parent->save();
-
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->save();
-
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->save();
-
-		$thrown        = new $throwable_class( 'Call to a member function get_id() on null' );
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service->method( 'get_or_create_token_for_user' )->willThrowException( $thrown );
-		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
-		$logger = RecordingWcLogger::install();
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$caught = null;
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} catch ( \Throwable $throwable ) {
-			$caught = $throwable;
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$this->assertSame( $propagates ? $thrown : null, $caught );
-		$this->assertNull( $service->last_checkout_context );
-		$this->assertSame( $status, wc_get_order( $renewal->get_id() )->get_status() );
-		$repair_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
-		$this->assertCount( $propagates ? 1 : 0, $repair_lines, 'Only a PHP Error is logged with debug logging off.' );
-	}
-
-	/**
-	 * @testdox A PHP error fetching the payment method during token repair fails the scheduled action and leaves the renewal pending.
-	 *
-	 * Client 11.1.0 fetches the payment method without a catch (`class-wc-payments-token-service.php:136`) and the repair
-	 * catches only Exception (trait:538), so the PHP error reaches Action Scheduler instead of failing the renewal with
-	 * "No saved payment method found". The error is logged once, by the
-	 * repair.
-	 */
-	public function test_scheduled_subscription_payment_token_repair_payment_method_fetch_php_error(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$customer_id = self::factory()->user->create();
-
-		$parent = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->update_meta_data( '_payment_method_id', 'pm_repair_fetch' );
-		$parent->save();
-
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->save();
-
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->save();
-
-		$error          = new \TypeError( 'Return value must be of type array, null returned' );
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
-		$details_service = new WooPaymentsPaymentMethodDetailsService();
-		$details_service->init(
-			$legacy_runtime,
-			new class( $error ) extends WooPaymentsApiClient {
-				/**
-				 * Error to throw.
-				 *
-				 * @var \TypeError
-				 */
-				private \TypeError $error;
-
-				/**
-				 * Constructor.
-				 *
-				 * @param \TypeError $error Error to throw.
-				 */
-				public function __construct( \TypeError $error ) {
-					$this->error = $error;
-				}
-
-				// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
-				/**
-				 * Throw the PHP error.
-				 *
-				 * @param string $payment_method_id Payment method ID.
-				 * @return array<string,mixed>
-				 * @throws \TypeError Always.
-				 */
-				public function get_payment_method( string $payment_method_id ): array {
-					unset( $payment_method_id );
-					throw $this->error;
-				}
-				// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-			},
-			new StaticWooPaymentsRuntimeArbiter( true )
-		);
-		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
-		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-		$logger = RecordingWcLogger::install();
-
-		$caught = null;
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} catch ( \Throwable $throwable ) {
-			$caught = $throwable;
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$this->assertSame( $error, $caught );
-		$this->assertNull( $service->last_checkout_context );
-		$this->assertSame( 'pending', wc_get_order( $renewal->get_id() )->get_status() );
-		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
-		$this->assertNotContains( 'Subscription renewal failed: No saved payment method found.', $notes );
-		$error_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
-		$this->assertCount( 1, $error_lines, 'The PHP error is logged once.' );
-		$this->assertSame( \TypeError::class, $logger->contexts[ $error_lines[0] ]['exception'] );
-	}
-
-	/**
-	 * @testdox Should not attempt token repair when network-wide saved cards are forced.
-	 */
-	public function test_scheduled_subscription_payment_skips_repair_for_network_saved_cards(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$customer_id = self::factory()->user->create();
-
-		$parent = wc_create_order();
-		$parent->set_customer_id( $customer_id );
-		$parent->update_meta_data( '_payment_method_id', 'pm_repair_123' );
-		$parent->save();
-
-		$subscription = wc_create_order();
-		$subscription->set_parent_id( $parent->get_id() );
-		$subscription->set_customer_id( $customer_id );
-		$subscription->save();
-
-		$renewal = wc_create_order();
-		$renewal->set_customer_id( $customer_id );
-		$renewal->set_payment_method( 'woocommerce_payments' );
-		$renewal->save();
-
-		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-		$filter = static fn(): bool => true;
-		add_filter( 'wcpay_force_network_saved_cards', $filter );
-
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		try {
-			$gateway->scheduled_subscription_payment( 10.00, $renewal );
-		} finally {
-			remove_filter( 'wcpay_force_network_saved_cards', $filter );
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-
-		$this->assertNull( $service->last_checkout_context );
-		$this->assertSame( 'failed', wc_get_order( $renewal->get_id() )->get_status() );
 	}
 
 	/**

@@ -30,6 +30,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -952,10 +953,10 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		$order->set_status( 'failed' );
 		$order->set_currency( 'USD' );
 
-		$gateway = new NativeWooPaymentsGateway();
-		$outcome = new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION );
+		$controller = new WooPaymentsSubscriptionsController();
+		$outcome    = new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION );
 
-		$this->native_invoke( $gateway, 'maybe_handle_subscription_customer_action_required', array( $order, $outcome ) );
+		$this->native_invoke( $controller, 'maybe_handle_subscription_customer_action_required', array( $order, $outcome ) );
 	}
 
 	/**

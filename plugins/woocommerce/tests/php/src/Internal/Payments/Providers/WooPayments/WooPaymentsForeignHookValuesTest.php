@@ -140,7 +140,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
 				break;
 			case 'woocommerce_email_classes':
-				// WooPaymentsSubscriptionRenewalHooks attaches it at this priority when Subscriptions is active.
+				// WooPaymentsSubscriptionsController attaches it at this priority when Subscriptions is active.
 				add_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
 				break;
 		}

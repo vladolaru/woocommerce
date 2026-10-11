@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNoticesPassthrough;
@@ -318,7 +318,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionRenewalHooks::class;
+				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionsController::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as the client's logger
 				// context does on every request (client 11.1.0 `includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
 				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;

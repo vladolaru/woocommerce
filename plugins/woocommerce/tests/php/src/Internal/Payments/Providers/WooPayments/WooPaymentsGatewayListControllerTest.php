@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -49,7 +49,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_resolved();
 		$GLOBALS['wp_rest_server'] = null;
 
-		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
 		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );

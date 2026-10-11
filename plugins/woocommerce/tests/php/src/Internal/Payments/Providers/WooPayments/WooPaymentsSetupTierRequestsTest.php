@@ -22,7 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionRenewalHooks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -87,7 +87,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
 
-		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionRenewalHooks::class, 'attached' );
+		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
 		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
