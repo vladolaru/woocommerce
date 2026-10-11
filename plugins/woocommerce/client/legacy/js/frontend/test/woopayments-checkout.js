@@ -3352,7 +3352,7 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	// The payment fields WooCommerce re-renders in the update_order_review fragment carry the gateway's refreshed
-	// config in data-wcpay-config (WooPaymentsCheckoutBridge::render_payment_fields()).
+	// config in data-wcpay-config (the gateway's payment_fields()).
 	function renderRefreshedPaymentFields( refreshedConfig ) {
 		const wrapper = document.createElement( 'div' );
 		wrapper.className = 'wcpay-core-checkout-form wcpay-upe-form';

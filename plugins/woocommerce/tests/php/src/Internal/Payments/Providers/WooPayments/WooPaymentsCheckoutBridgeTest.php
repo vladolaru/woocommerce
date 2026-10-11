@@ -153,35 +153,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the classic checkout error region with an assertive live-region role.
-	 *
-	 * T.3 Task 4 (`plan-task-t3.md`), the classic-error-region owner MISSING row: a screen reader
-	 * only announces a payment failure as soon as it appears when the region is an assertive live
-	 * region (`role="alert"`); a plain or absent live-region role can leave it unannounced while
-	 * focus stays on the payment fields. `render_payment_fields()` prints the region hidden up
-	 * front so the checkout script can fill and reveal it once a native confirmation callback
-	 * (`update_order_status`/`confirm_intent_for_order`) reports a failure
-	 * (`WooPaymentsCheckoutBridge.php:567`). Oracle: WooPayments 11.1.0
-	 * `client/checkout/utils/show-error-checkout.js:15` wraps a checkout error in
-	 * `<ul class="woocommerce-error" role="alert">`, the same `woocommerce-error` class and
-	 * `role="alert"` pairing native's region carries; the assertion below checks only that pairing,
-	 * not the surrounding `hidden` markup, which is native-only structure with no client
-	 * counterpart to cite.
-	 */
-	public function test_render_payment_fields_prints_assertive_payment_error_region(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-
-		ob_start();
-		$sut->render_payment_fields( self::CARD_SUPPORTS );
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'woocommerce-error', $output );
-		$this->assertStringContainsString( 'role="alert"', $output );
-	}
-
-	/**
 	 * @testdox Should not relocalize base checkout config after ordinary card fields render.
 	 */
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {
@@ -1320,9 +1291,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			}
 		);
 
+		$gateway = $this->create_card_gateway_for_bridge( $bridge );
 		ob_start();
-		$bridge->render_payment_fields( self::CARD_SUPPORTS );
+		$gateway->form();
 		$output = (string) ob_get_clean();
+		delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
 
 		$this->assertStringContainsString( 'wcpay-core-checkout-form', $output );
 		// Core's tokenization-form.js hides `.wc-payment-form` while a saved method is selected, so it must wrap the card element.
@@ -1347,41 +1320,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the test-mode instructions above the saved payment methods, inside the payment form, as client 11.1.0 does.
-	 */
-	public function test_render_payment_fields_prints_test_mode_instructions_above_saved_payment_methods(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
-
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-
-		ob_start();
-		$bridge->render_payment_fields(
-			self::CARD_SUPPORTS,
-			null,
-			static function (): void {
-				echo '<ul class="woocommerce-SavedPaymentMethods"></ul>';
-			}
-		);
-		$output = (string) ob_get_clean();
-
-		// Client 11.1.0 includes/class-wc-payments-checkout.php:462-502: the form wrapper opens, then the test-mode
-		// instructions, then the saved payment methods, then the fieldset with the card element.
-		$wrapper      = strpos( $output, 'id="wcpay-core-checkout-form"' );
-		$instructions = strpos( $output, 'wcpay-core-test-mode-instructions' );
-		$saved        = strpos( $output, 'woocommerce-SavedPaymentMethods' );
-		$fieldset     = strpos( $output, '<fieldset style="padding: 7px" class="wc-payment-form">' );
-
-		$this->assertIsInt( $wrapper );
-		$this->assertIsInt( $instructions );
-		$this->assertIsInt( $saved );
-		$this->assertIsInt( $fieldset );
-		$this->assertLessThan( $instructions, $wrapper );
-		$this->assertLessThan( $saved, $instructions, 'The test-mode instructions print above the saved payment methods.' );
-		$this->assertLessThan( $fieldset, $saved, 'The saved payment methods print above the card element.' );
-	}
-
-	/**
 	 * @testdox Should make core's tokenization-form.js a dependency of the classic checkout script when the card gateway supports tokenization, as client 11.1.0 does.
 	 */
 	public function test_classic_script_depends_on_tokenization_form_when_tokenization_is_supported(): void {
@@ -1390,9 +1328,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
 
-		ob_start();
-		$bridge->render_payment_fields( array( 'products', 'tokenization' ) );
-		ob_end_clean();
+		$bridge->enqueue_classic_checkout_assets_for_fields( array( 'products', 'tokenization' ) );
 
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first,
 		// so its listener is bound before the checkout script mounts the card element.
@@ -1412,9 +1348,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$bridge = new WooPaymentsCheckoutBridge();
 		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
 
-		ob_start();
-		$bridge->render_payment_fields( self::CARD_SUPPORTS );
-		ob_end_clean();
+		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
 
 		$this->assertNotContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
 		$this->assertFalse( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
@@ -1433,9 +1367,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
-		ob_start();
-		$bridge->render_payment_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
-		ob_end_clean();
+		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
 
 		$checkout_script = wp_scripts()->registered['wc-woopayments-checkout'];
 		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
@@ -1462,9 +1394,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
-		ob_start();
-		$bridge->render_payment_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
-		ob_get_clean();
+		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
 
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -1542,12 +1472,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			++$filtered;
 			return $config;
 		};
-		$render   = function ( array $supports, string $payment_method_id = 'card' ) use ( $bridge, $registry ): array {
-			ob_start();
-			$bridge->render_payment_fields( $supports, $registry->get( $payment_method_id ) );
-			$this->assertSame( 1, preg_match( '/data-wcpay-config="([^"]*)"/', (string) ob_get_clean(), $matches ) );
-
-			return json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true );
+		$render   = static function ( array $supports, string $payment_method_id = 'card' ) use ( $bridge, $registry ): array {
+			return $bridge->enqueue_classic_checkout_assets_for_fields( $supports, $registry->get( $payment_method_id ) );
 		};
 		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 		add_filter( 'wcpay_payment_fields_js_config', $filter );
@@ -2309,9 +2235,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$this->create_fraud_prevention_service( true, $session )
 		);
 
-		ob_start();
-		$bridge->render_payment_fields( self::CARD_SUPPORTS );
-		ob_get_clean();
+		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
 
 		$this->assertTrue( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
 		$inline_scripts = wp_scripts()->registered[ WooPaymentsFraudPreventionService::TOKEN_NAME ]->extra['after'] ?? array();

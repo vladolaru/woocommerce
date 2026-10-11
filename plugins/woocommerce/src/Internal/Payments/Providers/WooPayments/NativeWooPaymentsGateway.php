@@ -715,11 +715,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->tokenization_script();
-		$this->get_checkout_bridge()->render_payment_fields(
-			$this->get_card_gateway_supports(),
-			$this->payment_method_definition,
-			$is_add_payment_method_page ? null : array( $this, 'saved_payment_methods' )
-		);
+		$this->render_payment_form( $is_add_payment_method_page ? null : array( $this, 'saved_payment_methods' ) );
 		// The checkbox needs saved cards on and a method that can be saved (client 11.1.0 class-wc-payments-checkout.php:505).
 		// A guest gets it only when saving is forced (a subscription), as in client 11.1.0
 		// (class-wc-payments-checkout.php:513-516): no token can be stored for a guest.
@@ -755,7 +751,60 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	public function form() {
-		$this->get_checkout_bridge()->render_payment_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
+		$this->render_payment_form();
+	}
+
+	/**
+	 * Print the classic checkout payment form and enqueue the checkout assets its config is localized on.
+	 *
+	 * @param callable|null $render_saved_payment_methods Optional callback that prints the saved payment methods, below the test-mode instructions.
+	 * @return void
+	 */
+	private function render_payment_form( ?callable $render_saved_payment_methods = null ): void {
+		$checkout_bridge = $this->get_checkout_bridge();
+		$config          = $checkout_bridge->enqueue_classic_checkout_assets_for_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
+		$json_config     = wp_json_encode( $config );
+
+		if ( ! is_string( $json_config ) ) {
+			$json_config = '{}';
+		}
+
+		$payment_method_type = $this->payment_method_definition->get_id();
+
+		// The client's classes (`wcpay-upe-form`, `wc-payment-form`, `wcpay-upe-element`) stay beside native's: core's
+		// tokenization-form.js hides `.wc-payment-form` while a saved method is selected, and the woocommerce.com theme
+		// styles `.payment_box .wc-payment-form .wcpay-upe-element`. The wrapper is the client's own fieldset, inline
+		// padding included (client includes/class-wc-payments-checkout.php), so themes and the appearance probe for
+		// `.payment_box fieldset` see the same markup.
+		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
+
+		if ( ! empty( $config['testMode'] ) ) {
+			$testing_instructions = $config['paymentMethodsConfig']['card']['testingInstructions'] ?? '';
+			if ( is_string( $testing_instructions ) && '' !== $testing_instructions ) {
+				echo '<p class="wcpay-core-test-mode-instructions testmode-info">';
+				echo wp_kses_post( $testing_instructions );
+				echo '</p>';
+			}
+		}
+
+		// The client prints the saved payment methods here, below the test-mode instructions (client 11.1.0
+		// includes/class-wc-payments-checkout.php:474-499).
+		if ( null !== $render_saved_payment_methods ) {
+			$render_saved_payment_methods();
+		}
+
+		echo '<fieldset style="padding: 7px" class="wc-payment-form">';
+		echo '<div id="wcpay-core-payment-element" class="wcpay-core-payment-element wcpay-upe-element" data-payment-method-type="' . esc_attr( $payment_method_type ) . '"></div>';
+		echo '</fieldset>';
+		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
+
+		if ( ! $checkout_bridge->should_expose_checkout_surface() ) {
+			echo '<p class="woocommerce-info wcpay-core-checkout-unavailable">';
+			echo esc_html__( 'WooPayments checkout is not available right now. Please choose another payment method.', 'woocommerce' );
+			echo '</p>';
+		}
+
+		echo '</div>';
 	}
 
 	/**

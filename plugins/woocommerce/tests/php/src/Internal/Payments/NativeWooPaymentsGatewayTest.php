@@ -515,15 +515,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_gateway_for_method' )->willReturn( null );
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
-			static function (): void {
-				echo '<div id="wcpay-bridge-marker"></div>';
-			}
-		);
+		$bridge = $this->create_checkout_bridge_double();
 		// The WooPayments settings turn saved cards off. iDEAL's own row holds only what the client's settings sync writes
 		// (enabled and the enabled list), plus saved_cards in the pre-10.1.0 history.
 		$card_settings      = static fn(): array => array(
@@ -565,7 +557,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$ideal_gateway->payment_fields();
 			$fields = (string) ob_get_clean();
 			remove_filter( 'woocommerce_is_checkout', '__return_true' );
-			$this->assertStringContainsString( 'wcpay-bridge-marker', $fields );
+			$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $fields );
 			$this->assertStringNotContainsString( 'wc-woocommerce_payments_ideal-new-payment-method', $fields, 'iDEAL cannot be saved, so it offers no save checkbox.' );
 
 			update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
@@ -5867,16 +5859,14 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$registry          = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway      = new NativeWooPaymentsGateway( $registry->get( 'card' ) );
 		$received_supports = null;
-		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
+		$bridge            = $this->create_checkout_bridge_double(
+			array(),
+			true,
 			static function ( array $supports ) use ( &$received_supports ): void {
 				$received_supports = $supports;
 			}
 		);
-		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+		$provider          = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_gateway_for_method' ) )
 			->getMock();
@@ -5885,15 +5875,17 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$klarna_gateway = new NativeWooPaymentsGateway( $registry->get( 'klarna' ) );
 		$klarna_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge );
+		ob_start();
 		$klarna_gateway->form();
+		ob_end_clean();
 
 		$this->assertSame( $card_gateway->supports, $received_supports );
 	}
 
 	/**
-	 * @testdox Should delegate payment fields rendering to the checkout bridge with the gateway's own supports.
+	 * @testdox Should print the saved payment methods inside the payment form, below the test-mode instructions, with the gateway's own supports.
 	 */
-	public function test_payment_fields_delegate_to_checkout_bridge(): void {
+	public function test_payment_fields_print_saved_methods_inside_the_form_with_the_gateway_supports(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		// A customer with a saved card: core lists it with the new-card option, and the save checkbox follows.
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
@@ -5910,23 +5902,16 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service           = new RecordingPaymentProcessingService();
 		$received_supports = null;
-		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge
-			->expects( $this->once() )
-			->method( 'render_payment_fields' )
-			->willReturnCallback(
-				static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ) use ( &$received_supports ): void {
-					$received_supports = $supports;
-					echo '<div id="wcpay-bridge-marker">';
-					if ( null !== $render_saved_payment_methods ) {
-						$render_saved_payment_methods();
-					}
-					echo '</div>';
-				}
-			);
+		$bridge            = $this->create_checkout_bridge_double(
+			array(
+				'testMode'             => true,
+				'paymentMethodsConfig' => array( 'card' => array( 'testingInstructions' => 'Use test card 4242 4242 4242 4242.' ) ),
+			),
+			true,
+			static function ( array $supports ) use ( &$received_supports ): void {
+				$received_supports = $supports;
+			}
+		);
 
 		$output           = '';
 		$gateway_supports = array();
@@ -5949,14 +5934,66 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $gateway_supports, $received_supports );
 		$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $received_supports );
-		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
+		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-new-payment-method', $output );
 		$this->assertStringContainsString( 'wc-woocommerce_payments-payment-token-new', $output );
-		// The bridge prints the saved payment methods inside its form, below the test-mode instructions, as in
-		// client 11.1.0 (includes/class-wc-payments-checkout.php:474-499); the save checkbox follows the form.
-		$this->assertMatchesRegularExpression( '/<div id="wcpay-bridge-marker">.*wc-woocommerce_payments-payment-token-new.*<\/div>.*wc-woocommerce_payments-new-payment-method/s', $output );
+		// The saved payment methods print inside the form, below the test-mode instructions and above the card element, as in
+		// client 11.1.0 (includes/class-wc-payments-checkout.php:462-502); the save checkbox follows the form.
+		$this->assertMatchesRegularExpression( '/<div id="wcpay-core-checkout-form"[^>]*>.*wcpay-core-test-mode-instructions.*wc-woocommerce_payments-payment-token-new.*<fieldset style="padding: 7px" class="wc-payment-form">.*<\/div>.*wc-woocommerce_payments-new-payment-method/s', $output );
 		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]*>/', $output );
 		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
+	}
+
+	/**
+	 * @testdox Should print the classic checkout error region with an assertive live-region role.
+	 *
+	 * T.3 Task 4 (`plan-task-t3.md`), the classic-error-region owner MISSING row: a screen reader
+	 * only announces a payment failure as soon as it appears when the region is an assertive live
+	 * region (`role="alert"`); a plain or absent live-region role can leave it unannounced while
+	 * focus stays on the payment fields. The payment form prints the region hidden up front so the
+	 * checkout script can fill and reveal it once a native confirmation callback
+	 * (`update_order_status`/`confirm_intent_for_order`) reports a failure (the config's
+	 * `confirmationErrorMessage`). Oracle: WooPayments 11.1.0
+	 * `client/checkout/utils/show-error-checkout.js:15` wraps a checkout error in
+	 * `<ul class="woocommerce-error" role="alert">`, the same `woocommerce-error` class and
+	 * `role="alert"` pairing native's region carries; the assertion below checks only that pairing,
+	 * not the surrounding `hidden` markup, which is native-only structure with no client
+	 * counterpart to cite.
+	 */
+	public function test_payment_form_prints_assertive_payment_error_region(): void {
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_bridge_double() );
+
+		ob_start();
+		$gateway->form();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'woocommerce-error', $output );
+		$this->assertStringContainsString( 'role="alert"', $output );
+	}
+
+	/**
+	 * @testdox Should tell the shopper inside the payment form that WooPayments checkout is unavailable only while the account cannot take payments: $scenario.
+	 * @testWith ["account can take payments", true, false]
+	 *           ["account cannot take payments", false, true]
+	 *
+	 * @param string $scenario          Scenario description.
+	 * @param bool   $can_take_payments Whether the account can take payments.
+	 * @param bool   $expects_notice    Whether the unavailable notice prints.
+	 */
+	public function test_payment_form_prints_the_unavailable_notice_only_when_the_account_cannot_take_payments( string $scenario, bool $can_take_payments, bool $expects_notice ): void {
+		$gateway = new NativeWooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_bridge_double( array(), $can_take_payments ) );
+
+		ob_start();
+		$gateway->form();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame(
+			$expects_notice ? 1 : 0,
+			preg_match( '/<div id="wcpay-core-checkout-form"[^>]*>.*<p class="woocommerce-info wcpay-core-checkout-unavailable">WooPayments checkout is not available right now\. Please choose another payment method\.<\/p><\/div>$/s', $output ),
+			$scenario
+		);
 	}
 
 	/**
@@ -5976,17 +6013,19 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$wp->query_vars['add-payment-method'] = '';
 		wp_dequeue_script( 'woocommerce-tokenization-form' );
 
-		$received_callback = 'not called';
-		$bridge            = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
-			static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ) use ( &$received_callback ): void {
-				$received_callback = $render_saved_payment_methods;
-				echo '<div id="wcpay-bridge-marker"></div>';
-			}
-		);
+		// A customer with a saved card, so the saved methods list would print if the form were given it.
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $customer_id );
+		$token = new \WC_Payment_Token_CC();
+		$token->set_token( 'pm_test_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $customer_id );
+		$token->save();
+		$bridge = $this->create_checkout_bridge_double();
 
 		$output = '';
 		try {
@@ -6009,8 +6048,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:401,493-499: tokenization shows on this page, so core's
 		// script loads, but the saved methods list does not. The save checkbox is the decided difference above.
 		$this->assertTrue( wp_script_is( 'woocommerce-tokenization-form', 'enqueued' ) );
-		$this->assertNull( $received_callback );
-		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
+		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
 		$this->assertStringNotContainsString( 'woocommerce-SavedPaymentMethods', $output );
 	}
 
@@ -6029,15 +6067,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		$service = new RecordingPaymentProcessingService();
-		$bridge  = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
-			static function (): void {
-				echo '<div id="wcpay-bridge-marker"></div>';
-			}
-		);
+		$bridge  = $this->create_checkout_bridge_double();
 
 		$output = '';
 		try {
@@ -6077,18 +6107,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_payment_fields_offer_a_guest_no_saving(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		wp_set_current_user( 0 );
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
-			static function ( array $supports, $payment_method_definition = null, ?callable $render_saved_payment_methods = null ): void {
-				unset( $supports, $payment_method_definition );
-				if ( null !== $render_saved_payment_methods ) {
-					$render_saved_payment_methods();
-				}
-			}
-		);
+		$bridge = $this->create_checkout_bridge_double();
 
 		$output = '';
 		try {
@@ -6134,15 +6153,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$store_currency      = static fn(): string => $currency;
 		add_filter( 'woocommerce_payment_gateway_supports', $claims_tokenization, 10, 3 );
 		add_filter( 'woocommerce_currency', $store_currency );
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'render_payment_fields' ) )
-			->getMock();
-		$bridge->method( 'render_payment_fields' )->willReturnCallback(
-			static function (): void {
-				echo '<div id="wcpay-bridge-marker"></div>';
-			}
-		);
+		$bridge   = $this->create_checkout_bridge_double();
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_gateway_for_method' ) )
@@ -6169,7 +6180,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_currency', $store_currency );
 		}
 
-		$this->assertStringContainsString( 'wcpay-bridge-marker', $output );
+		$this->assertStringContainsString( 'id="wcpay-core-checkout-form"', $output );
 		$this->assertStringNotContainsString( 'wc-' . $gateway_id . '-new-payment-method', $output );
 	}
 
@@ -7210,6 +7221,33 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public detector contract.
 		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * Create a checkout bridge double that returns a fixed payment fields config.
+	 *
+	 * @param array<string,mixed> $config            Config the bridge returns for the payment form.
+	 * @param bool                $can_take_payments Whether the account can take payments.
+	 * @param callable|null       $on_enqueue        Optional callback that receives the supports and payment method definition the gateway passes.
+	 * @return WooPaymentsCheckoutBridge
+	 */
+	private function create_checkout_bridge_double( array $config = array(), bool $can_take_payments = true, ?callable $on_enqueue = null ): WooPaymentsCheckoutBridge {
+		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'enqueue_classic_checkout_assets_for_fields', 'should_expose_checkout_surface' ) )
+			->getMock();
+		$bridge->method( 'enqueue_classic_checkout_assets_for_fields' )->willReturnCallback(
+			static function ( array $supports, $payment_method_definition = null ) use ( $config, $on_enqueue ): array {
+				if ( null !== $on_enqueue ) {
+					$on_enqueue( $supports, $payment_method_definition );
+				}
+
+				return $config;
+			}
+		);
+		$bridge->method( 'should_expose_checkout_surface' )->willReturn( $can_take_payments );
+
+		return $bridge;
 	}
 
 	/**

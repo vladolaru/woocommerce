@@ -23,7 +23,7 @@ import {
  *
  * The shipped Blocks journey (`shopper/card-authentication.spec.ts`) does not
  * cover these four contracts. Native's Classic surface is a different
- * integration: `WooPaymentsCheckoutBridge` renders it, `woopayments-checkout.js`
+ * integration: the gateway's payment form renders it, `woopayments-checkout.js`
  * drives it, the confirmation arrives as a hash the page consumes after the
  * checkout response rather than inside it, and failures land in native's own
  * `role="alert"` region instead of the Blocks notice and `wp.a11y`.
