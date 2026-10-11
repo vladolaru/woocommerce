@@ -1090,6 +1090,188 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 `checkout_order_processed()` counts an order paid with another gateway on the WordPress.com stats pixel
+	 * (`includes/class-woopay-tracker.php:581-602`, `bump_stats()` at :545-574); native does not wait for the answer.
+	 *
+	 * @testdox Should send one stats counter request, without waiting for the answer, for an order paid with another gateway from $hook.
+	 * @dataProvider order_processed_action_provider
+	 *
+	 * @param string $hook Order-processed action.
+	 */
+	public function test_counts_an_order_paid_with_another_gateway_once_without_waiting( string $hook ): void {
+		$requests = $this->capture_http_requests();
+		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( false ) );
+		$order    = $this->create_order_paid_with( 'cod', 'Cash on delivery' );
+
+		$sut->register();
+		$this->fire_order_processed( $hook, $order );
+
+		// The pixel URL client 11.1.0 builds (`includes/class-woopay-tracker.php:50,557-561`).
+		$this->assertSame( array( 'https://pixel.wp.com/g.gif?v=wpcom-no-pv&x_wcpay_order_completed_gateway=other' ), array_column( $requests->getArrayCopy(), 'url' ), 'One counter request' );
+		$this->assertFalse( $requests[0]['blocking'], 'Checkout does not wait for the answer' );
+		$this->assertSame( 1, $requests[0]['timeout'], 'One-second timeout' );
+	}
+
+	/**
+	 * Both order-processed actions client 11.1.0 counts from (`includes/class-woopay-tracker.php:78-79`).
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function order_processed_action_provider(): array {
+		return array(
+			'classic checkout'   => array( 'woocommerce_checkout_order_processed' ),
+			'Store API checkout' => array( 'woocommerce_store_api_checkout_order_processed' ),
+		);
+	}
+
+	/**
+	 * @testdox Should send no stats counter for an order paid with WooPayments ($payment_method).
+	 * @testWith ["woocommerce_payments"]
+	 *           ["woocommerce_payments_klarna"]
+	 *
+	 * @param string $payment_method WooPayments gateway ID.
+	 */
+	public function test_sends_no_counter_for_an_order_paid_with_woopayments( string $payment_method ): void {
+		$requests = $this->capture_http_requests();
+		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( false ) );
+		$order    = $this->create_order_paid_with( $payment_method, 'WooPayments' );
+
+		$sut->register();
+		$this->fire_order_processed( 'woocommerce_checkout_order_processed', $order );
+		\WC_Tracks_Footer_Pixel::clear_events();
+
+		$counter_requests = array_filter(
+			array_column( $requests->getArrayCopy(), 'url' ),
+			static fn( string $url ): bool => 0 === strpos( $url, 'https://pixel.wp.com/g.gif' )
+		);
+		$this->assertSame( array(), $counter_requests );
+	}
+
+	/**
+	 * Each row turns off one of the client 11.1.0 gates (`should_enable_tracking( false, true )`, `includes/class-woopay-tracker.php:228-287`, and
+	 * live mode, :553-555) on a store where the counter is sent.
+	 *
+	 * @testdox Should send no stats counter for an order paid with another gateway when the $gate check fails.
+	 * @dataProvider counter_gate_provider
+	 *
+	 * @param string $gate Gate turned off.
+	 */
+	public function test_sends_no_counter_when_a_gate_is_off( string $gate ): void {
+		$requests = $this->capture_http_requests();
+		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( 'test mode' === $gate, 'gateway enabled' !== $gate, true, 'account connected' !== $gate ) );
+		switch ( $gate ) {
+			case 'tracking option':
+				update_option( 'woocommerce_allow_tracking', 'no' );
+				break;
+			case 'tracking filter':
+				add_filter( 'wcpay_shopper_tracking_enabled', '__return_false' );
+				break;
+			case 'US store':
+				update_option( 'woocommerce_default_country', 'DE:BE' );
+				break;
+			case 'opt-out cookie':
+				$_COOKIE['tk_opt-out'] = '1';
+				break;
+			case 'front-end request':
+				set_current_screen( 'dashboard' );
+				break;
+			case 'not an administrator':
+				wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+				break;
+		}
+		$order = $this->create_order_paid_with( 'cod', 'Cash on delivery' );
+
+		$sut->register();
+		$this->fire_order_processed( 'woocommerce_checkout_order_processed', $order );
+
+		$this->assertSame( array(), $requests->getArrayCopy() );
+	}
+
+	/**
+	 * The client 11.1.0 counter gates, by name.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function counter_gate_provider(): array {
+		$gates = array( 'tracking option', 'tracking filter', 'gateway enabled', 'account connected', 'US store', 'opt-out cookie', 'front-end request', 'not an administrator', 'test mode' );
+
+		return array_combine( $gates, array_map( static fn( string $gate ): array => array( $gate ), $gates ) );
+	}
+
+	/**
+	 * Record every outgoing HTTP request without sending it.
+	 *
+	 * @return \ArrayObject<int,array{url:string,blocking:mixed,timeout:mixed}>
+	 */
+	private function capture_http_requests(): \ArrayObject {
+		$requests = new \ArrayObject();
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( $requests ) {
+				unset( $preempt ); // Avoid parameter not used PHPCS errors.
+				$requests[] = array(
+					'url'      => $url,
+					'blocking' => $parsed_args['blocking'],
+					'timeout'  => $parsed_args['timeout'],
+				);
+
+				return new \WP_Error( 'http_request_blocked', 'Blocked in tests.' );
+			},
+			10,
+			3
+		);
+
+		return $requests;
+	}
+
+	/**
+	 * Set up a US store that allows tracking, with a guest shopper, where the stats counter is sent.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service double.
+	 * @return WooPaymentsFrontendTrackingController
+	 */
+	private function arrange_counter_eligible_store( WooPaymentsAccountService $account_service ): WooPaymentsFrontendTrackingController {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		wp_set_current_user( 0 );
+
+		return $this->create_controller( true, $account_service );
+	}
+
+	/**
+	 * Create a checkout order paid with a gateway.
+	 *
+	 * @param string $payment_method Gateway ID.
+	 * @param string $title          Gateway title.
+	 * @return \WC_Order
+	 */
+	private function create_order_paid_with( string $payment_method, string $title ): \WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		$order->set_payment_method_title( $title );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Fire an order-processed action with the argument checkout passes: the order ID on classic, the order on the Store API.
+	 *
+	 * @param string    $hook  Order-processed action.
+	 * @param \WC_Order $order Checkout order.
+	 */
+	private function fire_order_processed( string $hook, \WC_Order $order ): void {
+		if ( 'woocommerce_store_api_checkout_order_processed' === $hook ) {
+			/** This action is documented in src/StoreApi/Routes/V1/Checkout.php */
+			do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+			return;
+		}
+
+		/** This action is documented in includes/class-wc-checkout.php */
+		do_action( 'woocommerce_checkout_order_processed', $order->get_id() );
+	}
+
+	/**
 	 * Client 11.1.0 `should_enable_tracking()` checks `is_stripe_connected()` (`includes/class-woopay-tracker.php:248-252`):
 	 * any cached account counts, onboarded or not, and an errored refresh serves the earlier account
 	 * (`includes/class-database-cache.php:176-179`); only no account, or an errored cache with no account, sends nothing.
@@ -1351,9 +1533,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $test_mode       Whether the account is in test mode.
 	 * @param bool $gateway_enabled Whether the WooPayments gateway is enabled.
 	 * @param bool $woopay_enabled  Whether WooPay is enabled.
+	 * @param bool $connected       Whether an account is connected; without one the account cache reads empty.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_account_service( bool $test_mode, bool $gateway_enabled = true, bool $woopay_enabled = true ): WooPaymentsAccountService {
+	private function create_account_service( bool $test_mode, bool $gateway_enabled = true, bool $woopay_enabled = true, bool $connected = true ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled', 'is_gateway_enabled' ) )
@@ -1361,10 +1544,12 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
-			array(
-				'country'                    => 'US',
-				'platform_checkout_eligible' => true,
-			)
+			$connected
+				? array(
+					'country'                    => 'US',
+					'platform_checkout_eligible' => true,
+				)
+				: array()
 		);
 		$account_service->method( 'get_gateway_setting' )->willReturnMap(
 			array(

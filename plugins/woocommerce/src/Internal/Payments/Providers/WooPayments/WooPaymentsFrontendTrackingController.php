@@ -155,6 +155,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private const REST_ROUTE = '/payments/tracks';
 
 	/**
+	 * WordPress.com stats pixel that counts a checkout order paid with another gateway, with no visitor data
+	 * (client 11.1.0 `includes/class-woopay-tracker.php:50,557-561`).
+	 */
+	private const OTHER_GATEWAY_ORDER_COUNTER_URL = 'https://pixel.wp.com/g.gif?v=wpcom-no-pv&x_wcpay_order_completed_gateway=other';
+
+	/**
 	 * Page-view events queued during render for the footer script to send.
 	 *
 	 * @var array<int,array{event:string,properties:array<string,mixed>}>
@@ -311,7 +317,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record that checkout created a WooPayments order before payment processing begins.
+	 * Record that checkout created an order before payment processing begins: a Tracks event for a WooPayments order,
+	 * the stats counter for an order paid with another gateway (client 11.1.0 `includes/class-woopay-tracker.php:581-602`).
 	 *
 	 * @internal
 	 * @param int|\WC_Order $order          Order ID or Store API order object.
@@ -319,7 +326,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 */
 	public function record_checkout_order_placed( $order, $_checkout_data = null ): void {
 		$order = wc_get_order( $order );
-		if ( ! $order instanceof \WC_Order || 0 !== strpos( $order->get_payment_method(), 'woocommerce_payments' ) ) {
+		if ( ! $order instanceof \WC_Order ) {
+			return;
+		}
+
+		if ( 0 !== strpos( $order->get_payment_method(), 'woocommerce_payments' ) ) {
+			$this->send_other_gateway_order_counter();
 			return;
 		}
 
@@ -730,6 +742,30 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
 		// Core's transport: sent now in AJAX, REST, CLI and cron requests, otherwise from the footer pixel queue.
 		return $event->record();
+	}
+
+	/**
+	 * Count an order paid with another gateway on the WordPress.com stats pixel, like the client's `bump_stats()`.
+	 *
+	 * Under the client's gates (client 11.1.0 `includes/class-woopay-tracker.php:545-555`). Unlike the client, checkout does
+	 * not wait for the answer beyond a one-second timeout; the request is never retried and a failure is ignored.
+	 */
+	private function send_other_gateway_order_counter(): void {
+		try {
+			if ( ! $this->is_shopper_tracking_enabled( false, true ) || $this->get_account_service()->is_test_mode_enabled() ) {
+				return;
+			}
+
+			wp_safe_remote_get(
+				self::OTHER_GATEWAY_ORDER_COUNTER_URL,
+				array(
+					'blocking' => false,
+					'timeout'  => 1,
+				)
+			);
+		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+			// Tracking must never interrupt checkout order processing.
+		}
 	}
 
 	/**
