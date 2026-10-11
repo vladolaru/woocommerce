@@ -317,7 +317,7 @@ class WooPaymentsPaymentOperationService {
 						$this->capture_metadata( $order ),
 						$is_order_total ? $this->capture_level3_data( $order ) : array()
 					);
-					$outcome = WooPaymentsIntentCodec::outcome_from_native_capture_result( $result, $intent_id );
+					$outcome = WooPaymentsIntentCodec::outcome_from_capture_result( $result, $intent_id );
 					$plan    = WooPaymentsOrderEffectPlan::for_capture( $result );
 
 					return $outcome->with_effect_plan( empty( $context->get_provider_data()[ self::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ) ? $plan : $plan->without_fee_meta() );
@@ -728,7 +728,7 @@ class WooPaymentsPaymentOperationService {
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url(), '', $customer_id )
+			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), '', $customer_id )
 		);
 		$data    = $outcome->get_data();
 
@@ -1465,7 +1465,7 @@ class WooPaymentsPaymentOperationService {
 			);
 		}
 
-		return WooPaymentsIntentMappingContext::for_native(
+		return new WooPaymentsIntentMappingContext(
 			$order->get_id(),
 			$order->get_checkout_order_received_url(),
 			$payment_credential,

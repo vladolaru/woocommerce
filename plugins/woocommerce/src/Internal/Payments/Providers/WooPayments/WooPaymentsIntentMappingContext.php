@@ -67,22 +67,22 @@ final class WooPaymentsIntentMappingContext {
 	/**
 	 * Constructor.
 	 *
-	 * @param string $intent_type              Provider intent type.
 	 * @param int    $order_id                 Order ID.
 	 * @param string $order_received_url       Order-received URL.
 	 * @param string $payment_credential       Submitted payment credential.
 	 * @param string $fallback_customer_id     Customer ID used for the request.
 	 * @param string $customer_action_redirect Prebuilt customer-action redirect.
+	 * @param string $intent_type              Provider intent type.
 	 * @param string $provider_redirect_url    Sanitized provider redirect URL.
 	 */
-	private function __construct(
-		string $intent_type,
+	public function __construct(
 		int $order_id,
 		string $order_received_url,
-		string $payment_credential,
-		string $fallback_customer_id,
-		string $customer_action_redirect,
-		string $provider_redirect_url
+		string $payment_credential = '',
+		string $fallback_customer_id = '',
+		string $customer_action_redirect = '',
+		string $intent_type = 'pi',
+		string $provider_redirect_url = ''
 	) {
 		$this->intent_type              = $intent_type;
 		$this->order_id                 = $order_id;
@@ -91,38 +91,6 @@ final class WooPaymentsIntentMappingContext {
 		$this->fallback_customer_id     = $fallback_customer_id;
 		$this->customer_action_redirect = $customer_action_redirect;
 		$this->provider_redirect_url    = $provider_redirect_url;
-	}
-
-	/**
-	 * Build context for a native provider response.
-	 *
-	 * @param int    $order_id                 Order ID.
-	 * @param string $order_received_url       Order-received URL.
-	 * @param string $payment_credential       Submitted payment credential.
-	 * @param string $fallback_customer_id     Customer ID used for the request.
-	 * @param string $customer_action_redirect Prebuilt customer-action redirect.
-	 * @param string $intent_type              Provider intent type.
-	 * @param string $provider_redirect_url    Sanitized provider redirect URL.
-	 * @return self
-	 */
-	public static function for_native(
-		int $order_id,
-		string $order_received_url,
-		string $payment_credential = '',
-		string $fallback_customer_id = '',
-		string $customer_action_redirect = '',
-		string $intent_type = 'pi',
-		string $provider_redirect_url = ''
-	): self {
-		return new self(
-			$intent_type,
-			$order_id,
-			$order_received_url,
-			$payment_credential,
-			$fallback_customer_id,
-			$customer_action_redirect,
-			$provider_redirect_url
-		);
 	}
 
 	/**

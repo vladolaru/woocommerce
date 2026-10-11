@@ -4818,7 +4818,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// The outcome the real provider hands the gateway: the codec's mapping enriched with the order effects.
 		$service->checkout_outcome = wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->enrich_outcome_for_lifecycle(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
-			WooPaymentsIntentCodec::outcome_from_intention( $intent, WooPaymentsIntentMappingContext::for_native( $order->get_id(), $order->get_checkout_order_received_url() ) ),
+			WooPaymentsIntentCodec::outcome_from_intention( $intent, new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url() ) ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 

@@ -45,7 +45,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					),
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -74,7 +74,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'customer'       => 'cus_sepa',
 				'payment_method' => 'pm_sepa',
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
@@ -93,7 +93,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'payment_method'       => 'pm_action',
 				'payment_method_types' => array( 'wechat_pay' ),
 			),
-			WooPaymentsIntentMappingContext::for_native(
+			new WooPaymentsIntentMappingContext(
 				42,
 				'https://example.test/order-received/42',
 				'pm_request',
@@ -138,7 +138,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			WooPaymentsIntentMappingContext::for_native(
+			new WooPaymentsIntentMappingContext(
 				42,
 				'https://example.test/order-received/42',
 				'pm_request',
@@ -174,7 +174,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 						'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
 					),
 				),
-				WooPaymentsIntentMappingContext::for_native(
+				new WooPaymentsIntentMappingContext(
 					42,
 					'https://example.test/order-received/42',
 					'',
@@ -207,7 +207,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'multibanco_display_details' => array( 'reference' => '123 456 789' ),
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
@@ -227,7 +227,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'data' => array( array( 'payment_method' => 'pm_from_charge' ) ),
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, '', 'ctoken_submitted' )
+			new WooPaymentsIntentMappingContext( 42, '', 'ctoken_submitted' )
 		);
 
 		$this->assertSame( 'pm_from_charge', $outcome->get_payment_method_id() );
@@ -248,7 +248,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'message'      => 'Provider diagnostic: balance check failed for request req_private.',
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -274,7 +274,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'message' => $platform_message,
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -297,7 +297,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'message' => 'Raw provider secret must remain diagnostic only.',
 				),
 			),
-			WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -338,7 +338,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 						'message'      => 'Malformed provider metadata for request req_private.',
 					),
 				),
-				WooPaymentsIntentMappingContext::for_native( 42, 'https://example.test/order-received/42' )
+				new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 			);
 		} finally {
 			restore_error_handler();

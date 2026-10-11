@@ -155,17 +155,6 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Normalize a native capture response before local enrichment.
-	 *
-	 * @param array<string,mixed> $result                       Native capture result.
-	 * @param string              $fallback_provider_payment_id Persisted provider payment ID.
-	 * @return PaymentOutcome
-	 */
-	public static function outcome_from_native_capture_result( array $result, string $fallback_provider_payment_id = '' ): PaymentOutcome {
-		return self::outcome_from_capture_result( $result, $fallback_provider_payment_id );
-	}
-
-	/**
 	 * Tell whether a provider refund status is a refund still on its way: recorded on the order as pending, and settled
 	 * by `charge.refund.updated`.
 	 *

@@ -206,7 +206,7 @@ class WooPaymentsIntentConfirmationService {
 		$outcome               = $this->enrich_outcome_for_lifecycle(
 			$order,
 			$intent,
-			WooPaymentsIntentMappingContext::for_native(
+			new WooPaymentsIntentMappingContext(
 				$order->get_id(),
 				$order->get_checkout_order_received_url(),
 				(string) $order->get_meta( '_payment_method_id', true ),
@@ -252,7 +252,7 @@ class WooPaymentsIntentConfirmationService {
 		$outcome               = $this->enrich_outcome_for_lifecycle(
 			$order,
 			$intent,
-			WooPaymentsIntentMappingContext::for_native(
+			new WooPaymentsIntentMappingContext(
 				$order->get_id(),
 				$order->get_checkout_order_received_url(),
 				'',
