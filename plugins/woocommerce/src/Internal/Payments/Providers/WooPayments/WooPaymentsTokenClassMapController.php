@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Maps persisted WooPayments token types to native token classes.
+ * Loads saved WooPayments SEPA, Link and Amazon Pay tokens with the token classes here, whether a token row names its
+ * type or one of the WooPayments extension's token class names.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 

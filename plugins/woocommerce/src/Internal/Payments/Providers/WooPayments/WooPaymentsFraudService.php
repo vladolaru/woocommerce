@@ -15,13 +15,14 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Anti-fraud services integration for native WooPayments.
+ * Serves the WooPayments fraud-services config (Sift and Stripe) to checkout and
+ * admin pages, links a shopper's pre-login session to their customer, and
+ * prints the Sift tracker on WooCommerce admin pages.
  *
- * Owns the prepared fraud-services configuration served to checkout surfaces —
- * the raw account payload resolved through the platform's public-config
- * fallback, then prepared per service (test-mode beacon key swap, Sift user
- * and session identity) — so the browser-side fraud scripts receive the same
- * config the WooPayments plugin serves.
+ * The config is the account payload, or the platform's public config as the
+ * fallback, prepared per service (test-mode beacon key swap, Sift user and
+ * session identity), so the browser-side fraud scripts receive the config
+ * client 11.1.0 serves (class-wc-payments-fraud-service.php:92-136).
  *
  * Distinct from WooPaymentsFraudPreventionService, which owns the
  * card-testing prevention token.
@@ -68,7 +69,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	private WooPaymentsSessionService $session_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -82,7 +83,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService  $account_service  Account service.
 	 * @param WooPaymentsCustomerService $customer_service Customer service.
 	 * @param WooPaymentsSessionService  $session_service  Session service.
-	 * @param WooPaymentsApiClient       $api_client       Native WooPayments API client.
+	 * @param WooPaymentsApiClient       $api_client       WooPayments API client.
 	 */
 	final public function init( WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsSessionService $session_service, WooPaymentsApiClient $api_client ): void {
 		$this->account_service  = $account_service;
@@ -107,9 +108,9 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	 * Print the Sift page tracker on WooCommerce admin pages, with the merchant's account as the Sift user.
 	 *
 	 * Same script as client 11.1.0 (`includes/class-wc-payments-fraud-service.php:83`, `:207-243`), only when Sift is
-	 * configured. The client skips its own dashboard pages here because their JS loads Sift; native has no such loader, so
-	 * every WooCommerce admin page prints it. A test-mode store without a sandbox beacon key gets no tracker, so test
-	 * traffic never reaches the production Sift account.
+	 * configured. Client 11.1.0 skips its own dashboard pages here because their JS loads Sift; this code has no such
+	 * loader, so every WooCommerce admin page prints it. A test-mode store without a sandbox beacon key gets no tracker,
+	 * so test traffic never reaches the production Sift account.
 	 *
 	 * @internal
 	 */
@@ -160,7 +161,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return;
 		}
 
-		// REST_REQUEST is not defined yet on init, so match the REST prefix in the request URI as the client does.
+		// REST_REQUEST is not defined yet on init, so match the REST prefix in the request URI, as client 11.1.0 does
+		// (class-wc-payments-fraud-service.php:160-166).
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only used for prefix matching.
 		if ( '' !== $request_uri && false !== strpos( $request_uri, trailingslashit( rest_get_url_prefix() ) ) ) {
 			return;
@@ -188,8 +190,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 		try {
 			$this->api_client->link_session_to_customer( $this->session_service->get_sift_session_id(), $customer_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			// Client 11.1.0 fraud-service:195 logs this at info level through its gated Logger, with the platform's message;
-			// native logs its status and code instead.
+			// Client 11.1.0 logs this at info level only when WooPayments logging is on, with the platform's message
+			// (class-wc-payments-fraud-service.php:195); this line logs its status and code instead.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( '[Tracking] Error when linking session with user.', $exception, array(), 'info' );
 		}
 	}
@@ -197,10 +199,10 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	/**
 	 * Get the prepared fraud-services config for browser consumption.
 	 *
-	 * Resolution order matches the WooPayments plugin: the merchant-specific
-	 * account payload wins (an explicitly empty list is respected), the
-	 * platform's cached public config is the fallback, and a bare `stripe`
-	 * entry is the backward-compatible default.
+	 * The resolution order is client 11.1.0's (class-wc-payments-fraud-service.php:92-113):
+	 * the merchant-specific account payload wins (an explicitly empty list is
+	 * respected), the platform's cached public config is the fallback, and a
+	 * bare `stripe` entry is the backward-compatible default.
 	 *
 	 * @return array<string,array<string,mixed>|null> Prepared config keyed by service ID; a null value means the service is disabled.
 	 */
@@ -231,6 +233,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 
 			/**
 			 * Filters a single prepared fraud-service config before it is served to clients.
+			 *
+			 * Keeps this name because extensions listen to it.
 			 *
 			 * @since 11.0.0
 			 *
@@ -272,8 +276,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 		// sandbox key must replace the production one whenever the store is in
 		// test mode so test traffic never trains the production Sift account.
 		// When the platform sends no sandbox key, fail safe and ship no beacon
-		// key at all — a deliberate divergence from the plugin, which falls
-		// through to the production key in that config shape.
+		// key at all. Client 11.1.0 falls through to the production key in that
+		// config shape (class-wc-payments-fraud-service.php:332-335).
 		if ( $this->account_service->is_test_mode_enabled() ) {
 			if ( isset( $config['sandbox_beacon_key'] ) ) {
 				$config['beacon_key'] = $config['sandbox_beacon_key'];

@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * WooPayments locale helpers for provider-boundary locale handling.
+ * Maps WordPress locales to the locales Stripe.js supports.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsLocaleUtils {
 
@@ -35,9 +35,9 @@ final class WooPaymentsLocaleUtils {
 	 *
 	 * Stripe.js supports only a subset of IETF language tags; when a country-specific
 	 * locale is not supported the base language is used, and when nothing matches
-	 * 'auto' is returned so Stripe.js falls back to the browser locale. Mirrors the
-	 * reference client's convert_to_stripe_locale(), list copied from
-	 * https://stripe.com/docs/js/appendix/supported_locales.
+	 * 'auto' is returned so Stripe.js falls back to the browser locale, as in
+	 * client 11.1.0's convert_to_stripe_locale() (class-wc-payments-utils.php:688).
+	 * The list is copied from https://stripe.com/docs/js/appendix/supported_locales.
 	 *
 	 * @param string $locale WordPress locale.
 	 * @return string Closest Stripe-supported locale, or 'auto' when none matches.

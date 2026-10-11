@@ -20,12 +20,12 @@ use WC_Order;
 class WooPaymentsIppReceiptEmail extends WC_Email {
 
 	/**
-	 * Preserved WooPayments email registry key.
+	 * Email registry key, the WooPayments extension's class name.
 	 */
 	public const EMAIL_CLASS_KEY = 'WC_Payments_Email_IPP_Receipt';
 
 	/**
-	 * Preserved sent marker meta key.
+	 * Order meta marking the receipt as sent.
 	 */
 	private const SENT_META_KEY = '_new_receipt_email_sent';
 

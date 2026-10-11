@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Formats card-present brands and networks for WooPayments receipt surfaces.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsTerminalCardFormatter {
 
@@ -36,8 +36,8 @@ final class WooPaymentsTerminalCardFormatter {
 	/**
 	 * Get the terminal-card asset name for a provider brand or network.
 	 *
-	 * A non-empty result identifies terminal networks that take display
-	 * precedence over the card brand in the standalone WooPayments runtime.
+	 * A non-empty result marks a terminal network shown before the card brand,
+	 * as in client 11.1.0 (class-wc-payments-utils.php:336-346).
 	 *
 	 * @param string $brand Provider card brand or network.
 	 * @return string

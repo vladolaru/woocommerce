@@ -12,11 +12,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Adds a per-request id and a running entry number to each WooPayments log line, after core's time and level.
  *
- * Support follows one request through a log file by the id, as with the client's lines (client 11.1.0
- * `src/Internal/LoggerContext.php:63-79`, `:119-132`). Core's line is kept, so its context JSON stays.
+ * Support follows one request through a log file by the id, as with client 11.1.0's lines
+ * (`src/Internal/LoggerContext.php:63-79`, `:119-132`). Core's line is kept, so its context JSON stays.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsLogEntryFormat implements RegisterHooksInterface {
 

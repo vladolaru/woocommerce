@@ -12,13 +12,13 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Personal-data eraser for the WooPayments data stored on a WordPress user.
  *
- * Registered on every request whatever the native payments tier: the customer IDs and the cached payment-method list
- * outlive the connection, so they can exist on an available store (disconnected, or run by the WooPayments plugin) and
- * on a disabled one (the kill switch) as well as on a connected or active store (owner decision N-316). The callbacks
- * are static and need no service, so registering them loads nothing until WordPress builds its eraser list.
+ * Registered on every request whatever the WooPayments setup tier: the customer IDs and the cached payment-method list
+ * outlive the connection, so they can exist on an available store (disconnected, or run by the WooPayments extension)
+ * and on a disabled one (the kill switch) as well as on a connected or active store. The callbacks are static and need
+ * no service, so registering them loads nothing until WordPress builds its eraser list.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCustomerDataEraser {
 

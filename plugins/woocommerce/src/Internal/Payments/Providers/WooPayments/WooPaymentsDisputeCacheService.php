@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Invalidates preserved WooPayments dispute cache entries.
+ * Deletes the WooPayments dispute caches: the live and test dispute counts and the active-dispute cache.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputeCacheService {
 

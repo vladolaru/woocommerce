@@ -11,17 +11,17 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Manages WooPayments card-testing fraud-prevention session tokens.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFraudPreventionService {
 
 	/**
-	 * Checkout POST field and session key used by the WooPayments extension.
+	 * Checkout POST field and session key; client 11.1.0 uses the same (fraud-prevention/class-fraud-prevention-service.php:18).
 	 */
 	public const TOKEN_NAME = 'wcpay-fraud-prevention-token';
 
 	/**
-	 * Fraud-prevention token length used by the WooPayments extension.
+	 * Fraud-prevention token length, client 11.1.0's (fraud-prevention/class-fraud-prevention-service.php:157).
 	 */
 	private const TOKEN_LENGTH = 16;
 
@@ -120,8 +120,8 @@ class WooPaymentsFraudPreventionService {
 	 * shopper-side scripts, when protection applies to this session.
 	 *
 	 * Safe to call from more than one surface owner: the enqueued-script
-	 * guard makes the token script a per-page singleton, mirroring the
-	 * WooPayments plugin's maybe_append_fraud_prevention_token().
+	 * guard makes the token script a per-page singleton, as in client 11.1.0's
+	 * maybe_append_fraud_prevention_token() (fraud-prevention/class-fraud-prevention-service.php:73-76).
 	 */
 	public function maybe_enqueue_token_script(): void {
 		if ( wp_script_is( self::TOKEN_NAME, 'enqueued' ) ) {

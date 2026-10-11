@@ -14,7 +14,7 @@ use WC_Order;
  * Marks WooPayments test-mode order emails using the persisted payment mode.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTestModeOrderEmailService implements RegisterHooksInterface {
 

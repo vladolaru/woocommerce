@@ -8,15 +8,16 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * WooPayments-compatible Action Scheduler wrapper.
+ * Schedules WooPayments Action Scheduler jobs: once per hook, arguments and group while one is pending, and held until
+ * Action Scheduler starts when asked for earlier.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsActionSchedulerService {
 
 	/**
-	 * Canonical WooPayments Action Scheduler group.
+	 * Action Scheduler group of the WooPayments jobs, client 11.1.0's (class-wc-payments-action-scheduler-service.php:18).
 	 *
 	 * @var string
 	 */
@@ -35,8 +36,8 @@ class WooPaymentsActionSchedulerService {
 	 * Before Action Scheduler initializes, its functions return without scheduling, so a job asked for that early is
 	 * kept and scheduled on action_scheduler_init, once per blog, hook, args and group with the latest timestamp asked for
 	 * (client 11.1.0 `class-wc-payments-action-scheduler-service.php:220-249`). Once initialized, a job already pending
-	 * keeps its first timestamp; the client replaces it instead. Every job reads the store's state when it runs, so
-	 * the first due time loses nothing, and no pending action is unscheduled.
+	 * keeps its first timestamp; client 11.1.0 replaces it instead (`:276-281`). Every job reads the store's state when it
+	 * runs, so the first due time loses nothing, and no pending action is unscheduled.
 	 *
 	 * @since 11.0.0
 	 *

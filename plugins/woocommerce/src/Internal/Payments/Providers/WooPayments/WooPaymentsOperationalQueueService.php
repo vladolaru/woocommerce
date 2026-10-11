@@ -23,113 +23,118 @@ use Throwable;
 use WC_Order;
 
 /**
- * Native owner for WooPayments-compatible operational queue hooks.
+ * Runs the WooPayments account and store jobs: platform syncs, the Instant Deposits note, the post-KYC activation
+ * emails, go-live records, site language and store launch updates, and the Multi-Currency currencies that enabled
+ * payment methods need.
+ *
+ * Their hooks, options, transients and notes keep the WooPayments extension's names, so jobs it queued and state it
+ * stored carry over after the switch.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 	/**
-	 * Preserved store setup sync hook.
+	 * Action Scheduler hook of the store setup sync.
 	 *
 	 * @var string
 	 */
 	const STORE_SETUP_SYNC_ACTION = 'wcpay_store_setup_sync';
 
 	/**
-	 * Preserved compatibility-data update hook.
+	 * Action Scheduler hook of the compatibility data update.
 	 *
 	 * @var string
 	 */
 	const UPDATE_COMPATIBILITY_DATA_ACTION = 'wcpay_update_compatibility_data';
 
 	/**
-	 * Preserved Instant Deposit reminder hook.
+	 * Action Scheduler hook of the Instant Deposits eligibility reminder.
 	 *
 	 * @var string
 	 */
 	const INSTANT_DEPOSIT_REMINDER_ACTION = 'wcpay_instant_deposit_reminder';
 
 	/**
-	 * Preserved post-KYC activation email hook.
+	 * Action Scheduler hook that sends a post-KYC activation email.
 	 *
 	 * @var string
 	 */
 	const POST_KYC_ACTIVATION_EMAIL_SEND_ACTION = 'wcpay_post_kyc_activation_email_send';
 
 	/**
-	 * Preserved Action Scheduler group of the post-KYC activation email hook.
+	 * Action Scheduler group of the post-KYC activation email jobs.
 	 *
 	 * @var string
 	 */
 	const POST_KYC_ACTIVATION_EMAIL_GROUP = 'woocommerce-payments';
 
 	/**
-	 * Preserved post-KYC activation email class registry key.
+	 * Email registry key of the post-KYC activation email, the WooPayments extension's class name.
 	 *
 	 * @var string
 	 */
 	const POST_KYC_ACTIVATION_EMAIL_CLASS_KEY = 'WC_Payments_Email_Post_Kyc_Activation';
 
 	/**
-	 * Preserved Instant Deposit eligibility note name.
+	 * Inbox note name of the Instant Deposits eligibility note.
 	 *
 	 * @var string
 	 */
 	private const INSTANT_DEPOSIT_NOTE_NAME = 'wc-payments-notes-instant-deposits-eligible';
 
 	/**
-	 * Preserved option that records a merchant has been eligible for Instant Deposits.
+	 * Option recording that the merchant has been eligible for Instant Deposits.
 	 *
 	 * @var string
 	 */
 	private const INSTANT_DEPOSITS_PREVIOUSLY_ELIGIBLE_OPTION = 'wcpay_instant_deposits_previously_eligible';
 
 	/**
-	 * Preserved KYC completion date option.
+	 * Option holding the date the account's KYC was seen complete.
 	 *
 	 * @var string
 	 */
 	private const KYC_COMPLETION_DATE_OPTION = 'wcpay_kyc_completion_date';
 
 	/**
-	 * Preserved KYC submitted date option.
+	 * Option holding the date the merchant submitted KYC.
 	 *
 	 * @var string
 	 */
 	private const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
 
 	/**
-	 * Preserved post-KYC activation email sent-stage option.
+	 * Option listing the post-KYC activation email stages already sent.
 	 *
 	 * @var string
 	 */
 	private const POST_KYC_EMAIL_SENT_STAGES_OPTION = 'wcpay_post_kyc_activation_email_sent_stages';
 
 	/**
-	 * Preserved post-KYC activation email scheduled marker.
+	 * Option marking that the post-KYC activation emails are scheduled.
 	 *
 	 * @var string
 	 */
 	private const POST_KYC_EMAILS_SCHEDULED_OPTION = 'wcpay_post_kyc_activation_emails_scheduled';
 
 	/**
-	 * Preserved first-live-sale marker.
+	 * Option marking the store's first live WooPayments sale.
 	 *
 	 * @var string
 	 */
 	private const HAS_LIVE_SALE_OPTION = 'wcpay_has_live_sale';
 
 	/**
-	 * Preserved test-mode enable date option.
+	 * Option holding the time test mode was turned on.
 	 *
 	 * @var string
 	 */
 	private const TEST_MODE_ENABLED_DATE_OPTION = 'wcpay_test_mode_enabled_date';
 
 	/**
-	 * Preserved test-to-live notice eligibility transient.
+	 * Transient caching whether the test-to-live notice applies.
 	 *
 	 * @var string
 	 */
@@ -143,14 +148,14 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
 
 	/**
-	 * Preserved post-KYC activation eligibility transient.
+	 * Transient caching whether a post-KYC activation email applies.
 	 *
 	 * @var string
 	 */
 	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
 
 	/**
-	 * Preserved one-and-done eligibility transient.
+	 * Transient caching the one-and-done notice eligibility.
 	 *
 	 * @var string
 	 */
@@ -251,7 +256,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register preserved operational queue producers and consumers.
+	 * Register the account and store job handlers while the built-in WooPayments owns payments.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -315,14 +320,15 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 		update_option( self::HAS_LIVE_SALE_OPTION, '1', true );
 		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
-		// Plugin 11.1.0 `WC_Payments_Order_Service::maybe_record_first_live_sale()`.
+		// Client 11.1.0 records the same event (class-wc-payments-order-service.php:295-309).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_first_live_sale' );
 	}
 
 	/**
-	 * Track test-mode flips for the go-live nudge, like the plugin's onboarding service.
+	 * Track test-mode flips for the go-live nudge, as client 11.1.0's onboarding service does
+	 * (class-wc-payments-onboarding-service.php:1106, :1673-1681).
 	 *
-	 * Enable stamps the (preserved) enable date so the nudge clock starts; disable clears it so re-entering test mode restarts the clock; both drop the notice-eligibility transients.
+	 * Enable stamps the enable date so the nudge clock starts; disable clears it so re-entering test mode restarts the clock; both drop the notice-eligibility transients.
 	 *
 	 * @param mixed $old_value Previous settings option value.
 	 * @param mixed $new_value New settings option value.
@@ -359,7 +365,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Auto-enable the Multi-Currency currencies required by enabled payment methods.
 	 *
-	 * Mirrors the plugin's WC_Payments_Currency_Manager::maybe_add_missing_currencies(): without it, enabling a currency-restricted method such as iDEAL (EUR) leaves the required currency disabled, so the method is marked enabled but never offered at checkout.
+	 * Does what client 11.1.0's WC_Payments_Currency_Manager::maybe_add_missing_currencies() does (compat/multi-currency/class-wc-payments-currency-manager.php:96): without it, enabling a currency-restricted method such as iDEAL (EUR) leaves the required currency disabled, so the method is marked enabled but never offered at checkout.
 	 */
 	public function maybe_add_missing_currencies(): void {
 		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
@@ -394,7 +400,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Get the currency codes the enabled payment methods are restricted to, among the methods WooPayments registers on this store.
 	 *
-	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's domestic currency, the currency of the account's country, like the plugin's per-method currency resolution.
+	 * A method with no currency restriction contributes nothing; a domestic-only method requires the account's domestic currency, the currency of the account's country, as in client 11.1.0 (compat/multi-currency/class-wc-payments-currency-manager.php:71, :81).
 	 *
 	 * @return string[]
 	 */
@@ -432,7 +438,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Propagate a site-language change to the connected account's locale.
 	 *
-	 * Mirrors the plugin's possibly_update_wcpay_account_locale(): platform-generated merchant emails and hosted pages render in the account locale, which otherwise never follows WPLANG.
+	 * Does what client 11.1.0's possibly_update_wcpay_account_locale() does (class-wc-payments-account.php:2652): platform-generated merchant emails and hosted pages render in the account locale, which otherwise never follows WPLANG.
 	 *
 	 * @param string $option_name Updated option name.
 	 * @param mixed  $old_value   Previous option value.
@@ -456,10 +462,10 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Tell the platform when the store goes live, so Stripe runs its checks on the now-public site.
 	 *
-	 * Ports the plugin's inform_stripe_when_store_goes_live() (client 11.1.0 `includes/admin/class-wc-payments-admin.php:185`,
-	 * `:197-222`), which re-sends the account's business URL. The client watches the site visibility form only; the option
-	 * hook also covers the Launch Your Store task and WP-CLI, and fires only when the value changes. Without a connected
-	 * account there is no business URL to re-send.
+	 * Re-sends the account's business URL, as client 11.1.0's inform_stripe_when_store_goes_live() does
+	 * (`includes/admin/class-wc-payments-admin.php:185`, `:197-222`). Client 11.1.0 watches the site visibility form only;
+	 * the option hook also covers the Launch Your Store task and WP-CLI, and fires only when the value changes. Without a
+	 * connected account there is no business URL to re-send.
 	 *
 	 * @internal
 	 *
@@ -577,7 +583,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved Instant Deposit reminder action.
+	 * Handle the Instant Deposits eligibility reminder action.
 	 *
 	 * @internal
 	 */
@@ -630,7 +636,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Schedule the preserved post-KYC activation email stages when KYC completion is recorded.
+	 * Schedule the post-KYC activation email stages when KYC completion is recorded.
 	 *
 	 * @internal
 	 *
@@ -647,7 +653,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		// Atomically claim the scheduling gate. add_option() performs an INSERT that
+		// Atomically claim the scheduling. add_option() performs an INSERT that
 		// returns false when the row already exists, so only the first of two
 		// concurrent account-refresh handlers proceeds to schedule the email stages.
 		// This avoids the time-of-check/time-of-use race a get_option()/update_option()
@@ -673,7 +679,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved staged post-KYC activation email action.
+	 * Handle the staged post-KYC activation email action.
 	 *
 	 * @internal
 	 *
@@ -773,12 +779,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		// Note: this handler intentionally does not verify a nonce. It fires from a
 		// post-KYC activation email CTA that merchants may open days after it is sent,
 		// so a short-lived nonce would be expired for most legitimate clicks. The CSRF
-		// exposure is limited and acceptable: the handler is gated on the
+		// exposure is limited and acceptable: the handler checks the
 		// `manage_woocommerce` capability, only records a single telemetry event whose
 		// `stage` must be in the POST_KYC_STAGE_DAYS allowlist, and performs a safe
 		// same-page redirect via wp_safe_redirect( remove_query_arg( ... ) ). The worst
 		// a forged request can do is record one allowlisted-stage analytics event.
-		// See review finding 7522b93d.
 		$stage = isset( $_GET['wcpay_referrer_stage'] ) ? (int) $_GET['wcpay_referrer_stage'] : 0;
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
@@ -795,7 +800,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the preserved Instant Deposit eligibility note when it does not already exist.
+	 * Add the Instant Deposits eligibility note when it does not already exist.
 	 */
 	private function add_instant_deposit_note(): void {
 		/**
@@ -839,7 +844,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Delete the preserved Instant Deposit eligibility note.
+	 * Delete the Instant Deposits eligibility note.
 	 */
 	private function delete_instant_deposit_note(): void {
 		/**
@@ -859,7 +864,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Schedule the next preserved Instant Deposit eligibility reminder.
+	 * Schedule the next Instant Deposits eligibility reminder.
 	 */
 	private function schedule_instant_deposit_note_reminder(): void {
 		$this->scheduler->schedule_job( self::INSTANT_DEPOSIT_REMINDER_ACTION, array(), time() + self::INSTANT_DEPOSIT_REMINDER_DELAY );
@@ -942,7 +947,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native post-KYC activation email instance.
+	 * Get the post-KYC activation email instance.
 	 *
 	 * @return WooPaymentsPostKycActivationEmail|null
 	 */
@@ -958,7 +963,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the WooPayments-compatible store setup snapshot.
+	 * Build the store setup snapshot sent to the platform.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -1010,7 +1015,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
 				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			),
-			// The plugin reads the Multi-Currency feature flag with a default of enabled.
+			// Client 11.1.0 reads the Multi-Currency feature flag with a default of enabled (class-wc-payments-features.php:67-68).
 			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
 			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
 			'plugin'                                      => array(

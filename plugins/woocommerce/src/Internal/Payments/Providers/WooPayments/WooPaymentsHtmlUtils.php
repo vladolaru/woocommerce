@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Escaping helpers for WooPayments-compatible interpolated HTML.
+ * Escapes text but keeps mapped interpolation tags, as client 11.1.0's WC_Payments_Utils::esc_interpolated_html() does
+ * (class-wc-payments-utils.php:67).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsHtmlUtils {
 

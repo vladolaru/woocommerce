@@ -17,11 +17,11 @@ use WC_Order;
  * Client 11.1.0 `class-wc-payments-payment-method-service.php:55-123`: the stored payment method details are read
  * first, so rendering a paid order (thank-you page, order view, emails) needs no platform call; the payment method is
  * fetched, and stored, only when they are missing. Without it, core's PaymentInfo fallback fetched on the first render
- * of every natively paid order. It registers on every request, as the client does, and resolves the details service
- * only when an order renders without stored details.
+ * of every order the built-in WooPayments paid. It registers on every request, as client 11.1.0 does
+ * (class-wc-payments.php:674-675), and resolves the details service only when an order renders without stored details.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 
@@ -52,7 +52,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the card info filter when native owns the runtime.
+	 * Register the card info filter while the built-in WooPayments owns payments.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -86,7 +86,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			}
 
 			// Rendering an order must survive a failed fetch, as core's own fallback does (PaymentInfo::get_wcpay_card_info()),
-			// with the same always-on 'payment-info' line for an Exception or a PHP Error (sweep row 220), but the failure's
+			// with the same always-on 'payment-info' line for an Exception or a PHP Error, but the failure's
 			// class, code and platform status instead of its message. A failure answers with empty card fields, so that
 			// fallback does not fetch a second time.
 			try {

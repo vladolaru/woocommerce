@@ -15,29 +15,33 @@ use WC_Payment_Token;
 use WC_Payment_Tokens;
 
 /**
- * Native owner for WooPayments-compatible order tracking queue hooks.
+ * Sends WooPayments card orders to the platform for Sift order tracking, through Action Scheduler, when they are
+ * created or updated while Sift is enabled.
+ *
+ * Its hooks and order meta keep the WooPayments extension's names, so jobs it queued and orders it tracked carry over
+ * after the switch.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 
 	/**
-	 * Preserved WooPayments new-order tracking hook.
+	 * Action Scheduler hook that tracks a new order.
 	 *
 	 * @var string
 	 */
 	const TRACK_NEW_ORDER_ACTION = 'wcpay_track_new_order';
 
 	/**
-	 * Preserved WooPayments update-order tracking hook.
+	 * Action Scheduler hook that tracks an order update.
 	 *
 	 * @var string
 	 */
 	const TRACK_UPDATE_ORDER_ACTION = 'wcpay_track_update_order';
 
 	/**
-	 * Preserved order meta marker for completed creation tracking.
+	 * Order meta marking that the order's creation was tracked.
 	 *
 	 * @var string
 	 */
@@ -104,7 +108,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register preserved order tracking queue producers and consumers.
+	 * Register the order tracking handlers while the built-in WooPayments owns payments.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -127,8 +131,8 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * Client 11.1.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1108-1160),
 	 * run first on every order update: the order's latest token wins; without one, an order with no payment method ID takes
-	 * its parent's, or is left alone; a missing customer ID comes from the parent. Native runs it for the card gateway's
-	 * orders only, where the client writes these WooPayments IDs onto any gateway's order.
+	 * its parent's, or is left alone; a missing customer ID comes from the parent. This code runs it for the card gateway's
+	 * orders only, where client 11.1.0 writes these WooPayments IDs onto any gateway's order.
 	 *
 	 * @param WC_Order $order Order being updated.
 	 */
@@ -190,9 +194,8 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 			return;
 		}
 
-		// The plugin tracks Sift orders for the main card gateway only — an
-		// exact gateway-ID match, never the split sub-gateways — so native
-		// must not widen the population Sift trains on.
+		// Client 11.1.0 tracks Sift orders for the main card gateway only, an exact gateway-ID match, never the split
+		// sub-gateways (class-wc-payment-gateway-wcpay.php:4505), so Sift trains on the same orders here.
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method() ) {
 			return;
 		}
@@ -214,13 +217,13 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 			array(
 				'order_id' => (int) $order->get_id(),
 			),
-			// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+			// Five seconds out, as client 11.1.0 schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
 			time() + 5
 		);
 	}
 
 	/**
-	 * Handle the preserved wcpay_track_new_order action.
+	 * Handle the wcpay_track_new_order action.
 	 *
 	 * @internal
 	 *
@@ -231,7 +234,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved wcpay_track_update_order action.
+	 * Handle the wcpay_track_update_order action.
 	 *
 	 * @internal
 	 *
@@ -321,7 +324,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the WooPayments-compatible order tracking payload.
+	 * Build the order tracking payload: the order's data with its WooPayments payment method, customer and mode.
 	 *
 	 * @param WC_Order $order             Order object.
 	 * @param string   $payment_method_id Provider payment method ID.
@@ -342,7 +345,7 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Tell whether the order mode matches the current WooPayments mode.
 	 *
-	 * Plugin 11.1.0 compares the stored value with `Order_Mode::TEST` or `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:173-179).
+	 * Client 11.1.0 compares the stored value with `Order_Mode::TEST` or `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:173-179).
 	 *
 	 * @param string $order_mode Persisted order mode.
 	 * @return bool
@@ -356,7 +359,8 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Tell whether Sift order tracking is enabled.
 	 *
-	 * A null Sift config means a `wcpay_prepare_fraud_config` callback turned Sift off.
+	 * A null Sift config means a `wcpay_prepare_fraud_config` callback turned Sift off; client 11.1.0 checks it the same
+	 * way (class-wc-payment-gateway-wcpay.php:4495).
 	 *
 	 * @return bool
 	 */

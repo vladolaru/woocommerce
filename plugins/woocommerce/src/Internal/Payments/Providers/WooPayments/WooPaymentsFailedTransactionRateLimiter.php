@@ -11,12 +11,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Tracks failed WooPayments card transactions in the WooCommerce session.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFailedTransactionRateLimiter {
 
 	/**
-	 * Session key used by the standalone WooPayments extension for declined-card attempts.
+	 * Session key holding the declined-card attempt times; client 11.1.0 uses the same key (class-session-rate-limiter.php:22).
 	 */
 	public const SESSION_KEY = 'wcpay_card_declined_registry';
 

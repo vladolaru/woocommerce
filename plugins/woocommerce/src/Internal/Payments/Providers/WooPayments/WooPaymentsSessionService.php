@@ -10,13 +10,13 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Browsing-session identity for native WooPayments.
- *
  * Derives the Sift session ID that links a shopper's browsing session to
- * their WooPayments customer, mirroring the WooPayments plugin's session
- * service: a persisted random store ID combined with the WooCommerce session
+ * their WooPayments customer.
+ *
+ * The ID combines a persisted random store ID with the WooCommerce session
  * customer ID, with the pre-login cookie identity used when the shopper
- * logged in during the current request.
+ * logged in during the current request, as in client 11.1.0's session
+ * service (class-wc-payments-session-service.php:71-81).
  *
  * @internal
  */
@@ -25,9 +25,10 @@ class WooPaymentsSessionService {
 	/**
 	 * Option holding the persisted random store ID used to derive Sift session IDs.
 	 *
-	 * Deliberately reuses the WooPayments plugin's option name: a store cut over
-	 * from the plugin to the native integration must keep deriving the same
-	 * session IDs, or Sift loses the continuity of every ongoing browsing session.
+	 * Client 11.1.0's option name (class-wc-payments-session-service.php:19): a
+	 * store that switches from the WooPayments extension must keep deriving the
+	 * same session IDs, or Sift loses the continuity of every ongoing browsing
+	 * session.
 	 */
 	private const SESSION_STORE_ID_OPTION = 'wcpay_session_store_id';
 

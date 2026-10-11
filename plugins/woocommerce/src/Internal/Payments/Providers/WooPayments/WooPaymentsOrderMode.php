@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 /**
  * Values stored in the `_wcpay_mode` order meta: the mode a WooPayments payment was processed in.
  *
- * Mirrors plugin 11.1.0 `WCPay\Constants\Order_Mode` (includes/constants/class-order-mode.php). These are
+ * Client 11.1.0's `WCPay\Constants\Order_Mode` (includes/constants/class-order-mode.php). These are
  * order values, not the account mode: a live account writes `prod`, never `live`.
  *
  * @since 11.2.0

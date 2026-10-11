@@ -14,11 +14,12 @@ use Throwable;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Writes WooPayments log lines under one source, only when debug logging is on or in dev mode.
+ * Writes WooPayments log lines under one source, when debug logging is on or in dev mode.
  *
- * Mirrors client 11.1.0 `src/Internal/Logger.php:22,64-91`: every level is gated, and the setting is read
- * from the gateway settings option so no gateway needs to be initialized. The one exception is a PHP Error
- * caught where the client catches only exceptions: see log_throwable().
+ * As in client 11.1.0's logger (`src/Internal/Logger.php:22,64-91`), every level checks the setting, read from the
+ * gateway settings option so no gateway needs to be initialized. Two kinds of line are written whatever the setting:
+ * a PHP Error caught where client 11.1.0 catches only exceptions (log_throwable()), and an anomaly support needs to
+ * see (log_always()).
  *
  * @since 11.2.0
  * @internal
@@ -26,7 +27,7 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsLogger {
 
 	/**
-	 * Log source the client writes to.
+	 * Log source, client 11.1.0's (src/Internal/Logger.php:22).
 	 */
 	public const SOURCE = 'woopayments';
 
@@ -178,8 +179,8 @@ class WooPaymentsLogger {
 	/**
 	 * Log a caught throwable with its class, code and a short trace, plus the platform's status and code for a platform error.
 	 *
-	 * An Exception follows the logging setting, as on the client (`includes/class-logger.php:100-112`). Any other
-	 * throwable is a PHP Error the client would let fatal, so it is always written at error level (monitor rule 2026-10-04).
+	 * An Exception follows the logging setting, as in client 11.1.0 (`includes/class-logger.php:100-112`). Any other
+	 * throwable is a PHP Error client 11.1.0 would let fatal, so it is always written at error level.
 	 *
 	 * @param string              $message   Message.
 	 * @param Throwable           $throwable Caught throwable.
@@ -219,7 +220,8 @@ class WooPaymentsLogger {
 	}
 
 	/**
-	 * Write a line, with the request context only while WooPayments logging is on, as the client adds it only then.
+	 * Write a line, with the request context only while WooPayments logging is on, as client 11.1.0 adds it only then
+	 * (`src/Internal/Logger.php:64-68`).
 	 *
 	 * @param string              $message              Message.
 	 * @param string              $level                Log level.
@@ -241,7 +243,7 @@ class WooPaymentsLogger {
 	 */
 	private function get_request_context(): array {
 		$user = did_action( 'init' ) ? wp_get_current_user() : null;
-		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below, as the client does.
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized below, as client 11.1.0 does (src/Internal/LoggerContext.php:143-144).
 		$user_agent  = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '--';
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '--';
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized

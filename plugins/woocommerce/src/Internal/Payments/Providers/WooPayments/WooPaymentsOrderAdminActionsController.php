@@ -15,10 +15,11 @@ use Throwable;
 use WC_Order;
 
 /**
- * Restores WooPayments authorization actions and wallet payment titles in the WooCommerce order workflow.
+ * Adds the WooPayments capture and cancel actions to the order screen, captures or cancels an authorization when its
+ * order is completed or cancelled, and shows a wallet order's payment title in admin.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
@@ -59,7 +60,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register order workflow hooks when native owns the runtime.
+	 * Register the order screen and status hooks while the built-in WooPayments owns payments.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -90,9 +91,9 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * Show an Apple Pay or Google Pay order's payment title in place of the card gateway's title in admin.
 	 *
 	 * The order screen's "Payment via" line and payment method select read the gateway title, so a wallet order would read
-	 * as a card order. Ported from client 11.1.0 `filter_gateway_title()` (class-wc-payments-express-checkout-button-handler.php:415-437),
-	 * with the order found as its `get_current_order()` does (class-wc-payments-express-checkout-button-helper.php:520-533).
-	 * Unlike the client, only a WooPayments order's title is used: the select lists every gateway, so another gateway's
+	 * as a card order. Client 11.1.0 does the same in `filter_gateway_title()` (class-wc-payments-express-checkout-button-handler.php:415-437),
+	 * finding the order as its `get_current_order()` does (class-wc-payments-express-checkout-button-helper.php:520-533).
+	 * Unlike client 11.1.0, only a WooPayments order's title is used: the select lists every gateway, so another gateway's
 	 * Apple Pay order would relabel the WooPayments option.
 	 *
 	 * @internal
@@ -118,7 +119,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return $title;
 		}
 
-		// "Payment Request" is the title of orders placed with the client's legacy payment request buttons.
+		// "Payment Request" is the title of orders placed with client 11.1.0's earlier payment request buttons
+		// (class-wc-payments-express-checkout-button-handler.php:427).
 		foreach ( array( 'Apple Pay', 'Google Pay', 'Payment Request' ) as $wallet_title ) {
 			if ( 0 === strpos( $method_title, $wallet_title ) ) {
 				return $method_title;
@@ -278,7 +280,8 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 				$this->add_operation_failure_note( $order, $operation );
 			}
 
-			// The client schedules the Fee details job after this capture even when its capture note already exists (class-wc-payments-order-service.php:1862-1874).
+			// Client 11.1.0 schedules the Fee details job after this capture even when its capture note already exists
+			// (class-wc-payments-order-service.php:1862-1874); a job already pending for the order is not scheduled again.
 			if ( $on_status_change && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
 				$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) $order->get_meta( '_intent_id', true );
 				wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->schedule( $order, $intent_id );
@@ -290,7 +293,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether an operation failed without shared-path note evidence.
+	 * Tell whether an operation failed and its outcome carries no note to add.
 	 *
 	 * @param PaymentOutcome $outcome   Operation outcome.
 	 * @param string         $operation Capture or cancel.
@@ -305,7 +308,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the WooPayments-compatible generic operation failure note.
+	 * Add the generic capture or cancel failure note.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $operation Capture or cancel.
