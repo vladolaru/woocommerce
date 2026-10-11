@@ -3912,6 +3912,49 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A held-for-review checkout on an order carrying the held-for-review note the WooPayments extension wrote adds no second note.
+	 *
+	 * Client 11.1.0 writes the note in generate_fraud_held_for_review_note() (class-wc-payments-order-service.php:2342-2361)
+	 * through generate_fraud_note() (:2408-2441); its link, compose_transaction_url() (class-wc-payments-utils.php:1051-1071),
+	 * adds status_is=review and type_is=order_note.
+	 */
+	public function test_review_intent_recognises_the_woopayments_extension_held_for_review_note(): void {
+		$order          = $this->create_woopayments_order( '12.00' );
+		$extension_url  = add_query_arg(
+			array(
+				'page'      => 'wc-admin',
+				'path'      => rawurlencode( '/payments/transactions/details' ),
+				'id'        => 'pi_review_replay',
+				'status_is' => 'review',
+				'type_is'   => 'order_note',
+			),
+			admin_url( 'admin.php' )
+		);
+		$extension_note = '&#x26D4; A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . ' was <strong>held for review</strong> by the following risk filters:<br>&#8226; Place in review if the AVS verification fails<br><br><a href="' . $extension_url . '" target="_blank" rel="noopener noreferrer">View more details</a>.';
+		$order->add_order_note( $extension_note );
+
+		$this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_review_replay' ),
+			$this->review_payment_intent_provider( array( 'avs_verification' => 'review' ) )
+		);
+
+		$held_notes = array_values(
+			array_filter(
+				wc_get_order_notes(
+					array(
+						'order_id' => $order->get_id(),
+						'type'     => 'any',
+					)
+				),
+				static fn( object $note ): bool => str_contains( (string) $note->content, 'held for review' )
+			)
+		);
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertCount( 1, $held_notes );
+		$this->assertSame( $extension_note, $held_notes[0]->content );
+	}
+
+	/**
 	 * @testdox Replayed held-for-review intents repair rule evidence without duplicating equivalent notes.
 	 */
 	public function test_review_intent_replay_repairs_rule_evidence_and_deduplicates_content_sensitive_notes(): void {

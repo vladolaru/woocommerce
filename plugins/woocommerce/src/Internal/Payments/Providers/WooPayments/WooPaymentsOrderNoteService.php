@@ -898,7 +898,17 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function format_fraud_held_for_review_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $ruleset_results, string $text_domain, string $formatted_amount ): string {
 		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
-		$labels          = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
+		if ( '' !== $transaction_url ) {
+			// As client 11.1.0 links it (class-wc-payments-order-service.php:2342-2361): to the transaction's review entries.
+			$transaction_url = add_query_arg(
+				array(
+					'status_is' => 'review',
+					'type_is'   => 'order_note',
+				),
+				$transaction_url
+			);
+		}
+		$labels = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
 
 		if ( array() !== $labels ) {
 			$rules_list = '&#8226; ' . implode( '<br>&#8226; ', array_map( 'esc_html', $labels ) );
