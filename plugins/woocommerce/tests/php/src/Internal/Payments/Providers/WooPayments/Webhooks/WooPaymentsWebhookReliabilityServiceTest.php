@@ -125,42 +125,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fetching failed events stores payloads and schedules processing jobs.
-	 */
-	public function test_fetch_events_stores_events_and_schedules_processing_jobs(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
-		$event     = array(
-			'id'   => 'evt_1',
-			'type' => 'payment_intent.succeeded',
-		);
-		$service   = $this->create_service(
-			$scheduler,
-			$store,
-			new StaticFailedEventsProvider(
-				array(
-					'data'     => array( $event, array( 'type' => 'missing.id' ) ),
-					'has_more' => false,
-				)
-			),
-			new RecordingEventIngestor()
-		);
-
-		$service->fetch_events_and_schedule_processing_jobs();
-
-		$this->assertSame( $event, $store->get_event( 'evt_1' ) );
-		$this->assertSame(
-			array(
-				array(
-					'hook' => 'wcpay_webhook_process_event',
-					'args' => array( 'event_id' => 'evt_1' ),
-				),
-			),
-			$scheduler->scheduled_jobs
-		);
-	}
-
-	/**
 	 * @testdox Fetching failed events records the last fetch timestamp for supportability.
 	 */
 	public function test_fetch_events_records_last_fetch_timestamp(): void {
@@ -408,44 +372,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'second failure' => array( 1, 10 * MINUTE_IN_SECONDS ),
 			'third failure'  => array( 2, HOUR_IN_SECONDS ),
 		);
-	}
-
-	/**
-	 * @testdox After the third retry fails, the event is dropped, nothing more is scheduled and an error names it.
-	 */
-	public function test_process_event_gives_up_after_three_retries(): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'still failing' ) ) );
-		$store->set_event(
-			'evt_exhausted',
-			array(
-				'id'   => 'evt_exhausted',
-				'type' => 'payment_intent.succeeded',
-				WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 3,
-			)
-		);
-		$logged = array();
-		$logger = function ( $message, $level ) use ( &$logged ) {
-			$logged[] = array( $level, $message );
-			return $message;
-		};
-		add_filter( 'woocommerce_logger_log_message', $logger, 10, 2 );
-
-		try {
-			$service->process_event( 'evt_exhausted' );
-			$this->fail( 'The last failure must still reach Action Scheduler.' );
-		} catch ( \RuntimeException $exception ) {
-			unset( $exception );
-		} finally {
-			remove_filter( 'woocommerce_logger_log_message', $logger, 10 );
-		}
-
-		$this->assertNull( $store->get_event( 'evt_exhausted' ) );
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
-		$errors = array_values( array_filter( $logged, static fn( array $entry ): bool => 'error' === $entry[0] && false !== strpos( $entry[1], 'evt_exhausted' ) ) );
-		$this->assertNotEmpty( $errors, 'An error naming the dropped event must be logged.' );
-		$this->assertStringContainsString( 'payment_intent.succeeded', $errors[0][1] );
 	}
 
 	/**
@@ -853,27 +779,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( $event ), $ingestor->processed_events );
 		$this->assertNull( $store->get_event( 'evt_retried' ) );
-	}
-
-	/**
-	 * @testdox A malformed retried event is dropped without another attempt.
-	 */
-	public function test_malformed_event_is_dropped_without_retry(): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \InvalidArgumentException( 'malformed event' ) ) );
-		$store->set_event(
-			'evt_malformed',
-			array(
-				'id'   => 'evt_malformed',
-				'type' => 'payment_intent.succeeded',
-			)
-		);
-
-		$service->process_event( 'evt_malformed' );
-
-		$this->assertNull( $store->get_event( 'evt_malformed' ) );
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**

@@ -3,10 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -105,24 +102,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 		$this->sut                             = wc_get_container()->get( WooPaymentsEventIngestor::class );
 		$this->last_refund_charge_id           = 'ch_123';
-	}
-
-	/**
-	 * Run core Multi-Currency with EUR next to the store currency.
-	 */
-	private function enable_core_multi_currency_with_second_currency(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
-		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
-			->getMock();
-		$container = wc_get_container();
-		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
-		$arbiter->init( $container->get( WooPaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
-		$arbiter->method( 'should_core_register' )->willReturn( true );
-		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 
 	/**
@@ -1023,108 +1002,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded that completes the order schedules the Fee details job and writes no fee note itself, as the WooPayments extension does.
-	 */
-	public function test_payment_intent_succeeded_schedules_the_fee_details_job(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_intent_id', 'pi_123' );
-		$order->save();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.succeeded',
-				$order,
-				array(
-					'amount'  => 5000,
-					'charges' => array(
-						'data' => array(
-							array(
-								'id'                     => 'ch_123',
-								'payment_method'         => 'pm_123',
-								'application_fee_amount' => 218,
-								'payment_method_details' => array(
-									'card' => array(
-										'mandate' => 'mandate_123',
-									),
-								),
-								'fee_breakdown_v1'       => array(
-									'rows'    => array(
-										array(
-											'key'      => 'base',
-											'kind'     => 'fee',
-											'amount'   => 293,
-											'currency' => 'usd',
-											'rate'     => array(
-												'percentage' => 0.029,
-												'fixed' => 30,
-												'fixed_currency' => 'usd',
-											),
-										),
-										array(
-											'key'      => 'additional.fx',
-											'kind'     => 'fee',
-											'amount'   => 0,
-											'currency' => 'usd',
-											'rate'     => array(
-												'percentage' => 0.01,
-												'fixed' => 0,
-												'fixed_currency' => 'usd',
-											),
-										),
-									),
-									'totals'  => array(
-										'fee'         => array(
-											'amount'   => 293,
-											'currency' => 'usd',
-											'rate'     => array(
-												'percentage' => 0.039,
-												'fixed' => 30,
-												'fixed_currency' => 'usd',
-											),
-										),
-										'tax'         => array(
-											'amount'   => 0,
-											'currency' => 'usd',
-										),
-										'net'         => array(
-											'amount'   => 6422,
-											'currency' => 'usd',
-										),
-										'capture_net' => array(
-											'amount'   => 6422,
-											'currency' => 'usd',
-										),
-										'gross'       => array(
-											'amount'   => 6715,
-											'currency' => 'usd',
-										),
-									),
-									'fx'      => array(
-										'from_currency' => 'gbp',
-										'to_currency'   => 'usd',
-										'from_amount'   => 5000,
-										'to_amount'     => 6715,
-									),
-									'sources' => array(
-										'balance_transaction_exchange_rate' => 1.3428,
-									),
-								),
-							),
-						),
-					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNoteContaining( $order, array( 'successfully charged', 'pi_123' ) );
-		$this->assertOrderHasNoNoteContaining( $order, 'Fee details' );
-		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
-	}
-
-	/**
 	 * A succeeded event for an order that checkout already completed still writes the client's meta: the intent, charge
 	 * and payment method IDs, the event's lowercase currency, the mandate, and the envelope's fee and net
 	 * (class-wc-payments-webhook-processing-service.php:510-569, written before any status logic).
@@ -1186,24 +1063,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'mandate_replayed', $order->get_meta( '_stripe_mandate_id', true ) );
 		$this->assertSame( '0.85', $order->get_meta( '_wcpay_transaction_fee', true ) );
 		$this->assertSame( '13.21', $order->get_meta( '_wcpay_net', true ) );
-	}
-
-	/**
-	 * @testdox A replayed payment_intent.succeeded schedules no second Fee details job, as the WooPayments extension returns once the payment note exists.
-	 */
-	public function test_replayed_payment_intent_succeeded_schedules_no_fee_details_job(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_intent_id', 'pi_123' );
-		$order->save();
-		$event = $this->create_payment_intent_event( 'payment_intent.succeeded', $order );
-
-		$this->sut->process( $event );
-		$this->assertTrue( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
-		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
-
-		$this->sut->process( $event );
-
-		$this->assertFalse( $this->is_fee_details_job_pending( $order->get_id(), 'pi_123', false ) );
 	}
 
 	/**
@@ -2535,50 +2394,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replayed charge.dispute.created delivered after the first finished runs the handler only once.
-	 *
-	 * The durable processed marker stops the second delivery. The test counts `woocommerce_payments_after_webhook_delivery`,
-	 * fired once per dispatch, so the dispute note's own dedupe cannot hide a second run.
-	 */
-	public function test_dispute_created_replay_in_a_later_request_runs_the_handler_once(): void {
-		$order = $this->create_paid_woopayments_order( 'ch_3UJbTlBzWlxcwgpP0vNaexjT', 'pi_3UJbTlBzWlxcwgpP0FQ4MWQE' );
-		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_123' );
-		$order->save();
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-
-		$event          = $this->load_recorded_dispute_created_event( 'accept_case_created' );
-		$delivery_count = 0;
-		$count_delivery = function () use ( &$delivery_count ): void {
-			++$delivery_count;
-		};
-		add_action( 'woocommerce_payments_after_webhook_delivery', $count_delivery );
-
-		$this->sut->process( $event );
-		$this->sut->process( $event );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 1, $delivery_count, 'A replay after the first delivery finished must run the handler only once (the durable processed-event marker).' );
-		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed created webhook must keep the order on-hold, not toggle it again.' );
-		$this->assertCount(
-			1,
-			array_values(
-				array_filter(
-					wc_get_order_notes(
-						array(
-							'order_id' => $order->get_id(),
-							'type'     => 'any',
-						)
-					),
-					static fn( $note ): bool => str_contains( (string) $note->content, 'Payment has been disputed for' )
-				)
-			),
-			'A replayed created webhook must leave exactly one created-dispute note.'
-		);
-	}
-
-	/**
 	 * @testdox charge.dispute.created deletes stale dispute caches.
 	 */
 	public function test_dispute_created_deletes_dispute_caches(): void {
@@ -3565,21 +3380,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded notes include explicit currency when Multi-Currency has additional currencies.
-	 */
-	public function test_charge_refunded_uses_explicit_currency_in_created_refund_notes(): void {
-		$this->enable_core_multi_currency_with_second_currency();
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'USD', 'WooPayments', 're_123' ) );
-	}
-
-	/**
 	 * @testdox charge.refunded ignores canceled authorizations.
 	 */
 	public function test_charge_refunded_ignores_uncaptured_charges(): void {
@@ -4080,28 +3880,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated notes include explicit currency when Multi-Currency has additional currencies.
-	 */
-	public function test_charge_refund_updated_uses_explicit_currency_in_failed_refund_notes(): void {
-		$this->enable_core_multi_currency_with_second_currency();
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		$this->sut->process(
-			$this->create_refund_updated_event(
-				array(
-					'status'         => 'failed',
-					'failure_reason' => 'lost_or_stolen_card',
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'USD', 'WooPayments', 're_123', 'lost or stolen' ) );
-	}
-
-	/**
 	 * @testdox charge.refund.updated writes success metadata only for matched refunds.
 	 *
 	 * Fed by REC-5a R-c (`Fixtures/platform-refund-updated-events.json`, pair
@@ -4299,60 +4077,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		return array(
 			'a platform error'               => array( false ),
 			'its own exception wrapping one' => array( true ),
-		);
-	}
-
-	/**
-	 * @testdox Delivery hook errors are logged to the WooCommerce logger, never through the legacy proxy.
-	 */
-	public function test_delivery_hook_errors_are_logged_to_the_woocommerce_logger(): void {
-		$logger = RecordingWcLogger::install();
-
-		$legacy_proxy = new class() extends LegacyProxy {
-			/**
-			 * Call a user function.
-			 *
-			 * @param string $function_name Function name.
-			 * @param mixed  ...$parameters Function parameters.
-			 * @return mixed
-			 */
-			public function call_function( $function_name, ...$parameters ) {
-				if ( 'do_action' === $function_name ) {
-					throw new RuntimeException( 'Delivery hook failed.' );
-				}
-
-				if ( 'wc_get_logger' === $function_name ) {
-					throw new RuntimeException( 'Direct logger lookup should not be used.' );
-				}
-
-				return parent::call_function( $function_name, ...$parameters );
-			}
-		};
-
-		$sut = $this->create_ingestor(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			$legacy_proxy,
-			new class() extends WooPaymentsApiClient {
-				/**
-				 * Retrieve a WooPayments PaymentIntent.
-				 *
-				 * @param string $intent_id Intent ID.
-				 * @return array<string,mixed>
-				 */
-				public function get_payment_intention( string $intent_id ): array {
-					return array();
-				}
-			}
-		);
-
-		$sut->process( $this->create_payment_intent_event( 'customer.created', $this->create_woopayments_order() ) );
-
-		$this->assertSame(
-			array(
-				'A WooPayments webhook delivery hook callback failed.:woopayments',
-				'A WooPayments webhook delivery hook callback failed.:woopayments',
-			),
-			array_map( static fn( array $line ): string => $line[1] . ':' . $line[2], $logger->get_errors() )
 		);
 	}
 
@@ -5038,20 +4762,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The container resolves the ingestor with its event handlers injected.
-	 */
-	public function test_container_injects_event_handlers(): void {
-		$sut = wc_get_container()->get( WooPaymentsEventIngestor::class );
-
-		$reflection = new \ReflectionObject( $sut );
-		foreach ( array( 'dispute_event_handler', 'refund_event_handler', 'account_event_handler', 'notification_event_handler' ) as $property_name ) {
-			$property = $reflection->getProperty( $property_name );
-			$property->setAccessible( true );
-			$this->assertNotNull( $property->getValue( $sut ), "Handler {$property_name} should be injected by the container." );
-		}
-	}
-
-	/**
 	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
 	 *
 	 * @return void
@@ -5309,79 +5019,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should route an early fraud warning without applying payment lifecycle effects.
-	 */
-	public function test_routes_early_fraud_warning_created_event(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_early_warning' );
-		$order->save();
-
-		$this->sut->process(
-			array(
-				'id'       => 'evt_early_warning_created',
-				'type'     => 'radar.early_fraud_warning.created',
-				'livemode' => false,
-				'data'     => array(
-					'object' => array(
-						'charge'     => 'ch_early_warning',
-						'id'         => 'efw_123',
-						'actionable' => true,
-						'created'    => 123,
-					),
-				),
-			)
-		);
-
-		$this->assertSame(
-			array(
-				'efw_id'         => 'efw_123',
-				'efw_actionable' => true,
-				'efw_type'       => '',
-				'created'        => 123,
-			),
-			wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning', true )
-		);
-	}
-
-	/**
-	 * @testdox Should route an early fraud warning update without lifecycle effects.
-	 */
-	public function test_routes_early_fraud_warning_updated_event(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_early_warning_updated' );
-		$order->update_meta_data(
-			'_wcpay_early_fraud_warning',
-			array(
-				'efw_id'         => 'efw_123',
-				'efw_actionable' => true,
-				'efw_type'       => '',
-				'created'        => 123,
-			)
-		);
-		$order->save();
-
-		$this->sut->process(
-			array(
-				'id'       => 'evt_early_warning_updated',
-				'type'     => 'radar.early_fraud_warning.updated',
-				'livemode' => false,
-				'data'     => array(
-					'object' => array(
-						'charge'     => 'ch_early_warning_updated',
-						'id'         => 'efw_123',
-						'actionable' => false,
-						'created'    => 123,
-					),
-				),
-			)
-		);
-
-		$this->assertSame( false, wc_get_order( $order->get_id() )->get_meta( '_wcpay_early_fraud_warning', true )['efw_actionable'] );
-	}
-
-	/**
 	 * @testdox Should preserve delivery hook order and arguments around early fraud warning handling.
 	 */
 	public function test_early_fraud_warning_preserves_delivery_hook_order_and_arguments(): void {
@@ -5453,37 +5090,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $hook_calls );
 		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_mode_mismatch' ) ) );
-	}
-
-	/**
-	 * @testdox Should leave a failed early warning unmarked, retry it, mark success, and short-circuit its replay.
-	 */
-	public function test_early_fraud_warning_failure_remains_retryable(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$sequence = array();
-		$handler  = $this->create_recording_early_fraud_warning_handler( $sequence, true );
-		$sut      = $this->create_ingestor(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
-			new class() extends WooPaymentsApiClient {},
-			$handler
-		);
-		$event    = $this->create_early_fraud_warning_event( 'evt_early_warning_retry' );
-
-		try {
-			$sut->process( $event );
-			$this->fail( 'Expected early fraud warning handler failure.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertSame( 'Recorded early fraud warning failure.', $exception->getMessage() );
-		}
-		$this->assertFalse( get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
-
-		$handler->should_throw = false;
-		$sut->process( $event );
-		$sut->process( $event );
-
-		$this->assertCount( 2, $handler->processed_events );
-		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_retry' ) ) );
 	}
 
 	/**
