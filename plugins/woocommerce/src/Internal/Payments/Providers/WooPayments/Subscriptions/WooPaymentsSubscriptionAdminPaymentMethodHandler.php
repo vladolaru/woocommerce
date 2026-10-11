@@ -275,7 +275,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 
 		$script_path = WC()->plugin_url() . '/assets/js/admin/woopayments-subscription-edit.js';
 		wp_enqueue_script(
-			'woocommerce_woopayments_subscription_edit',
+			'wc-woopayments-subscription-edit',
 			$script_path,
 			array( 'jquery' ),
 			WC()->version,
