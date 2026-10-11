@@ -239,7 +239,7 @@ class WooPaymentsTransportLog {
 	 * @return mixed
 	 */
 	public function redact( $input ) {
-		return self::redact_array( $input, self::API_KEYS_TO_REDACT );
+		return self::redact_array( $input );
 	}
 
 	/**
@@ -251,12 +251,11 @@ class WooPaymentsTransportLog {
 	 * by ending (API_KEY_SUFFIXES_TO_REDACT), and cleans every string value
 	 * with redact_string().
 	 *
-	 * @param mixed    $input          Payload to redact.
-	 * @param string[] $keys_to_redact Keys to redact.
-	 * @param int      $level          Current recursion depth.
+	 * @param mixed $input Payload to redact.
+	 * @param int   $level Current recursion depth.
 	 * @return mixed
 	 */
-	private static function redact_array( $input, array $keys_to_redact, int $level = 0 ) {
+	private static function redact_array( $input, int $level = 0 ) {
 		if ( is_object( $input ) ) {
 			return get_class( $input ) . '()';
 		}
@@ -276,14 +275,14 @@ class WooPaymentsTransportLog {
 		$result = array();
 
 		foreach ( $input as $key => $value ) {
-			if ( self::is_key_to_redact( $key, $keys_to_redact ) ) {
+			if ( self::is_key_to_redact( $key ) ) {
 				$result[ $key ] = self::REDACTED;
 				continue;
 			}
 
 			$result[ $key ] = is_string( $key ) && 'metadata' === strtolower( $key ) && is_array( $value )
 				? self::redact_metadata( $value )
-				: self::redact_array( $value, $keys_to_redact, $level + 1 );
+				: self::redact_array( $value, $level + 1 );
 		}
 
 		return $result;
@@ -316,17 +315,16 @@ class WooPaymentsTransportLog {
 	/**
 	 * Tell whether a payload key is redacted: a listed key, or one ending in a listed suffix, whatever its case.
 	 *
-	 * @param int|string $key            Payload key.
-	 * @param string[]   $keys_to_redact Keys to redact.
+	 * @param int|string $key Payload key.
 	 * @return bool
 	 */
-	private static function is_key_to_redact( $key, array $keys_to_redact ): bool {
+	private static function is_key_to_redact( $key ): bool {
 		if ( ! is_string( $key ) ) {
 			return false;
 		}
 
 		$key = strtolower( $key );
-		if ( in_array( $key, $keys_to_redact, true ) ) {
+		if ( in_array( $key, self::API_KEYS_TO_REDACT, true ) ) {
 			return true;
 		}
 

@@ -439,7 +439,7 @@ class WooPaymentsIntentConfirmationService {
 			}
 			if ( $token instanceof \WC_Payment_Token ) {
 				$this->token_service->attach_token_to_order( $order, $token );
-				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $this->get_result_customer_id( $intent ) );
+				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, WooPaymentsIntentCodec::result_customer_id( $intent, '' ) );
 
 				return array(
 					'error'                  => null,
@@ -449,12 +449,6 @@ class WooPaymentsIntentConfirmationService {
 			}
 		} catch ( Throwable $exception ) {
 			$this->token_service->log_token_save_error( $order, $payment_method_id, $exception );
-
-			return array(
-				'error'                  => $is_recurring ? $this->recurring_token_save_error_response() : null,
-				'token'                  => null,
-				'payment_method_details' => array(),
-			);
 		}
 
 		return array(
@@ -488,23 +482,5 @@ class WooPaymentsIntentConfirmationService {
 			),
 			'status_code' => 409,
 		);
-	}
-
-	/**
-	 * Get the customer ID from an intent response.
-	 *
-	 * @param array<string,mixed> $intent Platform intent response.
-	 * @return string
-	 */
-	private function get_result_customer_id( array $intent ): string {
-		if ( isset( $intent['customer'] ) && is_string( $intent['customer'] ) ) {
-			return $intent['customer'];
-		}
-
-		if ( isset( $intent['customer'] ) && is_array( $intent['customer'] ) && isset( $intent['customer']['id'] ) ) {
-			return (string) $intent['customer']['id'];
-		}
-
-		return '';
 	}
 }

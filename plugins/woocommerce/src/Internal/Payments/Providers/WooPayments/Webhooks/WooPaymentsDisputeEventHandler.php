@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use RuntimeException;
 use Throwable;
 use WC_Order;
-use WC_Order_Refund;
 
 /**
  * Applies WooPayments dispute events to their orders: the dispute notes, the order status and, for a lost dispute, a
@@ -389,11 +388,6 @@ class WooPaymentsDisputeEventHandler {
 		if ( is_wp_error( $refund ) ) {
 			$this->log_dispute_refund_failure( $order, $charge_id, $dispute_id, $status, $refund_amount, $refund->get_error_message() );
 			throw new RuntimeException( esc_html( sprintf( 'Could not create local dispute refund for order %1$d and dispute %2$s: %3$s', $order->get_id(), $dispute_id, $refund->get_error_message() ) ) );
-		}
-
-		if ( ! $refund instanceof WC_Order_Refund ) {
-			$this->log_dispute_refund_failure( $order, $charge_id, $dispute_id, $status, $refund_amount, 'wc_create_refund returned an unexpected value.' );
-			throw new RuntimeException( esc_html( sprintf( 'Could not create local dispute refund for order %1$d and dispute %2$s.', $order->get_id(), $dispute_id ) ) );
 		}
 	}
 

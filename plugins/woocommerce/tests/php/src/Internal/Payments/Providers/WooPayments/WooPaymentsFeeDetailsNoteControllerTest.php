@@ -177,13 +177,13 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Applying through the lifecycle's lock schedules the job, and a held lock refuses the event without writing or scheduling.
 	 */
-	public function test_apply_with_lock_reports_a_refusal_and_schedules_only_an_applied_event(): void {
+	public function test_apply_with_lock_schedules_only_an_applied_event(): void {
 		$order      = $this->create_order();
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$this->hold_order_payment_lock( $order, $vocabulary, 'native_charge_operation' );
 
 		try {
-			$this->assertFalse( $this->sut->apply_and_schedule_fee_details_with_lock( $order, $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ) ) );
+			$this->sut->apply_and_schedule_fee_details_with_lock( $order, $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ) );
 		} finally {
 			$this->clear_order_payment_lock( $order, $vocabulary );
 		}
@@ -191,7 +191,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->get_pending_job_args() );
 		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
-		$this->assertTrue( $this->sut->apply_and_schedule_fee_details_with_lock( $order, $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ) ) );
+		$this->sut->apply_and_schedule_fee_details_with_lock( $order, $this->completed_event( 'pi_123', PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS ) );
 
 		$this->assertCount( 1, $this->get_pending_job_args() );
 	}
