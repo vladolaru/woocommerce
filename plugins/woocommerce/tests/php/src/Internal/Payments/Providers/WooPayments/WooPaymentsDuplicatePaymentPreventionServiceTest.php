@@ -31,7 +31,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	/**
 	 * @testdox Should redirect duplicate pending orders to a paid session order with matching cart content.
 	 */
-	public function test_check_against_session_processing_order_redirects_to_paid_matching_session_order(): void {
+	public function test_delete_duplicate_of_paid_session_order_redirects_to_paid_matching_session_order(): void {
 		$session        = $this->create_session();
 		$sut            = $this->create_service( $session );
 		$same_cart_hash = 'same-cart-hash';
@@ -41,7 +41,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$current_id     = $current_order->get_id();
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 
-		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
 		$this->assertIsArray( $result );
 		$this->assertSame( 'success', $result['result'] );
@@ -86,7 +86,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 			unset( $wp->query_vars['order-received'] );
 		}
 		$repeat_order = $this->create_order( 'same-cart-hash', 'pending', $customer_id );
-		$result       = $sut->check_against_session_processing_order( $repeat_order, $this->create_gateway() );
+		$result       = $sut->delete_duplicate_of_paid_session_order( $repeat_order, $this->create_gateway() );
 
 		// A non-null result is the redirect to the earlier order after deleting the repeat one.
 		$this->assertSame( $repeat_is_kept, null === $result );
@@ -103,7 +103,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * @param string $current_status    Current order status.
 	 * @param bool   $same_customer     Whether both orders belong to the same customer.
 	 */
-	public function test_check_against_session_processing_order_returns_null_for_mismatches( string $session_cart_hash, string $session_status, string $current_cart_hash, string $current_status = 'pending', bool $same_customer = true ): void {
+	public function test_delete_duplicate_of_paid_session_order_returns_null_for_mismatches( string $session_cart_hash, string $session_status, string $current_cart_hash, string $current_status = 'pending', bool $same_customer = true ): void {
 		$session       = $this->create_session();
 		$sut           = $this->create_service( $session );
 		$customer_id   = self::factory()->user->create();
@@ -111,7 +111,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$current_order = $this->create_order( $current_cart_hash, $current_status, $same_customer ? $customer_id : self::factory()->user->create() );
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
 
-		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
 		$this->assertNull( $result );
 		$this->assertSame( $current_status, wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );
@@ -122,7 +122,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 *
 	 * Client 11.1.0 includes/class-duplicate-payment-prevention-service.php:183-185.
 	 */
-	public function test_check_against_session_processing_order_returns_null_for_the_current_order(): void {
+	public function test_delete_duplicate_of_paid_session_order_returns_null_for_the_current_order(): void {
 		$session       = $this->create_session();
 		$sut           = $this->create_service( $session );
 		$customer_id   = self::factory()->user->create();
@@ -132,7 +132,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$paid_copy->save();
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $current_order->get_id() );
 
-		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+		$result = $sut->delete_duplicate_of_paid_session_order( $current_order, $this->create_gateway() );
 
 		$this->assertNull( $result );
 		$this->assertSame( 'processing', wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );

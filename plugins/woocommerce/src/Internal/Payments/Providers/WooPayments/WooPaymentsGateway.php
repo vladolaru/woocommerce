@@ -1470,7 +1470,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		$duplicate_order_result = $this->get_duplicate_payment_prevention_service()->check_against_session_processing_order( $order, $this );
+		$duplicate_order_result = $this->get_duplicate_payment_prevention_service()->delete_duplicate_of_paid_session_order( $order, $this );
 		if ( is_array( $duplicate_order_result ) ) {
 			return $duplicate_order_result;
 		}

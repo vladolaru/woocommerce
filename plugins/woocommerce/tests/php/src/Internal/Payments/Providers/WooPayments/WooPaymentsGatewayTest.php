@@ -4044,10 +4044,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$duplicate_payment_prevention_service = $this->getMockBuilder( WooPaymentsDuplicatePaymentPreventionService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'check_against_session_processing_order' ) )
+			->onlyMethods( array( 'delete_duplicate_of_paid_session_order' ) )
 			->getMock();
 		$duplicate_payment_prevention_service
-			->method( 'check_against_session_processing_order' )
+			->method( 'delete_duplicate_of_paid_session_order' )
 			->willThrowException( new \RuntimeException( 'Session storage is unavailable.' ) );
 
 		$service = new RecordingPaymentProcessingService();

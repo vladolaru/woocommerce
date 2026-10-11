@@ -201,7 +201,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Redirect to a paid session order when the current order duplicates the same cart content.
+	 * Delete the current order when it duplicates a paid session order, and redirect to the paid order.
 	 *
 	 * On a match it deletes the current pending order, adds a note about it to the paid session order,
 	 * clears the session marker and returns a success redirect to the paid order.
@@ -210,7 +210,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @param WC_Payment_Gateway $gateway       Gateway used to build the return URL.
 	 * @return array<string,string>|null Success redirect on a match, null otherwise.
 	 */
-	public function check_against_session_processing_order( WC_Order $current_order, WC_Payment_Gateway $gateway ): ?array {
+	public function delete_duplicate_of_paid_session_order( WC_Order $current_order, WC_Payment_Gateway $gateway ): ?array {
 		$session_order_id = $this->get_session_processing_order();
 		if ( null === $session_order_id ) {
 			return null;
