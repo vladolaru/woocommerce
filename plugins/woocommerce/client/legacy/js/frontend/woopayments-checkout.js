@@ -644,7 +644,7 @@
 			window.prompt( 'Copy test card number:', testNumber );
 		}
 
-		// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
+		// The status after the button announces the copy (WooPaymentsCheckoutAssets::get_card_testing_instructions()).
 		function showCopied() {
 			status = button.parentNode
 				? button.parentNode.querySelector(

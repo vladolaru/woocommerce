@@ -124,7 +124,7 @@ jest.mock( '@woocommerce/settings', () => {
 					},
 				],
 				testingInstructions:
-					// Markup of WooPaymentsCheckoutBridge::get_card_testing_instructions().
+					// Markup of WooPaymentsCheckoutAssets::get_card_testing_instructions().
 					'Use test card <button type="button" class="js-woopayments-copy-test-number" title="Copy to clipboard"><i></i><span>4242 4242 4242 4242</span></button><span class="js-woopayments-copy-test-number-status screen-reader-text" role="status" aria-live="polite" data-copied-message="Copied to clipboard."></span> or refer to our <a href="https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards" target="_blank">testing guide</a>.',
 			},
 			link: {

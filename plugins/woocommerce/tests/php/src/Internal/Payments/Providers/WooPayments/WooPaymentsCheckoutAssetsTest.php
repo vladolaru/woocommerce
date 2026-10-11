@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -26,9 +26,9 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeB
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsCheckoutBridge class.
+ * Tests for the WooPaymentsCheckoutAssets class.
  */
-class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
+class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Card gateway support features passed to the config builders where the test does not exercise them.
@@ -42,7 +42,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -54,11 +54,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids'      => array( 'apple_pay', 'google_pay' ),
 			)
 		);
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		try {
-			$gateway = $this->create_card_gateway_for_bridge( $sut );
+			$gateway = $this->create_card_gateway( $sut );
 			ob_start();
 			/** This action is documented in templates/checkout/form-checkout.php */
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
@@ -85,11 +85,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_after_checkout_form_fallback_does_nothing_when_native_does_not_own_payments(): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$sut = new WooPaymentsCheckoutAssets();
+		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		try {
-			$this->create_card_gateway_for_bridge( $sut );
+			$this->create_card_gateway( $sut );
 			/** This action is documented in templates/checkout/form-checkout.php */
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 		} finally {
@@ -117,7 +117,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		set_query_var( 'order-pay', $order->get_id() );
 		$_GET['key'] = $order->get_order_key();
 
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -129,11 +129,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids'      => array( 'apple_pay', 'google_pay' ),
 			)
 		);
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		try {
-			$gateway = $this->create_card_gateway_for_bridge( $sut );
+			$gateway = $this->create_card_gateway( $sut );
 			ob_start();
 			/** This action is documented in templates/checkout/form-pay.php */
 			do_action( 'woocommerce_pay_order_before_payment' );
@@ -158,12 +158,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
-		$account_service = $this->create_account_service_for_bridge( true );
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service( true );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		try {
-			$gateway = $this->create_card_gateway_for_bridge( $sut );
+			$gateway = $this->create_card_gateway( $sut );
 			ob_start();
 			$gateway->form();
 			/** This action is documented in templates/checkout/form-checkout.php */
@@ -179,12 +179,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build the card gateway on the given bridge, with saved cards on, so it adds its classic checkout fallback hooks.
+	 * Build the card gateway on the given checkout assets, with saved cards on, so it adds its classic checkout fallback hooks.
 	 *
-	 * @param WooPaymentsCheckoutBridge $bridge Checkout bridge under test.
+	 * @param WooPaymentsCheckoutAssets $assets Checkout assets under test.
 	 * @return NativeWooPaymentsGateway
 	 */
-	private function create_card_gateway_for_bridge( WooPaymentsCheckoutBridge $bridge ): NativeWooPaymentsGateway {
+	private function create_card_gateway( WooPaymentsCheckoutAssets $assets ): NativeWooPaymentsGateway {
 		$this->reset_classic_checkout_fallback_hooks_flag();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
@@ -193,7 +193,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $bridge );
+		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $assets );
 
 		return $gateway;
 	}
@@ -285,7 +285,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Report the WooCommerce Subscriptions core library as loaded, through the LegacyProxy check the bridge's subscription
+	 * Report the WooCommerce Subscriptions core library as loaded, through the LegacyProxy check the checkout assets' subscription
 	 * policy uses (the mock is reset after every test), and define the shared `wcs_is_subscription()` double.
 	 */
 	private function report_subscriptions_loaded(): void {
@@ -332,11 +332,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_ignores_a_non_array_filter_result(): void {
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 		add_filter( 'wcpay_payment_fields_js_config', '__return_null' );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'woocommerce_payments', $config['gatewayId'], 'The payment fields must still get their config.' );
 	}
@@ -349,15 +349,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_translates_card_brand_labels(): void {
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 		$translate = static function ( $translation, $text ) {
 			return 'Supported credit card brands' === $text || 'Show all supported credit card brands' === $text ? 'translated: ' . $text : $translation;
 		};
 		add_filter( 'gettext', $translate, 10, 2 );
 
 		try {
-			$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+			$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		} finally {
 			remove_filter( 'gettext', $translate, 10 );
 		}
@@ -370,10 +370,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve the card checkout config shape and filter it through wcpay_payment_fields_js_config.
 	 */
 	public function test_get_payment_fields_js_config_preserves_card_checkout_shape(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -383,7 +383,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'pk_test_123', $config['publishableKey'] );
 		$this->assertSame( 'acct_123', $config['accountId'] );
@@ -469,15 +469,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$this->create_account_service( true ),
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller()
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['cartContainsSubscription'], 'A renewal cart pays for a subscription; the forced-save signal must fire for it.' );
 	}
@@ -488,12 +488,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_exposes_subscription_change_payment_request_state(): void {
 		$this->report_subscriptions_loaded();
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$this->create_account_service( true ),
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller()
 		);
 
 		$filter_calls = 0;
@@ -510,7 +510,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
 		$_GET['change_payment_method']                                = '123';
 		$original_request = $_GET;
-		$not_order_pay    = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$not_order_pay    = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayNotHasKey( 'isChangingPayment', $not_order_pay );
 		$this->assertTrue( $not_order_pay['testFilterMutation'] );
 		$this->assertSame( $original_request, $_GET );
@@ -518,20 +518,20 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		global $wp;
 		$wp->query_vars['order-pay'] = 456;
 		unset( $_GET['change_payment_method'] );
-		$missing_request = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$missing_request = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayNotHasKey( 'isChangingPayment', $missing_request );
 		$this->assertTrue( $missing_request['testFilterMutation'] );
 
 		$_GET['change_payment_method'] = '456';
 		$non_subscription_request      = $_GET;
-		$non_subscription              = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$non_subscription              = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayNotHasKey( 'isChangingPayment', $non_subscription );
 		$this->assertTrue( $non_subscription['testFilterMutation'] );
 		$this->assertSame( $non_subscription_request, $_GET );
 
 		$_GET['change_payment_method'] = '123';
 		$subscription_request          = $_GET;
-		$changing_payment              = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$changing_payment              = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayHasKey( 'isChangingPayment', $changing_payment );
 		$this->assertTrue( $changing_payment['isChangingPayment'] );
 		$this->assertArrayNotHasKey( 'testFilterMutation', $changing_payment );
@@ -565,15 +565,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $order->get_id() );
 		$_GET['change_payment_method']                                = (string) $order->get_id(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$this->create_account_service( true ),
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller()
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		// A payment-method change collects no payment, so the order's 12.34 EUR
 		// must not become the element's context: the checkout script derives a
@@ -594,7 +594,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should fold enabled Link configuration into the card Payment Element.
 	 */
 	public function test_get_payment_fields_js_config_folds_link_into_card(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -606,10 +606,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			),
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 		);
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayHasKey( 'link', $config['paymentMethodsConfig'] );
 		$this->assertSame( 'link', $config['paymentMethodsConfig']['link']['id'] );
@@ -621,7 +621,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should offer the card alone when no enabled payment methods are saved, even with Link available to the account.
 	 */
 	public function test_get_payment_fields_js_config_offers_card_alone_without_saved_enabled_methods(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -634,10 +634,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'fees'         => array( 'link' => array() ),
 			)
 		);
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( array( 'card' ), array_keys( $config['paymentMethodsConfig'] ) );
 		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
@@ -658,7 +658,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @param bool   $has_fee     Whether the account lists a link fee.
 	 */
 	public function test_get_payment_fields_js_config_does_not_fold_link_without_active_capability_and_fee( string $link_status, bool $has_fee ): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -670,10 +670,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			),
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 		);
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayNotHasKey( 'link', $config['paymentMethodsConfig'] );
 		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
@@ -683,7 +683,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should fold enabled Link into the production explicit-card definition path.
 	 */
 	public function test_get_payment_fields_js_config_folds_link_into_explicit_card_definition(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -697,8 +697,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
 		$card_definition = $registry->get( 'card' );
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge(), null, $registry );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), null, $registry );
 
 		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $card_definition );
 
@@ -710,13 +710,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose country-aware shopper icons for a split payment method.
 	 */
 	public function test_get_payment_fields_js_config_exposes_country_aware_afterpay_icons(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array( 'country' => 'US' )
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge(), null, $registry );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), null, $registry );
 
 		$config          = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'afterpay_clearpay' ) );
 		$afterpay_config = $config['paymentMethodsConfig']['afterpay_clearpay'];
@@ -732,7 +732,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose the P24 split gateway to checkout with the client's title, icon and Polish shopper rule.
 	 */
 	public function test_get_payment_fields_js_config_exposes_p24_like_the_client(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'PL',
@@ -744,8 +744,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'p24' ) )
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge(), null, $registry );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), null, $registry );
 
 		$p24_config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'p24' ) )['paymentMethodsConfig']['p24'];
 
@@ -763,7 +763,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_exposes_payment_list_wallets_with_gateway_identity(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -775,8 +775,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids'      => array( 'card' ),
 			)
 		);
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -798,7 +798,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_omits_payment_list_wallets_without_active_card_payments(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -810,8 +810,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				'upe_enabled_payment_method_ids'      => array( 'card' ),
 			)
 		);
-		$sut             = new WooPaymentsCheckoutBridge();
-		$sut->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$sut             = new WooPaymentsCheckoutAssets();
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -824,7 +824,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_excludes_link_for_unsupported_currency(): void {
 		update_option( 'woocommerce_currency', 'EUR' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -836,10 +836,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			),
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 		);
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayNotHasKey( 'link', $config['paymentMethodsConfig'] );
 		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
@@ -871,21 +871,21 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$_GET['key'] = 'order_key' === $key ? $order->get_order_key() : $key;
 		}
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
-			$this->create_account_service_for_bridge(
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$this->create_account_service(
 				true,
 				array(
 					'country'      => 'US',
 					'capabilities' => array( 'card_payments' => 'active' ),
 				)
 			),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller()
 		);
 
-		$config     = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config     = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$cart_total = (int) round( (float) WC()->cart->get_total( '' ) * 100 );
 		WC()->cart->empty_cart();
 
@@ -918,9 +918,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		set_query_var( 'order-pay', $order->get_id() );
 		$_GET['key'] = $order->get_order_key();
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
-			$this->create_account_service_for_bridge(
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
+			$this->create_account_service(
 				true,
 				array(
 					'country'      => 'US',
@@ -932,12 +932,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				),
 				array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 			),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge()
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller()
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['isOrderPay'] );
 		$this->assertSame( $order->get_id(), $config['orderId'] );
@@ -972,22 +972,22 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->go_to( get_permalink( $my_account_page_id ) );
 		$GLOBALS['wp']->query_vars['add-payment-method'] = '';
 
-		$account_service  = $this->create_account_service_for_bridge( true );
+		$account_service  = $this->create_account_service( true );
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $this->createStub( WooPaymentsApiClient::class ), $account_service, new WooPaymentsSessionService() );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
 			$account_service,
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge(),
+			$this->create_woopay_session_service( false ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller(),
 			null,
 			null,
 			$customer_service
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'Ada Lovelace', $config['customerData']['name'] );
 		$this->assertSame( 'ada@example.com', $config['customerData']['email'] );
@@ -999,7 +999,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_platform_checkout_config_is_independent_from_woopay_frontend_config(): void {
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'                    => 'US',
@@ -1007,10 +1007,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['forceNetworkSavedCards'] );
 		$this->assertTrue( $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
@@ -1022,10 +1022,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_merges_direct_checkout_eligibility(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true, true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true, true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['isWooPayDirectCheckoutEnabled'] );
 	}
@@ -1043,12 +1043,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_config_reads_the_session_service_platform_predicate( bool $platform ): void {
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false, false, $platform ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false, false, $platform ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertSame( $platform, $bridge->should_use_stripe_platform_on_checkout_page() );
+		$this->assertSame( $platform, $assets->should_use_stripe_platform_on_checkout_page() );
 		$this->assertSame( $platform, $config['forceNetworkSavedCards'] );
 		$this->assertSame( $platform, $config['paymentMethodsConfig']['card']['forceNetworkSavedCards'] );
 	}
@@ -1059,12 +1059,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_hides_card_save_option_for_logged_in_woopay_shoppers(): void {
 		wp_set_current_user( self::factory()->user->create() );
 
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['isSavedCardsEnabled'] );
 		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
@@ -1079,7 +1079,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_keeps_non_card_save_option_for_logged_in_woopay_shoppers(): void {
 		wp_set_current_user( self::factory()->user->create() );
 
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'      => 'US',
@@ -1095,10 +1095,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['paymentMethodsConfig']['link']['isReusable'] );
 		$this->assertTrue( $config['paymentMethodsConfig']['link']['showSaveOption'], 'The WooPay guard must not hide the save option for a reusable non-card method.' );
@@ -1109,16 +1109,16 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide saved-card controls when saved cards are disabled.
 	 */
 	public function test_get_payment_fields_js_config_hides_saved_card_controls_when_saved_cards_are_disabled(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array( 'country' => 'RO' ),
 			array( 'saved_cards' => 'no' )
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertFalse( $config['isSavedCardsEnabled'] );
 		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
@@ -1132,16 +1132,16 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * (class-wc-payments-checkout.php:579, :604-619).
 	 */
 	public function test_get_payment_fields_js_config_shows_card_save_option_when_saved_cards_enabled(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array( 'country' => 'RO' ),
 			array( 'saved_cards' => 'yes' )
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['isSavedCardsEnabled'] );
 		$this->assertTrue( $config['paymentMethodsConfig']['card']['showSaveOption'] );
@@ -1151,7 +1151,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should build no payment methods for a stored empty list of enabled methods (client 11.1.0 `get_enabled_payment_method_config()`, `class-wc-payments-checkout.php:291-320`, builds them from the enabled list).
 	 */
 	public function test_get_payment_fields_js_config_builds_no_methods_for_an_empty_enabled_list(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array( 'country' => 'RO' ),
 			array(
@@ -1160,10 +1160,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( array(), $config['paymentMethodsConfig'] );
 	}
@@ -1178,16 +1178,16 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->report_subscriptions_loaded();
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array( 'country' => 'RO' ),
 			array( 'saved_cards' => 'yes' )
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $config['isSavedCardsEnabled'] );
 		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
@@ -1198,17 +1198,17 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_includes_cartes_bancaires_for_stores_based_in_france(): void {
 		update_option( 'woocommerce_default_country', 'FR' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country' => 'US',
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$icons  = $config['paymentMethodsConfig']['card']['cardBrandIcons'];
 
 		// Client 11.1.0 sends the store base country (includes/class-wc-payments-checkout.php:270) and decides the brand from it
@@ -1226,17 +1226,17 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_leaves_cartes_bancaires_out_for_stores_based_outside_france(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country' => 'FR',
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'US', $config['storeCountry'] );
 		$this->assertNotContains( 'cartes_bancaires', array_column( $config['paymentMethodsConfig']['card']['cardBrandIcons'], 'id' ) );
@@ -1246,11 +1246,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should give Stripe the site locale, not the admin user's, in the checkout config.
 	 */
 	public function test_get_payment_fields_js_config_uses_the_site_locale(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $this->in_admin_with_french_user_locale( static fn() => $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS ) );
+		$config = $this->in_admin_with_french_user_locale( static fn() => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS ) );
 
 		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/class-wc-payments-checkout.php:195).
 		$this->assertSame( 'en', $config['locale'] );
@@ -1263,12 +1263,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'GB' );
 		// Client 11.1.0 picks the test card for the account country, else US (includes/class-wc-payments-checkout.php:474-481;
 		// includes/class-wc-payments-account.php:2731-2734; includes/constants/class-country-test-cards.php:92-94).
-		$account_service = $this->create_account_service_for_bridge( true, array() );
+		$account_service = $this->create_account_service( true, array() );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertStringContainsString( '4242 4242 4242 4242', $config['paymentMethodsConfig']['card']['testingInstructions'] );
 		$this->assertStringNotContainsString( '4000 0082 6000 0000', $config['paymentMethodsConfig']['card']['testingInstructions'] );
@@ -1278,10 +1278,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should enqueue core-owned checkout assets when rendering payment fields.
 	 */
 	public function test_payment_fields_enqueues_core_owned_assets_and_preserves_wcpay_config_filter(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -1291,7 +1291,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$gateway = $this->create_card_gateway_for_bridge( $bridge );
+		$gateway = $this->create_card_gateway( $assets );
 		ob_start();
 		$gateway->form();
 		$output = (string) ob_get_clean();
@@ -1325,10 +1325,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_classic_script_depends_on_tokenization_form_when_tokenization_is_supported(): void {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$bridge->enqueue_classic_checkout_assets_for_fields( array( 'products', 'tokenization' ) );
+		$assets->enqueue_classic_checkout_assets_for_fields( array( 'products', 'tokenization' ) );
 
 		// Client 11.1.0 includes/class-wc-payments-checkout.php:130-131: WordPress then prints tokenization-form.js first,
 		// so its listener is bound before the checkout script mounts the card element.
@@ -1345,10 +1345,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_classic_script_does_not_depend_on_tokenization_form_without_tokenization(): void {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
+		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
 
 		$this->assertNotContains( 'woocommerce-tokenization-form', wp_scripts()->registered['wc-woopayments-checkout']->deps );
 		$this->assertFalse( wp_script_is( 'woocommerce-tokenization-form', 'registered' ) );
@@ -1360,14 +1360,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_payment_fields_registers_full_checkout_script_after_frontend_script_registration(): void {
 		\WC_Frontend_Scripts::load_scripts();
 
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
-		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
+		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'ideal' ) );
 
 		$checkout_script = wp_scripts()->registered['wc-woopayments-checkout'];
 		$this->assertTrue( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
@@ -1387,14 +1387,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should localize split gateway classic config under a gateway-specific object name.
 	 */
 	public function test_payment_fields_localizes_split_gateway_config_under_gateway_specific_object_name(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
-		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
+		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS, $payment_method_registry->get( 'klarna' ) );
 
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -1408,9 +1408,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Split gateways sharing one holder build the gateway-independent Blocks config once, and still get their own gateway keys and filter pass.
 	 */
 	public function test_split_gateway_blocks_data_builds_the_shared_config_once(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$builds   = 0;
 		$filtered = 0;
@@ -1429,7 +1429,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$shared   = new \ArrayObject();
 			$gateways = array();
 			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
-				$gateways[] = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS, $registry->get( $payment_method_id ), $shared )['gatewayId'];
+				$gateways[] = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, $registry->get( $payment_method_id ), $shared )['gatewayId'];
 			}
 		} finally {
 			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
@@ -1458,9 +1458,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_classic_payment_list_builds_the_shared_config_once( string $surface, string $changed ): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$account_service = $this->create_account_service_for_bridge( true );
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$builds   = 0;
 		$filtered = 0;
@@ -1472,8 +1472,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			++$filtered;
 			return $config;
 		};
-		$render   = static function ( array $supports, string $payment_method_id = 'card' ) use ( $bridge, $registry ): array {
-			return $bridge->enqueue_classic_checkout_assets_for_fields( $supports, $registry->get( $payment_method_id ) );
+		$render   = static function ( array $supports, string $payment_method_id = 'card' ) use ( $assets, $registry ): array {
+			return $assets->enqueue_classic_checkout_assets_for_fields( $supports, $registry->get( $payment_method_id ) );
 		};
 		add_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 		add_filter( 'wcpay_payment_fields_js_config', $filter );
@@ -1550,12 +1550,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should include WooPay save-user data in Blocks payment method data.
 	 */
 	public function test_get_blocks_payment_method_data_includes_woopay_save_user_data(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$data = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $data['isWooPayEnabled'] );
 		$this->assertTrue( $data['PRE_CHECK_SAVE_MY_INFO'] );
@@ -1569,9 +1569,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * gateway declares reach the checkout and values a filter removed stay out.
 	 */
 	public function test_config_features_are_the_supports_passed_in(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$account_service = $this->create_account_service( true );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 
 		// An extension removed `products` from the gateway's supports, leaving a gap in the keys.
@@ -1579,9 +1579,9 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		unset( $supports[0] );
 		$expected = array( 'refunds', 'tokenization', 'add_payment_method' );
 
-		$classic = $bridge->get_payment_fields_js_config( $supports );
-		$blocks  = $bridge->get_blocks_payment_method_data( $supports );
-		$split   = $bridge->get_blocks_payment_method_data( $supports, $registry->get( 'klarna' ) );
+		$classic = $assets->get_payment_fields_js_config( $supports );
+		$blocks  = $assets->get_blocks_payment_method_data( $supports );
+		$split   = $assets->get_blocks_payment_method_data( $supports, $registry->get( 'klarna' ) );
 
 		$this->assertSame( $expected, $classic['features'] );
 		$this->assertSame( $expected, $blocks['features'] );
@@ -1600,12 +1600,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * client/checkout/blocks/index.js:123-134).
 	 */
 	public function test_get_blocks_payment_method_data_exposes_woopay_express_gate_flags(): void {
-		$account_service = $this->create_account_service_for_bridge( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
+		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$data = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $data['isWooPayEnabled'] );
 		$this->assertTrue( $data['shouldShowWooPayButton'] );
@@ -1727,15 +1727,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Build a checkout bridge whose WooPay config carries every key the real WooPay session service emits.
+	 * Build checkout assets whose WooPay config carries every key the real WooPay session service emits.
 	 *
-	 * @return WooPaymentsCheckoutBridge
+	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function create_bridge_with_full_woopay_config(): WooPaymentsCheckoutBridge {
+	private function create_assets_with_full_woopay_config(): WooPaymentsCheckoutAssets {
 		$real_account_service = new WooPaymentsAccountService();
 		$real_account_service->init( new LegacyProxy() );
 		$real_woopay_service = new WooPaymentsWooPaySessionService();
-		$real_woopay_service->init( $real_account_service, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller_for_bridge() );
+		$real_woopay_service->init( $real_account_service, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller() );
 		$woopay_config = array_merge(
 			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
 			array(
@@ -1753,19 +1753,19 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$woopay_service->method( 'get_woopay_frontend_config' )->willReturn( $woopay_config );
 		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array( 'PRE_CHECK_SAVE_MY_INFO' => true ) );
 
-		$account_service = $this->create_account_service_for_bridge( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
-		$bridge          = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $woopay_service, $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-		$this->inject_express_checkout_service( $bridge, $account_service );
+		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
+		$assets          = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $woopay_service, $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
+		$this->inject_express_checkout_service( $assets, $account_service );
 
-		return $bridge;
+		return $assets;
 	}
 
 	/**
 	 * @testdox Blocks payment method data carries exactly the client's keys plus the native keys the Blocks bundle reads.
 	 */
 	public function test_get_blocks_payment_method_data_has_the_client_key_set_plus_consumed_native_keys(): void {
-		$data = $this->create_bridge_with_full_woopay_config()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_with_full_woopay_config()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$expected = array_merge( self::CLIENT_BLOCKS_DATA_KEYS, self::NATIVE_BLOCKS_DATA_KEYS_WITH_CONSUMERS );
 		sort( $expected );
@@ -1779,17 +1779,17 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Blocks payment method data never carries the dropped native-only keys, while the classic config keeps them.
 	 */
 	public function test_get_blocks_payment_method_data_omits_dropped_native_keys(): void {
-		$bridge = $this->create_bridge_with_full_woopay_config();
-		$data   = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$assets = $this->create_assets_with_full_woopay_config();
+		$data   = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$shared = new \ArrayObject();
-		$split  = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS, ( new WooPaymentsPaymentMethodRegistry() )->get( 'klarna' ), $shared );
+		$split  = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS, ( new WooPaymentsPaymentMethodRegistry() )->get( 'klarna' ), $shared );
 
 		foreach ( self::DROPPED_BLOCKS_DATA_KEYS as $key ) {
 			$this->assertArrayNotHasKey( $key, $data, "Blocks data must not carry {$key}." );
 			$this->assertArrayNotHasKey( $key, $split, "Split-gateway Blocks data must not carry {$key}." );
 		}
 
-		$classic = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$classic = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$this->assertArrayHasKey( 'customerData', $classic );
 		$this->assertArrayHasKey( 'paymentListWalletsConfig', $classic );
 		$this->assertArrayHasKey( 'woopayAgreementText', $classic );
@@ -1799,13 +1799,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Blocks payment method data reports is_admin like the client: false on the storefront, true in wp-admin.
 	 */
 	public function test_get_blocks_payment_method_data_reports_is_admin(): void {
-		$bridge = $this->create_bridge_with_full_woopay_config();
+		$assets = $this->create_assets_with_full_woopay_config();
 
-		$this->assertFalse( $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS )['is_admin'] );
+		$this->assertFalse( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['is_admin'] );
 
 		set_current_screen( 'edit-post' );
 		try {
-			$this->assertTrue( $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS )['is_admin'] );
+			$this->assertTrue( $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS )['is_admin'] );
 		} finally {
 			set_current_screen( 'front' );
 		}
@@ -1846,15 +1846,15 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_blocks_data_express_switches_follow_the_checkout_location(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
-		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$this->assertTrue( $data['isPaymentRequestEnabled'] );
 		$this->assertTrue( $data['isAmazonPayEnabled'] );
 
-		$data = $this->create_bridge_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'amazon_pay' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'amazon_pay' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$this->assertFalse( $data['isPaymentRequestEnabled'], 'Apple Pay/Google Pay is not listed at checkout.' );
 		$this->assertTrue( $data['isAmazonPayEnabled'] );
 
-		$data = $this->create_bridge_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'payment_request' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( array( 'express_checkout_checkout_methods' => array( 'payment_request' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$this->assertTrue( $data['isPaymentRequestEnabled'] );
 		$this->assertFalse( $data['isAmazonPayEnabled'], 'Amazon Pay is not listed at checkout.' );
 	}
@@ -1865,8 +1865,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function test_blocks_data_amazon_pay_switch_uses_native_amazon_pay_availability(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
-		$toggled_off = $this->create_bridge_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
-		$ineligible  = $this->create_bridge_for_express_handlers( array(), array( 'capabilities' => array() ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$toggled_off = $this->create_assets_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$ineligible  = $this->create_assets_for_express_handlers( array(), array( 'capabilities' => array() ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $toggled_off['isPaymentRequestEnabled'] );
 		$this->assertFalse( $toggled_off['isAmazonPayEnabled'] );
@@ -1882,7 +1882,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_blocks_data_express_switches_ignore_locations_without_a_page_context(): void {
-		$data = $this->create_bridge_for_express_handlers(
+		$data = $this->create_assets_for_express_handlers(
 			array(
 				'express_checkout_checkout_methods' => array(),
 				'express_checkout_cart_methods'     => array(),
@@ -1909,7 +1909,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$_GET['change_payment_method'] = '123';
 		}
 
-		$data = $this->create_bridge_for_express_handlers( $settings, $account_data )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( $settings, $account_data )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertArrayNotHasKey( 'isPaymentRequestEnabled', $data );
 		$this->assertArrayNotHasKey( 'isAmazonPayEnabled', $data );
@@ -1947,7 +1947,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $customer_id );
 		$this->go_to_pay_for_order_link( $order );
 
-		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertSame( $order->get_id(), $data['order_id'] );
 		$this->assertSame( 'true', $data['pay_for_order'] );
@@ -1964,7 +1964,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$this->go_to_pay_for_order_link( $order );
 		$_GET['key'] = 'wc_order_wrong';
 
-		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( current_user_can( 'pay_for_order', $order->get_id() ) );
 		foreach ( array( 'order_id', 'pay_for_order', 'key', 'billing_email' ) as $order_pay_key ) {
@@ -1987,7 +1987,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		Constants::set_constant( 'DONOTCACHEPAGE', true );
 
 		try {
-			$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+			$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		} finally {
 			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
 		}
@@ -2030,7 +2030,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		Constants::set_constant( 'DONOTCACHEPAGE', false );
 
 		try {
-			$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+			$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		} finally {
 			Constants::clear_single_constant( 'DONOTCACHEPAGE' );
 			$session->set( 'customer', $session_customer );
@@ -2058,14 +2058,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $owner_id );
 		$this->go_to_pay_for_order_link( $order );
 		unset( $_GET['key'] );
-		$assert_none( $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Missing order key.' );
+		$assert_none( $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Missing order key.' );
 
 		$this->go_to_pay_for_order_link( $order );
 		wp_set_current_user( $other_id );
-		$assert_none( $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Another customer cannot pay the order.' );
+		$assert_none( $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Another customer cannot pay the order.' );
 
 		wp_set_current_user( $owner_id );
-		$assert_none( $this->create_bridge_for_express_handlers( array(), array( 'payments_enabled' => false ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Payments are not enabled.' );
+		$assert_none( $this->create_assets_for_express_handlers( array(), array( 'payments_enabled' => false ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS ), 'Payments are not enabled.' );
 	}
 
 	/**
@@ -2079,7 +2079,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( 123 );
 		$_GET['change_payment_method']                                = '123';
 
-		$data = $this->create_bridge_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertTrue( $data['isChangingPayment'] );
 		$this->assertArrayNotHasKey( 'order_id', $data );
@@ -2103,7 +2103,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Blocks data carries the client's WooPay button keys while WooPay and its express button are enabled.
 	 */
 	public function test_blocks_data_carries_woopay_button_keys_while_woopay_is_enabled(): void {
-		$data = $this->create_bridge_for_express_handlers( array(), array(), true )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( array(), array(), true )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		foreach ( self::WOOPAY_BUTTON_KEYS as $key ) {
 			$this->assertArrayHasKey( $key, $data );
@@ -2130,7 +2130,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			$_GET['change_payment_method'] = '123';
 		}
 
-		$data = $this->create_bridge_for_express_handlers( $settings, array(), $woopay )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( $settings, array(), $woopay )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		foreach ( self::WOOPAY_BUTTON_KEYS as $key ) {
 			$this->assertArrayNotHasKey( $key, $data, "{$scenario}: {$key}" );
@@ -2157,10 +2157,10 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should strip script tags from filter-injected card testing instructions in the Blocks payload.
 	 */
 	public function test_get_blocks_payment_method_data_sanitizes_filtered_testing_instructions(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -2170,7 +2170,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$data                 = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data                 = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$testing_instructions = $data['paymentMethodsConfig']['card']['testingInstructions'];
 
 		$this->assertStringNotContainsString( '<script>', $testing_instructions );
@@ -2180,13 +2180,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the setup intent and order status nonces when the checkout surface is available.
 	 */
-	public function test_get_payment_fields_js_config_exposes_native_bridge_nonces_when_checkout_surface_is_available(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+	public function test_get_payment_fields_js_config_exposes_checkout_nonces_when_checkout_surface_is_available(): void {
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
@@ -2199,19 +2199,19 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
 
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
 			$account_service,
-			$this->create_woopay_session_service_for_bridge( true ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge(),
+			$this->create_woopay_session_service( true ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller(),
 			$this->create_fraud_prevention_service( true, $session )
 		);
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
-		$data   = $bridge->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$data   = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'fraud-token-123', $config['fraudPreventionToken'] );
 		$this->assertSame( 'fraud-token-123', $data['fraudPreventionToken'] );
@@ -2224,18 +2224,18 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'fraud-token-123' );
 
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init(
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init(
 			$account_service,
-			$this->create_woopay_session_service_for_bridge( true ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$this->create_frontend_tracking_controller_for_bridge(),
+			$this->create_woopay_session_service( true ),
+			$this->create_frontend_styles_service(),
+			$this->create_frontend_tracking_controller(),
 			$this->create_fraud_prevention_service( true, $session )
 		);
 
-		$bridge->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
+		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
 
 		$this->assertTrue( wp_script_is( WooPaymentsFraudPreventionService::TOKEN_NAME, 'enqueued' ) );
 		$inline_scripts = wp_scripts()->registered[ WooPaymentsFraudPreventionService::TOKEN_NAME ]->extra['after'] ?? array();
@@ -2249,12 +2249,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should hide checkout surface controls when the Core-owned account readiness fails.
 	 */
 	public function test_get_payment_fields_js_config_hides_native_controls_when_account_is_not_ready(): void {
-		$account_service = $this->create_account_service_for_bridge( false );
+		$account_service = $this->create_account_service( false );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( true ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( 'pk_test_123', $config['publishableKey'] );
 		$this->assertSame( 'acct_123', $config['accountId'] );
@@ -2272,12 +2272,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve WooPay config shape when WooPay is disabled.
 	 */
 	public function test_get_payment_fields_js_config_preserves_woopay_config_shape_when_woopay_is_disabled(): void {
-		$account_service = $this->create_account_service_for_bridge( true );
+		$account_service = $this->create_account_service( true );
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
@@ -2308,7 +2308,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose fraud-services config from the preserved account payload.
 	 */
 	public function test_get_payment_fields_js_config_uses_account_fraud_services(): void {
-		$account_service = $this->create_account_service_for_bridge(
+		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'        => 'US',
@@ -2316,26 +2316,26 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-		$this->inject_fraud_service_for_bridge( $bridge, $account_service );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
+		$this->inject_fraud_service( $assets, $account_service );
 
-		$config = $bridge->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
 	}
 
 	/**
-	 * Inject a fraud service wired to the given (mocked) account service into a bridge.
+	 * Inject a fraud service wired to the given (mocked) account service into the checkout assets.
 	 *
-	 * The bridge otherwise resolves the fraud service from the container, whose
+	 * The class otherwise resolves the fraud service from the container, whose
 	 * account service is the real one — the test's mocked account payload would
 	 * never reach it.
 	 *
-	 * @param WooPaymentsCheckoutBridge $bridge          Bridge under test.
+	 * @param WooPaymentsCheckoutAssets $assets          Checkout assets under test.
 	 * @param WooPaymentsAccountService $account_service Account service (usually a mock) the fraud service should read.
 	 */
-	private function inject_fraud_service_for_bridge( WooPaymentsCheckoutBridge $bridge, WooPaymentsAccountService $account_service ): void {
+	private function inject_fraud_service( WooPaymentsCheckoutAssets $assets, WooPaymentsAccountService $account_service ): void {
 		$api_client       = new WooPaymentsApiClient();
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
@@ -2343,13 +2343,13 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$fraud_service = new WooPaymentsFraudService();
 		$fraud_service->init( $account_service, $customer_service, new WooPaymentsSessionService(), $api_client );
 
-		$property = new \ReflectionProperty( WooPaymentsCheckoutBridge::class, 'fraud_service' );
+		$property = new \ReflectionProperty( WooPaymentsCheckoutAssets::class, 'fraud_service' );
 		$property->setAccessible( true );
-		$property->setValue( $bridge, $fraud_service );
+		$property->setValue( $assets, $fraud_service );
 	}
 
 	/**
-	 * Create an account service mock for checkout bridge tests.
+	 * Create an account service mock for checkout assets tests.
 	 *
 	 * @param bool  $can_process_payments Whether the account can process payments.
 	 * @param array $account_data         Account cache data, in the platform account shape the client caches (country,
@@ -2358,7 +2358,7 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * @param array $gateway_settings     Gateway settings.
 	 * @return WooPaymentsAccountService|\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private function create_account_service_for_bridge( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
+	private function create_account_service( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'is_payment_request_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
@@ -2403,12 +2403,12 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Give the bridge a real express checkout service backed by the bridge's account service.
+	 * Give the checkout assets a real express checkout service backed by their account service.
 	 *
-	 * @param WooPaymentsCheckoutBridge $bridge          Checkout bridge.
+	 * @param WooPaymentsCheckoutAssets $assets          Checkout assets.
 	 * @param WooPaymentsAccountService $account_service Account service mock.
 	 */
-	private function inject_express_checkout_service( WooPaymentsCheckoutBridge $bridge, WooPaymentsAccountService $account_service ): void {
+	private function inject_express_checkout_service( WooPaymentsCheckoutAssets $assets, WooPaymentsAccountService $account_service ): void {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -2416,33 +2416,33 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
 		$service = new WooPaymentsExpressCheckoutService();
-		$service->init( $account_service, $provider, $this->create_frontend_tracking_controller_for_bridge() );
+		$service->init( $account_service, $provider, $this->create_frontend_tracking_controller() );
 
-		$property = new \ReflectionProperty( WooPaymentsCheckoutBridge::class, 'express_checkout_service' );
+		$property = new \ReflectionProperty( WooPaymentsCheckoutAssets::class, 'express_checkout_service' );
 		$property->setAccessible( true );
-		$property->setValue( $bridge, $service );
+		$property->setValue( $assets, $service );
 	}
 
 	/**
-	 * Build a bridge whose account can run the client's express checkout handlers.
+	 * Build checkout assets whose account can run the client's express checkout handlers.
 	 *
 	 * @param array<string,mixed> $settings     Gateway setting overrides.
 	 * @param array<string,mixed> $account_data Account data overrides.
 	 * @param bool                $woopay       Whether the WooPay session service reports WooPay enabled.
-	 * @return WooPaymentsCheckoutBridge
+	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function create_bridge_for_express_handlers( array $settings = array(), array $account_data = array(), bool $woopay = false ): WooPaymentsCheckoutBridge {
-		$account_service = $this->create_account_service_for_bridge(
+	private function create_assets_for_express_handlers( array $settings = array(), array $account_data = array(), bool $woopay = false ): WooPaymentsCheckoutAssets {
+		$account_service = $this->create_account_service(
 			true,
 			array_merge( self::EXPRESS_ACCOUNT_DATA, $account_data ),
 			array_merge( self::EXPRESS_GATEWAY_SETTINGS, $settings )
 		);
 
-		$bridge = new WooPaymentsCheckoutBridge();
-		$bridge->init( $account_service, $this->create_woopay_session_service_for_bridge( $woopay ), $this->create_frontend_styles_service_for_bridge(), $this->create_frontend_tracking_controller_for_bridge() );
-		$this->inject_express_checkout_service( $bridge, $account_service );
+		$assets = new WooPaymentsCheckoutAssets();
+		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
+		$this->inject_express_checkout_service( $assets, $account_service );
 
-		return $bridge;
+		return $assets;
 	}
 
 	/**
@@ -2517,14 +2517,14 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPay session service mock for checkout bridge tests.
+	 * Create a WooPay session service mock for checkout assets tests.
 	 *
 	 * @param bool $enabled                 Whether WooPay is enabled.
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
 	 * @param bool $uses_stripe_platform    Whether checkout uses the Stripe platform account for WooPay.
 	 * @return WooPaymentsWooPaySessionService|\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private function create_woopay_session_service_for_bridge( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
+	private function create_woopay_session_service( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
 		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data', 'should_use_stripe_platform_on_checkout_page' ) )
@@ -2575,11 +2575,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a frontend styles service mock for checkout bridge tests.
+	 * Create a frontend styles service mock for checkout assets tests.
 	 *
 	 * @return WooPaymentsFrontendStylesService|\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private function create_frontend_styles_service_for_bridge() {
+	private function create_frontend_styles_service() {
 		$service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
 			->onlyMethods( array( 'get_styles_cache_version' ) )
 			->getMock();
@@ -2590,11 +2590,11 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a frontend tracking controller mock for checkout bridge tests.
+	 * Create a frontend tracking controller mock for checkout assets tests.
 	 *
 	 * @return WooPaymentsFrontendTrackingController|\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private function create_frontend_tracking_controller_for_bridge() {
+	private function create_frontend_tracking_controller() {
 		$controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )

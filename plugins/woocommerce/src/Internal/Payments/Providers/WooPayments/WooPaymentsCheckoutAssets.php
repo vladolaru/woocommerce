@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCheckoutBridge class file.
+ * WooPaymentsCheckoutAssets class file.
  */
 
 declare( strict_types = 1 );
@@ -14,12 +14,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
- * Owns the transitional Core checkout surface for the WooPayments card gateway.
+ * Registers the WooPayments checkout scripts and styles, and builds the payment fields config they read: the
+ * `wcpay_core_checkout_config` objects on the classic checkout and the Checkout block's payment method data.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsCheckoutBridge {
+class WooPaymentsCheckoutAssets {
 	/**
 	 * Native payment method capability for saved/reusable payment credentials.
 	 */
@@ -334,7 +335,7 @@ class WooPaymentsCheckoutBridge {
 	}
 
 	/**
-	 * Tell whether the bridge has enough data to expose the shopper checkout UI.
+	 * Tell whether the account can take payments, so the shopper checkout UI can show.
 	 *
 	 * @return bool
 	 */
@@ -1111,7 +1112,7 @@ class WooPaymentsCheckoutBridge {
 		// script build a payment-mode Payment Element for an amount the shopper
 		// is not paying. The WooPayments client plugin resolves this request to
 		// the cart context, whose empty-cart total of zero yields a setup-mode
-		// element, and this bridge must produce the same element.
+		// element, and this class must produce the same element.
 		if ( 0 < $order_id && ! $this->is_changing_payment_method_for_subscription() ) {
 			$order = wc_get_order( $order_id );
 			// The pay link's key as well as the capability: core grants pay_for_order on a guest order to anyone, and the

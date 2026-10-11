@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
@@ -56,24 +56,24 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Should require checkout bridge readiness before the Blocks payment method activates.
+	 * @testdox Should require checkout readiness before the Blocks payment method activates.
 	 */
-	public function test_is_active_requires_checkout_bridge_readiness(): void {
+	public function test_is_active_requires_checkout_readiness(): void {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( false );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( false );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -85,18 +85,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( false );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -108,18 +108,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter( false ), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter( false ), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -131,11 +131,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -148,7 +148,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$gateway->id = 'woocommerce_payments_klarna';
 		$gateway->expects( $this->once() )->method( 'is_available' )->willReturn( false );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $gateway );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $gateway );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -204,18 +204,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				true
 			);
 
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integration->get_payment_method_script_handles() );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
@@ -290,11 +290,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				)
 			);
 
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -302,7 +302,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$woopay_session_service = $this->create_woopay_session_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $woopay_session_service, $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $woopay_session_service, $this->create_express_checkout_service() );
 
 		$this->assertSame(
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-woopay', 'wc-payment-method-woopayments-fraud-scripts' ),
@@ -375,11 +375,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				)
 			);
 
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -387,7 +387,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $express_checkout_service );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $express_checkout_service );
 
 		$this->assertSame(
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
@@ -420,18 +420,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				wp_register_style( $handle, false, array(), 'test' );
 			}
 		);
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
 
 		$handles = $integration->get_payment_method_script_handles();
 
@@ -466,18 +466,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				wp_register_style( $handle, false, array(), 'test' );
 			}
 		);
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
 
 		$handles = $integration->get_payment_method_script_handles();
 
@@ -505,18 +505,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 				wp_register_style( $handle, false, array(), 'test' );
 			}
 		);
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
 		$handles     = $integration->get_payment_method_script_handles();
 		set_current_screen( 'front' );
 
@@ -644,18 +644,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Should source Blocks payment method data from the checkout bridge.
+	 * @testdox Should source Blocks payment method data from the checkout assets class.
 	 */
-	public function test_get_payment_method_data_uses_checkout_bridge_config(): void {
+	public function test_get_payment_method_data_uses_checkout_assets_config(): void {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$bridge
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets
 			->expects( $this->once() )
 			->method( 'get_blocks_payment_method_data' )
 			->willReturn(
@@ -670,7 +670,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 
 		$this->assertSame(
 			array(
@@ -688,11 +688,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
@@ -704,7 +704,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
 
-		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 		$integrations = $integration->get_payment_method_integrations();
 
 		$this->assertSame(
@@ -722,18 +722,18 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Split-gateway Blocks integrations of one registration share one config holder, so the bridge builds the shared config once.
+	 * @testdox Split-gateway Blocks integrations of one registration share one config holder, so the checkout assets class builds the shared config once.
 	 */
 	public function test_split_gateway_integrations_share_one_config_holder(): void {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
 		$holders   = array();
-		$bridge->method( 'get_blocks_payment_method_data' )->willReturnCallback(
+		$assets->method( 'get_blocks_payment_method_data' )->willReturnCallback(
 			static function ( $supports, $definition, $shared = null ) use ( &$holders ): array {
 				$holders[] = $shared;
 				return array();
@@ -747,7 +747,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( false );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( new NativeWooPaymentsGateway( $registry->get( 'card' ) ), new NativeWooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
 			$payment_method->get_payment_method_data();
 		}
@@ -782,10 +782,10 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api       = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge          = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets          = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$integration     = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration     = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 		$integration_ids = array_map(
 			static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
 			$integration->get_payment_method_integrations()
@@ -810,12 +810,12 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$bridge
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets
 			->expects( $this->once() )
 			->method( 'get_blocks_payment_method_data' )
 			->with( array( 'products', 'refunds', 'tokenization', 'add_payment_method', 'subscriptions' ), $klarna_gateway->get_payment_method_definition() )
@@ -834,7 +834,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
 		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $klarna_gateway );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $klarna_gateway );
 
 		$this->assertSame(
 			array(
@@ -855,12 +855,12 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$bridge    = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets    = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
-		$bridge->method( 'get_blocks_payment_method_data' )->willReturn(
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'get_blocks_payment_method_data' )->willReturn(
 			array(
 				'title' => 'WooPayments',
 			)
@@ -873,7 +873,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $bridge, $provider, $this->create_woopay_session_service(), $express_checkout_service );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $express_checkout_service );
 
 		$this->assertSame(
 			array(
@@ -966,11 +966,11 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	 * @return WooPayments
 	 */
 	private function create_registered_integration( bool $show_woopay_button = false, bool $show_express_button = false ): WooPayments {
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
@@ -980,7 +980,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		return new WooPayments(
 			Package::container()->get( AssetApi::class ),
 			$this->create_runtime_arbiter(),
-			$bridge,
+			$assets,
 			$provider,
 			$this->create_woopay_session_service( $show_woopay_button ),
 			$this->create_express_checkout_service( $show_express_button )

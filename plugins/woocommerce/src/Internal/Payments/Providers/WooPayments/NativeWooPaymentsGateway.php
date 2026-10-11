@@ -124,11 +124,11 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private bool $checkout_payment_started = false;
 
 	/**
-	 * WooPayments checkout bridge.
+	 * WooPayments checkout scripts and their config.
 	 *
-	 * @var WooPaymentsCheckoutBridge
+	 * @var WooPaymentsCheckoutAssets
 	 */
-	private WooPaymentsCheckoutBridge $checkout_bridge;
+	private WooPaymentsCheckoutAssets $checkout_assets;
 
 	/**
 	 * WooPay session service.
@@ -354,7 +354,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		$this->get_checkout_bridge()->enqueue_classic_checkout_assets_without_fields( $this->supports );
+		$this->get_checkout_assets()->enqueue_classic_checkout_assets_without_fields( $this->supports );
 	}
 
 	/**
@@ -448,7 +448,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param PaymentProcessingService                          $processing_service        Payment processing service.
 	 * @param WooPaymentsProvider                               $provider                  WooPayments provider.
-	 * @param WooPaymentsCheckoutBridge|null                    $checkout_bridge           Optional checkout bridge.
+	 * @param WooPaymentsCheckoutAssets|null                    $checkout_assets           Optional checkout assets.
 	 * @param WooPaymentsApiClient|null                         $api_client                Optional API client.
 	 * @param WooPaymentsAccountService|null                    $account_service           Optional account service.
 	 * @param WooPaymentsTokenService|null                      $token_service             Optional token service.
@@ -461,7 +461,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	final public function init(
 		PaymentProcessingService $processing_service,
 		WooPaymentsProvider $provider,
-		?WooPaymentsCheckoutBridge $checkout_bridge = null,
+		?WooPaymentsCheckoutAssets $checkout_assets = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsTokenService $token_service = null,
@@ -474,8 +474,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->processing_service = $processing_service;
 		$this->provider           = $provider;
 
-		if ( null !== $checkout_bridge ) {
-			$this->checkout_bridge = $checkout_bridge;
+		if ( null !== $checkout_assets ) {
+			$this->checkout_assets = $checkout_assets;
 		}
 
 		if ( null !== $api_client ) {
@@ -761,8 +761,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return void
 	 */
 	private function render_payment_form( ?callable $render_saved_payment_methods = null ): void {
-		$checkout_bridge = $this->get_checkout_bridge();
-		$config          = $checkout_bridge->enqueue_classic_checkout_assets_for_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
+		$checkout_assets = $this->get_checkout_assets();
+		$config          = $checkout_assets->enqueue_classic_checkout_assets_for_fields( $this->get_card_gateway_supports(), $this->payment_method_definition );
 		$json_config     = wp_json_encode( $config );
 
 		if ( ! is_string( $json_config ) ) {
@@ -798,7 +798,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 		echo '</fieldset>';
 		echo '<div class="woocommerce-error wcpay-core-payment-errors" role="alert" hidden></div>';
 
-		if ( ! $checkout_bridge->should_expose_checkout_surface() ) {
+		if ( ! $checkout_assets->should_expose_checkout_surface() ) {
 			echo '<p class="woocommerce-info wcpay-core-checkout-unavailable">';
 			echo esc_html__( 'WooPayments checkout is not available right now. Please choose another payment method.', 'woocommerce' );
 			echo '</p>';
@@ -832,7 +832,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 */
 	public function save_payment_method_checkbox() {
 		$force_checked = $this->cart_contains_subscription() || $this->is_subscription_change_payment_form();
-		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_checkout_bridge()->should_use_stripe_platform_on_checkout_page() );
+		$should_hide   = $force_checked || ( 'card' === $this->get_payment_method_id() && $this->get_checkout_assets()->should_use_stripe_platform_on_checkout_page() );
 
 		$html = sprintf(
 			'<p class="form-row woocommerce-SavedPaymentMethods-saveNew">
@@ -1139,14 +1139,14 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 			$icon = implode( '', $icons );
 		} else {
-			$brand_labels          = WooPaymentsCheckoutBridge::get_card_brand_icon_labels();
+			$brand_labels          = WooPaymentsCheckoutAssets::get_card_brand_icon_labels();
 			$brands                = array_slice( $brand_labels, 0, 3, true );
 			$additional_icon_count = count( $brand_labels ) - count( $brands );
 
 			foreach ( $brands as $brand => $label ) {
 				$icons[] = sprintf(
 					'<img src="%1$s" alt="%2$s" width="38" height="24" />',
-					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/' . ( WooPaymentsCheckoutBridge::CARD_BRAND_ICON_ASSETS[ $brand ] ?? 'payment-methods/' . $brand . '.svg' ) ) ),
+					esc_url( \WC_HTTPS::force_https_url( WC()->plugin_url() . '/assets/images/' . ( WooPaymentsCheckoutAssets::CARD_BRAND_ICON_ASSETS[ $brand ] ?? 'payment-methods/' . $brand . '.svg' ) ) ),
 					esc_attr( $label )
 				);
 			}
@@ -1993,16 +1993,16 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the WooPayments checkout bridge.
+	 * Get the WooPayments checkout scripts and their config.
 	 *
-	 * @return WooPaymentsCheckoutBridge
+	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function get_checkout_bridge(): WooPaymentsCheckoutBridge {
-		if ( ! isset( $this->checkout_bridge ) ) {
-			$this->checkout_bridge = wc_get_container()->get( WooPaymentsCheckoutBridge::class );
+	private function get_checkout_assets(): WooPaymentsCheckoutAssets {
+		if ( ! isset( $this->checkout_assets ) ) {
+			$this->checkout_assets = wc_get_container()->get( WooPaymentsCheckoutAssets::class );
 		}
 
-		return $this->checkout_bridge;
+		return $this->checkout_assets;
 	}
 
 	/**

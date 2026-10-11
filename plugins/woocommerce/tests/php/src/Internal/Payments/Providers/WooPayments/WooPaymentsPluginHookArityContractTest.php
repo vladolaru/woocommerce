@@ -36,7 +36,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
@@ -662,8 +662,8 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_checkout_config(): void {
 		RecordedPublicFraudServices::answer();
-		$bridge = wc_get_container()->get( WooPaymentsCheckoutBridge::class );
-		$bridge->get_payment_fields_js_config( array( 'products' ) );
+		$assets = wc_get_container()->get( WooPaymentsCheckoutAssets::class );
+		$assets->get_payment_fields_js_config( array( 'products' ) );
 	}
 
 	/**

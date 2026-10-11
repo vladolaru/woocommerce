@@ -730,7 +730,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_tracks_classic_and_blocks_checkout_page_views_once(): void {
 		$recorded_events = array();
-		// The emitters are mocked, as when the funnel events lived in the checkout bridge and called this controller.
+		// The emitters are mocked: this pins which events the funnel hooks send, and the emitter tests pin how they record.
 		$sut = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_shopper_tracking_enabled', 'queue_user_event' ) )
@@ -783,7 +783,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_tracks_shopper_funnel_events_on_their_hooks(): void {
 		$recorded_events = array();
-		// The emitters are mocked, as when the funnel events lived in the checkout bridge and called this controller.
+		// The emitters are mocked: this pins which events the funnel hooks send, and the emitter tests pin how they record.
 		$sut = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'queue_user_event', 'record_user_event', 'track_proceed_to_checkout_clicks' ) )
@@ -980,7 +980,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_tracks_classic_and_store_api_order_placement_before_payment(): void {
 		$recorded_events = array();
-		// The emitters are mocked, as when the funnel events lived in the checkout bridge and called this controller.
+		// The emitters are mocked: this pins which events the funnel hooks send, and the emitter tests pin how they record.
 		$sut = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )

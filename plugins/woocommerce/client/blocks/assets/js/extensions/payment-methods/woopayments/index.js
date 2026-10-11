@@ -1370,7 +1370,7 @@ const WooPaymentsContent = ( {
 			event.preventDefault();
 			button.querySelector( 'i' )?.setAttribute( 'aria-hidden', 'true' );
 
-			// The status after the button announces the copy (WooPaymentsCheckoutBridge::get_card_testing_instructions()).
+			// The status after the button announces the copy (WooPaymentsCheckoutAssets::get_card_testing_instructions()).
 			const showCopied = () => {
 				const status = button.parentNode?.querySelector(
 					'.js-woopayments-copy-test-number-status'

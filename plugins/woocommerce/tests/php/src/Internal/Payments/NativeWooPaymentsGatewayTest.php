@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsErrorMessages;
@@ -515,7 +515,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_gateway_for_method' )->willReturn( null );
-		$bridge = $this->create_checkout_bridge_double();
+		$assets = $this->create_checkout_assets_double();
 		// The WooPayments settings turn saved cards off. iDEAL's own row holds only what the client's settings sync writes
 		// (enabled and the enabled list), plus saved_cards in the pre-10.1.0 history.
 		$card_settings      = static fn(): array => array(
@@ -539,9 +539,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		try {
 			$card_gateway = new NativeWooPaymentsGateway();
-			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge, null, $account_service );
+			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
 			$ideal_gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'ideal' ) );
-			$ideal_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge, null, $account_service );
+			$ideal_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
 			WC()->payment_gateways()->payment_gateways = array(
 				$card_gateway->id  => $card_gateway,
 				$ideal_gateway->id => $ideal_gateway,
@@ -5859,7 +5859,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$registry          = new WooPaymentsPaymentMethodRegistry();
 		$card_gateway      = new NativeWooPaymentsGateway( $registry->get( 'card' ) );
 		$received_supports = null;
-		$bridge            = $this->create_checkout_bridge_double(
+		$assets            = $this->create_checkout_assets_double(
 			array(),
 			true,
 			static function ( array $supports ) use ( &$received_supports ): void {
@@ -5874,7 +5874,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$card_gateway->supports = array( 'products', 'refunds', 'subscriptions', 'card_only_marker' );
 
 		$klarna_gateway = new NativeWooPaymentsGateway( $registry->get( 'klarna' ) );
-		$klarna_gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge );
+		$klarna_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets );
 		ob_start();
 		$klarna_gateway->form();
 		ob_end_clean();
@@ -5902,7 +5902,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service           = new RecordingPaymentProcessingService();
 		$received_supports = null;
-		$bridge            = $this->create_checkout_bridge_double(
+		$assets            = $this->create_checkout_assets_double(
 			array(
 				'testMode'             => true,
 				'paymentMethodsConfig' => array( 'card' => array( 'testingInstructions' => 'Use test card 4242 4242 4242 4242.' ) ),
@@ -5918,9 +5918,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
-				function () use ( $service, $bridge, &$output, &$gateway_supports ): void {
+				function () use ( $service, $assets, &$output, &$gateway_supports ): void {
 					$gateway = new NativeWooPaymentsGateway();
-					$gateway->init( $service, new WooPaymentsProvider(), $bridge );
+					$gateway->init( $service, new WooPaymentsProvider(), $assets );
 					$gateway_supports = $gateway->supports;
 
 					ob_start();
@@ -5962,7 +5962,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_form_prints_assertive_payment_error_region(): void {
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_bridge_double() );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_assets_double() );
 
 		ob_start();
 		$gateway->form();
@@ -5983,7 +5983,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_form_prints_the_unavailable_notice_only_when_the_account_cannot_take_payments( string $scenario, bool $can_take_payments, bool $expects_notice ): void {
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_bridge_double( array(), $can_take_payments ) );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_assets_double( array(), $can_take_payments ) );
 
 		ob_start();
 		$gateway->form();
@@ -6025,15 +6025,15 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token->set_expiry_year( '2040' );
 		$token->set_user_id( $customer_id );
 		$token->save();
-		$bridge = $this->create_checkout_bridge_double();
+		$assets = $this->create_checkout_assets_double();
 
 		$output = '';
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
-				function () use ( $bridge, &$output ): void {
+				function () use ( $assets, &$output ): void {
 					$gateway = new NativeWooPaymentsGateway();
-					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 					ob_start();
 					$gateway->payment_fields();
@@ -6067,13 +6067,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		$service = new RecordingPaymentProcessingService();
-		$bridge  = $this->create_checkout_bridge_double();
+		$assets  = $this->create_checkout_assets_double();
 
 		$output = '';
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
-				function () use ( $service, $bridge, &$output ): void {
+				function () use ( $service, $assets, &$output ): void {
 					$gateway = new class() extends NativeWooPaymentsGateway {
 						/**
 						 * Simulate optional WooCommerce Subscriptions availability.
@@ -6084,7 +6084,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 							return true;
 						}
 					};
-					$gateway->init( $service, new WooPaymentsProvider(), $bridge );
+					$gateway->init( $service, new WooPaymentsProvider(), $assets );
 
 					ob_start();
 					$gateway->payment_fields();
@@ -6107,15 +6107,15 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_payment_fields_offer_a_guest_no_saving(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		wp_set_current_user( 0 );
-		$bridge = $this->create_checkout_bridge_double();
+		$assets = $this->create_checkout_assets_double();
 
 		$output = '';
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
-				function () use ( $bridge, &$output ): void {
+				function () use ( $assets, &$output ): void {
 					$gateway = new NativeWooPaymentsGateway();
-					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 					ob_start();
 					$gateway->payment_fields();
@@ -6153,7 +6153,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$store_currency      = static fn(): string => $currency;
 		add_filter( 'woocommerce_payment_gateway_supports', $claims_tokenization, 10, 3 );
 		add_filter( 'woocommerce_currency', $store_currency );
-		$bridge   = $this->create_checkout_bridge_double();
+		$assets   = $this->create_checkout_assets_double();
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_gateway_for_method' ) )
@@ -6164,9 +6164,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		try {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => $saved_cards ),
-				function () use ( $bridge, $provider, $payment_method_id, &$output ): void {
+				function () use ( $assets, $provider, $payment_method_id, &$output ): void {
 					$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
-					$gateway->init( new RecordingPaymentProcessingService(), $provider, $bridge );
+					$gateway->init( new RecordingPaymentProcessingService(), $provider, $assets );
 					$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ), 'The filter makes the gateway claim tokenization.' );
 
 					ob_start();
@@ -6301,16 +6301,16 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *           ["sepa_debit", true, "visible"]
 	 *
 	 * @param string $payment_method Payment method of the gateway.
-	 * @param bool   $platform       Whether the checkout bridge reports WooPay on the checkout page.
+	 * @param bool   $platform       Whether the checkout assets report WooPay on the checkout page.
 	 * @param string $expected       Whether the checkbox is hidden or visible.
 	 */
 	public function test_save_payment_method_checkbox_hides_for_woopay_on_the_card_checkout( string $payment_method, bool $platform, string $expected ): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
-		$bridge = $this->createMock( WooPaymentsCheckoutBridge::class );
-		$bridge->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
+		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
+		$assets->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
 		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $bridge );
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 		ob_start();
 		$gateway->save_payment_method_checkbox();
@@ -6417,7 +6417,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve checkout bridge dependencies when payment fields are rendered directly.
+	 * @testdox Should resolve checkout assets dependencies when payment fields are rendered directly.
 	 */
 	public function test_payment_fields_resolve_dependencies_without_explicit_init(): void {
 		RecordedPublicFraudServices::answer();
@@ -7224,19 +7224,19 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a checkout bridge double that returns a fixed payment fields config.
+	 * Create a checkout assets double that returns a fixed payment fields config.
 	 *
-	 * @param array<string,mixed> $config            Config the bridge returns for the payment form.
+	 * @param array<string,mixed> $config            Config the double returns for the payment form.
 	 * @param bool                $can_take_payments Whether the account can take payments.
 	 * @param callable|null       $on_enqueue        Optional callback that receives the supports and payment method definition the gateway passes.
-	 * @return WooPaymentsCheckoutBridge
+	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function create_checkout_bridge_double( array $config = array(), bool $can_take_payments = true, ?callable $on_enqueue = null ): WooPaymentsCheckoutBridge {
-		$bridge = $this->getMockBuilder( WooPaymentsCheckoutBridge::class )
+	private function create_checkout_assets_double( array $config = array(), bool $can_take_payments = true, ?callable $on_enqueue = null ): WooPaymentsCheckoutAssets {
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'enqueue_classic_checkout_assets_for_fields', 'should_expose_checkout_surface' ) )
 			->getMock();
-		$bridge->method( 'enqueue_classic_checkout_assets_for_fields' )->willReturnCallback(
+		$assets->method( 'enqueue_classic_checkout_assets_for_fields' )->willReturnCallback(
 			static function ( array $supports, $payment_method_definition = null ) use ( $config, $on_enqueue ): array {
 				if ( null !== $on_enqueue ) {
 					$on_enqueue( $supports, $payment_method_definition );
@@ -7245,9 +7245,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return $config;
 			}
 		);
-		$bridge->method( 'should_expose_checkout_surface' )->willReturn( $can_take_payments );
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( $can_take_payments );
 
-		return $bridge;
+		return $assets;
 	}
 
 	/**

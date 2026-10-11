@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
@@ -93,7 +93,7 @@ class ApiTest extends WC_Unit_Test_Case {
 		$woopayments             = new WooPayments(
 			$this->createMock( AssetApi::class ),
 			$this->createMock( WooPaymentsRuntimeArbiter::class ),
-			$this->createMock( WooPaymentsCheckoutBridge::class ),
+			$this->createMock( WooPaymentsCheckoutAssets::class ),
 			$this->createMock( WooPaymentsProvider::class ),
 			$this->createMock( WooPaymentsWooPaySessionService::class ),
 			$this->createMock( WooPaymentsExpressCheckoutService::class )

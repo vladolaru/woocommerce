@@ -3493,7 +3493,7 @@ describe( 'WooPayments checkout', () => {
 		delete window.wcpay_core_checkout_config_woocommerce_payments_ideal;
 	} );
 
-	// Markup of WooPaymentsCheckoutBridge::get_card_testing_instructions().
+	// Markup of WooPaymentsCheckoutAssets::get_card_testing_instructions().
 	function renderTestNumberButton() {
 		document.body.innerHTML +=
 			'<button type="button" class="js-woopayments-copy-test-number">' +

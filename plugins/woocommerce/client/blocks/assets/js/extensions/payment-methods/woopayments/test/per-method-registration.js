@@ -51,7 +51,7 @@ jest.mock( '@woocommerce/settings', () => {
 			stylesCacheVersion: 'styles-v1',
 			currency: 'USD',
 			isCoreNativeCheckoutAvailable: true,
-			// The split config carries the card's top-level flag (WooPaymentsCheckoutBridge payment fields config).
+			// The split config carries the card's top-level flag (WooPaymentsCheckoutAssets payment fields config).
 			forceNetworkSavedCards: true,
 			paymentMethodTypes: [ 'klarna' ],
 			paymentMethodsConfig: {

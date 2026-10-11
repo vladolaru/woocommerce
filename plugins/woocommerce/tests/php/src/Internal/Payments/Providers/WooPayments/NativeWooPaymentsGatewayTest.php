@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutBridge;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -223,11 +223,11 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $arbiter );
 		$provider = $this->createMock( WooPaymentsProvider::class );
 		$provider->method( 'can_process_payments' )->willReturn( $can_process_payments );
-		$bridge = $this->createMock( WooPaymentsCheckoutBridge::class );
-		$bridge->expects( $this->exactly( $expected_enqueues ) )->method( 'enqueue_classic_checkout_assets_without_fields' );
+		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
+		$assets->expects( $this->exactly( $expected_enqueues ) )->method( 'enqueue_classic_checkout_assets_without_fields' );
 
 		$gateway = new NativeWooPaymentsGateway();
-		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $bridge );
+		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $assets );
 		/** This action is documented in templates/checkout/form-checkout.php */
 		do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 	}
