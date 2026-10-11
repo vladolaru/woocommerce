@@ -238,12 +238,19 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event whose mode differs from the store's is skipped with one error line naming it, as with the WooPayments extension.
+	 * @testdox An event whose mode differs from the store's is skipped before any hook, with one error line naming it, as with the WooPayments extension.
 	 */
 	public function test_webhook_mode_mismatch_logs_the_event(): void {
 		$order = $this->create_woopayments_order();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$logger = RecordingWcLogger::install();
+		$logger     = RecordingWcLogger::install();
+		$hook_calls = array();
+		add_action(
+			'woocommerce_payments_before_webhook_delivery',
+			function () use ( &$hook_calls ): void {
+				$hook_calls[] = 'before';
+			}
+		);
 
 		// The mismatch check reads only the envelope's livemode and id (client 11.1.0
 		// class-wc-payments-webhook-processing-service.php:268-290); the PaymentIntent body is never reached.
@@ -260,8 +267,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
-		$errors = array_filter( $logger->get_errors(), static fn( array $line ): bool => false !== strpos( $line[1], 'evt_mode_mismatch' ) );
-		$this->assertCount( 1, $errors, 'The skipped event must leave one error line naming it.' );
+		$this->assertSame( array(), $hook_calls );
+		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: evt_mode_mismatch)', 'woopayments' ) ), $logger->get_errors() );
 	}
 
 	/**
@@ -1405,11 +1412,18 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded stamps review_allowed on an order held on-hold for review.
+	 * @testdox payment_intent.succeeded with an allow outcome stamps $expected_box_type on a $order_status order.
+	 *
+	 * An order held on-hold for review gets review_allowed; any other keeps the plain allow stamp.
+	 *
+	 * @dataProvider provider_succeeded_intent_fraud_meta_box
+	 *
+	 * @param string $order_status      Order status before the event.
+	 * @param string $expected_box_type Fraud meta box type after the event.
 	 */
-	public function test_payment_intent_succeeded_stamps_review_allowed_for_on_hold_order(): void {
+	public function test_payment_intent_succeeded_stamps_the_fraud_meta_box_by_order_status( string $order_status, string $expected_box_type ): void {
 		$order = $this->create_woopayments_order();
-		$order->set_status( 'on-hold' );
+		$order->set_status( $order_status );
 		$order->save();
 
 		$this->sut->process(
@@ -1432,45 +1446,34 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'review_allowed', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( $expected_box_type, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_outcome_status', true ) );
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded keeps the plain allow stamp for orders not on hold.
+	 * Order statuses and the fraud meta box a succeeded allow outcome leaves.
+	 *
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function test_payment_intent_succeeded_keeps_allow_for_pending_order(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.succeeded',
-				$order,
-				array(
-					'metadata' => array( 'fraud_outcome' => 'allow' ),
-					'charges'  => array(
-						'data' => array(
-							array(
-								'payment_method_details' => array( 'type' => 'card' ),
-							),
-						),
-					),
-				)
-			)
+	public function provider_succeeded_intent_fraud_meta_box(): array {
+		return array(
+			'on hold for review' => array( 'on-hold', 'review_allowed' ),
+			'pending'            => array( 'pending', 'allow' ),
 		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed marks the order failed.
+	 * @testdox payment_intent.payment_failed with a failed $payment_method_type payment method fails the order and records the intent.
+	 *
+	 * @dataProvider provider_actionable_payment_failures
+	 *
+	 * @param string $order_payment_method_id `_payment_method_id` on the order.
+	 * @param string $payment_method_id       Failed payment method ID in the event.
+	 * @param string $payment_method_type     Failed payment method type in the event.
 	 */
-	public function test_payment_intent_failed_marks_order_failed(): void {
+	public function test_payment_intent_failed_marks_order_failed( string $order_payment_method_id, string $payment_method_id, string $payment_method_type ): void {
 		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+		$order->update_meta_data( '_payment_method_id', $order_payment_method_id );
 		$order->save();
 
 		$this->sut->process(
@@ -1481,8 +1484,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 					'status'             => 'requires_payment_method',
 					'last_payment_error' => array(
 						'payment_method' => array(
-							'id'   => 'pm_123',
-							'type' => 'card',
+							'id'   => $payment_method_id,
+							'type' => $payment_method_type,
 						),
 					),
 				)
@@ -1495,6 +1498,19 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Failures the order is failed for.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provider_actionable_payment_failures(): array {
+		return array(
+			'card'                                 => array( 'pm_123', 'pm_123', 'card' ),
+			'AU BECS debit'                        => array( 'pm_123', 'pm_123', 'au_becs_debit' ),
+			'card present, another payment method' => array( 'pm_current', 'pm_terminal', 'card_present' ),
+		);
 	}
 
 	/**
@@ -1530,36 +1546,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $failed );
 		$this->assertStringContainsString( 'Declined &lt;b&gt;by issuer&lt;/b&gt;', $failed[0]->content );
 		$this->assertStringNotContainsString( '<b>by issuer</b>', $failed[0]->content );
-	}
-
-	/**
-	 * @testdox payment_intent.payment_failed marks AU BECS debit orders failed.
-	 */
-	public function test_payment_intent_failed_marks_au_becs_debit_order_failed(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', 'pm_123' );
-		$order->save();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
-				array(
-					'status'             => 'requires_payment_method',
-					'last_payment_error' => array(
-						'payment_method' => array(
-							'id'   => 'pm_123',
-							'type' => 'au_becs_debit',
-						),
-					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
 	}
 
 	/**
@@ -1728,150 +1714,80 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed ignores non-actionable payment methods.
+	 * @testdox payment_intent.payment_failed leaves the order untouched when the failure is not one it acts on.
+	 *
+	 * @dataProvider provider_ignored_payment_failures
+	 *
+	 * @param array<string,string> $order_meta         Meta on the order before the event.
+	 * @param array<string,mixed>  $intent             Intent fields of the event.
+	 * @param string               $expected_intent_id `_intent_id` after the event.
 	 */
-	public function test_payment_intent_failed_ignores_non_actionable_payment_methods(): void {
+	public function test_payment_intent_failed_ignores_failures_it_does_not_act_on( array $order_meta, array $intent, string $expected_intent_id ): void {
 		$order = $this->create_woopayments_order();
+		foreach ( $order_meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+		$order->save();
 
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
+		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.payment_failed', $order, array_merge( array( 'status' => 'requires_payment_method' ), $intent ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( $expected_intent_id, $order->get_meta( '_intent_id', true ) );
+		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Failures the order is not failed for.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:array<string,mixed>,2:string}>
+	 */
+	public function provider_ignored_payment_failures(): array {
+		return array(
+			'non-actionable payment method'        => array(
+				array(),
 				array(
-					'status'             => 'requires_payment_method',
 					'last_payment_error' => array(
 						'payment_method' => array(
 							'id'   => 'pm_123',
 							'type' => 'klarna',
 						),
 					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-	}
-
-	/**
-	 * @testdox payment_intent.payment_failed ignores BACS debit.
-	 */
-	public function test_payment_intent_failed_ignores_bacs_debit(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
+				),
+				'',
+			),
+			'BACS debit'                           => array(
+				array(),
 				array(
-					'status'             => 'requires_payment_method',
 					'last_payment_error' => array(
 						'payment_method' => array(
 							'id'   => 'pm_123',
 							'type' => 'bacs_debit',
 						),
 					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-	}
-
-	/**
-	 * @testdox payment_intent.payment_failed ignores a failure from a superseded payment method.
-	 */
-	public function test_payment_intent_failed_ignores_mismatched_payment_method(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', 'pm_current' );
-		$order->update_meta_data( '_intent_id', 'pi_current' );
-		$order->save();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
+				),
+				'',
+			),
+			'no payment method ID'                 => array( array(), array( 'last_payment_error' => array( 'payment_method' => array( 'type' => 'card' ) ) ), '' ),
+			'superseded payment method and intent' => array(
+				array(
+					'_payment_method_id' => 'pm_current',
+					'_intent_id'         => 'pi_current',
+				),
 				array(
 					'id'                 => 'pi_stale',
-					'status'             => 'requires_payment_method',
 					'last_payment_error' => array(
 						'payment_method' => array(
 							'id'   => 'pm_stale',
 							'type' => 'card',
 						),
 					),
-				)
-			)
+				),
+				'pi_current',
+			),
 		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'pi_current', $order->get_meta( '_intent_id', true ) );
-		$this->assertCount( 0, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
-	 * @testdox payment_intent.payment_failed ignores an error carrying no payment method ID.
-	 */
-	public function test_payment_intent_failed_ignores_missing_payment_method_id(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
-				array(
-					'status'             => 'requires_payment_method',
-					'last_payment_error' => array(
-						'payment_method' => array(
-							'type' => 'card',
-						),
-					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-	}
-
-	/**
-	 * @testdox payment_intent.payment_failed still applies card_present failures with a different payment method ID.
-	 */
-	public function test_payment_intent_failed_applies_card_present_with_mismatched_id(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', 'pm_current' );
-		$order->save();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.payment_failed',
-				$order,
-				array(
-					'status'             => 'requires_payment_method',
-					'last_payment_error' => array(
-						'payment_method' => array(
-							'id'   => 'pm_terminal',
-							'type' => 'card_present',
-						),
-					),
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
 	}
 
 	/**
@@ -2030,24 +1946,37 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.expired marks the order failed.
+	 * @testdox charge.expired fails the unpaid order, stores the fetched intent status and asks for the right intent.
+	 *
+	 * An authorization leaves the order on hold with the intent as its transaction ID. The event's `payment_intent` is the
+	 * Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent), which client 11.1.0 reads
+	 * before the order's `_intent_id` (class-wc-payments-webhook-processing-service.php:394).
+	 *
+	 * @dataProvider provider_charge_expired_fails_the_unpaid_order
+	 *
+	 * @param string              $order_status      Order status before the event.
+	 * @param string              $transaction_id    Order transaction ID.
+	 * @param array<string,mixed> $order_meta        Meta on the order before the event.
+	 * @param array<string,mixed> $charge            Charge object of the event.
+	 * @param string              $expected_intent   Intent ID fetched.
 	 */
-	public function test_charge_expired_marks_order_failed(): void {
+	public function test_charge_expired_fails_the_unpaid_order( string $order_status, string $transaction_id, array $order_meta, array $charge, string $expected_intent ): void {
 		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_expired' );
-		$order->update_meta_data( '_intent_id', 'pi_expired' );
+		$order->set_status( $order_status );
+		$order->set_transaction_id( $transaction_id );
+		foreach ( $order_meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
 		$order->save();
-
-		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
+		$this->assertNull( $order->get_date_paid() );
+		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
 
 		$sut->process(
 			array(
 				'id'   => 'evt_expired',
 				'type' => 'charge.expired',
 				'data' => array(
-					'object' => array(
-						'id' => 'ch_expired',
-					),
+					'object' => $charge,
 				),
 			)
 		);
@@ -2056,7 +1985,56 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'ch_expired', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( $charge['id'], $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( array( $expected_intent ), $requested_intents );
+	}
+
+	/**
+	 * Unpaid orders a charge expiry fails.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,mixed>,3:array<string,mixed>,4:string}>
+	 */
+	public function provider_charge_expired_fails_the_unpaid_order(): array {
+		return array(
+			'pending, intent from the order'         => array(
+				'pending',
+				'',
+				array(
+					'_charge_id' => 'ch_expired',
+					'_intent_id' => 'pi_expired',
+				),
+				array( 'id' => 'ch_expired' ),
+				'pi_expired',
+			),
+			'pending capture, intent from the event' => array(
+				'pending',
+				'',
+				array(
+					'_charge_id'        => 'ch_expired_status',
+					'_intention_status' => 'requires_capture',
+				),
+				array(
+					'id'             => 'ch_expired_status',
+					'payment_intent' => 'pi_expired_status',
+				),
+				'pi_expired_status',
+			),
+			'authorized, on hold'                    => array(
+				'on-hold',
+				'pi_authorized',
+				array(
+					'_intent_id'        => 'pi_authorized',
+					'_charge_id'        => 'ch_authorized',
+					'_intention_status' => 'requires_capture',
+				),
+				array(
+					'id'             => 'ch_authorized',
+					'payment_intent' => 'pi_authorized',
+				),
+				'pi_authorized',
+			),
+		);
 	}
 
 	/**
@@ -2148,45 +2126,19 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.expired stores the freshly fetched intent status so capture actions stop being offered.
+	 * @testdox charge.expired stamps review_expired on a fraud-reviewed order and leaves any other fraud meta box alone.
+	 *
+	 * @dataProvider provider_charge_expired_fraud_meta_box
+	 *
+	 * @param string $meta_key          Fraud meta the order carries before the event.
+	 * @param string $meta_value        Its value.
+	 * @param string $expected_box_type Fraud meta box type after the event.
 	 */
-	public function test_charge_expired_stores_fetched_intention_status(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_expired_status' );
-		$order->update_meta_data( '_intention_status', 'requires_capture' );
-		$order->save();
-
-		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
-
-		$sut->process(
-			array(
-				'id'   => 'evt_expired_status',
-				'type' => 'charge.expired',
-				'data' => array(
-					'object' => array(
-						'id'             => 'ch_expired_status',
-						'payment_intent' => 'pi_expired_status',
-					),
-				),
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
-		$this->assertSame( array( 'pi_expired_status' ), $requested_intents );
-	}
-
-	/**
-	 * @testdox charge.expired stamps review_expired on fraud-reviewed orders.
-	 */
-	public function test_charge_expired_sets_review_expired_for_reviewed_order(): void {
+	public function test_charge_expired_stamps_the_fraud_meta_box( string $meta_key, string $meta_value, string $expected_box_type ): void {
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_charge_id', 'ch_expired_review' );
 		$order->update_meta_data( '_intent_id', 'pi_expired_review' );
-		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->update_meta_data( $meta_key, $meta_value );
 		$order->save();
 
 		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
@@ -2206,38 +2158,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'review_expired', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( $expected_box_type, $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 		$this->assertSame( array( 'pi_expired_review' ), $requested_intents );
 	}
 
 	/**
-	 * @testdox charge.expired leaves the fraud meta box alone for unreviewed orders.
+	 * Fraud states before a charge expiry and the fraud meta box after it.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
 	 */
-	public function test_charge_expired_keeps_fraud_meta_for_unreviewed_order(): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_charge_id', 'ch_expired_plain' );
-		$order->update_meta_data( '_intent_id', 'pi_expired_plain' );
-		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'allow' );
-		$order->save();
-
-		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ), $requested_intents );
-
-		$sut->process(
-			array(
-				'id'   => 'evt_expired_plain',
-				'type' => 'charge.expired',
-				'data' => array(
-					'object' => array(
-						'id' => 'ch_expired_plain',
-					),
-				),
-			)
+	public function provider_charge_expired_fraud_meta_box(): array {
+		return array(
+			'held for review' => array( '_wcpay_fraud_outcome_status', 'review', 'review_expired' ),
+			'not reviewed'    => array( '_wcpay_fraud_meta_box_type', 'allow', 'allow' ),
 		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'allow', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
 	}
 
 	/**
@@ -2394,15 +2328,33 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.dispute.created deletes stale dispute caches.
+	 * @testdox A $event_type event deletes the stale dispute caches.
+	 *
+	 * @dataProvider provider_dispute_events_clear_caches
+	 *
+	 * @param string $event_type     Dispute event type.
+	 * @param string $dispute_status Dispute status in the event.
 	 */
-	public function test_dispute_created_deletes_dispute_caches(): void {
-		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
+	public function test_dispute_events_delete_dispute_caches( string $event_type, string $dispute_status ): void {
+		$this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 		$this->seed_dispute_cache_options();
 
-		$this->sut->process( $this->create_dispute_event( 'charge.dispute.created', 'needs_response' ) );
+		$this->sut->process( $this->create_dispute_event( $event_type, $dispute_status ) );
 
 		$this->assert_dispute_cache_options_deleted();
+	}
+
+	/**
+	 * Dispute events that clear the dispute caches.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_dispute_events_clear_caches(): array {
+		return array(
+			'created' => array( 'charge.dispute.created', 'needs_response' ),
+			'updated' => array( 'charge.dispute.updated', 'needs_response' ),
+			'closed'  => array( 'charge.dispute.closed', 'won' ),
+		);
 	}
 
 	/**
@@ -2508,18 +2460,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_update_url( 'ch_123' ) . '">dispute overview</a> for more details. (Dispute ID: du_123)' );
-	}
-
-	/**
-	 * @testdox charge.dispute.updated deletes stale dispute caches when an update note is applied.
-	 */
-	public function test_dispute_updated_deletes_dispute_caches(): void {
-		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
-		$this->seed_dispute_cache_options();
-
-		$this->sut->process( $this->create_dispute_event( 'charge.dispute.updated', 'needs_response' ) );
-
-		$this->assert_dispute_cache_options_deleted();
 	}
 
 	/**
@@ -2652,27 +2592,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertOrderHasNote( $order, 'Dispute has been closed with status won. See <a href="' . $this->get_expected_dispute_url( 'ch_123' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details. (Dispute ID: du_123)' );
 		// Client os:632/os:692: only a `lost` status creates a local refund.
 		$this->assertCount( 0, $order->get_refunds(), 'A won dispute must never create a local refund.' );
-	}
-
-	/**
-	 * @testdox charge.dispute.closed deletes stale dispute caches.
-	 */
-	public function test_dispute_closed_deletes_dispute_caches(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_status( 'on-hold' );
-		$order->update_meta_data( '_charge_id', 'ch_123' );
-		$order->save();
-		$this->seed_dispute_cache_options();
-
-		$sut = $this->create_ingestor(
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
-			$this->create_dispute_summary_api_client()
-		);
-
-		$sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'won' ) );
-
-		$this->assert_dispute_cache_options_deleted();
 	}
 
 	/**
@@ -3015,21 +2934,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Unknown event types are successful no-ops.
-	 */
-	public function test_unknown_event_type_is_a_successful_noop(): void {
-		$order = $this->create_woopayments_order();
-
-		$this->sut->process( $this->create_payment_intent_event( 'customer.created', $order ) );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
-	}
-
-	/**
 	 * @testdox Without the Stripe Billing module, $event_type is refused with the WooPayments extension's reason, after the before-delivery hook only, is not marked processed and is not logged here.
 	 *
 	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws
@@ -3316,53 +3220,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded for a linked refund that already has its created note changes nothing ($event_status event, $refund_status refund).
-	 *
-	 * @dataProvider linked_refund_charge_refunded_provider
-	 *
-	 * @param string $event_status   Refund status the event carries.
-	 * @param string $note_type      Created-refund note the order already has: created_successful or created_pending.
-	 * @param string $refund_status  Order refund status before the event.
-	 */
-	public function test_charge_refunded_for_a_linked_refund_changes_nothing( string $event_status, string $note_type, string $refund_status ): void {
-		$order  = $this->create_refundable_woopayments_order( '10.00' );
-		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
-		$refund->save_meta_data();
-		$order->update_meta_data( '_wcpay_refund_status', $refund_status );
-		$order->save();
-		// The created note the gateway path writes when it links the refund, with the same identity.
-		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Refund re_123 recorded.', 'refund:re_123:' . $note_type );
-		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, $event_status ) );
-
-		$order  = wc_get_order( $order->get_id() );
-		$refund = wc_get_order( $refund->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$this->assertCount( 1, $order->get_refunds() );
-		$this->assertSame( $refund_status, $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_existing', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
-	 * Provide charge.refunded cases for a linked refund that already has its created note.
-	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
-	 */
-	public function linked_refund_charge_refunded_provider(): array {
-		return array(
-			'succeeded event, successful refund' => array( 'succeeded', 'created_successful', 'successful' ),
-			'pending event, successful refund'   => array( 'pending', 'created_successful', 'successful' ),
-			'succeeded event, pending refund'    => array( 'succeeded', 'created_pending', 'pending' ),
-		);
-	}
-
-	/**
 	 * @testdox charge.refunded accepts split-UPE WooPayments gateway IDs.
 	 */
 	public function test_charge_refunded_accepts_split_upe_gateway_ids(): void {
@@ -3395,169 +3252,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded fails closed when the captured field is missing.
-	 */
-	public function test_charge_refunded_fails_closed_for_missing_captured_field(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$event = $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' );
-		unset( $event['data']['object']['captured'] );
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'missing required field: captured' );
-
-		$this->sut->process( $event );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed when the captured field is malformed.
-	 */
-	public function test_charge_refunded_fails_closed_for_malformed_captured_field(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'missing required field: captured' );
-
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded', array( 'captured' => 'yes' ) ) );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed for invalid refund amounts.
-	 */
-	public function test_charge_refunded_fails_closed_for_invalid_amount(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		try {
-			$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 1500, 'succeeded' ) );
-			$this->fail( 'Expected invalid external refund amount to fail closed.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertStringContainsString( 'refund amount is not valid', $exception->getMessage() );
-		}
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed for negative refund amounts.
-	 */
-	public function test_charge_refunded_fails_closed_for_negative_refund_amount(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		try {
-			$this->sut->process( $this->create_charge_refunded_event( $order, 1000, -400, 'succeeded' ) );
-			$this->fail( 'Expected negative external refund amount to fail closed.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertStringContainsString( 'refund amount is not valid', $exception->getMessage() );
-		}
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed for missing refund data.
-	 */
-	public function test_charge_refunded_fails_closed_for_missing_refund_data(): void {
-		$order                                      = $this->create_refundable_woopayments_order( '10.00' );
-		$event                                      = $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' );
-		$event['data']['object']['refunds']['data'] = array();
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'missing refund data' );
-
-		$this->sut->process( $event );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed for missing refund IDs.
-	 */
-	public function test_charge_refunded_fails_closed_for_missing_refund_id(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$event = $this->create_charge_refunded_event(
-			$order,
-			1000,
-			400,
-			'succeeded',
-			array(
-				'refunds' => array(
-					'data' => array(
-						array(
-							'id' => '',
-						),
-					),
-				),
-			)
-		);
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'missing required field: id' );
-
-		$this->sut->process( $event );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed for a charge ID no order holds when the charge's metadata names no order.
-	 */
-	public function test_charge_refunded_fails_closed_for_unknown_charge_id(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$event = $this->create_charge_refunded_event(
-			$order,
-			1000,
-			400,
-			'succeeded',
-			array(
-				'id'       => 'ch_unknown',
-				'metadata' => array(
-					'order_id'  => '',
-					'order_key' => '',
-				),
-			)
-		);
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'Could not find WooPayments order via charge ID' );
-
-		$this->sut->process( $event );
-	}
-
-	/**
-	 * @testdox charge.refunded fails closed when the event order key mismatches.
-	 */
-	public function test_charge_refunded_fails_closed_for_mismatched_order_key(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$event = $this->create_charge_refunded_event(
-			$order,
-			1000,
-			400,
-			'succeeded',
-			array(
-				'metadata' => array(
-					'order_id'  => (string) $order->get_id(),
-					'order_key' => 'wc_order_wrong_key',
-				),
-			)
-		);
-
-		try {
-			$this->sut->process( $event );
-			$this->fail( 'Expected mismatched order key to fail closed.' );
-		} catch ( RuntimeException $exception ) {
-			$this->assertStringContainsString( 'Could not find WooPayments order via charge ID', $exception->getMessage() );
-		}
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-	}
-
-	/**
 	 * @testdox charge.refunded uses the shared order payment lock.
 	 */
 	public function test_charge_refunded_fails_closed_when_order_payment_is_locked(): void {
@@ -3581,9 +3275,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated marks matched failed refunds failed and deletes the local refund.
+	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires the refund deleted hook and marks the refunded order failed.
+	 *
+	 * @dataProvider provider_refund_update_failure_deletes_the_linked_refund
+	 *
+	 * @param string   $status         Refund status in the event.
+	 * @param string   $failure_reason Refund failure reason in the event, '' for none.
+	 * @param string[] $note_fragments Fragments of the note.
 	 */
-	public function test_charge_refund_updated_failed_marks_order_failed_and_deletes_refund(): void {
+	public function test_refund_update_failure_deletes_the_linked_refund( string $status, string $failure_reason, array $note_fragments ): void {
 		$order     = $this->create_refundable_woopayments_order( '10.00' );
 		$refund    = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund_id = $refund->get_id();
@@ -3591,53 +3291,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$refund->save_meta_data();
 		$order->set_status( 'refunded' );
 		$order->save();
-
-		$this->sut->process(
-			$this->create_refund_updated_event(
-				array(
-					'status'         => 'failed',
-					'failure_reason' => 'lost_or_stolen_card',
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertFalse( wc_get_order( $refund_id ), 'The matched local refund object should be deleted after the provider marks it failed.' );
-		$this->assertNull( get_post( $refund_id ), 'The matched local refund post should be deleted after the provider marks it failed.' );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'unsuccessful', 'WooPayments', 're_123', 'lost or stolen' ) );
-	}
-
-	/**
-	 * @testdox charge.refund.updated fires the refund deleted hook when deleting a matched local refund.
-	 */
-	public function test_charge_refund_updated_failed_fires_refund_deleted_hook(): void {
-		$order      = $this->create_refundable_woopayments_order( '10.00' );
-		$refund     = $this->create_local_refund( $order, 4.00, 'Existing refund' );
-		$refund_id  = $refund->get_id();
-		$hook_calls = array();
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->save_meta_data();
+		$hook_calls              = array();
 		$refund_deleted_callback = function ( int $deleted_refund_id, int $deleted_order_id ) use ( &$hook_calls ): void {
 			$hook_calls[] = array( $deleted_refund_id, $deleted_order_id );
 		};
-
-		add_action(
-			'woocommerce_refund_deleted',
-			$refund_deleted_callback,
-			10,
-			2
-		);
+		add_action( 'woocommerce_refund_deleted', $refund_deleted_callback, 10, 2 );
 
 		try {
 			$this->sut->process(
 				$this->create_refund_updated_event(
-					array(
-						'status'         => 'failed',
-						'failure_reason' => 'lost_or_stolen_card',
+					array_filter(
+						array(
+							'status'         => $status,
+							'failure_reason' => $failure_reason,
+						)
 					)
 				)
 			);
@@ -3645,7 +3312,27 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_refund_deleted', $refund_deleted_callback, 10 );
 		}
 
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertFalse( wc_get_order( $refund_id ), 'The matched local refund object should be deleted after the provider marks it ' . $status . '.' );
+		$this->assertNull( get_post( $refund_id ), 'The matched local refund post should be deleted after the provider marks it ' . $status . '.' );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertOrderHasNoteContaining( $order, $note_fragments );
 		$this->assertSame( array( array( $refund_id, $order->get_id() ) ), $hook_calls );
+	}
+
+	/**
+	 * Refund updates that undo a linked local refund.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string[]}>
+	 */
+	public function provider_refund_update_failure_deletes_the_linked_refund(): array {
+		return array(
+			'failed, lost or stolen card' => array( 'failed', 'lost_or_stolen_card', array( 'A refund of', 'unsuccessful', 'WooPayments', 're_123', 'lost or stolen' ) ),
+			'canceled'                    => array( 'canceled', '', array( 'A refund of', 'cancelled', 'WooPayments', 're_123' ) ),
+		);
 	}
 
 	/**
@@ -3749,11 +3436,23 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated records failed refunds without a matched local refund.
+	 * @testdox charge.refund.updated records a refund failed for insufficient funds with the note for the account country.
+	 *
+	 * Client 11.1.0 reads the account country, else US, for this note (includes/class-wc-payments-order-service.php:3066-3074;
+	 * includes/class-wc-payments-account.php:2731-2734), so a Hong Kong store without an account country gets the FROD note.
+	 *
+	 * @dataProvider provider_insufficient_funds_refund_note
+	 *
+	 * @param string $account_country WooPayments account country, '' for none.
+	 * @param string $store_country   Store country, '' to leave the test store's.
+	 * @param int    $frod_notes      Notes naming the FROD balance: 1 where FROD is supported, else 0.
 	 */
-	public function test_charge_refund_updated_failed_without_matched_refund_adds_note(): void {
+	public function test_charge_refund_updated_records_insufficient_funds_with_the_account_country_note( string $account_country, string $store_country, int $frod_notes ): void {
 		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$this->set_woopayments_account_country( 'US' );
+		$this->set_woopayments_account_country( $account_country );
+		if ( '' !== $store_country ) {
+			update_option( 'woocommerce_default_country', $store_country );
+		}
 
 		$this->sut->process(
 			$this->create_refund_updated_event(
@@ -3769,80 +3468,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 0, $order->get_refunds() );
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'Refund of', 'failed', 'insufficient funds in your WooPayments balance', 'Future Refunds or Disputes (FROD) balance' ) );
-	}
-
-	/**
-	 * @testdox charge.refund.updated uses the non-FROD insufficient-balance note for unsupported countries.
-	 */
-	public function test_charge_refund_updated_insufficient_funds_without_frod_support_uses_short_note(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$this->set_woopayments_account_country( 'HK' );
-
-		$this->sut->process(
-			$this->create_refund_updated_event(
-				array(
-					'status'         => 'failed',
-					'failure_reason' => 'insufficient_funds',
-				)
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertOrderHasNoteContaining( $order, array( 'Refund of', 'failed', 'insufficient funds in your WooPayments balance' ) );
-		$this->assertOrderLacksNoteContaining( $order, array( 'Future Refunds or Disputes (FROD) balance' ) );
+		$this->assertCount( $frod_notes, $this->get_order_notes_containing( $order, 'Future Refunds or Disputes (FROD) balance' ) );
 	}
 
 	/**
-	 * @testdox charge.refund.updated reads a missing account country as US, not the store country, for the FROD note.
+	 * Account and store countries and whether the insufficient-funds note names the FROD balance.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int}>
 	 */
-	public function test_charge_refund_updated_insufficient_funds_without_account_country_uses_us(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-		$this->set_woopayments_account_country( '' );
-		update_option( 'woocommerce_default_country', 'HK' );
-
-		$this->sut->process(
-			$this->create_refund_updated_event(
-				array(
-					'status'         => 'failed',
-					'failure_reason' => 'insufficient_funds',
-				)
-			)
+	public function provider_insufficient_funds_refund_note(): array {
+		return array(
+			'US account'                     => array( 'US', '', 1 ),
+			'HK account, FROD not supported' => array( 'HK', '', 0 ),
+			'no account country, HK store'   => array( '', 'HK', 1 ),
 		);
-
-		$order = wc_get_order( $order->get_id() );
-
-		// Client 11.1.0 reads the account country, else US, for this note (includes/class-wc-payments-order-service.php:3066-3074;
-		// includes/class-wc-payments-account.php:2731-2734), so a Hong Kong store without an account country gets the FROD note.
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertOrderHasNoteContaining( $order, array( 'Refund of', 'failed', 'insufficient funds in your WooPayments balance', 'Future Refunds or Disputes (FROD) balance' ) );
-	}
-
-	/**
-	 * @testdox charge.refund.updated records canceled refunds and deletes the local refund.
-	 */
-	public function test_charge_refund_updated_canceled_marks_order_failed_and_deletes_refund(): void {
-		$order     = $this->create_refundable_woopayments_order( '10.00' );
-		$refund    = $this->create_local_refund( $order, 4.00, 'Existing refund' );
-		$refund_id = $refund->get_id();
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->save_meta_data();
-		$order->set_status( 'refunded' );
-		$order->save();
-
-		$this->sut->process( $this->create_refund_updated_event( array( 'status' => 'canceled' ) ) );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertFalse( wc_get_order( $refund_id ), 'The matched local refund object should be deleted after the provider marks it canceled.' );
-		$this->assertNull( get_post( $refund_id ), 'The matched local refund post should be deleted after the provider marks it canceled.' );
-		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'cancelled', 'WooPayments', 're_123' ) );
 	}
 
 	/**
@@ -3933,31 +3573,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated fails closed for unknown statuses.
-	 */
-	public function test_charge_refund_updated_fails_closed_for_unknown_status(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'Invalid refund update status' );
-
-		$this->sut->process( $this->create_refund_updated_event( array( 'status' => 'requires_action' ) ) );
-	}
-
-	/**
-	 * @testdox charge.refund.updated fails closed for missing required fields.
-	 */
-	public function test_charge_refund_updated_fails_closed_for_missing_required_fields(): void {
-		$this->create_refundable_woopayments_order( '10.00' );
-
-		$this->expectException( RuntimeException::class );
-		$this->expectExceptionMessage( 'missing required field: status' );
-
-		$this->sut->process( $this->create_refund_updated_event( array( 'status' => '' ) ) );
-	}
-
-	/**
-	 * @testdox Delivery hooks fire for successful no-op events.
+	 * @testdox An unknown event type is a successful no-op: the order is untouched and the delivery hooks fire.
 	 */
 	public function test_delivery_hooks_fire_for_successful_noop_events(): void {
 		$hook_calls = array();
@@ -3978,7 +3594,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			2
 		);
 
-		$this->sut->process( $this->create_payment_intent_event( 'customer.created', $this->create_woopayments_order() ) );
+		$order = $this->create_woopayments_order();
+
+		$this->sut->process( $this->create_payment_intent_event( 'customer.created', $order ) );
 
 		$this->assertSame(
 			array(
@@ -3987,6 +3605,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			),
 			$hook_calls
 		);
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pending', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 	}
 
 	/**
@@ -4078,29 +3700,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			'a platform error'               => array( false ),
 			'its own exception wrapping one' => array( true ),
 		);
-	}
-
-	/**
-	 * @testdox Webhook mode mismatch skips processing and delivery hooks.
-	 */
-	public function test_mode_mismatch_skips_processing_and_delivery_hooks(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$hook_calls = array();
-		add_action(
-			'woocommerce_payments_before_webhook_delivery',
-			function () use ( &$hook_calls ): void {
-				$hook_calls[] = 'before';
-			}
-		);
-		$order = $this->create_woopayments_order();
-
-		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order, array(), array( 'livemode' => true ) ) );
-
-		$order = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( array(), $hook_calls );
 	}
 
 	/**
@@ -4699,43 +4298,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.expired fails an authorized order, which is on hold and not yet paid.
-	 *
-	 * An authorization leaves the order on hold with the intent as its transaction ID. The event's `payment_intent` is the
-	 * Stripe Charge field (https://docs.stripe.com/api/charges/object#charge_object-payment_intent), which client 11.1.0 reads
-	 * before the order's `_intent_id` (class-wc-payments-webhook-processing-service.php:394).
-	 */
-	public function test_charge_expired_fails_an_authorized_order(): void {
-		$order = $this->create_woopayments_order();
-		$order->set_transaction_id( 'pi_authorized' );
-		$order->set_status( 'on-hold' );
-		$order->update_meta_data( '_intent_id', 'pi_authorized' );
-		$order->update_meta_data( '_charge_id', 'ch_authorized' );
-		$order->update_meta_data( '_intention_status', 'requires_capture' );
-		$order->save();
-		$this->assertNull( $order->get_date_paid() );
-		$sut = $this->create_charge_expired_ingestor( array( 'status' => 'canceled' ) );
-
-		$sut->process(
-			array(
-				'id'   => 'evt_authorized_expired',
-				'type' => 'charge.expired',
-				'data' => array(
-					'object' => array(
-						'id'             => 'ch_authorized',
-						'payment_intent' => 'pi_authorized',
-					),
-				),
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
-	}
-
-	/**
 	 * Intent overrides giving the first charge a card payment method, so the event names a WooPayments display title.
 	 *
 	 * Stripe API Charge `payment_method_details` with its `type` (read by client 11.1.0 at
@@ -5086,10 +4648,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$event['livemode']                 = true;
 		$event['data']['object']['charge'] = 'ch_that_does_not_exist';
 
+		$logger = RecordingWcLogger::install();
+
 		$sut->process( $event );
 
 		$this->assertSame( array(), $hook_calls );
-		$this->assertSame( 1, get_transient( 'wcpay_processed_event_' . md5( 'evt_early_warning_mode_mismatch' ) ) );
+		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: evt_early_warning_mode_mismatch)', 'woopayments' ) ), $logger->get_errors() );
 	}
 
 	/**

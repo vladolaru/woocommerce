@@ -72,31 +72,34 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reliability hooks are not registered when the WooPayments extension owns the runtime.
+	 * @testdox The preserved reliability hooks are registered only when the built-in WooPayments owns the runtime (extension active: $extension_active).
+	 *
+	 * @dataProvider provider_runtime_owner_hook_registration
+	 *
+	 * @param bool      $extension_active Whether the WooPayments extension is active.
+	 * @param int|false $expected         Priority each hook is registered at, or false when it is not.
 	 */
-	public function test_registers_no_actions_when_extension_owns_runtime(): void {
-		$this->fake_plugin( true );
+	public function test_registers_preserved_actions_only_when_builtin_owns_runtime( bool $extension_active, $expected ): void {
+		$this->fake_plugin( $extension_active );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
 		$this->sut->register();
 
-		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
-		$this->assertFalse( has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
-		$this->assertFalse( has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
+		$this->assertSame( $expected, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
+		$this->assertSame( $expected, has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
+		$this->assertSame( $expected, has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
 	}
 
 	/**
-	 * @testdox Preserved reliability hooks are registered when the built-in WooPayments owns the runtime.
+	 * Runtime owners and the hook priority they leave.
+	 *
+	 * @return array<string,array{0:bool,1:int|false}>
 	 */
-	public function test_registers_preserved_actions_when_builtin_owns_runtime(): void {
-		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-
-		$this->sut->register();
-
-		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
-		$this->assertSame( 10, has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
-		$this->assertSame( 10, has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
+	public function provider_runtime_owner_hook_registration(): array {
+		return array(
+			'extension owns the runtime' => array( true, false ),
+			'built-in owns the runtime'  => array( false, 10 ),
+		);
 	}
 
 	/**

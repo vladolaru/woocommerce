@@ -95,29 +95,43 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should escape the webhook dispute status in a closed dispute note.
+	 * @testdox A charge.dispute.closed event escapes its status in the closed note it writes.
+	 *
+	 * @dataProvider provider_dispute_closed_note_escapes_status
+	 *
+	 * @param string $status  Dispute status carrying markup.
+	 * @param string $note    Fragment that finds the closed note.
 	 */
-	public function test_dispute_closed_note_escapes_status(): void {
-		$note = $this->invoke_private(
-			'get_dispute_closed_note',
-			array( 'ch_123', '<script>alert(1)</script>', false )
+	public function test_dispute_closed_note_escapes_status( string $status, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_123' );
+		$order->save();
+
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => 'dp_escape',
+				'charge' => 'ch_123',
+				'status' => $status,
+			)
 		);
 
-		$this->assertStringNotContainsString( '<script>', $note, 'The raw script tag must not appear in the closed dispute note.' );
-		$this->assertStringContainsString( '&lt;script&gt;', $note, 'The status must be HTML-escaped in the closed dispute note.' );
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<script>', $notes[0]->content, 'The raw script tag must not appear in the closed note.' );
+		$this->assertStringContainsString( '&lt;script&gt;', $notes[0]->content, 'The status must be HTML-escaped in the closed note.' );
 	}
 
 	/**
-	 * @testdox Should escape the webhook dispute status in a closed inquiry note.
+	 * Closed dispute statuses carrying markup, for each wording.
+	 *
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function test_dispute_closed_inquiry_note_escapes_status(): void {
-		$note = $this->invoke_private(
-			'get_dispute_closed_note',
-			array( 'ch_123', '<script>alert(1)</script>', true )
+	public function provider_dispute_closed_note_escapes_status(): array {
+		return array(
+			'dispute' => array( '<script>alert(1)</script>', 'Dispute has been closed with status' ),
+			'inquiry' => array( 'warning_<script>alert(1)</script>', 'Payment inquiry has been closed with status' ),
 		);
-
-		$this->assertStringNotContainsString( '<script>', $note, 'The raw script tag must not appear in the closed inquiry note.' );
-		$this->assertStringContainsString( '&lt;script&gt;', $note, 'The status must be HTML-escaped in the closed inquiry note.' );
 	}
 
 	/**
@@ -186,23 +200,24 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A won dispute close on an already refunded order keeps the refunded status instead of completing it.
+	 * @testdox A won dispute close on an order already refunded in full leaves it refunded, not completed.
+	 *
+	 * @dataProvider provider_won_close_on_refunded_order
+	 *
+	 * @param callable $make_refund Brings the order into that state.
 	 */
-	public function test_dispute_closed_keeps_refunded_status_on_fully_refunded_order(): void {
+	public function test_won_close_on_a_refunded_order_leaves_it_refunded( callable $make_refund ): void {
 		$order = $this->create_disputable_order();
-		$order->set_status( 'refunded' );
+		$order->update_meta_data( '_charge_id', 'ch_refunded' );
 		$order->save();
+		$make_refund( $order );
 
-		$this->invoke_private(
-			'process_dispute_closed',
+		$this->sut->process(
+			'charge.dispute.closed',
 			array(
-				$order,
-				array(
-					'id'     => 'dp_refunded',
-					'status' => 'won',
-				),
-				'ch_refunded',
-				'txn_refunded',
+				'id'     => 'dp_refunded',
+				'charge' => 'ch_refunded',
+				'status' => 'won',
 			)
 		);
 
@@ -212,137 +227,71 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A won dispute close moves an over-refunded on-hold order to refunded, not completed.
+	 * Orders refunded in full before a won dispute close.
+	 *
+	 * @return array<string,array{0:callable}>
 	 */
-	public function test_dispute_closed_moves_over_refunded_order_to_refunded(): void {
-		$order = $this->create_disputable_order();
-
-		$refund = wc_create_refund(
-			array(
-				'order_id'       => $order->get_id(),
-				'amount'         => 10.00,
-				'refund_payment' => false,
-			)
+	public function provider_won_close_on_refunded_order(): array {
+		return array(
+			'refunded status'           => array(
+				static function ( WC_Order $order ): void {
+					$order->set_status( 'refunded' );
+					$order->save();
+				},
+			),
+			'on hold, refunded in full' => array(
+				static function ( WC_Order $order ): void {
+					wc_create_refund(
+						array(
+							'order_id'       => $order->get_id(),
+							'amount'         => 10.00,
+							'refund_payment' => false,
+						)
+					);
+					wc_get_order( $order->get_id() )->update_status( 'on-hold' );
+				},
+			),
 		);
-		$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
-
-		$order = wc_get_order( $order->get_id() );
-		$order->update_status( 'on-hold' );
-
-		$this->invoke_private(
-			'process_dispute_closed',
-			array(
-				$order,
-				array(
-					'id'     => 'dp_overref',
-					'status' => 'won',
-				),
-				'ch_overref',
-				'txn_overref',
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( 'refunded', $order->get_status() );
-		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because it has already been fully refunded.' ) );
 	}
 
 	/**
-	 * @testdox Two disputes on one charge each get their own note and open-dispute record.
+	 * @testdox Two disputes on one charge each get their own note and record; closing one keeps the hold, closing the last completes the order.
 	 */
-	public function test_two_sibling_disputes_are_both_recorded(): void {
+	public function test_sibling_disputes_on_one_charge(): void {
 		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_multi' );
+		$order->save();
+		$created           = $this->get_created_event_object( 'dp_b1', 'needs_response' );
+		$created['charge'] = 'ch_multi';
 
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_b1', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_b2', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
+		$this->sut->process( 'charge.dispute.created', $created );
+		$this->sut->process( 'charge.dispute.created', array_merge( $created, array( 'id' => 'dp_b2' ) ) );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( array( 'dp_b1', 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b1)' ) );
 		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b2)' ) );
-	}
 
-	/**
-	 * @testdox Closing one of two disputes keeps the hold and notes the sibling still open.
-	 */
-	public function test_closing_first_sibling_dispute_keeps_hold(): void {
-		$order = $this->create_disputable_order();
-
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_c1', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_c2', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
-
-		$order = wc_get_order( $order->get_id() );
-		$this->invoke_private(
-			'process_dispute_closed',
+		$this->sut->process(
+			'charge.dispute.closed',
 			array(
-				$order,
-				array(
-					'id'     => 'dp_c1',
-					'status' => 'won',
-				),
-				'ch_multi',
-				'txn_multi',
+				'id'     => 'dp_b1',
+				'charge' => 'ch_multi',
+				'status' => 'won',
 			)
 		);
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( 'on-hold', $order->get_status() );
-		$this->assertSame( array( 'dp_c2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertSame( array( 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because 1 other dispute on this payment is still open.' ) );
-	}
 
-	/**
-	 * @testdox Closing the last open dispute completes the order and clears the record.
-	 */
-	public function test_closing_last_sibling_dispute_completes_order(): void {
-		$order = $this->create_disputable_order();
-
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_d1', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $this->get_created_event_object( 'dp_d2', 'needs_response' ), 'ch_multi', 'txn_multi' )
-		);
-
-		$order = wc_get_order( $order->get_id() );
-		$this->invoke_private(
-			'process_dispute_closed',
+		$this->sut->process(
+			'charge.dispute.closed',
 			array(
-				$order,
-				array(
-					'id'     => 'dp_d1',
-					'status' => 'won',
-				),
-				'ch_multi',
-				'txn_multi',
-			)
-		);
-
-		$order = wc_get_order( $order->get_id() );
-		$this->invoke_private(
-			'process_dispute_closed',
-			array(
-				$order,
-				array(
-					'id'     => 'dp_d2',
-					'status' => 'won',
-				),
-				'ch_multi',
-				'txn_multi',
+				'id'     => 'dp_b2',
+				'charge' => 'ch_multi',
+				'status' => 'won',
 			)
 		);
 

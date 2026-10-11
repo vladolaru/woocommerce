@@ -49,55 +49,43 @@ class WooPaymentsFailedEventsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API failures return an empty page instead of aborting the Action Scheduler request.
+	 * @testdox A platform error fetching failed events returns an empty page and is logged with its status and code, never its message.
+	 *
+	 * The empty page keeps the Action Scheduler request going. Client 11.1.0 appends the platform's message to the line
+	 * (`class-wc-payments-webhook-reliability-service.php`).
+	 *
+	 * @dataProvider provider_fetch_failures
+	 *
+	 * @param WooPaymentsApiException $failure         Error the API client throws.
+	 * @param int                     $expected_status Logged HTTP status.
+	 * @param string                  $expected_code   Logged error code.
 	 */
-	public function test_get_failed_webhook_events_returns_empty_page_on_api_failure(): void {
-		$api_client = new class() extends WooPaymentsApiClient {
-			// phpcs:ignore Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
-			/**
-			 * Get failed webhook events.
-			 *
-			 * @throws WooPaymentsApiException Always.
-			 */
-			public function get_failed_webhook_events(): array {
-				throw new WooPaymentsApiException( 'Remote fetch failed.', 'wcpay_failed_events_unavailable', 500 );
-			}
-		};
-		$provider   = new WooPaymentsFailedEventsProvider();
+	public function test_fetch_failure_log_leaves_out_platform_text( WooPaymentsApiException $failure, int $expected_status, string $expected_code ): void {
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'get_failed_webhook_events' )->willThrowException( $failure );
+		$provider = new WooPaymentsFailedEventsProvider();
 		$provider->init( $api_client );
+		$logger = RecordingWcLogger::install();
 
 		$result = $provider->get_failed_webhook_events();
 
 		$this->assertSame( array(), $result['data'] );
 		$this->assertFalse( $result['has_more'] );
+		$context = $this->get_logged_context( $logger, 'Can not fetch failed events from the server.' );
+		$this->assertSame( array( $expected_status, $expected_code ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( 'woopayments', $context['source'] ?? null, 'Fetch failures land in the WooPayments log with every other webhook line.' );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
-	 * @testdox A platform error fetching failed events is logged with its status and code, never its message.
+	 * Platform errors the failed-events fetch can meet.
 	 *
-	 * Client 11.1.0 appends the platform's message (`class-wc-payments-webhook-reliability-service.php`).
+	 * @return array<string,array{0:WooPaymentsApiException,1:int,2:string}>
 	 */
-	public function test_fetch_failure_log_leaves_out_platform_text(): void {
-		$api_client = new class() extends WooPaymentsApiClient {
-			// phpcs:ignore Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
-			/**
-			 * Fail the fetch as the platform does.
-			 *
-			 * @throws WooPaymentsApiException Always.
-			 */
-			public function get_failed_webhook_events(): array {
-				throw WooPaymentsFailedEventsProviderTest::make_provider_error();
-			}
-		};
-		$provider   = new WooPaymentsFailedEventsProvider();
-		$provider->init( $api_client );
-		$logger = RecordingWcLogger::install();
-
-		$provider->get_failed_webhook_events();
-
-		$context = $this->get_logged_context( $logger, 'Can not fetch failed events from the server.' );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
-		$this->assertSame( 'woopayments', $context['source'] ?? null, 'Fetch failures land in the WooPayments log with every other webhook line.' );
-		$this->assert_log_holds_no_provider_text( $logger );
+	public function provider_fetch_failures(): array {
+		return array(
+			'server error'                => array( new WooPaymentsApiException( 'Remote fetch failed.', 'wcpay_failed_events_unavailable', 500 ), 500, 'unknown_error' ),
+			'error carrying shopper text' => array( self::make_provider_error(), 404, 'resource_missing' ),
+		);
 	}
 }

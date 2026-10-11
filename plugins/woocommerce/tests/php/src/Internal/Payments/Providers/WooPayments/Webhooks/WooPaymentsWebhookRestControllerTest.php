@@ -92,35 +92,33 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The webhook route permission callback rejects requests without manage_woocommerce.
+	 * @testdox The webhook route permission callback lets only manage_woocommerce users in ($role).
+	 *
+	 * Real platform delivery uses the authenticated reliability pull path, not this direct route.
+	 *
+	 * @dataProvider provider_permission_callback
+	 *
+	 * @param string $role     Role of the current user, or '' for no user.
+	 * @param bool   $expected Whether the request passes.
 	 */
-	public function test_permission_callback_rejects_unauthenticated_requests(): void {
-		wp_set_current_user( 0 );
+	public function test_permission_callback_allows_only_manage_woocommerce_users( string $role, bool $expected ): void {
+		wp_set_current_user( '' === $role ? 0 : $this->factory->user->create( array( 'role' => $role ) ) );
 
 		$permission_callback = $this->get_registered_permission_callback();
 
-		$this->assertFalse(
-			(bool) call_user_func( $permission_callback, $this->create_post_request( array( 'type' => 'customer.created' ) ) ),
-			'Unauthenticated requests must be rejected because real platform delivery uses the authenticated reliability pull path, not this direct route.'
-		);
+		$this->assertSame( $expected, (bool) call_user_func( $permission_callback, $this->create_post_request( array( 'type' => 'customer.created' ) ) ) );
 	}
 
 	/**
-	 * @testdox The webhook route permission callback allows manage_woocommerce administrators.
+	 * Current users and whether the webhook route lets them in.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
 	 */
-	public function test_permission_callback_allows_manage_woocommerce_admins(): void {
-		$admin_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
-		wp_set_current_user( $admin_id );
-
-		$permission_callback = $this->get_registered_permission_callback();
-
-		$this->assertTrue(
-			(bool) call_user_func( $permission_callback, $this->create_post_request( array( 'type' => 'customer.created' ) ) ),
-			'Administrators with manage_woocommerce must pass the gate.'
+	public function provider_permission_callback(): array {
+		return array(
+			'no user'       => array( '', false ),
+			'administrator' => array( 'administrator', true ),
 		);
-
-		wp_set_current_user( 0 );
-		wp_delete_user( $admin_id );
 	}
 
 	/**
@@ -213,69 +211,89 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event that fails to process for a passing reason is kept and scheduled to run again; the reply is unchanged.
+	 * @testdox A failed $event_type push gets the $expected_status reply and is kept and scheduled to run again only when its failure is retried ($kept).
+	 *
+	 * A passing failure of a retried type is kept and retried, a refund event gets one attempt as with the WooPayments
+	 * extension, a fraud warning refused by the order payment lock is retried although the type gets one attempt after other
+	 * failures, and a malformed event is not kept.
+	 *
+	 * @dataProvider provider_failed_push_outcomes
+	 *
+	 * @param string   $event_type        Event type.
+	 * @param callable $failure           Builds the ingestor's failure from an order ID.
+	 * @param int      $expected_status   Reply status.
+	 * @param string   $expected_result   Reply envelope result.
+	 * @param bool     $kept              Whether the event is kept and one retry scheduled.
 	 */
-	public function test_failed_event_is_kept_and_scheduled_for_retry(): void {
+	public function test_failed_push_outcomes( string $event_type, callable $failure, int $expected_status, string $expected_result, bool $kept ): void {
+		$order      = wc_create_order();
 		$event      = array(
-			'id'   => 'evt_retry_controller',
-			'type' => 'payment_intent.succeeded',
+			'id'   => 'evt_failed_push',
+			'type' => $event_type,
 		);
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'platform call failed' ) ) );
+		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( $failure( $order->get_id() ) ) );
 
 		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
 
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
-		$this->assertSame( $event, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_retry_controller' ) );
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( array( 'result' => $expected_result ), $response->get_data() );
+		$this->assertSame( $kept ? $event : null, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_failed_push' ) );
 		$this->assertSame(
-			array(
+			$kept ? array(
 				array(
 					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
-					'args' => array( 'event_id' => 'evt_retry_controller' ),
+					'args' => array( 'event_id' => 'evt_failed_push' ),
 				),
-			),
+			) : array(),
 			$this->scheduler->scheduled_jobs
 		);
 	}
 
 	/**
-	 * @testdox A refund event that fails for a passing reason is not kept or retried: it gets one attempt, as with the WooPayments extension.
+	 * Failed pushes and what happens to them.
+	 *
+	 * @return array<string,array{0:string,1:callable,2:int,3:string,4:bool}>
 	 */
-	public function test_failed_event_off_the_retried_list_is_not_kept(): void {
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'database error' ) ) );
-
-		$response = $controller->handle_webhook(
-			$this->create_post_request(
-				array(
-					'id'   => 'evt_refund_controller',
-					'type' => 'charge.refunded',
-				)
-			)
+	public function provider_failed_push_outcomes(): array {
+		return array(
+			'retried type, passing failure' => array(
+				'payment_intent.succeeded',
+				static function ( int $order_id ): \Throwable {
+					unset( $order_id );
+					return new RuntimeException( 'platform call failed' );
+				},
+				500,
+				'error',
+				true,
+			),
+			'refund event, passing failure' => array(
+				'charge.refunded',
+				static function ( int $order_id ): \Throwable {
+					unset( $order_id );
+					return new RuntimeException( 'database error' );
+				},
+				500,
+				'error',
+				false,
+			),
+			'fraud warning, lock refusal'   => array(
+				'radar.early_fraud_warning.created',
+				static fn( int $order_id ): \Throwable => new OrderPaymentLockRefusedException( $order_id, 'early fraud warning webhook' ),
+				500,
+				'error',
+				true,
+			),
+			'malformed event'               => array(
+				'payment_intent.succeeded',
+				static function ( int $order_id ): \Throwable {
+					unset( $order_id );
+					return new InvalidArgumentException( 'malformed event' );
+				},
+				400,
+				'bad_request',
+				false,
+			),
 		);
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_refund_controller' ) );
-		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox A fraud warning push refused by the order payment lock is kept and scheduled to run again, although the type gets one attempt after other failures.
-	 */
-	public function test_lock_refused_fraud_warning_push_is_kept_and_scheduled(): void {
-		$order      = wc_create_order();
-		$event      = array(
-			'id'   => 'evt_efw_lock_controller',
-			'type' => 'radar.early_fraud_warning.created',
-		);
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' ) ) );
-
-		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
-		$this->assertSame( $event, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_efw_lock_controller' ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
-		$this->assertSame( array( 'event_id' => 'evt_efw_lock_controller' ), $this->scheduler->scheduled_jobs[0]['args'] );
 	}
 
 	/**
@@ -371,26 +389,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$context = $this->get_logged_context( $logger, $expected );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
-	 * @testdox A malformed event is not kept or retried.
-	 */
-	public function test_malformed_event_is_not_retried(): void {
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new InvalidArgumentException( 'malformed event' ) ) );
-
-		$response = $controller->handle_webhook(
-			$this->create_post_request(
-				array(
-					'id'   => 'evt_malformed_controller',
-					'type' => 'payment_intent.succeeded',
-				)
-			)
-		);
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_malformed_controller' ) );
-		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
 	}
 
 	/**

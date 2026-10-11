@@ -407,29 +407,59 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A delayed pending charge.refunded for a refund the WooPayments extension completed before the switch changes nothing.
+	 * @testdox A $event_status charge.refunded for a linked refund whose created note is on the order ($existing_note) changes nothing.
+	 *
+	 * The note marks the refund complete: the gateway's refund, an earlier delivery or the WooPayments extension before the
+	 * switch wrote it, after the refund status and metadata. The extension's note carries no identity and matches by its
+	 * wording (client 11.1.0 class-wc-payments-order-service.php:1935-1939). Rows from 2224ece1012 and acaf26865d5 (identity
+	 * notes) and cf039e3d930 (the extension's note).
+	 *
+	 * @dataProvider provider_linked_refund_with_its_created_note
+	 *
+	 * @param string $event_status  Refund status the event carries.
+	 * @param string $existing_note Created note on the order: an identity note type (created_successful, created_pending) or 'extension'.
+	 * @param string $refund_status Order refund status before the event.
 	 */
-	public function test_charge_refunded_leaves_a_refund_the_extension_completed(): void {
+	public function test_charge_refunded_for_a_linked_refund_with_its_created_note_changes_nothing( string $event_status, string $existing_note, string $refund_status ): void {
 		$order  = $this->create_refundable_order();
 		$refund = $this->create_local_refund( $order );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
 		$refund->save_meta_data();
-		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
-		$order->add_order_note( $this->get_extension_created_refund_note() );
+		$order->update_meta_data( '_wcpay_refund_status', $refund_status );
 		$order->save();
+		if ( 'extension' === $existing_note ) {
+			$order->add_order_note( $this->get_extension_created_refund_note() );
+		} else {
+			// The created note the gateway path writes when it links the refund, with the same identity.
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Refund re_123 recorded.', 'refund:re_123:' . $existing_note );
+		}
 		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		$charge                                 = $this->get_successful_refund_charge();
-		$charge['refunds']['data'][0]['status'] = 'pending';
+		$charge['refunds']['data'][0]['status'] = $event_status;
 		$this->sut->process( 'charge.refunded', $charge );
 
 		$order   = wc_get_order( $order->get_id() );
 		$refunds = $order->get_refunds();
 		$this->assertCount( 1, $refunds );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( $refund_status, $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( 'txn_existing', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
 		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Linked refunds whose created note is already on the order.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provider_linked_refund_with_its_created_note(): array {
+		return array(
+			'identity note, succeeded event, successful refund' => array( 'succeeded', 'created_successful', 'successful' ),
+			'identity note, pending event, successful refund'   => array( 'pending', 'created_successful', 'successful' ),
+			'identity note, succeeded event, pending refund'    => array( 'succeeded', 'created_pending', 'pending' ),
+			'extension note, pending event, successful refund'  => array( 'pending', 'extension', 'successful' ),
+		);
 	}
 
 	/**
@@ -648,19 +678,36 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded event on a charge recorded on an order another gateway paid adds one note and no refund, and logs one line.
+	 * @testdox A charge.refunded event on a charge that is not the order's payment is recorded: one note and one warning line, no refund, the order's status and charge kept.
 	 *
 	 * Client 11.1.0 refunds the charge's order whatever its gateway (class-wc-payments-webhook-processing-service.php:1108-1119);
 	 * here the refund is recorded, because the charge is not the order's payment. The charge carries its `payment_intent`
-	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent).
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_intent) and, for a charge no order holds, the store's
+	 * `metadata` with `order_id` and `order_key` (https://docs.stripe.com/api/charges/object#charge_object-metadata).
+	 *
+	 * @dataProvider provider_charge_refunded_on_another_charge
+	 *
+	 * @param callable $create_order          Creates the order the charge resolves to.
+	 * @param string   $charge_id             Refunded charge ID.
+	 * @param string   $intent_id             The charge's payment intent.
+	 * @param bool     $metadata_names_order  Whether the charge's metadata names the order.
+	 * @param int      $refund_amount         Refund amount in minor units.
+	 * @param string   $expected_charge_meta  `_charge_id` on the order after the event.
+	 * @param string   $order_payment_method  Order payment method named by the warning line.
 	 */
-	public function test_charge_refunded_on_an_order_paid_by_another_gateway_is_recorded(): void {
-		$order                                  = $this->create_order_paid_by_another_gateway( 'cod', 'ch_cod' );
+	public function test_charge_refunded_on_another_charge_is_recorded( callable $create_order, string $charge_id, string $intent_id, bool $metadata_names_order, int $refund_amount, string $expected_charge_meta, string $order_payment_method ): void {
+		$order                                  = $create_order( $this );
 		$charge                                 = $this->get_successful_refund_charge();
-		$charge['id']                           = 'ch_cod';
-		$charge['payment_intent']               = 'pi_cod';
-		$charge['refunds']['data'][0]['amount'] = 1000;
-		$logger                                 = RecordingWcLogger::install();
+		$charge['id']                           = $charge_id;
+		$charge['payment_intent']               = $intent_id;
+		$charge['refunds']['data'][0]['amount'] = $refund_amount;
+		if ( $metadata_names_order ) {
+			$charge['metadata'] = array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			);
+		}
+		$logger = RecordingWcLogger::install();
 
 		$this->sut->process( 'charge.refunded', $charge );
 
@@ -668,15 +715,16 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 0, $order->get_refunds() );
 		$this->assertSame( 'processing', $order->get_status() );
+		$this->assertSame( $expected_charge_meta, $order->get_meta( '_charge_id', true ) );
 		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
 		$record_notes = $this->get_notes_containing( $order, 'No refund was added to the order.' );
 		$this->assertCount( 1, $record_notes );
 		$this->assertStringContainsString( 're_123', $record_notes[0]->content );
-		$this->assertStringContainsString( 'ch_cod', $record_notes[0]->content );
+		$this->assertStringContainsString( $charge_id, $record_notes[0]->content );
 		$record_lines = array_keys(
 			array_filter(
 				$logger->lines,
-				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', charge.refunded, charge ch_cod, order payment method cod' === $line[1]
+				static fn( array $line ): bool => 'warning' === $line[0] && 'other charge recorded: order ' . $order->get_id() . ', charge.refunded, charge ' . $charge_id . ', order payment method ' . $order_payment_method === $line[1]
 			)
 		);
 		$this->assertCount( 1, $record_lines );
@@ -684,75 +732,56 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded event on a WooPayments order paid by another intent is recorded, even though the order holds the charge ID.
+	 * Refunds of a charge that is not the order's payment.
 	 *
-	 * The order's transaction ID names the intent that paid it; the refunded charge belongs to a second intent.
+	 * @return array<string,array{0:callable,1:string,2:string,3:bool,4:int,5:string,6:string}>
 	 */
-	public function test_charge_refunded_on_an_order_paid_by_another_intent_is_recorded(): void {
-		$order = $this->create_refundable_order();
-		$order->update_meta_data( '_charge_id', 'ch_second' );
-		$order->save();
-		$charge                   = $this->get_successful_refund_charge();
-		$charge['id']             = 'ch_second';
-		$charge['payment_intent'] = 'pi_second';
+	public function provider_charge_refunded_on_another_charge(): array {
+		$gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 
-		$this->sut->process( 'charge.refunded', $charge );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertCount( 1, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
-	}
-
-	/**
-	 * @testdox A charge.refunded event on a second charge no order holds is recorded on the order its metadata names, which keeps its first charge and gets no refund.
-	 *
-	 * The second charge's Charge object carries the store's `metadata` with `order_id` and `order_key`
-	 * (https://docs.stripe.com/api/charges/object#charge_object-metadata), as the first charge's does.
-	 */
-	public function test_charge_refunded_on_a_second_charge_is_recorded_on_the_order_its_metadata_names(): void {
-		$order                    = $this->create_refundable_order();
-		$charge                   = $this->get_successful_refund_charge();
-		$charge['id']             = 'ch_second';
-		$charge['payment_intent'] = 'pi_second';
-		$charge['metadata']       = array(
-			'order_id'  => (string) $order->get_id(),
-			'order_key' => $order->get_order_key(),
+		return array(
+			'order paid by another gateway'             => array(
+				static fn( self $test ): WC_Order => $test->create_order_paid_by_another_gateway( 'cod', 'ch_cod' ),
+				'ch_cod',
+				'pi_cod',
+				false,
+				1000,
+				'ch_cod',
+				'cod',
+			),
+			'order paid by another intent, holding the charge' => array(
+				static function ( self $test ): WC_Order {
+					$order = $test->create_refundable_order();
+					$order->update_meta_data( '_charge_id', 'ch_second' );
+					$order->save();
+					return $order;
+				},
+				'ch_second',
+				'pi_second',
+				false,
+				400,
+				'ch_second',
+				$gateway_id,
+			),
+			'second charge no order holds, by metadata' => array(
+				static fn( self $test ): WC_Order => $test->create_refundable_order(),
+				'ch_second',
+				'pi_second',
+				true,
+				400,
+				'ch_123',
+				$gateway_id,
+			),
+			'charge no order holds, the order\'s own intent' => array(
+				static fn( self $test ): WC_Order => $test->create_refundable_order(),
+				'ch_unheld',
+				'pi_123',
+				true,
+				400,
+				'ch_123',
+				$gateway_id,
+			),
 		);
-
-		$this->sut->process( 'charge.refunded', $charge );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertSame( 'ch_123', $order->get_meta( '_charge_id', true ) );
-		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
-		$record_notes = $this->get_notes_containing( $order, 'No refund was added to the order.' );
-		$this->assertCount( 1, $record_notes );
-		$this->assertStringContainsString( 'ch_second', $record_notes[0]->content );
-	}
-
-	/**
-	 * @testdox A charge.refunded event on a charge no order holds is only recorded on the order its metadata names, even when its intent is the one that paid the order.
-	 */
-	public function test_charge_refunded_found_by_metadata_is_never_applied(): void {
-		$order                    = $this->create_refundable_order();
-		$charge                   = $this->get_successful_refund_charge();
-		$charge['id']             = 'ch_unheld';
-		$charge['payment_intent'] = 'pi_123';
-		$charge['metadata']       = array(
-			'order_id'  => (string) $order->get_id(),
-			'order_key' => $order->get_order_key(),
-		);
-
-		$this->sut->process( 'charge.refunded', $charge );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertCount( 0, $order->get_refunds() );
-		$this->assertCount( 1, $this->get_notes_containing( $order, 'No refund was added to the order.' ) );
 	}
 
 	/**
@@ -878,21 +907,190 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded event on a charge no order holds, whose metadata names an order with another key, still fails as not found.
+	 * @testdox A $event_type event refused before any write throws a RuntimeException and leaves the order without a refund or refund status.
+	 *
+	 * A RuntimeException goes through the reliability service's retry path; an InvalidArgumentException would be dropped. The
+	 * ingestor passes the event object to this handler unchanged and does not catch.
+	 *
+	 * @dataProvider provider_refund_events_refused_before_any_write
+	 *
+	 * @param string   $event_type       Refund event type.
+	 * @param callable $change_event     Changes the event object built for the order.
+	 * @param string   $expected_message Fragment of the exception message.
 	 */
-	public function test_charge_refunded_on_an_unheld_charge_with_another_order_key_is_not_found(): void {
-		$order              = $this->create_refundable_order();
-		$charge             = $this->get_successful_refund_charge();
-		$charge['id']       = 'ch_second';
-		$charge['metadata'] = array(
-			'order_id'  => (string) $order->get_id(),
-			'order_key' => 'wc_order_another_site',
+	public function test_refund_events_refused_before_any_write( string $event_type, callable $change_event, string $expected_message ): void {
+		$order = $this->create_refundable_order();
+
+		$thrown = null;
+		try {
+			$this->sut->process( $event_type, $change_event( $this->get_refund_event_object( $event_type, $order ), $order ) );
+		} catch ( \RuntimeException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown );
+		$this->assertStringContainsString( $expected_message, $thrown->getMessage() );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
+	 * Refund events refused before any write.
+	 *
+	 * @return array<string,array{0:string,1:callable,2:string}>
+	 */
+	public function provider_refund_events_refused_before_any_write(): array {
+		$refunded = 'charge.refunded';
+		$updated  = 'charge.refund.updated';
+
+		return array(
+			'captured missing'                   => array(
+				$refunded,
+				static function ( array $charge ): array {
+					unset( $charge['captured'] );
+					return $charge;
+				},
+				'missing required field: captured',
+			),
+			'captured malformed'                 => array(
+				$refunded,
+				static fn( array $charge ): array => array_merge( $charge, array( 'captured' => 'yes' ) ),
+				'missing required field: captured',
+			),
+			'refund above the order total'       => array(
+				$refunded,
+				static function ( array $charge ): array {
+					$charge['refunds']['data'][0]['amount'] = 1500;
+					return $charge;
+				},
+				'refund amount is not valid',
+			),
+			'negative refund amount'             => array(
+				$refunded,
+				static function ( array $charge ): array {
+					$charge['refunds']['data'][0]['amount'] = -400;
+					return $charge;
+				},
+				'refund amount is not valid',
+			),
+			'no refund data'                     => array(
+				$refunded,
+				static function ( array $charge ): array {
+					$charge['refunds']['data'] = array();
+					return $charge;
+				},
+				'missing refund data',
+			),
+			'refund ID empty'                    => array(
+				$refunded,
+				static function ( array $charge ): array {
+					$charge['refunds']['data'][0]['id'] = '';
+					return $charge;
+				},
+				'missing required field: id',
+			),
+			'charge no order holds, no metadata' => array(
+				$refunded,
+				static fn( array $charge ): array => array_merge(
+					$charge,
+					array(
+						'id'       => 'ch_unknown',
+						'metadata' => array(
+							'order_id'  => '',
+							'order_key' => '',
+						),
+					)
+				),
+				'Could not find WooPayments order via charge ID',
+			),
+			'held charge, wrong order key'       => array(
+				$refunded,
+				static fn( array $charge, WC_Order $order ): array => array_merge(
+					$charge,
+					array(
+						'metadata' => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => 'wc_order_wrong_key',
+						),
+					)
+				),
+				'Could not find WooPayments order via charge ID',
+			),
+			'unheld charge, another order key'   => array(
+				$refunded,
+				static fn( array $charge, WC_Order $order ): array => array_merge(
+					$charge,
+					array(
+						'id'       => 'ch_second',
+						'metadata' => array(
+							'order_id'  => (string) $order->get_id(),
+							'order_key' => 'wc_order_another_site',
+						),
+					)
+				),
+				'Could not find WooPayments order via charge ID: ch_second',
+			),
+			'unknown update status'              => array(
+				$updated,
+				static fn( array $refund ): array => array_merge( $refund, array( 'status' => 'requires_action' ) ),
+				'Invalid refund update status',
+			),
+			'update status empty'                => array(
+				$updated,
+				static fn( array $refund ): array => array_merge( $refund, array( 'status' => '' ) ),
+				'missing required field: status',
+			),
 		);
+	}
 
-		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Could not find WooPayments order via charge ID: ch_second' );
+	/**
+	 * Build a refund event object for a refundable order, as the WooPayments ingestor tests did.
+	 *
+	 * charge.refunded carries the Charge with its refunds list and the store's metadata; client 11.1.0 reads status,
+	 * captured, amount, currency, metadata and refunds.data[0] (class-wc-payments-webhook-processing-service.php:1079-1143).
+	 * charge.refund.updated carries the Refund (:300-309).
+	 *
+	 * @param string   $event_type Refund event type.
+	 * @param WC_Order $order      Order holding the charge.
+	 * @return array<string,mixed>
+	 */
+	private function get_refund_event_object( string $event_type, WC_Order $order ): array {
+		$charge_id = (string) $order->get_meta( '_charge_id', true );
+		if ( 'charge.refund.updated' === $event_type ) {
+			return array(
+				'id'       => 're_123',
+				'charge'   => $charge_id,
+				'amount'   => 400,
+				'currency' => 'usd',
+				'status'   => 'failed',
+			);
+		}
 
-		$this->sut->process( 'charge.refunded', $charge );
+		return array(
+			'id'       => $charge_id,
+			'status'   => 'succeeded',
+			'amount'   => 1000,
+			'currency' => 'usd',
+			'captured' => true,
+			'metadata' => array(
+				'order_id'  => (string) $order->get_id(),
+				'order_key' => $order->get_order_key(),
+			),
+			'refunds'  => array(
+				'data' => array(
+					array(
+						'id'                  => 're_123',
+						'status'              => 'succeeded',
+						'amount'              => 400,
+						'currency'            => 'usd',
+						'reason'              => 'requested_by_customer',
+						'balance_transaction' => 'txn_123',
+					),
+				),
+			),
+		);
 	}
 
 	/**
@@ -1196,16 +1394,22 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund the platform made whose local effects failed keeps only its link, and a $event_status charge.refunded completes it: one note, the refund status and the transaction ID, no second refund row.
+	 * @testdox A refund the platform made whose local effects failed keeps only its link, and a $event_status charge.refunded completes it, also when a hook callback throws: one note, the refund status and the transaction ID, no second refund row.
 	 *
-	 * @testWith ["succeeded", "successful", "was successfully processed"]
-	 *           ["pending", "pending", "is pending"]
+	 * Rows from 2224ece1012 and acaf26865d5 (no hook), cd8f8176b18 (a woocommerce_order_note_added callback throws: the
+	 * delivery fails, but the status and transaction ID were saved before the note) and 94c3d0fabe6 (a
+	 * woocommerce_before_order_object_save callback throws: WC_Abstract_Order::save() catches it and the delivery succeeds).
+	 * The order is read past its caches, so an unsaved change on a cached object cannot pass for a saved one.
 	 *
-	 * @param string $event_status    Refund status the event carries.
-	 * @param string $expected_status Order refund status the event writes.
-	 * @param string $note_text       Status words of the created note the event adds.
+	 * @dataProvider provider_link_only_refund_completion
+	 *
+	 * @param string      $event_status      Refund status the event carries.
+	 * @param string      $throwing_hook     Hook a callback throws from during the delivery, or '' for none.
+	 * @param string|null $expected_failure  Message the delivery fails with, or null when it succeeds.
+	 * @param string      $expected_status   Order refund status the event writes.
+	 * @param string      $note_text         Status words of the created note the event adds.
 	 */
-	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed( string $event_status, string $expected_status, string $note_text ): void {
+	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed( string $event_status, string $throwing_hook, ?string $expected_failure, string $expected_status, string $note_text ): void {
 		$order = $this->create_refundable_order();
 		// An earlier refund attempt on the order failed.
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
@@ -1235,11 +1439,25 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 're_123', $refund->get_meta( '_wcpay_refund_id', true ), 'The failed effects leave only the link.' );
 		$this->assertSame( '', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
 
+		$throwing = static function (): void {
+			throw new \RuntimeException( 'A hook callback failed.' );
+		};
+		if ( '' !== $throwing_hook ) {
+			add_action( $throwing_hook, $throwing );
+		}
 		$charge                                 = $this->get_successful_refund_charge();
 		$charge['refunds']['data'][0]['status'] = $event_status;
-		$this->sut->process( 'charge.refunded', $charge );
+		$failure                                = null;
+		try {
+			$this->sut->process( 'charge.refunded', $charge );
+		} catch ( \RuntimeException $exception ) {
+			$failure = $exception->getMessage();
+		} finally {
+			remove_action( $throwing_hook, $throwing );
+		}
 
-		$order   = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_failure, $failure );
+		$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 		$refunds = $order->get_refunds();
 		$this->assertCount( 1, $refunds );
 		$this->assertSame( $refund->get_id(), $refunds[0]->get_id() );
@@ -1253,65 +1471,17 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When a woocommerce_order_note_added callback throws while charge.refunded completes a link-only refund, the refund status and transaction ID are already saved.
+	 * Link-only refunds a charge.refunded completes.
+	 *
+	 * @return array<string,array{0:string,1:string,2:?string,3:string,4:string}>
 	 */
-	public function test_charge_refunded_saves_the_refund_effects_before_the_note(): void {
-		$order = $this->create_refundable_order();
-		// An earlier refund attempt on the order failed.
-		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
-		$order->save();
-		// The link alone, as PaymentProcessingService::persist_refund_reconciliation_context() leaves it.
-		$refund = $this->create_local_refund( $order );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->save_meta_data();
-		$throwing = static function (): void {
-			throw new \RuntimeException( 'A note hook failed.' );
-		};
-		add_action( 'woocommerce_order_note_added', $throwing );
-
-		try {
-			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
-			$this->fail( 'The throwing note hook fails the delivery.' );
-		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'A note hook failed.', $exception->getMessage() );
-		} finally {
-			remove_action( 'woocommerce_order_note_added', $throwing );
-		}
-
-		// Read past the order caches: an unsaved change on a cached order object must not pass for a saved one.
-		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_123', $order->get_refunds()[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
-	}
-
-	/**
-	 * @testdox When a woocommerce_before_order_object_save callback throws while charge.refunded completes a link-only refund, the refund status and transaction ID are still saved.
-	 */
-	public function test_charge_refunded_saves_the_refund_status_when_an_order_save_hook_throws(): void {
-		$order = $this->create_refundable_order();
-		// An earlier refund attempt on the order failed.
-		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
-		$order->save();
-		// The link alone, as PaymentProcessingService::persist_refund_reconciliation_context() leaves it.
-		$refund = $this->create_local_refund( $order );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->save_meta_data();
-		// WC_Abstract_Order::save() catches what this throws and returns, so the delivery itself succeeds.
-		$throwing = static function (): void {
-			throw new \RuntimeException( 'An order save hook failed.' );
-		};
-		add_action( 'woocommerce_before_order_object_save', $throwing );
-
-		try {
-			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
-		} finally {
-			remove_action( 'woocommerce_before_order_object_save', $throwing );
-		}
-
-		// Read past the order caches: an unsaved change on a cached order object must not pass for a saved one.
-		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_123', $order->get_refunds()[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+	public function provider_link_only_refund_completion(): array {
+		return array(
+			'succeeded'        => array( 'succeeded', '', null, 'successful', 'was successfully processed' ),
+			'pending'          => array( 'pending', '', null, 'pending', 'is pending' ),
+			'note hook throws' => array( 'succeeded', 'woocommerce_order_note_added', 'A hook callback failed.', 'successful', 'was successfully processed' ),
+			'save hook throws' => array( 'succeeded', 'woocommerce_before_order_object_save', null, 'successful', 'was successfully processed' ),
+		);
 	}
 
 	/**
