@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Native owner for WooPayments-compatible webhook reliability queue consumers.
+ * Fetches the WooPayments webhook events the platform could not deliver, and processes and retries failed events
+ * through Action Scheduler.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 
@@ -30,14 +31,14 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	const CONTINUOUS_FETCH_FLAG_ACCOUNT_DATA = 'has_more_failed_events';
 
 	/**
-	 * Preserved failed-event fetch hook.
+	 * Action Scheduler hook that fetches failed events from the platform.
 	 *
 	 * @var string
 	 */
 	const WEBHOOK_FETCH_EVENTS_ACTION = 'wcpay_webhook_fetch_events';
 
 	/**
-	 * Preserved failed-event processing hook.
+	 * Action Scheduler hook that processes one stored failed event.
 	 *
 	 * @var string
 	 */
@@ -125,7 +126,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register preserved reliability queue consumers.
+	 * Register the account refresh listener that starts a fetch, and the fetch and processing actions.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -183,8 +184,8 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when it is retried.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
-	 * it itself. Client 11.1.0 loses such an event; event types that are not retried get one attempt, as on the client.
-	 * A lock refusal that is not retried is noted on its order.
+	 * it itself; client 11.1.0 loses such an event. Types that are not retried get one attempt, and a lock refusal that
+	 * is not retried is noted on its order.
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
@@ -207,11 +208,10 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Process a queued failed webhook event.
 	 *
 	 * The stored event is removed once the ingestor handles it. An event the ingestor refuses as malformed can never
-	 * succeed: as on the client, it is removed, one error line names it and the job completes. Any other failure of a
-	 * retried event type schedules the same job again, at most three more times after 1 minute, 10 minutes and 1 hour;
-	 * after the last attempt the event is removed and an error is logged. Other types get this one attempt, as on the
-	 * client. Action Scheduler does not retry a failed action by itself. Such a failure is re-thrown, so Action Scheduler
-	 * records the failed attempt.
+	 * succeed, so it is removed with one error line and the job completes. Any other failure of a retried type schedules
+	 * the job again, at most three more times after 1 minute, 10 minutes and 1 hour, then the event is removed with an
+	 * error line; other types get this one attempt. The failure is re-thrown so Action Scheduler records it, since
+	 * Action Scheduler does not retry a failed action by itself.
 	 *
 	 * @param string $event_id Event ID.
 	 * @throws \Throwable When the ingestor fails other than by refusing the event; the event is kept for the next attempt unless none is left.
@@ -252,9 +252,9 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Tell whether a failed delivery is processed again later.
 	 *
 	 * Retried event types are, after any passing failure, and the types safe to apply late are when the order payment
-	 * lock refused them (WooPaymentsEventIngestor::is_retried_lock_refusal()). The holder's lock expires after its TTL
-	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS), and the delays outlast it: the retries run 1, 11 and 71 minutes after the
-	 * first refused attempt of the processing job.
+	 * lock refused them (WooPaymentsEventIngestor::is_retried_lock_refusal()). The retries run 1, 11 and 71 minutes after
+	 * the processing job's first attempt, so the last two run after a lock left by a request that died has expired
+	 * (WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS, five minutes).
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
@@ -284,7 +284,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Schedule the next attempt for a failed event, or drop it and log an error when no attempt is left.
 	 *
 	 * An event the order payment lock refused on every attempt also leaves a note on its order, so the merchant sees
-	 * that a payment update did not reach it. As on the client, the dropped event is not kept: the platform marks a
+	 * that a payment update did not reach it. The dropped event is not kept: the platform marks a
 	 * listed event as fetched and the failed-event store is a one-day transient nothing else reads, so the note and the
 	 * error line naming the event are the trail.
 	 *

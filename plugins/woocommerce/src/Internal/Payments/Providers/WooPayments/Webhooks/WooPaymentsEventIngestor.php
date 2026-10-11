@@ -19,10 +19,10 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Ingests WooPayments provider webhook events into native payment lifecycle effects.
+ * Receives platform webhook events, skips repeats and other modes, and passes each to its handler.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsEventIngestor {
 
@@ -41,7 +41,7 @@ class WooPaymentsEventIngestor {
 	private const PROCESSED_EVENT_TRANSIENT_TTL = HOUR_IN_SECONDS;
 
 	/**
-	 * Known WooPayments event types whose side effects still block native cutover.
+	 * Event types this store cannot apply yet; the cutover preflight check fails while the list is not empty.
 	 *
 	 * @var string[]
 	 */
@@ -64,7 +64,7 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
 	 *
-	 * Other types get one attempt, as on the client: running the refund, dispute or fraud warning handlers again can
+	 * Other types get one attempt: running the refund, dispute or fraud warning handlers again can
 	 * duplicate a refund or apply an older event over a newer one.
 	 *
 	 * @var string[]
@@ -81,7 +81,7 @@ class WooPaymentsEventIngestor {
 	 * the event is safe to apply late, after a newer event: charge.expired is terminal, and a fraud warning only
 	 * records its warning and a note, so a late one changes no status and moves no money. Refund and dispute events
 	 * are not, since a late created or pending event would undo a newer close or failure; their refusal keeps one
-	 * attempt and is noted on the order (monitor ruling 2026-10-06).
+	 * attempt and is noted on the order.
 	 *
 	 * @var string[]
 	 */
@@ -92,7 +92,7 @@ class WooPaymentsEventIngestor {
 	);
 
 	/**
-	 * Legacy proxy.
+	 * The LegacyProxy instance.
 	 *
 	 * @var LegacyProxy
 	 */
@@ -159,7 +159,7 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                              $legacy_proxy                      Legacy proxy.
+	 * @param LegacyProxy                              $legacy_proxy                      The LegacyProxy instance.
 	 * @param WooPaymentsTransportLog                  $transport_log                     Transport log.
 	 * @param WooPaymentsDisputeEventHandler           $dispute_event_handler             Dispute event handler.
 	 * @param WooPaymentsRefundEventHandler            $refund_event_handler              Refund event handler.
@@ -184,16 +184,12 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Process a WooPayments webhook event.
 	 *
-	 * An event carrying an ID is not processed again within the marker TTL once a delivery of it finished:
-	 * the same event can be delivered repeatedly (Action Scheduler retries, provider re-delivery, the
-	 * failed-event replay queue), and re-applying it would duplicate money-affecting side effects such as
-	 * order-state transitions, refund metadata, and dispute updates.
-	 *
-	 * The "processed" marker is written only after the event is handled, so an event whose processing threw, or
-	 * whose request died, is processed by the next delivery. Two deliveries of one event that overlap are not kept
-	 * apart here: the handlers that change an order serialize themselves (the order payment lock, or the Stripe Billing
-	 * invoice lock), and a redelivery after a failed attempt can add its notes again.
-	 * Client 11.1.0 keeps no marker at all.
+	 * An event with an ID is skipped for the marker TTL once a delivery of it has finished: Action Scheduler retries,
+	 * platform redelivery and the failed-event queue can deliver it again, and applying it twice would repeat status
+	 * changes, refund metadata and dispute updates. The marker is written only after the event is handled, so a delivery
+	 * that threw or died is processed again. Overlapping deliveries are not kept apart here: the handlers that change an
+	 * order take the order payment lock or the Stripe Billing invoice lock, and a redelivery after a failed attempt can
+	 * add its notes again. Client 11.1.0 keeps no marker at all.
 	 *
 	 * @since 11.0.0
 	 *
@@ -202,7 +198,8 @@ class WooPaymentsEventIngestor {
 	 */
 	public function process( array $event ): void {
 		$event_id = $this->get_event_id( $event );
-		// Sweep row 300: the client's received line, first, so a skipped, deduplicated or refused event still leaves one.
+		// Client 11.1.0 logs the received line first (class-wc-payments-webhook-processing-service.php:155-160), so a skipped,
+		// repeated or refused event still leaves one.
 		$this->transport_log->debug_payload(
 			sprintf( 'WEBHOOK RECEIVED: %1$s %2$s', is_string( $event['type'] ?? null ) ? $event['type'] : '', $event_id ),
 			$event
@@ -235,8 +232,28 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
+		/**
+		 * Fires before a WooPayments webhook event is handled. A callback that throws is logged and does not fail the event.
+		 *
+		 * Keeps this name because extensions listen to it.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param string              $event_type Event type.
+		 * @param array<string,mixed> $event      Event payload.
+		 */
 		$this->run_delivery_hook( 'woocommerce_payments_before_webhook_delivery', $event_type, $event );
 		$this->route( $event_type, $event );
+		/**
+		 * Fires after a WooPayments webhook event is handled; not when its handler throws.
+		 *
+		 * Keeps this name because extensions listen to it.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param string              $event_type Event type.
+		 * @param array<string,mixed> $event      Event payload.
+		 */
 		$this->run_delivery_hook( 'woocommerce_payments_after_webhook_delivery', $event_type, $event );
 	}
 
@@ -391,7 +408,7 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Tell whether the webhook livemode does not match native runtime mode, logging one error line when it does.
+	 * Tell whether the event's livemode differs from the store's WooPayments mode, logging one error line when it does.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:268-290` skips the event and logs the same line.
 	 *
@@ -422,8 +439,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Tell whether WooPayments is in live mode.
 	 *
-	 * The same mode every other native reader uses (WooPaymentsAccountService::is_test_mode_enabled(): test-mode
-	 * onboarding, dev mode and the wcpay_test_mode filter included), as the client checks WC_Payments::mode()->is_live().
+	 * The mode every WooPayments reader uses (WooPaymentsAccountService::is_test_mode_enabled(): test-mode onboarding,
+	 * dev mode and the wcpay_test_mode filter included); client 11.1.0 reads WC_Payments::mode()->is_live().
 	 *
 	 * @return bool
 	 */
@@ -451,12 +468,12 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Refuse a Stripe Billing invoice event that reaches native WooPayments while the Stripe Billing module is not loaded.
+	 * Refuse a Stripe Billing invoice event while the Stripe Billing module is not loaded.
 	 *
 	 * Client 11.1.0 loads its event handler without WooCommerce Subscriptions too; its subscription lookup then finds nothing,
 	 * so it refuses the event with these reasons (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), the
-	 * webhook answers 400 and nothing is recorded. As on the client, the webhook route or the failed-event job that catches
-	 * the refusal logs it, so it is not logged here.
+	 * webhook answers 400 and nothing is recorded. The webhook route or the failed-event job that catches the refusal
+	 * logs it, so it is not logged here.
 	 *
 	 * @param string $event_type Event type.
 	 * @throws InvalidArgumentException Always.
@@ -489,7 +506,7 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Run a WooPayments-compatible webhook delivery hook.
+	 * Fire a webhook delivery hook; a callback that throws is logged and does not fail the event.
 	 *
 	 * @param string              $hook       Hook name.
 	 * @param string              $event_type Event type.

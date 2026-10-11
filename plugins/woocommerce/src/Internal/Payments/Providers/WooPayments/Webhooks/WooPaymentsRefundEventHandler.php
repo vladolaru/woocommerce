@@ -23,10 +23,11 @@ use WC_Order_Refund;
 use Throwable;
 
 /**
- * Handles WooPayments refund webhook side effects for native WooPayments.
+ * Applies WooPayments refund events to their orders: the local refund, its note and the refund status; an event on a
+ * charge that is not the order's payment is recorded instead.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsRefundEventHandler {
 
@@ -38,14 +39,14 @@ class WooPaymentsRefundEventHandler {
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
 	private OrderPaymentLock $order_payment_lock;
 
 	/**
-	 * WooPayments persistence profile.
+	 * WooPayments persistence vocabulary.
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */
@@ -77,8 +78,8 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param OrderPaymentLock                 $order_payment_lock     Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
+	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
 	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder  Recorder of events on another charge.
 	 * @param WooPaymentsAccountService        $account_service        WooPayments account service.
@@ -371,13 +372,13 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Build exact Core- and plugin-catalog renderings of a created-refund note.
+	 * Build the created-refund note and the other wordings that count as the same note.
 	 *
 	 * @param WC_Order        $order      Order object.
 	 * @param WC_Order_Refund $wc_refund  Refund object.
 	 * @param string          $refund_id  Provider refund ID.
 	 * @param bool            $is_pending Whether the provider refund is pending.
-	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 * @return string[] The note's wordings, the current one first.
 	 */
 	private function get_created_refund_note_candidates( WC_Order $order, WC_Order_Refund $wc_refund, string $refund_id, bool $is_pending ): array {
 		return wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_created_refund_note_candidates(
@@ -391,7 +392,7 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Build a WooPayments-compatible failed-refund note.
+	 * Build the failed or canceled refund note.
 	 *
 	 * @param WC_Order $order          Order object.
 	 * @param string   $refund_id      Provider refund ID.
@@ -451,7 +452,7 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Get a provider object's first refund payload.
+	 * Get the charge's most recent refund, the first in its refunds list.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @return array<string,mixed>
@@ -604,7 +605,7 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $note      Note content.
 	 * @param string   $refund_id Provider refund ID.
 	 * @param string   $note_type Stable note type.
-	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
+	 * @param string[] $equivalent_notes Other wordings that count as the same note.
 	 */
 	private function add_refund_order_note_once( WC_Order $order, string $note, string $refund_id, string $note_type, array $equivalent_notes = array() ): void {
 		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once(

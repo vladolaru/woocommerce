@@ -17,10 +17,10 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments webhook REST controller.
+ * Receives WooPayments webhook events from the platform on `wc/v3/payments/webhook` and passes them to the event ingestor.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 
@@ -74,18 +74,17 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the WooPayments-compatible webhook route.
+	 * Register the webhook route.
 	 *
-	 * Auth model: this route is intentionally gated on `manage_woocommerce` and is NOT a public,
-	 * unauthenticated delivery endpoint. It mirrors the WooPayments plugin's webhook controller,
-	 * which gates the same `wc/v3/payments/webhook` route on `current_user_can( 'manage_woocommerce' )`
-	 * (see WC_REST_Payments_Webhook_Controller / WC_Payments_REST_Controller::check_permission()).
+	 * The route requires `manage_woocommerce` and is not a public, unauthenticated delivery endpoint.
+	 * Client 11.1.0 checks the same capability on it (class-wc-rest-payments-webhook-controller.php:64,
+	 * class-wc-payments-rest-controller.php:63-65).
 	 *
 	 * The platform pushes each event to this route as a Jetpack-signed request made as the connection
 	 * owner, so the request runs as an administrator. An event whose push fails in transport is kept
 	 * by the platform and pulled later by {@see WooPaymentsWebhookReliabilityService}. There is no
 	 * shared webhook signing secret, so this route cannot verify a payload signature; the capability
-	 * gate is the trust boundary, and loosening it would open an unverified event-injection surface.
+	 * check is the trust boundary, and loosening it would let unverified events in.
 	 */
 	public function register_routes(): void {
 		register_rest_route(
@@ -94,8 +93,8 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'handle_webhook' ),
-				// Intentionally gated on `manage_woocommerce` (parity with the WooPayments plugin): platform
-				// pushes arrive signed as the connection owner. Do not loosen this gate; see the method doc-block.
+				// Requires `manage_woocommerce`: platform pushes arrive signed as the connection owner.
+				// Do not loosen this check; see the method docblock.
 				'permission_callback' => function () {
 					return current_user_can( 'manage_woocommerce' );
 				},
@@ -106,9 +105,8 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	/**
 	 * Handle a webhook delivery.
 	 *
-	 * Reached only after the `manage_woocommerce` permission gate in {@see self::register_routes()}.
-	 * The payload is not signature-verified because no shared signing secret exists for this route;
-	 * the capability gate is the trust boundary. The platform takes any reply in the expected envelope,
+	 * Reached only after the `manage_woocommerce` check in {@see self::register_routes()}; with no shared
+	 * signing secret, that check is the trust boundary. The platform takes any reply in the expected envelope,
 	 * including an error, as delivered, so a failed event that is retried is queued here by the store.
 	 *
 	 * @param WP_REST_Request $request REST request.
@@ -126,7 +124,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 			$this->event_ingestor->process( $payload );
 			return new WP_REST_Response( array( 'result' => 'success' ), 200 );
 		} catch ( InvalidArgumentException $exception ) {
-			// The refusing code logs nothing, as on the client; this one line names the event so a refused event stays traceable.
+			// The code that refuses an event logs nothing, so this one line names the event and keeps a refused event traceable.
 			$event_id = is_scalar( $payload['id'] ?? null ) ? (string) $payload['id'] : '';
 			$this->log_webhook_exception( $exception, $event_id, true );
 			return new WP_REST_Response( array( 'result' => 'bad_request' ), 400 );

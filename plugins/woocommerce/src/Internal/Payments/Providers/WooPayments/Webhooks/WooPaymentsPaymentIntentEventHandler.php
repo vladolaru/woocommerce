@@ -47,7 +47,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -115,7 +115,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @internal
 	 *
 	 * @param OrderPaymentLifecycleService        $lifecycle_service           Order lifecycle service.
-	 * @param WooPaymentsApiClient                $api_client                  Native WooPayments API client.
+	 * @param WooPaymentsApiClient                $api_client                  WooPayments API client.
 	 * @param WooPaymentsOrderDataService         $order_data_service          WooPayments order data service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
@@ -170,8 +170,8 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
 	public function process( string $event_type, array $event_object ): void {
-		// The plugin's canceled/amount_capturable_updated handlers are nothing but
-		// this cache invalidation and never resolve an order.
+		// Client 11.1.0 only clears the authorization summary caches on these two events and resolves no order
+		// (class-wc-payments-webhook-processing-service.php:417-434).
 		if ( in_array( $event_type, array( 'payment_intent.canceled', 'payment_intent.amount_capturable_updated' ), true ) ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 			return;
@@ -197,8 +197,7 @@ class WooPaymentsPaymentIntentEventHandler {
 
 		$this->process_order_payment_event( $order, $event_type, $event_object, $record_only );
 
-		// Captures and expiries change what the uncaptured-transactions badge counts; the plugin
-		// invalidates after the order effects land.
+		// Captures and expiries change what the uncaptured-transactions badge counts, so its caches are cleared once the order is updated.
 		if ( 'payment_intent.payment_failed' !== $event_type ) {
 			$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 		}
@@ -236,8 +235,7 @@ class WooPaymentsPaymentIntentEventHandler {
 
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
 
-		// Captures change what the uncaptured-transactions badge counts; the plugin
-		// invalidates after the order effects land.
+		// Captures change what the uncaptured-transactions badge counts, so its caches are cleared once the order is updated.
 		$this->admin_menu_badge_service->invalidate_authorization_summary_caches();
 	}
 
@@ -361,7 +359,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	 */
 	private function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
-		// The client's webhook never retitles an order, so an order of another gateway keeps its payment method.
+		// Client 11.1.0's webhook never retitles an order, so an order of another gateway keeps its payment method title.
 		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
 			$this->apply_completed_payment_method_display_title( $order, $payment_intent );
 		}
@@ -416,7 +414,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Build the neutral lifecycle event for a succeeded payment intent.
+	 * Build the payment lifecycle event for a succeeded payment intent.
 	 *
 	 * @param array<string,mixed> $event_object Provider intent object.
 	 * @param WC_Order            $order        Order object.
@@ -431,7 +429,7 @@ class WooPaymentsPaymentIntentEventHandler {
 				'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
 				'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
 				'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
-				// Plugin 11.1.0 stores the webhook's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:497,514).
+				// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
 				'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
 				'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
 				'_wcpay_mode'            => $this->account_service->get_order_mode(),
@@ -473,7 +471,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Build a neutral lifecycle event for a supported WooPayments webhook type.
+	 * Build a payment lifecycle event for a supported WooPayments webhook type.
 	 *
 	 * @param string              $event_type Event type.
 	 * @param array<string,mixed> $event_object Provider object.
@@ -519,11 +517,10 @@ class WooPaymentsPaymentIntentEventHandler {
 				$note_candidates = $this->order_note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
 				// The stored intention status still says requires_capture; only the live
-				// intent knows its post-expiry status (canceled), and leaving the stale
-				// value keeps capture/cancel actions offered against a dead intent. The
-				// fetch is load-bearing: on failure the exception propagates and the
-				// delivery fails, as in the plugin. charge.expired is not a retried type,
-				// so the event gets that one attempt.
+				// intent knows its status after expiry (canceled), and a stale value keeps
+				// capture and cancel actions offered against a dead intent. A failed fetch
+				// fails the delivery, as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:396-398),
+				// and charge.expired gets no retry after such a failure.
 				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
 
 				$meta = array(
@@ -879,8 +876,8 @@ class WooPaymentsPaymentIntentEventHandler {
 	/**
 	 * Tell whether an order belongs to a recurring payment.
 	 *
-	 * `wcs_order_contains_subscription()` deliberately excludes renewals, so both
-	 * detectors participate, matching the extension's is_payment_recurring().
+	 * `wcs_order_contains_subscription()` leaves out renewal orders, so renewals are
+	 * checked too, as client 11.1.0's is_payment_recurring() does (trait-wc-payments-subscriptions-utilities.php:53-66).
 	 *
 	 * @param WC_Order $order Order object.
 	 * @return bool

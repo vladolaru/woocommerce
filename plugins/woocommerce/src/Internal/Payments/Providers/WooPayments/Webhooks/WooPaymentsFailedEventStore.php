@@ -8,15 +8,15 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 /**
- * Stores failed WooPayments webhook event payloads in preserved transients.
+ * Stores failed WooPayments webhook events in one-day transients until a job processes them.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFailedEventStore {
 
 	/**
-	 * WooPayments-compatible failed-event transient prefix.
+	 * Failed-event transient prefix.
 	 *
 	 * @var string
 	 */

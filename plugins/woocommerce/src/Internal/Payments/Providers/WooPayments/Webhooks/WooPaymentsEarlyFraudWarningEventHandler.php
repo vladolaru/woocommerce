@@ -17,22 +17,23 @@ use RuntimeException;
 use WC_Order;
 
 /**
- * Stores WooPayments early fraud warning evidence on the matching order.
+ * Stores a WooPayments early fraud warning on its order and adds its note; a warning on a charge that is not the
+ * order's payment is recorded instead.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsEarlyFraudWarningEventHandler {
 
 	/**
-	 * Order payment store used to serialize writes.
+	 * Order payment lock, which serializes writes.
 	 *
 	 * @var OrderPaymentLock
 	 */
 	private OrderPaymentLock $order_payment_lock;
 
 	/**
-	 * WooPayments persistence profile.
+	 * WooPayments persistence vocabulary.
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */
@@ -65,8 +66,8 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 * @internal
 	 * @since 11.2.0
 	 *
-	 * @param OrderPaymentLock                 $order_payment_lock Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
+	 * @param OrderPaymentLock                 $order_payment_lock Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
 	 * @param WooPaymentsOrderNoteService      $note_service WooPayments note service.
 	 * @param WooPaymentsEventOrderResolver    $event_order_resolver Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder Recorder of events on another charge.
@@ -203,8 +204,8 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 		$fraud_type = $event_object['fraud_type'] ?? '';
 
 		// The client requires charge, id, actionable and created (class-wc-payments-webhook-processing-service.php:867-874)
-		// and casts what it stores (:900); a scalar of another type is cast the same way. Stricter than the client: a
-		// created time that is not numeric, or is negative, is refused rather than cast to a meaningless timestamp.
+		// and casts what it stores (:900); a scalar of another type is cast the same way. A created time that is not
+		// numeric, or is negative, is refused rather than cast to a meaningless timestamp.
 		if ( ! is_string( $charge ) || '' === $charge || ! is_string( $warning_id ) || '' === $warning_id || ! is_scalar( $actionable ) || ! is_numeric( $created ) || 0 > (int) $created || ! is_scalar( $fraud_type ) ) {
 			throw new InvalidArgumentException( 'WooPayments early fraud warning event is malformed.' );
 		}
@@ -247,7 +248,7 @@ class WooPaymentsEarlyFraudWarningEventHandler {
 	 *
 	 * @param string $warning_id Warning ID.
 	 * @param bool   $actionable Warning actionability.
-	 * @param string $core_note  Core catalog rendering.
+	 * @param string $core_note  Note text the identity hashes.
 	 * @return string
 	 */
 	private function get_note_identity( string $warning_id, bool $actionable, string $core_note ): string {

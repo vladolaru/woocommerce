@@ -12,15 +12,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
- * Provides failed WooPayments webhook events for queue replay.
+ * Fetches a page of the WooPayments webhook events the platform could not deliver.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFailedEventsProvider {
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient|null
 	 */
@@ -38,7 +38,7 @@ class WooPaymentsFailedEventsProvider {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client Native API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
@@ -63,7 +63,8 @@ class WooPaymentsFailedEventsProvider {
 				$events = $this->api_client->get_failed_webhook_events();
 			} catch ( WooPaymentsApiException $exception ) {
 				$this->last_fetch_failed = true;
-				// The client appends the platform's message; native logs its status and code.
+				// Client 11.1.0 appends the platform's message (class-wc-payments-webhook-reliability-service.php:104);
+				// this line logs its status and code instead.
 				wc_get_logger()->error(
 					'Can not fetch failed events from the server.',
 					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )

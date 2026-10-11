@@ -25,10 +25,11 @@ use WC_Order;
 use WC_Order_Refund;
 
 /**
- * Handles WooPayments dispute webhook side effects for native WooPayments.
+ * Applies WooPayments dispute events to their orders: the dispute notes, the order status and, for a lost dispute, a
+ * local refund; a dispute on a charge that is not the order's payment is recorded instead.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputeEventHandler {
 
@@ -40,7 +41,7 @@ class WooPaymentsDisputeEventHandler {
 	public const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -61,14 +62,14 @@ class WooPaymentsDisputeEventHandler {
 	private WooPaymentsOrderNoteService $order_note_service;
 
 	/**
-	 * Order payment store.
+	 * Order payment lock.
 	 *
 	 * @var OrderPaymentLock
 	 */
 	private OrderPaymentLock $order_payment_lock;
 
 	/**
-	 * WooPayments persistence profile.
+	 * WooPayments persistence vocabulary.
 	 *
 	 * @var WooPaymentsPersistenceVocabulary
 	 */
@@ -93,11 +94,11 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient             $api_client             Native WooPayments API client.
+	 * @param WooPaymentsApiClient             $api_client             WooPayments API client.
 	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service  Dispute cache service.
 	 * @param WooPaymentsOrderNoteService      $order_note_service     WooPayments order note service.
-	 * @param OrderPaymentLock                 $order_payment_lock     Order payment store.
-	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence profile.
+	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
 	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder Recorder of events on another charge.
 	 */
@@ -193,8 +194,8 @@ class WooPaymentsDisputeEventHandler {
 						$this->add_open_dispute_id( $order, $dispute_id );
 						$order->update_status( OrderStatus::ON_HOLD );
 					},
-					// Plugin versions predating the dispute-ID suffix wrote the bare note;
-					// on a cutover store the replayed webhook must still match it.
+					// Notes written before the dispute ID was appended carry none;
+					// a redelivered event must still match such a note.
 					array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry, $balance_transaction_id ) )
 				);
 			}
@@ -296,8 +297,8 @@ class WooPaymentsDisputeEventHandler {
 					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
 				}
 			},
-			// Plugin versions predating the dispute-ID suffix wrote the bare note;
-			// on a cutover store the replayed webhook must still match it.
+			// Notes written before the dispute ID was appended carry none;
+			// a redelivered event must still match such a note.
 			array( $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry, $balance_transaction_id ) )
 		);
 	}
@@ -735,7 +736,7 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string   $event_status Provider dispute status.
 	 * @param string   $note_type    Stable note type.
 	 * @param callable $before_add   Side effects to apply only when the note is new.
-	 * @param string[] $equivalent_notes Equivalent note texts written by other implementations or versions.
+	 * @param string[] $equivalent_notes Other wordings that count as the same note, such as one without the dispute ID.
 	 * @return bool True when the note was added.
 	 */
 	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null, array $equivalent_notes = array() ): bool {
@@ -753,7 +754,7 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * A concurrent delivery for the same order, such as a duplicate close or a sibling dispute's created event,
 	 * writes under the same lock, so the change sees those writes instead of overwriting them from a stale read.
-	 * Client 11.1.0 takes no lock in its dispute handlers; this is a recorded better-than-client row.
+	 * Client 11.1.0 takes no lock in its dispute handlers.
 	 *
 	 * The change runs only when the disputed charge is the order's own payment; a dispute on another charge is recorded
 	 * instead, with one note and one warning line, and the order keeps its status.
