@@ -7,9 +7,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -276,6 +278,44 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should send no order to tracking when a wcpay_prepare_fraud_config callback turns Sift off.
+	 *
+	 * In client 11.1.0 a null config from the filter means the service should not be used (class-wc-payments-fraud-service.php:130),
+	 * and order tracking stops on it with `isset( ...['sift'] )` (class-wc-payment-gateway-wcpay.php:4495).
+	 */
+	public function test_sends_no_order_to_tracking_when_a_filter_turns_sift_off(): void {
+		add_filter(
+			'wcpay_prepare_fraud_config',
+			static fn( $config, $service_id ) => 'sift' === $service_id ? null : $config,
+			10,
+			2
+		);
+		$tracked_orders = 0;
+		$api_client     = $this->create_api_client();
+		$api_client->method( 'track_order' )->willReturnCallback(
+			static function () use ( &$tracked_orders ): array {
+				++$tracked_orders;
+				return array( 'result' => 'success' );
+			}
+		);
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler, $api_client, null, $this->create_fraud_service_with_sift_configured() );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+			)
+		);
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+		foreach ( $scheduler->scheduled_jobs as $job ) {
+			$service->handle_wcpay_track_new_order( $job['args']['order_id'] );
+		}
+
+		$this->assertSame( 0, $tracked_orders );
 	}
 
 	/**
@@ -621,6 +661,39 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 			->willReturnCallback(
 				fn(): array => $this->fraud_services_config
 			);
+
+		return $fraud_service;
+	}
+
+	/**
+	 * Create a fraud service that runs its config through the wcpay_prepare_fraud_config filter, with Sift configured on the account.
+	 *
+	 * The account payload's `fraud_services` map is the shape client 11.1.0 reads (class-wc-payments-fraud-service.php:99-100).
+	 *
+	 * @return WooPaymentsFraudService
+	 */
+	private function create_fraud_service_with_sift_configured(): WooPaymentsFraudService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'fraud_services' => array(
+					'sift' => array(
+						'beacon_key'         => 'prod_beacon',
+						'sandbox_beacon_key' => 'sandbox_beacon',
+					),
+				),
+			)
+		);
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+
+		$session_service = $this->createMock( WooPaymentsSessionService::class );
+		$session_service->method( 'get_sift_session_id' )->willReturn( 'sess_123' );
+
+		$fraud_service = new WooPaymentsFraudService();
+		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $session_service, $this->createMock( WooPaymentsApiClient::class ) );
 
 		return $fraud_service;
 	}

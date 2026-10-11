@@ -356,12 +356,14 @@ class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
 	/**
 	 * Tell whether Sift order tracking is enabled.
 	 *
+	 * A null Sift config means a `wcpay_prepare_fraud_config` callback turned Sift off.
+	 *
 	 * @return bool
 	 */
 	private function is_sift_tracking_enabled(): bool {
 		$config = $this->fraud_service->get_fraud_services_config();
 
-		return array_key_exists( 'sift', $config );
+		return isset( $config['sift'] );
 	}
 
 	/**
