@@ -204,3 +204,7 @@ The retained native contract is assembled-product checkout readiness. On one pop
 ### Accepted risk
 
 The retained smoke does not detect a checkout that remains functional but becomes slower. That is accepted here because the source rows also lacked a pass/fail performance contract. A future benchmark should be designed as an owned performance programme rather than inferred from these migration rows.
+
+## 2026-10-11 — Frozen columns keep the names from the analysis
+
+The frozen upstream columns of `client-contract-map.tsv`, `native_owner_paths` among them, are the snapshot taken when the parity inventory was built, and the validator keeps them unchanged through their pinned hash. They may name native files that have since been renamed, such as `WooPaymentsCheckoutBridge.php`, now `WooPaymentsCheckoutAssets.php`. The current owner of each contract is in the editable `target_path` and `target_contract` columns, which follow every rename.
