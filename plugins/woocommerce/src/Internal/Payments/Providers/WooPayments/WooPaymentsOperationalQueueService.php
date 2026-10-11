@@ -394,7 +394,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	/**
 	 * Get the currency codes the enabled payment methods are restricted to, among the methods WooPayments registers on this store.
 	 *
-	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's default currency, like the plugin's per-method currency resolution.
+	 * A method with no currency restriction contributes nothing; domestic-only methods require the account's domestic currency, the currency of the account's country, like the plugin's per-method currency resolution.
 	 *
 	 * @return string[]
 	 */
@@ -416,7 +416,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			}
 
 			if ( in_array( WooPaymentsPaymentMethodRegistry::DOMESTIC_TRANSACTIONS_ONLY, $definition->get_capabilities(), true ) ) {
-				$codes[] = strtoupper( $this->account_service->get_account_default_currency() );
+				$codes[] = strtoupper( $this->account_service->get_account_domestic_currency() );
 				continue;
 			}
 

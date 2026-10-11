@@ -884,6 +884,53 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 requires the account's domestic currency, the currency of the account's country, for a domestic-only method
+	 * (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:71`, `:81`).
+	 *
+	 * @testdox Should auto-enable the account country's currency for a domestic-only method, not the account's default currency.
+	 */
+	public function test_settings_save_auto_adds_the_domestic_currency_for_a_domestic_only_method(): void {
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		$this->register_unavailable_rate_provider();
+		update_option(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY,
+			array(
+				'data'               => array(
+					'currencies' => array(
+						'cad' => 1.37,
+						'eur' => 0.9,
+					),
+					'updated'    => 123456,
+				),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+
+		// A CA account whose default currency is EUR. The account fields follow the recorded
+		// Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
+		$account_service = $this->create_account_service(
+			array(
+				'account_id'       => 'acct_native_test',
+				'country'          => 'CA',
+				'store_currencies' => array( 'default' => 'eur' ),
+			)
+		);
+		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service->register();
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'affirm' ) ) );
+
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
+		$this->assertIsArray( $enabled_currencies );
+		$this->assertContains( 'CAD', $enabled_currencies, 'Enabling Affirm on a CA account must auto-enable CAD.' );
+		$this->assertNotContains( 'EUR', $enabled_currencies, 'The account default currency is not what Affirm requires.' );
+	}
+
+	/**
 	 * Register an unavailable automatic-rate provider so the test exercises the production cache-fallback path.
 	 */
 	private function register_unavailable_rate_provider(): void {
