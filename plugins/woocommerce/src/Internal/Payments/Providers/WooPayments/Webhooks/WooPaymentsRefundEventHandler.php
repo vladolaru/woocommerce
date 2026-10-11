@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -414,17 +415,24 @@ class WooPaymentsRefundEventHandler {
 		$formatted_amount = WooPaymentsCurrencyUtils::format_explicit_order_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency, $order );
 		$status           = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
 		$suffix           = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
-		$note             = sprintf(
-			/* translators: %1$s: refund amount, %2$s: refund status, %3$s: WooPayments, %4$s: provider refund ID, %5$s: failure message or period. */
-			__( 'A refund of %1$s was <strong>%2$s</strong> using %3$s (<code>%4$s</code>)%5$s', 'woocommerce' ),
+
+		// As client 11.1.0 writes it (class-wc-payments-order-service.php:1979-1993): the text is escaped around its tags, and
+		// each value is escaped where it is built, so the amount keeps the <bdi> wc_price() puts in it.
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: refund amount, %2$s: refund status, %3$s: WooPayments, %4$s: provider refund ID, %5$s: failure message or period. */
+				__( 'A refund of %1$s was <strong>%2$s</strong> using %3$s (<code>%4$s</code>)%5$s', 'woocommerce' ),
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
 			$formatted_amount,
 			$status,
 			'WooPayments',
 			esc_html( $refund_id ),
 			$suffix
 		);
-
-		return wp_kses_post( $note );
 	}
 
 	/**
@@ -440,23 +448,30 @@ class WooPaymentsRefundEventHandler {
 			$order->get_currency()
 		);
 
+		// As client 11.1.0 writes it (class-wc-payments-order-service.php:3157-3170, :3178-3189): the text is escaped around its
+		// tags, so the amount keeps the <bdi> wc_price() puts in it.
 		if ( $this->is_frod_supported( $this->account_service->get_account_country_or_us() ) ) {
-			$learn_more_url = 'https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds';
-			$note           = sprintf(
-				/* translators: 1: Formatted refund amount, 2: Learn more URL. */
-				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="%2$s" target="_blank" rel="noopener noreferrer">Learn more</a>.', 'woocommerce' ),
-				$formatted_amount,
-				esc_url( $learn_more_url )
-			);
-		} else {
-			$note = sprintf(
-				/* translators: %1$s: Formatted refund amount. */
-				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.', 'woocommerce' ),
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %s: Formatted refund amount. */
+					__( 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a>Learn more</a>.', 'woocommerce' ),
+					array(
+						'strong' => '<strong>',
+						'a'      => '<a href="' . esc_url( 'https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds' ) . '" target="_blank" rel="noopener noreferrer">',
+					)
+				),
 				$formatted_amount
 			);
 		}
 
-		return wp_kses_post( $note );
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: Formatted refund amount. */
+				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.', 'woocommerce' ),
+				array( 'strong' => '<strong>' )
+			),
+			$formatted_amount
+		);
 	}
 
 	/**
@@ -754,20 +769,20 @@ class WooPaymentsRefundEventHandler {
 	private function get_refund_failure_message( string $failure_reason ): string {
 		switch ( $failure_reason ) {
 			case 'lost_or_stolen_card':
-				return __( 'The card used for the original payment has been reported lost or stolen.', 'woocommerce' );
+				return esc_html__( 'The card used for the original payment has been reported lost or stolen.', 'woocommerce' );
 			case 'expired_or_canceled_card':
-				return __( 'The card used for the original payment has expired or been canceled.', 'woocommerce' );
+				return esc_html__( 'The card used for the original payment has expired or been canceled.', 'woocommerce' );
 			case 'charge_for_pending_refund_disputed':
-				return __( 'The charge for this refund is being disputed by the customer.', 'woocommerce' );
+				return esc_html__( 'The charge for this refund is being disputed by the customer.', 'woocommerce' );
 			case 'insufficient_funds':
-				return __( 'Insufficient funds in your WooPayments balance.', 'woocommerce' );
+				return esc_html__( 'Insufficient funds in your WooPayments balance.', 'woocommerce' );
 			case 'declined':
-				return __( 'The refund was declined by the card issuer.', 'woocommerce' );
+				return esc_html__( 'The refund was declined by the card issuer.', 'woocommerce' );
 			case 'merchant_request':
-				return __( 'The refund was canceled at your request.', 'woocommerce' );
+				return esc_html__( 'The refund was canceled at your request.', 'woocommerce' );
 		}
 
-		return __( 'An unknown error occurred while processing the refund.', 'woocommerce' );
+		return esc_html__( 'An unknown error occurred while processing the refund.', 'woocommerce' );
 	}
 
 	/**

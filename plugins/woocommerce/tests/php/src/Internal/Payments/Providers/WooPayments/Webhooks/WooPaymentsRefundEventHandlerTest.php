@@ -183,6 +183,59 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $status refund update on an order carrying the note the WooPayments extension wrote for it adds no second note.
+	 *
+	 * Client 11.1.0 writes the failed or cancelled note in handle_failed_refund() (class-wc-payments-order-service.php:1979-1999),
+	 * deduped by exact text, and the insufficient-balance note with FROD support in handle_insufficient_balance_for_refund()
+	 * and get_frod_support_note() (:3065-3077, :3157-3170). The amount is wc_price() output, whose <bdi> the notes keep.
+	 *
+	 * @dataProvider woopayments_extension_failed_refund_note_provider
+	 *
+	 * @param string $status                Refund status in the event.
+	 * @param string $failure_reason        Refund failure reason in the event.
+	 * @param string $extension_note_format The extension's note, with %s for the formatted amount.
+	 */
+	public function test_failed_refund_update_recognises_the_woopayments_extension_note( string $status, string $failure_reason, string $extension_note_format ): void {
+		$order          = $this->create_refundable_order();
+		$extension_note = sprintf( $extension_note_format, wc_price( 4.00, array( 'currency' => 'USD' ) ) );
+		$order->add_order_note( $extension_note );
+
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'             => 're_123',
+				'charge'         => 'ch_123',
+				'amount'         => 400,
+				'currency'       => 'usd',
+				'status'         => $status,
+				'failure_reason' => $failure_reason,
+			)
+		);
+
+		$refund_notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'efund of' )
+			)
+		);
+		$this->assertCount( 1, $refund_notes );
+		$this->assertSame( $extension_note, $refund_notes[0]->content );
+	}
+
+	/**
+	 * Refund failure notes as the WooPayments extension writes them.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function woopayments_extension_failed_refund_note_provider(): array {
+		return array(
+			'failed, lost or stolen card' => array( 'failed', 'lost_or_stolen_card', 'A refund of %s was <strong>unsuccessful</strong> using WooPayments (<code>re_123</code>): The card used for the original payment has been reported lost or stolen.' ),
+			'canceled'                    => array( 'canceled', 'merchant_request', 'A refund of %s was <strong>cancelled</strong> using WooPayments (<code>re_123</code>).' ),
+			'failed, insufficient funds'  => array( 'failed', 'insufficient_funds', 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds" target="_blank" rel="noopener noreferrer">Learn more</a>.' ),
+		);
+	}
+
+	/**
 	 * @testdox A successful synchronous refund and its webhook converge on one canonical note and refund row.
 	 */
 	public function test_successful_synchronous_refund_followed_by_webhook_converges(): void {
