@@ -55,27 +55,6 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Payment processing service, resolved when a renewal runs.
-	 *
-	 * @var PaymentProcessingService|null
-	 */
-	private ?PaymentProcessingService $processing_service = null;
-
-	/**
-	 * WooPayments provider, resolved when a renewal runs.
-	 *
-	 * @var WooPaymentsProvider|null
-	 */
-	private ?WooPaymentsProvider $provider = null;
-
-	/**
-	 * WooPayments token service, resolved on first use.
-	 *
-	 * @var WooPaymentsTokenService|null
-	 */
-	private ?WooPaymentsTokenService $token_service = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -246,7 +225,9 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$token = $this->get_payment_token_from_order( $renewal_order );
-		if ( ! $token instanceof WC_Payment_Token && ! $this->is_network_saved_cards_enabled() ) {
+		// A site that uses only network-wide saved cards keeps the token outside the site, so the local repair must not
+		// re-localize it.
+		if ( ! $token instanceof WC_Payment_Token && ! wc_get_container()->get( WooPaymentsAccountService::class )->is_network_saved_cards_enabled() ) {
 			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
 		}
 
@@ -657,28 +638,12 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the site only uses network-wide saved payment methods.
-	 *
-	 * On such networks the token intentionally lives outside the site, so the local
-	 * repair must not run and re-localize it.
-	 *
-	 * @return bool
-	 */
-	private function is_network_saved_cards_enabled(): bool {
-		return $this->get_account_service()->is_network_saved_cards_enabled();
-	}
-
-	/**
 	 * Get the payment processing service.
 	 *
 	 * @return PaymentProcessingService
 	 */
 	private function get_processing_service(): PaymentProcessingService {
-		if ( null === $this->processing_service ) {
-			$this->processing_service = wc_get_container()->get( PaymentProcessingService::class );
-		}
-
-		return $this->processing_service;
+		return wc_get_container()->get( PaymentProcessingService::class );
 	}
 
 	/**
@@ -687,11 +652,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 * @return WooPaymentsProvider
 	 */
 	private function get_provider(): WooPaymentsProvider {
-		if ( null === $this->provider ) {
-			$this->provider = wc_get_container()->get( WooPaymentsProvider::class );
-		}
-
-		return $this->provider;
+		return wc_get_container()->get( WooPaymentsProvider::class );
 	}
 
 	/**
@@ -700,20 +661,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 * @return WooPaymentsTokenService
 	 */
 	private function get_token_service(): WooPaymentsTokenService {
-		if ( null === $this->token_service ) {
-			$this->token_service = wc_get_container()->get( WooPaymentsTokenService::class );
-		}
-
-		return $this->token_service;
-	}
-
-	/**
-	 * Get the WooPayments account service.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_account_service(): WooPaymentsAccountService {
-		return wc_get_container()->get( WooPaymentsAccountService::class );
+		return wc_get_container()->get( WooPaymentsTokenService::class );
 	}
 
 	/**

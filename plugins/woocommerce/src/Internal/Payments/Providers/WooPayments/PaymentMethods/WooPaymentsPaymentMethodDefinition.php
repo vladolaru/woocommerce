@@ -47,15 +47,6 @@ final class WooPaymentsPaymentMethodDefinition {
 	}
 
 	/**
-	 * Get duplicate-detection keywords for the payment method.
-	 *
-	 * @return string[]
-	 */
-	public function get_keywords(): array {
-		return $this->get_string_array_config( 'keywords' );
-	}
-
-	/**
 	 * Get the Stripe capability/payment method key.
 	 *
 	 * @return string

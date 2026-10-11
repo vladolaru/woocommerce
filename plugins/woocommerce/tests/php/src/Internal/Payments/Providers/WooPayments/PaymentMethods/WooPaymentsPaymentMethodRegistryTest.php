@@ -162,7 +162,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 
 		$this->assertNotNull( $definition );
 		$this->assertSame( $payment_method_id, $definition->get_id() );
-		$this->assertSame( $expected['keywords'], $definition->get_keywords() );
 		$this->assertSame( $expected['stripe_id'], $definition->get_stripe_id() );
 		$this->assertSame( $expected['stripe_payment_method_type'], $definition->get_stripe_payment_method_type() );
 		$this->assertSame( $expected['title'], $definition->get_title() );
@@ -394,7 +393,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'card'              => array(
 				'card',
 				array(
-					'keywords'                   => array( 'card', 'credit card', 'debit card', 'cc' ),
 					'stripe_id'                  => 'card_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Card',
@@ -410,7 +408,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'affirm'            => array(
 				'affirm',
 				array(
-					'keywords'                   => array( 'affirm' ),
 					'stripe_id'                  => 'affirm_payments',
 					'stripe_payment_method_type' => 'affirm',
 					'title'                      => 'Affirm',
@@ -426,7 +423,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'afterpay_clearpay' => array(
 				'afterpay_clearpay',
 				array(
-					'keywords'                   => array( 'afterpay', 'clearpay' ),
 					'stripe_id'                  => 'afterpay_clearpay_payments',
 					'stripe_payment_method_type' => 'afterpay_clearpay',
 					'title'                      => 'Afterpay',
@@ -442,7 +438,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'alipay'            => array(
 				'alipay',
 				array(
-					'keywords'                   => array( 'alipay' ),
 					'stripe_id'                  => 'alipay_payments',
 					'stripe_payment_method_type' => 'alipay',
 					'title'                      => 'Alipay',
@@ -458,7 +453,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'bancontact'        => array(
 				'bancontact',
 				array(
-					'keywords'                   => array( 'bancontact' ),
 					'stripe_id'                  => 'bancontact_payments',
 					'stripe_payment_method_type' => 'bancontact',
 					'title'                      => 'Bancontact',
@@ -474,7 +468,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'au_becs_debit'     => array(
 				'au_becs_debit',
 				array(
-					'keywords'                   => array( 'becs' ),
 					'stripe_id'                  => 'au_becs_debit_payments',
 					'stripe_payment_method_type' => 'au_becs_debit',
 					'title'                      => 'BECS Direct Debit',
@@ -490,7 +483,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'eps'               => array(
 				'eps',
 				array(
-					'keywords'                   => array( 'eps' ),
 					'stripe_id'                  => 'eps_payments',
 					'stripe_payment_method_type' => 'eps',
 					'title'                      => 'EPS',
@@ -506,7 +498,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'grabpay'           => array(
 				'grabpay',
 				array(
-					'keywords'                   => array( 'grabpay', 'grab_pay', 'grab' ),
 					'stripe_id'                  => 'grabpay_payments',
 					'stripe_payment_method_type' => 'grabpay',
 					'title'                      => 'GrabPay',
@@ -522,7 +513,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'ideal'             => array(
 				'ideal',
 				array(
-					'keywords'                   => array( 'ideal' ),
 					'stripe_id'                  => 'ideal_payments',
 					'stripe_payment_method_type' => 'ideal',
 					'title'                      => 'iDEAL | Wero',
@@ -539,7 +529,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'link'              => array(
 				'link',
 				array(
-					'keywords'                   => array( 'link', 'stripe link' ),
 					'stripe_id'                  => 'link_payments',
 					'stripe_payment_method_type' => 'link',
 					'title'                      => 'Link',
@@ -555,7 +544,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'multibanco'        => array(
 				'multibanco',
 				array(
-					'keywords'                   => array( 'multibanco' ),
 					'stripe_id'                  => 'multibanco_payments',
 					'stripe_payment_method_type' => 'multibanco',
 					'title'                      => 'Multibanco',
@@ -571,7 +559,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'klarna'            => array(
 				'klarna',
 				array(
-					'keywords'                   => array( 'klarna' ),
 					'stripe_id'                  => 'klarna_payments',
 					'stripe_payment_method_type' => 'klarna',
 					'title'                      => 'Klarna',
@@ -587,7 +574,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'p24'               => array(
 				'p24',
 				array(
-					'keywords'                   => array( 'p24', 'przelewy24' ),
 					'stripe_id'                  => 'p24_payments',
 					'stripe_payment_method_type' => 'p24',
 					'title'                      => 'Przelewy24 (P24)',
@@ -603,7 +589,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'sepa_debit'        => array(
 				'sepa_debit',
 				array(
-					'keywords'                   => array( 'sepa' ),
 					'stripe_id'                  => 'sepa_debit_payments',
 					'stripe_payment_method_type' => 'sepa_debit',
 					'title'                      => 'SEPA Direct Debit',
@@ -619,7 +604,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'wechat_pay'        => array(
 				'wechat_pay',
 				array(
-					'keywords'                   => array( 'wechat_pay', 'wechatpay' ),
 					'stripe_id'                  => 'wechat_pay_payments',
 					'stripe_payment_method_type' => 'wechat_pay',
 					'title'                      => 'WeChat Pay',
@@ -635,7 +619,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'apple_pay'         => array(
 				'apple_pay',
 				array(
-					'keywords'                   => array( 'apple_pay', 'applepay' ),
 					'stripe_id'                  => 'apple_pay_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Apple Pay',
@@ -651,7 +634,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'google_pay'        => array(
 				'google_pay',
 				array(
-					'keywords'                   => array( 'google_pay', 'googlepay', 'gpay' ),
 					'stripe_id'                  => 'google_pay_payments',
 					'stripe_payment_method_type' => 'card',
 					'title'                      => 'Google Pay',
@@ -667,7 +649,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 			'amazon_pay'        => array(
 				'amazon_pay',
 				array(
-					'keywords'                   => array( 'amazon_pay', 'amazonpay', 'amazon' ),
 					'stripe_id'                  => 'amazon_pay_payments',
 					'stripe_payment_method_type' => 'amazon_pay',
 					'title'                      => 'Amazon Pay',

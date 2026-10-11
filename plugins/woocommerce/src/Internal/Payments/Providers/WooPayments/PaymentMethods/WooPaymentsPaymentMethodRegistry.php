@@ -222,7 +222,6 @@ class WooPaymentsPaymentMethodRegistry {
 		return array(
 			array(
 				'id'                         => 'card',
-				'keywords'                   => array( 'card', 'credit card', 'debit card', 'cc' ),
 				'stripe_id'                  => 'card_payments',
 				'stripe_payment_method_type' => 'card',
 				'title'                      => 'Card',
@@ -240,7 +239,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'affirm',
-				'keywords'                   => array( 'affirm' ),
 				'stripe_id'                  => 'affirm_payments',
 				'stripe_payment_method_type' => 'affirm',
 				'title'                      => 'Affirm',
@@ -273,7 +271,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'afterpay_clearpay',
-				'keywords'                   => array( 'afterpay', 'clearpay' ),
 				'stripe_id'                  => 'afterpay_clearpay_payments',
 				'stripe_payment_method_type' => 'afterpay_clearpay',
 				'title'                      => 'Afterpay',
@@ -344,7 +341,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'alipay',
-				'keywords'                   => array( 'alipay' ),
 				'stripe_id'                  => 'alipay_payments',
 				'stripe_payment_method_type' => 'alipay',
 				'title'                      => 'Alipay',
@@ -377,7 +373,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'bancontact',
-				'keywords'                   => array( 'bancontact' ),
 				'stripe_id'                  => 'bancontact_payments',
 				'stripe_payment_method_type' => 'bancontact',
 				'title'                      => 'Bancontact',
@@ -389,7 +384,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'au_becs_debit',
-				'keywords'                   => array( 'becs' ),
 				'stripe_id'                  => 'au_becs_debit_payments',
 				'stripe_payment_method_type' => 'au_becs_debit',
 				'title'                      => 'BECS Direct Debit',
@@ -401,7 +395,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'eps',
-				'keywords'                   => array( 'eps' ),
 				'stripe_id'                  => 'eps_payments',
 				'stripe_payment_method_type' => 'eps',
 				'title'                      => 'EPS',
@@ -414,7 +407,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'grabpay',
-				'keywords'                   => array( 'grabpay', 'grab_pay', 'grab' ),
 				'stripe_id'                  => 'grabpay_payments',
 				'stripe_payment_method_type' => 'grabpay',
 				'title'                      => 'GrabPay',
@@ -429,7 +421,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'ideal',
-				'keywords'                   => array( 'ideal' ),
 				'stripe_id'                  => 'ideal_payments',
 				'stripe_payment_method_type' => 'ideal',
 				'title'                      => 'iDEAL | Wero',
@@ -445,7 +436,6 @@ class WooPaymentsPaymentMethodRegistry {
 			array(
 				'id'                         => 'link',
 				'publish_gateway'            => false,
-				'keywords'                   => array( 'link', 'stripe link' ),
 				'stripe_id'                  => 'link_payments',
 				'stripe_payment_method_type' => 'link',
 				'title'                      => 'Link',
@@ -460,7 +450,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'multibanco',
-				'keywords'                   => array( 'multibanco' ),
 				'stripe_id'                  => 'multibanco_payments',
 				'stripe_payment_method_type' => 'multibanco',
 				'title'                      => 'Multibanco',
@@ -474,7 +463,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'klarna',
-				'keywords'                   => array( 'klarna' ),
 				'stripe_id'                  => 'klarna_payments',
 				'stripe_payment_method_type' => 'klarna',
 				'title'                      => 'Klarna',
@@ -563,7 +551,6 @@ class WooPaymentsPaymentMethodRegistry {
 			array(
 				'id'                         => 'p24',
 				'offered_to_new_accounts'    => false,
-				'keywords'                   => array( 'p24', 'przelewy24' ),
 				'stripe_id'                  => 'p24_payments',
 				'stripe_payment_method_type' => 'p24',
 				'title'                      => 'Przelewy24 (P24)',
@@ -575,7 +562,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'sepa_debit',
-				'keywords'                   => array( 'sepa' ),
 				'stripe_id'                  => 'sepa_debit_payments',
 				'stripe_payment_method_type' => 'sepa_debit',
 				'title'                      => 'SEPA Direct Debit',
@@ -587,7 +573,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'wechat_pay',
-				'keywords'                   => array( 'wechat_pay', 'wechatpay' ),
 				'stripe_id'                  => 'wechat_pay_payments',
 				'stripe_payment_method_type' => 'wechat_pay',
 				'title'                      => 'WeChat Pay',
@@ -623,7 +608,6 @@ class WooPaymentsPaymentMethodRegistry {
 			array(
 				'id'                         => 'apple_pay',
 				'account_capability_key'     => 'card_payments',
-				'keywords'                   => array( 'apple_pay', 'applepay' ),
 				'stripe_id'                  => 'apple_pay_payments',
 				'stripe_payment_method_type' => 'card',
 				'title'                      => 'Apple Pay',
@@ -642,7 +626,6 @@ class WooPaymentsPaymentMethodRegistry {
 			array(
 				'id'                         => 'google_pay',
 				'account_capability_key'     => 'card_payments',
-				'keywords'                   => array( 'google_pay', 'googlepay', 'gpay' ),
 				'stripe_id'                  => 'google_pay_payments',
 				'stripe_payment_method_type' => 'card',
 				'title'                      => 'Google Pay',
@@ -660,7 +643,6 @@ class WooPaymentsPaymentMethodRegistry {
 			),
 			array(
 				'id'                         => 'amazon_pay',
-				'keywords'                   => array( 'amazon_pay', 'amazonpay', 'amazon' ),
 				'stripe_id'                  => 'amazon_pay_payments',
 				'stripe_payment_method_type' => 'amazon_pay',
 				'title'                      => 'Amazon Pay',
