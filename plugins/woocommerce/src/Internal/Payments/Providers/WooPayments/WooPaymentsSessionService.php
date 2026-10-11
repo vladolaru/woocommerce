@@ -112,7 +112,7 @@ class WooPaymentsSessionService {
 	 * @return string
 	 */
 	private function generate_session_id( string $session_customer_id ): string {
-		return $this->get_store_id() . '_' . $session_customer_id;
+		return $this->get_or_create_store_id() . '_' . $session_customer_id;
 	}
 
 	/**
@@ -120,7 +120,7 @@ class WooPaymentsSessionService {
 	 *
 	 * @return string
 	 */
-	private function get_store_id(): string {
+	private function get_or_create_store_id(): string {
 		$store_id = get_option( self::SESSION_STORE_ID_OPTION, false );
 		if ( ! is_string( $store_id ) || '' === $store_id ) {
 			// 'st_' prefix plus alphanumerics only, within Sift's user_id charset.
