@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use ReflectionClass;
 use RuntimeException;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -80,21 +79,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Invoke a private method on the System Under Test.
-	 *
-	 * @param string       $method Method name.
-	 * @param array<mixed> $args   Method arguments.
-	 * @return mixed
-	 */
-	private function invoke_private( string $method, array $args ) {
-		$reflection = new ReflectionClass( $this->sut );
-		$method     = $reflection->getMethod( $method );
-		$method->setAccessible( true );
-
-		return $method->invokeArgs( $this->sut, $args );
-	}
-
-	/**
 	 * @testdox A charge.dispute.closed event escapes its status in the closed note it writes.
 	 *
 	 * @dataProvider provider_dispute_closed_note_escapes_status
@@ -135,7 +119,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dispute amounts follow the WooPayments extension's explicit-price rule.
+	 * @testdox The amount in a charge.dispute.created note follows the WooPayments extension's explicit-price rule.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 (dispute amount) and
 	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
@@ -173,12 +157,19 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 				return $filter_result ?? $current_default;
 			}
 		);
-		$order = wc_create_order();
+		$order = $this->create_disputable_order();
 		$order->set_currency( $order_currency );
+		$order->update_meta_data( '_charge_id', 'ch_amount' );
+		$order->save();
+		$event           = $this->get_created_event_object( 'dp_amount', 'needs_response' );
+		$event['charge'] = 'ch_amount';
+		$event['amount'] = 5000;
 
-		$amount = $this->invoke_private( 'get_formatted_dispute_amount', array( $order, 5000 ) );
+		$this->sut->process( 'charge.dispute.created', $event );
 
-		$this->assertSame( $expected, html_entity_decode( wp_strip_all_tags( $amount ) ) );
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), 'Payment has been disputed for' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'disputed for ' . $expected . ' with reason', html_entity_decode( wp_strip_all_tags( $notes[0]->content ) ) );
 		$this->assertSame( array( $expected_default ), $defaults, 'The filter must run once per amount with the client default.' );
 	}
 

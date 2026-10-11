@@ -1420,8 +1420,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param string|null $expected_failure  Message the delivery fails with, or null when it succeeds.
 	 * @param string      $expected_status   Order refund status the event writes.
 	 * @param string      $note_text         Status words of the created note the event adds.
+	 * @param bool        $save_hooks_see_it Whether the order save hooks see the written refund status (not when a save hook throws).
 	 */
-	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed( string $event_status, string $throwing_hook, ?string $expected_failure, string $expected_status, string $note_text ): void {
+	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed( string $event_status, string $throwing_hook, ?string $expected_failure, string $expected_status, string $note_text, bool $save_hooks_see_it ): void {
 		$order = $this->create_refundable_order();
 		// An earlier refund attempt on the order failed.
 		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
@@ -1457,6 +1458,18 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		if ( '' !== $throwing_hook ) {
 			add_action( $throwing_hook, $throwing );
 		}
+		// The writer saves the order after the refund status, as the client does (class-wc-payments-order-service.php:1948),
+		// so listeners on the order save hooks see it. On HPOS, save_meta_data() can also run a full save when the order's
+		// date_modified is older than the current second (OrdersTableDataStore::after_meta_change()); in the same second only
+		// the explicit save fires the hooks, so this check covers it whenever the test runs within the second the order was
+		// created, which is the usual case (carried item B-R30).
+		$saved_statuses = array();
+		$record_save    = static function ( $saved_order ) use ( $order, &$saved_statuses ): void {
+			if ( $saved_order instanceof WC_Order && $saved_order->get_id() === $order->get_id() ) {
+				$saved_statuses[] = $saved_order->get_meta( '_wcpay_refund_status', true );
+			}
+		};
+		add_action( 'woocommerce_after_order_object_save', $record_save );
 		$charge                                 = $this->get_successful_refund_charge();
 		$charge['refunds']['data'][0]['status'] = $event_status;
 		$failure                                = null;
@@ -1466,9 +1479,11 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			$failure = $exception->getMessage();
 		} finally {
 			remove_action( $throwing_hook, $throwing );
+			remove_action( 'woocommerce_after_order_object_save', $record_save );
 		}
 
 		$this->assertSame( $expected_failure, $failure );
+		$this->assertSame( $save_hooks_see_it, in_array( $expected_status, $saved_statuses, true ) );
 		$order   = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
 		$refunds = $order->get_refunds();
 		$this->assertCount( 1, $refunds );
@@ -1485,14 +1500,14 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Link-only refunds a charge.refunded completes.
 	 *
-	 * @return array<string,array{0:string,1:string,2:?string,3:string,4:string}>
+	 * @return array<string,array{0:string,1:string,2:?string,3:string,4:string,5:bool}>
 	 */
 	public function provider_link_only_refund_completion(): array {
 		return array(
-			'succeeded'        => array( 'succeeded', '', null, 'successful', 'was successfully processed' ),
-			'pending'          => array( 'pending', '', null, 'pending', 'is pending' ),
-			'note hook throws' => array( 'succeeded', 'woocommerce_order_note_added', 'A hook callback failed.', 'successful', 'was successfully processed' ),
-			'save hook throws' => array( 'succeeded', 'woocommerce_before_order_object_save', null, 'successful', 'was successfully processed' ),
+			'succeeded'        => array( 'succeeded', '', null, 'successful', 'was successfully processed', true ),
+			'pending'          => array( 'pending', '', null, 'pending', 'is pending', true ),
+			'note hook throws' => array( 'succeeded', 'woocommerce_order_note_added', 'A hook callback failed.', 'successful', 'was successfully processed', true ),
+			'save hook throws' => array( 'succeeded', 'woocommerce_before_order_object_save', null, 'successful', 'was successfully processed', false ),
 		);
 	}
 
