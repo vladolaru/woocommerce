@@ -261,7 +261,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 	public function get_disputes_export( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response(
-				$this->api_client->get_disputes_export(
+				$this->api_client->start_disputes_export(
 					$this->get_disputes_filters( $request ),
 					(string) $request->get_param( 'user_email' ),
 					$this->get_optional_string_param( $request, 'locale' )

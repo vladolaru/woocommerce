@@ -283,7 +283,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	public function get_transactions_export( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response(
-				$this->api_client->get_transactions_export(
+				$this->api_client->start_transactions_export(
 					$this->get_transactions_filters( $request ),
 					(string) $request->get_param( 'user_email' ),
 					$this->get_optional_string_param( $request, 'deposit_id' ),

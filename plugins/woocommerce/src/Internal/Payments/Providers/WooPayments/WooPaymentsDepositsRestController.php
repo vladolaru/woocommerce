@@ -240,7 +240,7 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	public function get_deposits_export( WP_REST_Request $request ) {
 		try {
 			return new WP_REST_Response(
-				$this->api_client->get_deposits_export(
+				$this->api_client->start_deposits_export(
 					$this->get_allowed_params( $request, self::SUMMARY_QUERY_PARAMS ),
 					(string) $request->get_param( 'user_email' ),
 					$this->get_optional_string_param( $request, 'locale' )

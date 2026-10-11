@@ -450,7 +450,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 		$this->server->dispatch( $export_request );
 
-		$this->assertSame( 'get_transactions_export', $this->api_client->last_call['method'] );
+		$this->assertSame( 'start_transactions_export', $this->api_client->last_call['method'] );
 		$this->assertSame(
 			array(
 				'type_is_in'    => array( 'refund' ),

@@ -103,9 +103,9 @@ class RecordingReportsApiClient extends WooPaymentsApiClient {
 	 * @param string|null         $locale Locale.
 	 * @return array<string,mixed>
 	 */
-	public function get_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
+	public function start_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
 		$this->record(
-			'get_transactions_export',
+			'start_transactions_export',
 			array(
 				'filters'    => $filters,
 				'user_email' => $user_email,

@@ -186,7 +186,7 @@ class RecordingDepositsApiClient extends WooPaymentsApiClient {
 	 * @param string|null         $locale     Locale.
 	 * @return array<string,mixed>
 	 */
-	public function get_deposits_export( array $query = array(), string $user_email = '', ?string $locale = null ): array {
+	public function start_deposits_export( array $query = array(), string $user_email = '', ?string $locale = null ): array {
 		$this->last_export_query      = $query;
 		$this->last_export_user_email = $user_email;
 		$this->last_export_locale     = $locale;

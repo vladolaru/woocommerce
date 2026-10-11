@@ -205,7 +205,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'get_disputes_export', $this->api_client->last_call['method'] );
+		$this->assertSame( 'start_disputes_export', $this->api_client->last_call['method'] );
 		$this->assertSame( 'usd', $this->api_client->last_call['filters']['currency_is'] );
 		$this->assertSame( '2026-06-18', $this->api_client->last_call['filters']['created_before'] );
 		$this->assertArrayNotHasKey( 'ignored', $this->api_client->last_call['filters'] );

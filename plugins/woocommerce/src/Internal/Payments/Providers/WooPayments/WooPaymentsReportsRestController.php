@@ -199,7 +199,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			unset( $filters['deposit_id'] );
 
 			return new WP_REST_Response(
-				$this->api_client->get_transactions_export(
+				$this->api_client->start_transactions_export(
 					$filters,
 					$this->get_scalar_param( $request, 'user_email' ),
 					$deposit_id,

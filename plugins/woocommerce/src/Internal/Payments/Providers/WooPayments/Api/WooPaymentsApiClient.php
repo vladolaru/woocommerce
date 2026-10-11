@@ -1232,7 +1232,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	public function get_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
+	public function start_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
 			$filters['user_email'] = $user_email;
 		}
@@ -1467,7 +1467,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	public function get_disputes_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
+	public function start_disputes_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
 			$filters['user_email'] = $user_email;
 		}
@@ -1546,7 +1546,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	public function get_deposits_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
+	public function start_deposits_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
 		if ( '' !== $user_email ) {
 			$filters['user_email'] = $user_email;
 		}

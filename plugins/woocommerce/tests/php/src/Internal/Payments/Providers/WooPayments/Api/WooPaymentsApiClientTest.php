@@ -4911,10 +4911,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the deposits export endpoint and body fields.
 	 */
-	public function test_get_deposits_export_uses_preserved_endpoint(): void {
+	public function test_start_deposits_export_uses_preserved_endpoint(): void {
 		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
 
-		$sut->get_deposits_export(
+		$sut->start_deposits_export(
 			array(
 				'status_is'         => 'paid',
 				'store_currency_is' => 'usd',
@@ -5506,7 +5506,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the transactions export endpoint and body fields.
 	 */
-	public function test_get_transactions_export_uses_preserved_endpoint(): void {
+	public function test_start_transactions_export_uses_preserved_endpoint(): void {
 		list( $sut, $http_client ) = $this->make_sut(
 			true,
 			array(
@@ -5515,7 +5515,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut->get_transactions_export( array( 'type_is' => 'charge' ), 'merchant@example.com', 'po_test', 'en_US' );
+		$sut->start_transactions_export( array( 'type_is' => 'charge' ), 'merchant@example.com', 'po_test', 'en_US' );
 		$export_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/transactions/download', $http_client->last_path );
@@ -5812,10 +5812,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the disputes export endpoint and body fields.
 	 */
-	public function test_get_disputes_export_uses_preserved_endpoint(): void {
+	public function test_start_disputes_export_uses_preserved_endpoint(): void {
 		list( $sut, $http_client ) = $this->make_disputes_sut();
 
-		$sut->get_disputes_export( array( 'status_is' => 'needs_response' ), 'merchant@example.com', 'en_US' );
+		$sut->start_disputes_export( array( 'status_is' => 'needs_response' ), 'merchant@example.com', 'en_US' );
 		$export_body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertSame( '/sites/123/wcpay/disputes/download', $http_client->last_path );

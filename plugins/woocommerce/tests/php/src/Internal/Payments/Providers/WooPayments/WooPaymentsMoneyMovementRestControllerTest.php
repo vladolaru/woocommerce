@@ -834,7 +834,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'get_transactions_export', $this->api_client->last_call['method'] );
+		$this->assertSame( 'start_transactions_export', $this->api_client->last_call['method'] );
 		$this->assertSame( 'usd', $this->api_client->last_call['filters']['store_currency_is'] );
 		$this->assertSame( array( 'charge', 'refund' ), $this->api_client->last_call['filters']['type_is_in'] );
 		$this->assertArrayNotHasKey( 'ignored', $this->api_client->last_call['filters'] );
