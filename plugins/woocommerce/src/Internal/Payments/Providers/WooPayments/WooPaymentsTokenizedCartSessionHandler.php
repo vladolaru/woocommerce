@@ -14,7 +14,7 @@ use RuntimeException;
  * WooPayments product-page tokenized cart session handler.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 

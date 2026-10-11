@@ -18,10 +18,11 @@ use Throwable;
 use WC_Order;
 
 /**
- * Handles native WooPayments redirect returns.
+ * Completes a WooPayments payment or setup when the shopper returns from a redirect payment method: confirms the intent
+ * onto its order, or fails the order and sends the shopper back to checkout.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
@@ -47,21 +48,21 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private WooPaymentsIntentConfirmationService $intent_confirmation_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native WooPayments token service.
+	 * WooPayments token service.
 	 *
 	 * @var WooPaymentsTokenService
 	 */
 	private WooPaymentsTokenService $token_service;
 
 	/**
-	 * Native WooPayments customer service.
+	 * WooPayments customer service.
 	 *
 	 * @var WooPaymentsCustomerService
 	 */
@@ -75,7 +76,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
-	 * Native WooPayments order note service.
+	 * WooPayments order note service.
 	 *
 	 * @var WooPaymentsOrderNoteService
 	 */
@@ -88,11 +89,11 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsRuntimeArbiter            $arbiter                     Runtime owner arbiter.
 	 * @param WooPaymentsIntentConfirmationService $intent_confirmation_service Intent confirmation service.
-	 * @param WooPaymentsApiClient                 $api_client                  Native WooPayments API client.
-	 * @param WooPaymentsTokenService              $token_service               Native WooPayments token service.
-	 * @param WooPaymentsCustomerService           $customer_service            Native WooPayments customer service.
+	 * @param WooPaymentsApiClient                 $api_client                  WooPayments API client.
+	 * @param WooPaymentsTokenService              $token_service               WooPayments token service.
+	 * @param WooPaymentsCustomerService           $customer_service            WooPayments customer service.
 	 * @param OrderPaymentLifecycleService         $lifecycle_service           Payment lifecycle service.
-	 * @param WooPaymentsOrderNoteService          $note_service                Native WooPayments order note service.
+	 * @param WooPaymentsOrderNoteService          $note_service                WooPayments order note service.
 	 */
 	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsIntentConfirmationService $intent_confirmation_service, WooPaymentsApiClient $api_client, WooPaymentsTokenService $token_service, WooPaymentsCustomerService $customer_service, OrderPaymentLifecycleService $lifecycle_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->arbiter                     = $arbiter;
@@ -171,8 +172,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		// Authorized divergence: client 11.1.0 binds only positive totals (gw:2302-2306, pending woocommerce-payments#6575);
-		// native stores every SetupIntent in `_intent_id` before the shopper is redirected (decided divergence, ledger V649).
+		// Client 11.1.0 binds only positive totals (gw:2302-2306, pending woocommerce-payments#6575); this code stores every
+		// SetupIntent in `_intent_id` before the shopper is redirected, so a zero-total order's intent is checked too.
 		$is_payment_intent = 0.0 < (float) $order->get_total();
 		if ( ! $this->order_matches_intent( $order, $intent_id ) ) {
 			$this->log_intent_mismatch( $intent_id, $order );
@@ -186,8 +187,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			$this->log_fetch_error( $order, $intent_id, $exception );
 
-			// Decided divergence (money hazard): client gw:2428-2444 fails the order read at request start, and its paid check
-			// (os:2863) misses on-hold, so a webhook that authorized the payment during the fetch leaves a charge on a failed order.
+			// Client gw:2428-2444 fails the order it read at request start, and its paid check (os:2863) misses on-hold, so a webhook
+			// that authorized the payment during the fetch can leave a charge on a failed order; the failure here reads the order
+			// again under the lock first.
 			$this->fail_and_return_to_checkout( $order, $intent_id, '', $exception->getMessage(), $this->get_shopper_message_for_error( $exception ), false );
 			return;
 		}
@@ -238,7 +240,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		if ( ! empty( $intent_error ) ) {
 			$logger  = wc_get_container()->get( WooPaymentsLogger::class );
 			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
-			// Client gw:2378 logs the error's message, which Stripe writes; native logs its listed codes instead.
+			// Client gw:2378 logs the error's message, which Stripe writes; this line logs its listed codes instead.
 			$logger->log( 'Error when processing payment.', 'info', $this->get_intent_error_log_context( $intent_error ) );
 			$logger->error( 'Error occurred during the redirect payment process. Exception: ' . $message, array( 'order_id' => $order->get_id() ) );
 			$this->fail_and_return_to_checkout( $fresh_order, $intent_id, $intent_status, null, $message, true );
@@ -261,8 +263,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			$this->log_failure_kept_for_settlement( $fresh_order, $intent_id, $intent_status, $exception );
 		}
 
-		// A requires_action intent stays on order-received until the webhook settles it: the client's next-action redirect
-		// (gw:2409-2426) cannot complete there (decided, monitor ruling on area 2a f18).
+		// A requires_action intent stays on order-received until the webhook settles it: client 11.1.0's next-action redirect
+		// (gw:2409-2426) cannot complete there.
 		if ( WooPaymentsIntentCodec::holds_money( $intent_status ) && null !== WC()->cart ) {
 			WC()->cart->empty_cart();
 		}
@@ -271,11 +273,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Log a confirmation failure on a PaymentIntent that has moved or held money, which leaves the order as it is.
 	 *
-	 * Better than the client (monitor ruling 2026-10-05): its catch (gw:2428-2455) fails the order for any Exception and
-	 * fatals on a PHP Error, so a succeeded, requires_capture or processing intent can end on a failed order with the money
-	 * taken. Native never fails such an order, whatever the throwable: the shopper stays on order-received with no notice,
-	 * and the webhook (or, when the platform could not deliver it, the failed-event fetch) settles the order, as at
-	 * checkout (review 34 F2, checkout ruling 4).
+	 * Client 11.1.0's catch (gw:2428-2455) fails the order for any Exception and fatals on a PHP Error, so a succeeded,
+	 * requires_capture or processing intent can end on a failed order with the money taken. This method never fails such an
+	 * order, whatever the throwable: the shopper stays on order-received with no notice, and the webhook (or, when the
+	 * platform could not deliver it, the failed-event fetch) settles the order, as at checkout.
 	 *
 	 * @param WC_Order  $order         Order object.
 	 * @param string    $intent_id     Requested intent ID.
@@ -299,13 +300,14 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * End the return as the client's catch does (gw:2428-2455): fail the order with the "UPE payment failed" note, add
+	 * End the return as client 11.1.0's catch does (gw:2428-2455): fail the order with the "UPE payment failed" note, add
 	 * the shopper notice and send the shopper back to checkout with the cart kept.
 	 *
-	 * The client catches only Exception, so a PHP Error fatals there; native takes the same path and logs it always-on.
+	 * Client 11.1.0 catches only Exception, so a PHP Error fatals there; this takes the same path and logs it whatever the
+	 * logging setting.
 	 * A confirmation failure on a PaymentIntent that moved or held money never comes here (log_failure_kept_for_settlement()).
-	 * Decided exceptions, through fail_order_unless_settled(): an order a fresh locked read shows as processing, completed
-	 * or on-hold keeps its order-received page (like the checkout ruling of review 34 F2), and an order locked by another
+	 * Two exceptions, through fail_order_unless_settled(): an order a fresh locked read shows as processing, completed
+	 * or on-hold keeps its order-received page, as at checkout, and an order locked by another
 	 * claim is left to that holder.
 	 *
 	 * @param WC_Order  $order         Order object.
@@ -324,13 +326,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * The shopper stays on order-received when the failure write was skipped (the order is settled, bound to another
 	 * intent, or locked by another holder) and the payment may have gone through, so a resubmit cannot pay a second time.
 	 * A failure write that throws still sends the shopper to checkout, with an always-on error line: no money moved on
-	 * these paths. An intent error proves this payment failed, so that return always goes back to checkout, as the
-	 * client's catch does (gw:2447-2454) even when its own write was skipped.
+	 * these paths. An intent error proves this payment failed, so that return always goes back to checkout, as client
+	 * 11.1.0's catch does (gw:2447-2454) even when its own write was skipped.
 	 *
 	 * @param WC_Order    $order          Order object.
 	 * @param string      $intent_id      Requested intent ID.
 	 * @param string      $intent_status  Fetched intent status, or '' when the fetch failed.
-	 * @param string|null $note_message   Message for the "UPE payment failed" note, or null for the client's intent-error message.
+	 * @param string|null $note_message   Message for the "UPE payment failed" note, or null for client 11.1.0's intent-error message.
 	 * @param string      $shopper_notice Shopper error notice.
 	 * @param bool        $payment_failed Whether the intent itself reported the failure.
 	 */
@@ -346,18 +348,18 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Fail the order after a failed return, unless a fresh read under the order payment lock shows it is settled.
 	 *
 	 * Webhooks write the order status under the same lock, so an on-hold written just before this claims the lock is seen
-	 * here (review 33 F1). The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
+	 * here. The lifecycle's own late-failure check stays on paid statuses only: a Multibanco voucher expiry
 	 * must still move an on-hold order to failed.
 	 *
 	 * When another claim holds the lock, the order is left to it: a webhook, another return or the order-status callback
 	 * writing this payment's status, a checkout of the same order in another tab, a refund or a capture. Nothing is
-	 * written, and an always-on warning names the holder's operation, lock value and age from the lock record (review 35
-	 * F4). The client also skips the write (os:2747-2758) but sends the shopper to checkout (gw:2447-2454), where a
+	 * written, and an always-on warning names the holder's operation, lock value and age from the lock record.
+	 * Client 11.1.0 also skips the write (os:2747-2758) but sends the shopper to checkout (gw:2447-2454), where a
 	 * resubmit can pay again while the holder is still at work; fail_and_return_to_checkout() decides where the shopper goes.
 	 *
 	 * @param WC_Order    $order             Order object.
 	 * @param string      $intent_id         Requested intent ID.
-	 * @param string|null $exception_message Message of the failure, or null for the client's intent-error message.
+	 * @param string|null $exception_message Message of the failure, or null for client 11.1.0's intent-error message.
 	 * @param string      $intent_status     Fetched intent status, or '' when the fetch failed.
 	 * @return bool Whether the shopper goes back to checkout; false when the order is settled, bound to another intent or
 	 *              locked by another holder.
@@ -389,7 +391,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 			$this->lifecycle_service->apply_under_lock( $fresh_order, $this->build_failure_event( $fresh_order, $intent_id, $exception_message, $intent_status ), $persistence_vocabulary );
 		} catch ( Throwable $failure ) {
-			// The order should be failed but is not, so support needs this line whatever the logging setting. The client's
+			// The order should be failed but is not, so support needs this line whatever the logging setting. Client 11.1.0's
 			// mark_payment_failed() in its catch (gw:2440) has no catch of its own, so the same failure is visible there.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
 				sprintf(
@@ -437,9 +439,9 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Get the shopper notice for what ended the return (client get_filtered_error_message(), utils:769-830).
 	 *
-	 * A platform error gets the client's mapped message. Any other throwable shows the generic message instead of its
-	 * own text, which the client shows (decided divergence for the fetch, monitor ruling 2026-10-04; unit 2a-9a extends it
-	 * to the confirmation, whose lifecycle and PHP errors carry internal text).
+	 * A platform error gets client 11.1.0's mapped message. Any other throwable shows the generic message instead of its
+	 * own text, which client 11.1.0 shows, because a failed fetch's and a failed confirmation's lifecycle and PHP errors
+	 * carry internal text.
 	 *
 	 * @param Throwable $exception What ended the return.
 	 * @return string
@@ -497,9 +499,8 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Log a failed intent fetch.
 	 *
-	 * A platform error follows the client's logging setting (gw:2429). Any other throwable is a code or
-	 * environment fault, so it is always logged with its class, code and trace, never its message (decided divergence,
-	 * monitor ruling 2026-10-04).
+	 * A platform error follows client 11.1.0's logging setting (gw:2429). Any other throwable is a code or
+	 * environment fault, so it is always logged with its class, code and trace, never its message.
 	 *
 	 * @param WC_Order  $order     Order object.
 	 * @param string    $intent_id Requested intent ID.
@@ -670,7 +671,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a redirect-return failure when debug logging is on, as the client's catch does (gw:2429).
+	 * Log a redirect-return failure when debug logging is on, as client 11.1.0's catch does (gw:2429).
 	 *
 	 * @param string              $message Log message.
 	 * @param array<string,mixed> $context Log context.

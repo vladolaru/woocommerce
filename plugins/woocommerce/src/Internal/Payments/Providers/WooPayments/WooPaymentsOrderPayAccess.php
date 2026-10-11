@@ -15,7 +15,7 @@ use Automattic\Jetpack\Constants;
  * Shared by the order-pay checkout config, the classic express checkout and WooPay sessions so they apply one rule.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsOrderPayAccess {
 

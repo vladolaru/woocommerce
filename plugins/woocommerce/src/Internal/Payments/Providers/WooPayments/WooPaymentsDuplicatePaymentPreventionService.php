@@ -24,12 +24,13 @@ use WP_Error;
  * Prevents duplicate WooPayments charges for the same checkout session.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInterface {
 
 	/**
-	 * Session key used by the standalone WooPayments extension for the currently processing order.
+	 * Session key holding the order this checkout session is paying; client 11.1.0 uses the same key
+	 * (class-duplicate-payment-prevention-service.php:35).
 	 */
 	public const SESSION_KEY_PROCESSING_ORDER = 'wcpay_processing_order';
 
@@ -59,7 +60,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Payment methods paid offline after checkout, through a voucher.
 	 *
-	 * Mirrors the plugin's Payment_Method::OFFLINE_PAYMENT_METHODS (client 11.1.0 `includes/constants/class-payment-method.php:61-63`).
+	 * Client 11.1.0's Payment_Method::OFFLINE_PAYMENT_METHODS (`includes/constants/class-payment-method.php:61-63`).
 	 */
 	private const OFFLINE_PAYMENT_METHODS = array( 'multibanco' );
 
@@ -71,14 +72,14 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private ?\WC_Session $session;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native order payment lifecycle service.
+	 * Order payment lifecycle service.
 	 *
 	 * @var OrderPaymentLifecycleService
 	 */
@@ -119,8 +120,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                      $api_client                  Native WooPayments API client.
-	 * @param OrderPaymentLifecycleService              $lifecycle_service           Native order payment lifecycle service.
+	 * @param WooPaymentsApiClient                      $api_client                  WooPayments API client.
+	 * @param OrderPaymentLifecycleService              $lifecycle_service           Order payment lifecycle service.
 	 * @param WooPaymentsOrderDataService               $order_data_service          WooPayments order data service.
 	 * @param WooPaymentsRuntimeArbiter|null            $arbiter                     Optional runtime owner arbiter.
 	 * @param WooPaymentsIntentConfirmationService|null $intent_confirmation_service Optional intent confirmation service.
@@ -172,7 +173,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Clear an order from duplicate-payment session tracking when its checkout ended with an offline voucher.
 	 *
-	 * The client clears it when the intent succeeded, or is `requires_action` for an offline payment method (gw:2021,
+	 * Client 11.1.0 clears it when the intent succeeded, or is `requires_action` for an offline payment method (gw:2021,
 	 * 2147-2148, `Payment_Information::is_offline_payment_method()`). A succeeded intent is cleared through
 	 * `woocommerce_payment_complete`.
 	 *
@@ -285,7 +286,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	/**
 	 * Redirect when the current order already has an authorized PaymentIntent attached.
 	 *
-	 * A failed intent fetch lets checkout go on, as on the client, except for a PHP Error, which refuses checkout.
+	 * A failed intent fetch lets checkout go on, except for a PHP Error, which refuses checkout.
 	 *
 	 * @param WC_Order           $order   Current order.
 	 * @param WC_Payment_Gateway $gateway Gateway used to build the return URL.
@@ -300,8 +301,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		try {
 			$intent = $this->get_api_client()->get_payment_intention( $intent_id );
 		} catch ( Throwable $exception ) {
-			// Client 11.1.0 duplicate-payment-prevention-service:100-101 logs this through its gated Logger, with the
-			// platform's message; native logs its status and code instead.
+			// Client 11.1.0 duplicate-payment-prevention-service:100-101 logs this, when WooPayments logging is on, with the
+			// platform's message; this line logs its status and code instead.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
 				'Failed to fetch attached WooPayments payment intent.',
 				$exception,
@@ -311,8 +312,8 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 				)
 			);
 
-			// Decided divergence (monitor ruling 2026-10-04 (1)): client dpps:100 catches only Exception, so a PHP Error
-			// fatals there and nothing is charged. Native keeps that outcome without the fatal instead of charging again.
+			// Client 11.1.0 dpps:100 catches only Exception, so a PHP Error fatals there and nothing is charged. This keeps
+			// that outcome without the fatal, rather than charging again.
 			if ( ! $exception instanceof Exception ) {
 				return new WP_Error( 'duplicate_payment_check_failed', __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
 			}
@@ -457,7 +458,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * shoppers resubmit. This reads the stored order status instead, so it holds when the
 	 * platform does not respond.
 	 *
-	 * The gateway passes true for every validated payment-method change, to a new method or a saved token, as the client
+	 * The gateway passes true for every validated payment-method change, to a new method or a saved token, as client 11.1.0
 	 * skips the check for any change (client 11.1.0 `includes/class-duplicate-payment-prevention-service.php:226`,
 	 * `includes/compat/subscriptions/trait-wc-payments-subscriptions-utilities.php:38-43`): a store can filter a
 	 * subscription status into the paid statuses.
@@ -502,7 +503,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		 * payment through, so only do it for a specific flow you recognise: a blanket false
 		 * restores the double-charge this guard exists to stop.
 		 *
-		 * Kept under the WooPayments plugin's filter name: extensions already hook it.
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * @since 11.0.0
 		 *
@@ -668,7 +669,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the native WooPayments API client.
+	 * Get the WooPayments API client.
 	 *
 	 * @return WooPaymentsApiClient
 	 */
@@ -681,7 +682,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the native order payment lifecycle service.
+	 * Get the order payment lifecycle service.
 	 *
 	 * @return OrderPaymentLifecycleService
 	 */

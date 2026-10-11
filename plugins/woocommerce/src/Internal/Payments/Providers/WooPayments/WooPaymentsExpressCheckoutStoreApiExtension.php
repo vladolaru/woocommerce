@@ -11,17 +11,17 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\StoreApi\Schemas\V1\CartSchema;
 
 /**
- * Native WooPayments express checkout Store API cart extension.
+ * Adds the express checkout methods available for the cart's currency to the Store API cart data.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterface {
 
 	/**
 	 * Countries whose state is optional for express checkout Store API requests. Wallets send no state for
-	 * these countries; the list matches `Express_Checkout_Element_States::COUNTRIES_WITHOUT_STATES` in
-	 * WooPayments 11.1.0.
+	 * these countries; the list is client 11.1.0's `Express_Checkout_Element_States::COUNTRIES_WITHOUT_STATES`
+	 * (class-express-checkout-element-states.php:1175).
 	 */
 	private const COUNTRIES_WITHOUT_STATES = array( 'DZ', 'AO', 'BD', 'BJ', 'BO', 'BG', 'HR', 'DO', 'GH', 'GT', 'HU', 'KE', 'LA', 'LR', 'LT', 'MD', 'NA', 'NP', 'PK', 'PY', 'RO', 'SA', 'ZA', 'TZ', 'UG', 'ZM' );
 
@@ -156,7 +156,7 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * @return bool
 	 */
 	private function is_express_checkout_hooks_request(): bool {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flag check, mirroring the plugin.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flag check.
 		return ! wp_doing_cron() && ! ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) && ! isset( $_GET['change_payment_method'] );
 	}
 
@@ -193,7 +193,8 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	/**
 	 * Get the Apple Pay/Google Pay and Amazon Pay methods available for the current cart currency.
 	 *
-	 * Matches WooPayments 11.1.0: only `payment_request` and `amazon_pay`, without cart-location gating. The
+	 * Client 11.1.0 returns only `payment_request` and `amazon_pay`, without a cart-location check
+	 * (class-wc-payments-express-checkout-store-api-extension.php:81-93). The
 	 * frontend intersects this currency-fresh list with the localized current-location methods before mounting wallets.
 	 *
 	 * @return array<int,string>

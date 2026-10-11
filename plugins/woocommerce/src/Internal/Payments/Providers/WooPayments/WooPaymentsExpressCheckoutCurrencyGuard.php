@@ -16,11 +16,11 @@ use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
  * placement, which can happen when a multi-currency plugin flips the cart
  * based on the shipping address chosen inside the wallet sheet.
  *
- * Mirrors the WooPayments client plugin's
- * WC_Payments_Express_Checkout_Currency_Guard.
+ * Client 11.1.0's WC_Payments_Express_Checkout_Currency_Guard does the same
+ * (class-wc-payments-express-checkout-currency-guard.php:21).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface {
 

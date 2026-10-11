@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Native WooPayments express checkout helpers for platform payment methods.
+ * Express checkout helpers for WooPayments: the button config, cart and product data, and the wallets each page offers.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsExpressCheckoutService {
 
@@ -165,8 +165,7 @@ class WooPaymentsExpressCheckoutService {
 				'publishableKey' => $this->account_service->get_publishable_key(),
 				'accountId'      => $this->account_service->get_account_id(),
 				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
-				// Drives the Link autofill beta on the express Stripe instances,
-				// matching the reference client's shared connected-account instance.
+				// Drives the Link autofill beta on the express Stripe instances.
 				'linkEnabled'    => WooPaymentsFeaturePolicy::is_link_folded_into_card(
 					$this->account_service,
 					wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry::class ),
@@ -228,7 +227,7 @@ class WooPaymentsExpressCheckoutService {
 	/**
 	 * Tell whether Amazon Pay is usable for express checkout, whichever locations list it.
 	 *
-	 * The client's `can_use_amazon_pay()` (11.1.0 class-wc-payments-express-checkout-button-helper.php:362-388).
+	 * Client 11.1.0's `can_use_amazon_pay()` (class-wc-payments-express-checkout-button-helper.php:362-388).
 	 *
 	 * @since 11.2.0
 	 *
@@ -847,7 +846,7 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get the login confirmation settings for the wallet click gate.
+	 * Get the login confirmation settings for a wallet button click.
 	 *
 	 * When checkout requires an authenticated account that the express flow
 	 * cannot create, the wallet sheet must not open; the scripts show a

@@ -126,7 +126,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether Amazon Pay is usable for express checkout, whichever locations list it.
 	 *
-	 * The client's `can_use_amazon_pay()` (11.1.0 class-wc-payments-express-checkout-button-helper.php:362-388).
+	 * Client 11.1.0's `can_use_amazon_pay()` (class-wc-payments-express-checkout-button-helper.php:362-388).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.
@@ -146,9 +146,9 @@ class WooPaymentsExpressPaymentMethodTypes {
 	}
 
 	/**
-	 * Tell whether the client's button-only Amazon Pay guards hold.
+	 * Tell whether the button-only Amazon Pay checks hold.
 	 *
-	 * Mirrors WooPayments' `can_use_amazon_pay()`: no Amazon Pay button while express methods sit in the
+	 * As in client 11.1.0's `can_use_amazon_pay()` (class-wc-payments-express-checkout-button-helper.php:362-388): no Amazon Pay button while express methods sit in the
 	 * payment-method list, and the base gateway availability (gateway enabled, HTTPS in live mode outside admin).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
@@ -169,7 +169,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Get the express checkout methods configured for a context.
 	 *
-	 * The location setting, or Apple Pay / Google Pay alone while the legacy switch is on and no location setting exists.
+	 * The location setting, or Apple Pay / Google Pay alone while the older `payment_request` setting is on and no location setting exists.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.
@@ -351,7 +351,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		// In admin (the block editor preview) the client asks only whether the WooPayments and Amazon Pay gateways are enabled, which
+		// In admin (the block editor preview) client 11.1.0 asks only whether the WooPayments and Amazon Pay gateways are enabled, which
 		// is_amazon_pay_button_available() and the merchant switch above cover; the account and currency checks are storefront checks
 		// (client 11.1.0 class-wc-payment-gateway-wcpay.php:956-966).
 		if ( is_admin() ) {
@@ -363,7 +363,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 			return false;
 		}
 
-		// The store currency must be one the account takes from customers, an unknown list allowing any; the client reads the store
+		// The store currency must be one the account takes from customers, an unknown list allowing any; client 11.1.0 reads the store
 		// currency here even on the order-pay page (client 11.1.0 class-wc-payment-gateway-wcpay.php:921,1058-1069).
 		$customer_currencies = $account_service->get_customer_supported_currencies();
 		if ( array() !== $customer_currencies && ! in_array( strtolower( get_woocommerce_currency() ), $customer_currencies, true ) ) {
@@ -378,8 +378,8 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether the merchant has Amazon Pay switched on in the WooPayments settings.
 	 *
-	 * The client's Amazon Pay gateway is enabled exactly while `amazon_pay` is in the enabled payment
-	 * method IDs, and its express payment-type allowlist drops Amazon Pay when that gateway is disabled.
+	 * Amazon Pay is on exactly while `amazon_pay` is in the enabled payment method IDs, and the express payment-type
+	 * allowlist drops Amazon Pay while it is off.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @return bool
@@ -393,7 +393,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether Amazon Pay is available and enabled on the connected account.
 	 *
-	 * The account side of the client's gate is the `amazon_pay_payments` capability being active; the client never reads the
+	 * The account side of client 11.1.0's check is the `amazon_pay_payments` capability being active; it never reads the
 	 * account fees for express checkout (11.1.0 class-wc-payment-gateway-wcpay.php:908-913).
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
@@ -426,7 +426,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether Amazon Pay supports a currency for the connected account country.
 	 *
-	 * The same table as the client's Amazon Pay definition, applied to the order currency on the order-pay page and the store
+	 * The same table as client 11.1.0's Amazon Pay definition, applied to the order currency on the order-pay page and the store
 	 * currency elsewhere (client 11.1.0 AmazonPayDefinition.php:106-128, through `is_currency_valid()`,
 	 * class-upe-payment-method.php:311-326,491-504).
 	 *

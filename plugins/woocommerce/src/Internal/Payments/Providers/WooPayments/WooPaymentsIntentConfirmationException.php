@@ -10,9 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use RuntimeException;
 
 /**
- * Exception for expected native intent-confirmation business rejections.
+ * Thrown when an intent confirmation is refused for a business rule rather than a platform or code failure.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsIntentConfirmationException extends RuntimeException {}

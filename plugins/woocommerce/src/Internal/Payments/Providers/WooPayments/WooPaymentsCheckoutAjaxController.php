@@ -15,10 +15,11 @@ use Throwable;
 use WC_Order;
 
 /**
- * Native WooPayments checkout AJAX callbacks.
+ * Answers the AJAX actions the WooPayments checkout scripts call: the order-status update after a payment confirms in
+ * the browser, and setup intent creation for adding a payment method.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 
@@ -30,7 +31,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -70,7 +71,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter             $arbiter                     Runtime owner arbiter.
-	 * @param WooPaymentsApiClient                  $api_client                  Native WooPayments API client.
+	 * @param WooPaymentsApiClient                  $api_client                  WooPayments API client.
 	 * @param WooPaymentsCustomerService            $customer_service            WooPayments customer service.
 	 * @param WooPaymentsIntentConfirmationService  $intent_confirmation_service Intent confirmation service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry     Optional payment method registry.
@@ -111,7 +112,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the WooPayments-compatible order-status update action.
+	 * Handle the `update_order_status` AJAX action.
 	 */
 	public function handle_update_order_status(): void {
 		$response    = $this->confirm_order_payment( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -121,7 +122,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the WooPayments-compatible setup-intent creation action.
+	 * Handle the `create_setup_intent` AJAX action.
 	 */
 	public function handle_create_setup_intent(): void {
 		$response    = $this->create_setup_intent_for_request( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -233,8 +234,9 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		// The card-testing prevention check must run BEFORE the SetupIntent is
 		// created: a fraud-failed attempt that has already created and
 		// confirmed a SetupIntent leaves the payment method attached to the
-		// customer server-side with nothing to detach it. Same ordering as the
-		// plugin's create_setup_intent_ajax: nonce, fraud check, rate limit.
+		// customer server-side with nothing to detach it. Client 11.1.0's
+		// create_setup_intent_ajax() uses the same order: nonce, fraud check,
+		// rate limit (class-wc-payment-gateway-wcpay.php:4571-4594).
 		$fraud_prevention_service = $this->get_fraud_prevention_service();
 		if (
 			$fraud_prevention_service->has_session()
@@ -285,7 +287,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 					$exception->get_decline_code(),
 					$exception->getMessage()
 				),
-				// Same status mapping as the plugin: 402 and a missing status answer 400.
+				// As client 11.1.0 maps it: 402 and a missing status answer 400 (class-wc-payments-utils.php:878-890).
 				in_array( $exception->get_http_code(), array( 0, 402 ), true ) ? 400 : $exception->get_http_code()
 			);
 		} catch ( Throwable $exception ) {
@@ -296,7 +298,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether native callbacks can be handled.
+	 * Tell whether the built-in WooPayments owns payments and can reach the platform, so these callbacks run.
 	 *
 	 * @return bool
 	 */
@@ -355,7 +357,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Update WC Subscriptions after a successful native WooPayments payment-method change.
+	 * Update WC Subscriptions after a successful WooPayments payment-method change.
 	 *
 	 * @param WC_Order $order Subscription order.
 	 * @return void
@@ -449,7 +451,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native payment method ID from a submitted gateway ID.
+	 * Get the WooPayments payment method ID from a submitted gateway ID.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 * @return string

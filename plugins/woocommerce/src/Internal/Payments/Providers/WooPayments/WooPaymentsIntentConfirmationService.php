@@ -225,9 +225,9 @@ class WooPaymentsIntentConfirmationService {
 	}
 
 	/**
-	 * Build a payment lifecycle event from a native intent response.
+	 * Build a payment lifecycle event from a platform intent response.
 	 *
-	 * @param array<string,mixed> $intent                     Native intent response.
+	 * @param array<string,mixed> $intent                     Platform intent response.
 	 * @param WC_Order            $order                      Order being updated.
 	 * @param bool                $zero_amount_plain_note     Whether a completed $0 SetupIntent gets the order-status callback's plain note.
 	 * @return PaymentLifecycleEvent
@@ -337,12 +337,12 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Map `requires_action` and `requires_payment_method` by whether the intent carries an error.
 	 *
-	 * The plugin's order service fails the order when either status has an error and marks the payment
-	 * started otherwise (`update_order_status_from_intent()`). It reads only `last_payment_error`, so a
+	 * Client 11.1.0's order service fails the order when either status has an error and marks the payment
+	 * started otherwise (`update_order_status_from_intent()`, class-wc-payments-order-service.php:392). It reads only `last_payment_error`, so a
 	 * SetupIntent is always started here. The redirect return checks both errors itself before confirming
 	 * (`gw:2377-2382`). The caller keeps the provider's real status in `_intention_status`.
 	 *
-	 * @param array<string,mixed> $intent   Native intent response.
+	 * @param array<string,mixed> $intent   Platform intent response.
 	 * @param bool                $is_setup Whether the intent is a SetupIntent.
 	 * @return array<string,mixed>
 	 */
@@ -362,7 +362,7 @@ class WooPaymentsIntentConfirmationService {
 	 * Apply charge payment-method display details before order completion.
 	 *
 	 * @param WC_Order            $order  Order being updated.
-	 * @param array<string,mixed> $intent Native intent response.
+	 * @param array<string,mixed> $intent Platform intent response.
 	 */
 	private function apply_payment_method_display_details( WC_Order $order, array $intent ): void {
 		$this->order_effect_applier->apply_payment_method_display_details( $order, $intent, $this->account_service->get_account_country() );
@@ -371,7 +371,7 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Tell whether a PaymentIntent contains the full non-Link card identity required before lifecycle hooks run.
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
 	 * @return bool
 	 */
 	private function has_full_charge_card_identity( array $intent ): bool {
@@ -414,7 +414,7 @@ class WooPaymentsIntentConfirmationService {
 	 * Persist a requested payment method as a WooCommerce token before completing the order.
 	 *
 	 * @param WC_Order            $order               Order being updated.
-	 * @param array<string,mixed> $intent              Native intent response.
+	 * @param array<string,mixed> $intent              Platform intent response.
 	 * @param bool                $save_payment_method Whether the shopper asked to save the payment method; a recurring order saves it anyway.
 	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>} Token result and any blocking error response.
 	 */
@@ -503,7 +503,7 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Get the customer ID from an intent response.
 	 *
-	 * @param array<string,mixed> $intent Native intent response.
+	 * @param array<string,mixed> $intent Platform intent response.
 	 * @return string
 	 */
 	private function get_result_customer_id( array $intent ): string {

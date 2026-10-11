@@ -8,13 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Store API request detection shared by the native WooPayments Store API hooks.
+ * Tells whether the current request is a Store API request, for the WooPayments Store API hooks.
  *
- * Ports `WC_Payments_Utils::is_store_api_request()` from WooPayments 11.1.0: an allowlist of routes
+ * It is client 11.1.0's `WC_Payments_Utils::is_store_api_request()` rule (class-wc-payments-utils.php:1406): an allowlist of routes
  * rather than core's `/wc/store/` substring check.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsStoreApiRequestUtils {
 
@@ -44,7 +44,7 @@ final class WooPaymentsStoreApiRequestUtils {
 	 * @return bool
 	 */
 	public static function is_store_api_request(): bool {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only route detection, mirroring the plugin.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only route detection.
 		if ( isset( $_REQUEST['rest_route'] ) ) {
 			$rest_route = sanitize_text_field( wp_unslash( $_REQUEST['rest_route'] ) );
 		} else {

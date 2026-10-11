@@ -18,26 +18,26 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
  * `wcpay_core_checkout_config` objects on the classic checkout and the Checkout block's payment method data.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCheckoutAssets {
 	/**
-	 * Native payment method capability for saved/reusable payment credentials.
+	 * Payment method capability for saved/reusable payment credentials.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
 
 	/**
-	 * Native payment method capability for buy-now-pay-later methods.
+	 * Payment method capability for buy-now-pay-later methods.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_BUY_NOW_PAY_LATER = 'buy_now_pay_later';
 
 	/**
-	 * Native payment method capability for express checkout methods.
+	 * Payment method capability for express checkout methods.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
 
 	/**
-	 * Core-owned classic checkout script handle.
+	 * Classic checkout script handle.
 	 */
 	private const CLASSIC_SCRIPT_HANDLE = 'wc-woopayments-checkout';
 
@@ -47,7 +47,7 @@ class WooPaymentsCheckoutAssets {
 	private const FINGERPRINT_SCRIPT_HANDLE = 'wc-woopayments-fingerprintjs';
 
 	/**
-	 * Core-owned classic checkout style handle.
+	 * Classic checkout style handle.
 	 */
 	private const CLASSIC_STYLE_HANDLE = 'wc-woopayments-checkout';
 
@@ -59,8 +59,8 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Payment fields config keys left out of the Blocks payment method data.
 	 *
-	 * The client's Blocks data (class-wc-payments-blocks-payment-method.php:88-104) does not carry them and the
-	 * native Blocks bundle does not need them; the classic checkout config keeps them.
+	 * Client 11.1.0's Blocks data (class-wc-payments-blocks-payment-method.php:88-104) does not carry them and
+	 * WooCommerce's Blocks bundle does not need them; the classic checkout config keeps them.
 	 */
 	private const BLOCKS_OMITTED_CONFIG_KEYS = array(
 		'confirmationErrorMessage',
@@ -81,7 +81,7 @@ class WooPaymentsCheckoutAssets {
 	);
 
 	/**
-	 * WooPay button config keys, which the client adds only while its WooPay button handler runs.
+	 * WooPay button config keys, which client 11.1.0 adds only while its WooPay button handler runs.
 	 *
 	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:144-160.
 	 */
@@ -217,7 +217,7 @@ class WooPaymentsCheckoutAssets {
 	private WooPaymentsFraudService $fraud_service;
 
 	/**
-	 * Native WooPayments customer service.
+	 * WooPayments customer service.
 	 *
 	 * @var WooPaymentsCustomerService
 	 */
@@ -277,7 +277,7 @@ class WooPaymentsCheckoutAssets {
 	 *
 	 * Client 11.1.0 builds its classic config once per request: payment_fields() builds it only while the checkout
 	 * script is not yet enqueued, then enqueues the script, so every later gateway reuses the first build
-	 * (includes/class-wc-payments-checkout.php:409-424). Native renders one config per gateway, so it shares the base
+	 * (includes/class-wc-payments-checkout.php:409-424). This class renders one config per gateway, so it shares the base
 	 * the same way and builds again only when an input of the base changes (get_payment_list_config_base_key()).
 	 *
 	 * @var array{key:string,base:array{config:array<string,mixed>,saved_cards_enabled:bool,currency:string}}|null
@@ -295,7 +295,7 @@ class WooPaymentsCheckoutAssets {
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
 	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service  Optional fraud-prevention service.
 	 * @param WooPaymentsPaymentMethodRegistry|null  $payment_method_registry   Optional payment method registry.
-	 * @param WooPaymentsCustomerService|null        $customer_service          Optional native customer service.
+	 * @param WooPaymentsCustomerService|null        $customer_service          Optional WooPayments customer service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
@@ -526,7 +526,7 @@ class WooPaymentsCheckoutAssets {
 	 *
 	 * The card gateway supports, the order or cart total and currency, the order and its billing country, whether the
 	 * cart holds a subscription, and the shopper (the nonces and the saved-card data are per user). The rest of the
-	 * base (account, gateway settings, page type, locale) is fixed for the request, as the client's single build assumes.
+	 * base (account, gateway settings, page type, locale) is fixed for the request, as client 11.1.0's single build assumes.
 	 *
 	 * @param string[]                                                             $supports        Card gateway support features.
 	 * @param array{currency:string,total:int,order_id:int,billing_country:string} $payment_context Payment context.
@@ -588,9 +588,9 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Build the config base for the Blocks payment method data, with the client's Blocks key set.
+	 * Build the config base for the Blocks payment method data, with client 11.1.0's Blocks key set.
 	 *
-	 * Before the config filter, the client's own filter callbacks add the WooPay button keys, the express checkout
+	 * Before the config filter, client 11.1.0's own filter callbacks add the WooPay button keys, the express checkout
 	 * switches and the order-pay keys only while their handlers run; a subscription payment method change skips them all.
 	 *
 	 * @param string[] $supports Card gateway support features.
@@ -614,7 +614,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Tell whether the client loads its express checkout handlers on this request: payments enabled on the account,
+	 * Tell whether client 11.1.0 loads its express checkout handlers on this request: payments enabled on the account,
 	 * and not a cron or XML-RPC request (client 11.1.0 class-wc-payments.php:1858-1871).
 	 *
 	 * @return bool
@@ -626,7 +626,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Tell whether a client express button handler registers its config filter on this request: the WooPayments
+	 * Tell whether a client 11.1.0 express button handler registers its config filter on this request: the WooPayments
 	 * gateway is enabled and the page is not a subscription's change payment method page.
 	 *
 	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:107-126 and class-wc-payments-express-checkout-button-handler.php:74-89.
@@ -636,11 +636,11 @@ class WooPaymentsCheckoutAssets {
 	private function is_express_button_handler_request(): bool {
 		return $this->are_express_checkout_handlers_loaded()
 			&& $this->get_account_service()->is_gateway_enabled()
-			&& ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag, as in the client.
+			&& ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag.
 	}
 
 	/**
-	 * Tell whether the client's WooPay button handler adds its config keys on this request.
+	 * Tell whether client 11.1.0's WooPay button handler adds its config keys on this request.
 	 *
 	 * @return bool
 	 */
@@ -649,7 +649,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Get the client's Apple Pay/Google Pay and Amazon Pay switches for the current page.
+	 * Get client 11.1.0's Apple Pay/Google Pay and Amazon Pay switches for the current page.
 	 *
 	 * Client 11.1.0 `WC_Payments_Express_Checkout_Button_Handler::payment_fields_js_config()`
 	 * (class-wc-payments-express-checkout-button-handler.php:112-124), added while that handler runs.
@@ -681,7 +681,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Get the express checkout page context like the client's `get_button_context()`, or '' on other pages.
+	 * Get the express checkout page context like client 11.1.0's `get_button_context()`, or '' on other pages.
 	 *
 	 * Client 11.1.0 class-wc-payments-express-checkout-button-helper.php:255-286,450-468.
 	 *
@@ -698,7 +698,7 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		$is_checkout = is_checkout();
-		if ( $is_checkout && isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag, as in the client.
+		if ( $is_checkout && isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag.
 			return 'pay_for_order';
 		}
 
@@ -851,7 +851,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Get the native WooPayments customer service.
+	 * Get the WooPayments customer service.
 	 *
 	 * @return WooPaymentsCustomerService
 	 */
@@ -1110,9 +1110,10 @@ class WooPaymentsCheckoutAssets {
 		// collects no payment, so the order behind it must not decide the
 		// context: its total would flow into `cartTotal` and make the checkout
 		// script build a payment-mode Payment Element for an amount the shopper
-		// is not paying. The WooPayments client plugin resolves this request to
-		// the cart context, whose empty-cart total of zero yields a setup-mode
-		// element, and this class must produce the same element.
+		// is not paying. Client 11.1.0 resolves this request to the cart context
+		// (class-wc-payments-checkout.php:237-238, :250-253), whose empty-cart
+		// total of zero yields a setup-mode element, and this class must produce
+		// the same element.
 		if ( 0 < $order_id && ! $this->is_changing_payment_method_for_subscription() ) {
 			$order = wc_get_order( $order_id );
 			// The pay link's key as well as the capability: core grants pay_for_order on a guest order to anyone, and the
@@ -1166,7 +1167,7 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Get the native WooPayments fraud service.
+	 * Get the WooPayments fraud service.
 	 *
 	 * @return WooPaymentsFraudService
 	 */
@@ -1397,7 +1398,8 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Tell whether a reusable payment method should show the WooCommerce save-payment option.
 	 *
-	 * The logged-in WooPay guard applies to cards only, as in the plugin.
+	 * The logged-in WooPay check applies to cards only (should_show_card_save_option()), as in client 11.1.0
+	 * (class-wc-payments-checkout.php:610-619).
 	 *
 	 * @param bool $saved_cards_enabled Whether saved cards are enabled.
 	 * @return bool

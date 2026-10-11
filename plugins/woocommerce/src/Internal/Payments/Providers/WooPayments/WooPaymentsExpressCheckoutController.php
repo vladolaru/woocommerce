@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Native WooPayments Apple Pay and Google Pay express checkout frontend hooks.
+ * Adds the WooPayments Apple Pay and Google Pay express checkout buttons to the storefront: their assets, markup and
+ * redirect URL.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 
@@ -172,7 +173,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Enqueue Core-owned express checkout frontend assets on supported shopper surfaces.
+	 * Enqueue the express checkout frontend assets on supported shopper surfaces.
 	 */
 	public function enqueue_frontend_assets(): void {
 		if ( ! $this->is_supported_frontend_surface() ) {

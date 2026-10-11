@@ -14,10 +14,11 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * Native WooPayments product-page tokenized cart session hooks.
+ * Runs the tokenized cart sessions the product-page express checkout uses: a Store API cart of its own, kept apart from
+ * the shopper's cart.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterface {
 
