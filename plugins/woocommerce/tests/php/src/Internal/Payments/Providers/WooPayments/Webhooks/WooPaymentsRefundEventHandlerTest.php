@@ -1218,6 +1218,36 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox When a woocommerce_before_order_object_save callback throws while charge.refunded completes a link-only refund, the refund status and transaction ID are still saved.
+	 */
+	public function test_charge_refunded_saves_the_refund_status_when_an_order_save_hook_throws(): void {
+		$order = $this->create_refundable_order();
+		// An earlier refund attempt on the order failed.
+		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->save();
+		// The link alone, as PaymentProcessingService::persist_refund_reconciliation_context() leaves it.
+		$refund = $this->create_local_refund( $order );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		$refund->save_meta_data();
+		// WC_Abstract_Order::save() catches what this throws and returns, so the delivery itself succeeds.
+		$throwing = static function (): void {
+			throw new \RuntimeException( 'An order save hook failed.' );
+		};
+		add_action( 'woocommerce_before_order_object_save', $throwing );
+
+		try {
+			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+		} finally {
+			remove_action( 'woocommerce_before_order_object_save', $throwing );
+		}
+
+		// Read past the order caches: an unsaved change on a cached order object must not pass for a saved one.
+		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'txn_123', $order->get_refunds()[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+	}
+
+	/**
 	 * @testdox A succeeded charge.refund.updated finds the linked refund even when the request cached the order's refund IDs before it was linked.
 	 */
 	public function test_succeeded_refund_update_is_not_hidden_by_refund_ids_cached_earlier(): void {

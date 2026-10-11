@@ -327,9 +327,13 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		$wc_refund->save_meta_data();
+		// The status is saved on its own: WC_Abstract_Order::save() catches an exception a save hook throws and returns,
+		// so its return does not mean the status was saved.
+		$order->save_meta_data();
 		$order->save();
 
-		// The note goes last, so a note on the order means the refund's status and metadata were saved.
+		// The note goes last, so a note on the order means the refund's status and metadata were saved, even when an order
+		// save hook threw.
 		$note_candidates = $this->get_created_refund_note_candidates( $order, $wc_refund, $refund_id, $is_pending );
 		$this->add_refund_order_note_once( $order, $note_candidates[0], $refund_id, $is_pending ? 'created_pending' : 'created_successful', $note_candidates );
 	}
