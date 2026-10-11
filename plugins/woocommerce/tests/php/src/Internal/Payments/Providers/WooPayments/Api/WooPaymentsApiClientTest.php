@@ -788,18 +788,21 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$sut->create_and_confirm_payment_intention(
 			array(
-				'amount'               => 1000,
-				'currency'             => 'usd',
-				'customer'             => 'cus_built',
-				'payment_method'       => 'pm_built',
-				'payment_method_types' => array( 'card', 'link' ),
-				'metadata'             => array( 'order_id' => 12 ),
+				'amount'                    => 1000,
+				'currency'                  => 'usd',
+				'customer'                  => 'cus_built',
+				'payment_method'            => 'pm_built',
+				'payment_method_types'      => array( 'card', 'link' ),
+				// Stripe's PaymentIntent create parameter (API reference, "Create a PaymentIntent": automatic_payment_methods.enabled), which the callback unsets.
+				'automatic_payment_methods' => array( 'enabled' => true ),
+				'metadata'                  => array( 'order_id' => 12 ),
 			),
 			'idem_charge'
 		);
 
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertSame( array( 'card' ), $body['payment_method_types'] ?? null );
+		$this->assertArrayNotHasKey( 'automatic_payment_methods', $body, 'The key the callback unset must stay unset.' );
 		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ), 'A mutable key changes nothing the lock holds.' );
 	}
 
