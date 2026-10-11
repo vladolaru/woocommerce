@@ -115,11 +115,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fire the plugin's wpcay_get_account_login_data filter once with the login request object.
+	 * @testdox Should fire the wpcay_get_account_login_data filter once with the login request object.
 	 *
 	 * Pinned WooPayments 11.1.0: Get_Account_Login_Data::$hook and Request::send()/apply_filters( $hook, $this ), no extra arguments.
 	 */
-	public function test_create_login_link_fires_legacy_login_data_filter_with_the_request(): void {
+	public function test_create_login_link_fires_the_login_data_filter_with_the_request(): void {
 		list( $sut ) = $this->make_login_link_sut( true );
 
 		$captured = array();
@@ -1144,7 +1144,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retry idempotent write requests when the native transport has no HTTP response.
+	 * @testdox Should retry idempotent write requests when the transport has no HTTP response.
 	 */
 	public function test_post_request_retries_transport_failure_with_idempotency_key(): void {
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -1303,7 +1303,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should source test mode from the Core-owned account service.
+	 * @testdox Should source test mode from the account service.
 	 */
 	public function test_request_sources_test_mode_from_account_service(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -1341,7 +1341,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve structured card error details from failed native transport requests.
+	 * @testdox Should preserve structured card error details from failed transport requests.
 	 */
 	public function test_request_preserves_structured_card_error_details(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -1538,7 +1538,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the seller message for card_declined only, matching the plugin extraction guard.
+	 * @testdox Should keep the seller message for card_declined only, matching the WooPayments extension's extraction guard.
 	 */
 	public function test_api_error_ignores_seller_message_for_other_decline_codes(): void {
 		$exception = $this->capture_api_error(
@@ -2777,7 +2777,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create a customer through the native transport customers endpoint.
+	 * @testdox Should create a customer through the platform customers endpoint.
 	 */
 	public function test_create_customer_posts_to_customers_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -2808,7 +2808,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update an existing customer through the native transport customer resource endpoint.
+	 * @testdox Should update an existing customer through the platform customer resource endpoint.
 	 */
 	public function test_update_customer_posts_to_customer_resource(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -2838,7 +2838,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create and confirm native WooPayments PaymentIntents with one payment credential and lifted idempotency.
+	 * @testdox Should create and confirm WooPayments PaymentIntents with one payment credential and lifted idempotency.
 	 *
 	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
@@ -2902,7 +2902,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create and confirm native WooPayments SetupIntents through the setup_intents endpoint.
+	 * @testdox Should create and confirm WooPayments SetupIntents through the setup_intents endpoint.
 	 *
 	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Setup_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
@@ -2958,7 +2958,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require explicit payment method types when confirming native WooPayments SetupIntents.
+	 * @testdox Should require explicit payment method types when confirming WooPayments SetupIntents.
 	 */
 	public function test_create_and_confirm_setup_intention_requires_explicit_payment_method_types(): void {
 		$sut = new WooPaymentsApiClient();
@@ -2979,7 +2979,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create unconfirmed native WooPayments SetupIntents with the server-compatible confirm flag.
+	 * @testdox Should create unconfirmed WooPayments SetupIntents with the server-compatible confirm flag.
 	 *
 	 * Pinned WooPayments 11.1.0: Create_Setup_Intention::DEFAULT_PARAMS and ::get_api().
 	 */
@@ -3033,7 +3033,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require explicit payment method types when creating native WooPayments SetupIntents.
+	 * @testdox Should require explicit payment method types when creating WooPayments SetupIntents.
 	 */
 	public function test_create_setup_intention_requires_explicit_payment_method_types(): void {
 		$sut = new WooPaymentsApiClient();
@@ -3053,7 +3053,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve payment method details through the native transport payment methods endpoint.
+	 * @testdox Should retrieve payment method details through the platform payment methods endpoint.
 	 */
 	public function test_get_payment_method_reads_payment_methods_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3087,7 +3087,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve customer payment methods through the native transport payment methods list endpoint.
+	 * @testdox Should retrieve customer payment methods through the platform payment methods list endpoint.
 	 */
 	public function test_get_payment_methods_reads_customer_payment_methods_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3380,7 +3380,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track order payloads through the native transport tracking endpoint.
+	 * @testdox Should track order payloads through the platform tracking endpoint.
 	 */
 	public function test_track_order_posts_to_tracking_order_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3419,7 +3419,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update payment method billing details through the native transport.
+	 * @testdox Should update payment method billing details through the platform API.
 	 */
 	public function test_update_payment_method_posts_billing_details(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3453,7 +3453,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detach payment methods through the native transport.
+	 * @testdox Should detach payment methods through the platform API.
 	 */
 	public function test_detach_payment_method_posts_to_payment_method_detach_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3479,7 +3479,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve timeline events through the native transport.
+	 * @testdox Should retrieve timeline events through the platform API.
 	 */
 	public function test_get_timeline_reads_timeline_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3510,7 +3510,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send store setup snapshots through the native transport.
+	 * @testdox Should send store setup snapshots through the platform API.
 	 */
 	public function test_send_store_setup_posts_snapshot(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3545,7 +3545,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update compatibility data through the native transport.
+	 * @testdox Should update compatibility data through the platform API.
 	 */
 	public function test_update_compatibility_data_posts_compatibility_payload(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3576,7 +3576,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve WooPay compatibility data through the native transport.
+	 * @testdox Should retrieve WooPay compatibility data through the platform API.
 	 */
 	public function test_get_woopay_compatibility_reads_woopay_compatibility_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3658,9 +3658,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * The body is the recorded platform response in Fixtures/platform-public-fraud-services.json.
 	 *
-	 * @testdox Should send the native client identity on the public fraud services request.
+	 * @testdox Should send the WooPayments user agent on the public fraud services request.
 	 */
-	public function test_fetch_public_fraud_services_config_sends_the_client_identity(): void {
+	public function test_fetch_public_fraud_services_config_sends_the_woopayments_user_agent(): void {
 		$captured_url  = '';
 		$captured_args = array();
 		$filter        = static function ( $preempt, array $parsed_args, string $url ) use ( &$captured_url, &$captured_args ) {
@@ -3725,7 +3725,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve onboarding field data through the native transport onboarding endpoint.
+	 * @testdox Should retrieve onboarding field data through the platform onboarding endpoint.
 	 */
 	public function test_get_onboarding_fields_data_reads_onboarding_fields_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3758,7 +3758,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should initialize onboarding through the native onboarding endpoint.
+	 * @testdox Should initialize onboarding through the platform onboarding endpoint.
 	 */
 	public function test_initialize_onboarding_posts_account_payload(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3822,7 +3822,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the existing onboarding payload filter for native onboarding.
+	 * @testdox Should preserve the existing onboarding payload filter.
 	 */
 	public function test_initialize_onboarding_applies_onboarding_data_args_filter(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3873,7 +3873,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should initialize embedded KYC through the native onboarding endpoint.
+	 * @testdox Should initialize embedded KYC through the platform onboarding endpoint.
 	 */
 	public function test_initialize_onboarding_embedded_kyc_posts_account_payload(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3957,7 +3957,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should finalize embedded KYC through the native onboarding endpoint.
+	 * @testdox Should finalize embedded KYC through the platform onboarding endpoint.
 	 */
 	public function test_finalize_onboarding_embedded_kyc_posts_locale_source_and_notes(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -3992,7 +3992,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should delete the connected account through the native accounts endpoint.
+	 * @testdox Should delete the connected account through the platform accounts endpoint.
 	 */
 	public function test_delete_account_posts_to_accounts_delete_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4023,7 +4023,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update connected account settings through the native accounts endpoint.
+	 * @testdox Should update connected account settings through the platform accounts endpoint.
 	 */
 	public function test_update_account_posts_to_accounts_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4086,7 +4086,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should request account capabilities through the user-token native endpoint.
+	 * @testdox Should request account capabilities through the user-token platform endpoint.
 	 */
 	public function test_request_capability_posts_to_capabilities_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4217,9 +4217,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch file details and contents through native file endpoints.
+	 * @testdox Should fetch file details and contents through the platform file endpoints.
 	 */
-	public function test_get_file_details_and_contents_use_native_file_endpoints(): void {
+	public function test_get_file_details_and_contents_use_file_endpoints(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -4270,7 +4270,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should save fraud rulesets through the native fraud ruleset endpoint.
+	 * @testdox Should save fraud rulesets through the platform fraud ruleset endpoint.
 	 */
 	public function test_save_fraud_ruleset_posts_to_fraud_ruleset_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4302,7 +4302,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read the latest fraud ruleset through the native fraud ruleset endpoint.
+	 * @testdox Should read the latest fraud ruleset through the platform fraud ruleset endpoint.
 	 */
 	public function test_get_latest_fraud_ruleset_reads_from_fraud_ruleset_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4341,7 +4341,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch account data through the native accounts endpoint with the WooCommerce store ID.
+	 * @testdox Should fetch account data through the platform accounts endpoint with the WooCommerce store ID.
 	 */
 	public function test_get_account_fetches_accounts_endpoint_with_store_id(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4376,7 +4376,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch failed webhook events through the native WooPayments endpoint.
+	 * @testdox Should fetch failed webhook events through the WooPayments endpoint.
 	 */
 	public function test_get_failed_webhook_events_posts_to_failed_events_endpoint(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4472,7 +4472,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create terminal intents through the native intentions endpoint.
+	 * @testdox Should create terminal intents through the platform intentions endpoint.
 	 */
 	public function test_create_terminal_payment_intention_posts_terminal_payment_payload(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -5066,9 +5066,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve authorization summary filters and the legacy summary hook.
+	 * @testdox Should preserve authorization summary filters and the summary hook.
 	 */
-	public function test_get_authorizations_summary_preserves_filters_and_legacy_hook(): void {
+	public function test_get_authorizations_summary_preserves_filters_and_summary_hook(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5184,9 +5184,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve legacy Capital request filters before dispatch.
+	 * @testdox Should preserve Capital request filters before dispatch.
 	 */
-	public function test_capital_admin_methods_preserve_legacy_request_filters(): void {
+	public function test_capital_admin_methods_preserve_request_filters(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5237,9 +5237,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the legacy Capital link request filter object.
+	 * @testdox Should preserve the Capital link request filter object.
 	 */
-	public function test_create_capital_link_preserves_legacy_request_filter_object(): void {
+	public function test_create_capital_link_preserves_request_filter_object(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5945,9 +5945,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve admin badge count legacy request filters.
+	 * @testdox Should preserve admin badge count request filters.
 	 */
-	public function test_admin_badge_count_methods_preserve_legacy_request_filters(): void {
+	public function test_admin_badge_count_methods_preserve_request_filters(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -6107,9 +6107,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve payment method promotion legacy request filters.
+	 * @testdox Should preserve payment method promotion request filters.
 	 */
-	public function test_pm_promotion_methods_preserve_legacy_request_filters(): void {
+	public function test_pm_promotion_methods_preserve_request_filters(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -6211,7 +6211,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should list documents through the preserved documents request object and filter.
 	 */
-	public function test_get_documents_preserves_legacy_request_filter_contract(): void {
+	public function test_get_documents_preserves_request_filter_contract(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -6344,7 +6344,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should validate VAT through the preserved VAT request filter.
 	 */
-	public function test_validate_vat_preserves_legacy_request_filter_contract(): void {
+	public function test_validate_vat_preserves_request_filter_contract(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -6453,7 +6453,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should retrieve reporting balance summary through the preserved request object and filter.
 	 */
-	public function test_get_reporting_balance_summary_preserves_legacy_request_filter_contract(): void {
+	public function test_get_reporting_balance_summary_preserves_request_filter_contract(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
