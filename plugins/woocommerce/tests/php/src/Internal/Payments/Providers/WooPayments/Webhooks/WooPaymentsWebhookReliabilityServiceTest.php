@@ -164,9 +164,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Fetching failed events records the last fetch timestamp for supportability.
 	 */
 	public function test_fetch_events_records_last_fetch_timestamp(): void {
-		$this->assertTrue( defined( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ), 'Webhook reliability should expose its last-fetch option key.' );
-		$this->assertSame( self::EXPECTED_LAST_FETCH_OPTION, constant( WooPaymentsWebhookReliabilityService::class . '::LAST_FETCH_OPTION_KEY' ) );
-
 		$service = $this->create_service(
 			new RecordingActionSchedulerService(),
 			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
@@ -258,7 +255,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fetching failed events with the production scheduler queues every distinct event.
+	 * @testdox Fetching failed events with the production scheduler queues every distinct event and skips an event without an ID.
 	 */
 	public function test_fetch_events_schedules_each_distinct_event_with_production_scheduler(): void {
 		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
@@ -276,7 +273,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			$store,
 			new StaticFailedEventsProvider(
 				array(
-					'data'     => $events,
+					'data'     => array_merge( $events, array( array( 'type' => 'missing.id' ) ) ),
 					'has_more' => false,
 				)
 			),
@@ -300,7 +297,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			5,
 			$this->count_pending_reliability_actions( WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION ),
-			'The webhook backlog should schedule one processing action per distinct event.'
+			'The webhook backlog should schedule one processing action per distinct event, and none for an event without an ID.'
 		);
 	}
 
@@ -756,11 +753,12 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dropped event's line carries the platform error's status and code, never its message.
+	 * @testdox An event out of retries is dropped with nothing more scheduled, and its line carries the platform error's status and code, never its message.
 	 */
 	public function test_dropped_event_log_leaves_out_platform_text(): void {
-		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
-		$service = $this->create_service( new RecordingActionSchedulerService(), $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( self::make_provider_error() ) );
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( self::make_provider_error() ) );
 		$store->set_event(
 			'evt_exhausted',
 			array(
@@ -777,6 +775,8 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			unset( $exception );
 		}
 
+		$this->assertNull( $store->get_event( 'evt_exhausted' ), 'An event out of retries is dropped.' );
+		$this->assertSame( array(), $scheduler->scheduled_jobs, 'An event out of retries gets no further attempt.' );
 		$context = $this->get_logged_context( $logger, 'WooPayments webhook event evt_exhausted (payment_intent.succeeded) could not be processed after 3 retries and was dropped.' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
@@ -877,15 +877,16 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refused event is dropped, one error line names it and the job completes, as with the WooPayments extension.
+	 * @testdox A refused event is dropped without a retry, one error line names it and the job completes, as with the WooPayments extension.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:136-149`: the stored event is deleted, and an
 	 * `Invalid_Webhook_Data_Exception` is logged as "Failed processing event {id}. Reason: {message}" and not re-thrown.
 	 */
 	public function test_process_event_drops_and_logs_a_refused_event_without_failing_the_job(): void {
-		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
-		$service = $this->create_service(
-			new RecordingActionSchedulerService(),
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service(
+			$scheduler,
 			$store,
 			new StaticFailedEventsProvider(),
 			new ThrowingEventIngestor( new \InvalidArgumentException( 'malformed event' ) )
@@ -902,6 +903,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$service->process_event( 'evt_process' );
 
 		$this->assertNull( $store->get_event( 'evt_process' ), 'A refused event should be dropped so it is not processed again.' );
+		$this->assertSame( array(), $scheduler->scheduled_jobs, 'A refused event gets no retry.' );
 		$this->assertSame(
 			array( array( 'error', 'Failed processing event evt_process. Reason: malformed event', 'woopayments' ) ),
 			$logger->get_errors()

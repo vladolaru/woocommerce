@@ -527,17 +527,11 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order   = $this->create_disputable_order();
 		$order->set_transaction_id( (string) $dispute['payment_intent'] );
 		$order->update_meta_data( '_intent_id', (string) $dispute['payment_intent'] );
+		$order->update_meta_data( '_charge_id', (string) $dispute['charge'] );
 		$order->save();
 
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $dispute, 'ch_multi', 'txn_multi' )
-		);
-		$order = wc_get_order( $order->get_id() );
-		$this->invoke_private(
-			'process_dispute_created',
-			array( $order, $dispute, 'ch_multi', 'txn_multi' )
-		);
+		$this->sut->process( 'charge.dispute.created', $dispute );
+		$this->sut->process( 'charge.dispute.created', $dispute );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertSame( array( $dispute['id'] ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );

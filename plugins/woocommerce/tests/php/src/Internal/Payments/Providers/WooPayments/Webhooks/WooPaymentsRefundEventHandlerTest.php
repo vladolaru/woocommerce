@@ -123,13 +123,27 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				return $filter_result ?? $current_default;
 			}
 		);
-		$order  = $this->create_refundable_order();
-		$method = new \ReflectionMethod( $this->sut, 'get_failed_refund_note' );
-		$method->setAccessible( true );
+		$order = $this->create_refundable_order();
 
-		$note = $method->invoke( $this->sut, $order, 're_123', 400, 'usd', true, '' );
+		$this->sut->process(
+			'charge.refund.updated',
+			array(
+				'id'       => 're_123',
+				'charge'   => 'ch_123',
+				'amount'   => 400,
+				'currency' => 'usd',
+				'status'   => 'canceled',
+			)
+		);
 
-		$this->assertSame( $expected_note, html_entity_decode( wp_strip_all_tags( $note ) ) );
+		$notes = array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 're_123' )
+			)
+		);
+		$this->assertCount( 1, $notes );
+		$this->assertSame( $expected_note, html_entity_decode( wp_strip_all_tags( $notes[0]->content ) ) );
 		$this->assertSame( array( $expected_default ), $defaults, 'The filter must run once per note with the client default.' );
 	}
 

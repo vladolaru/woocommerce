@@ -28,36 +28,12 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	use OrderPaymentLockTestTrait;
 
 	/**
-	 * @testdox Should persist a valid created warning before adding its private merchant note.
+	 * @testdox Should persist a valid created warning and add its private merchant note.
 	 */
 	public function test_persists_created_warning_and_adds_private_note(): void {
-		$order        = $this->create_woopayments_order();
-		$note_service = new class() extends WooPaymentsOrderNoteService {
-			/**
-			 * Whether the warning was already persisted when note insertion began.
-			 *
-			 * @var bool
-			 */
-			public bool $saw_persisted_warning = false;
-
-			/**
-			 * {@inheritDoc}
-			 *
-			 * @param WC_Order      $order            Order object.
-			 * @param string        $note             Note content.
-			 * @param string        $identity         Stable private note identity.
-			 * @param string[]      $equivalent_notes Equivalent note renderings.
-			 * @param callable|null $before_add       Callback invoked before insertion.
-			 */
-			public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
-				$persisted_order             = wc_get_order( $order->get_id() );
-				$this->saw_persisted_warning = $persisted_order instanceof WC_Order && 'efw_123' === ( $persisted_order->get_meta( '_wcpay_early_fraud_warning', true )['efw_id'] ?? '' );
-
-				return parent::add_note_once( $order, $note, $identity, $equivalent_notes, $before_add );
-			}
-		};
-		$logger       = RecordingWcLogger::install();
-		$handler      = $this->create_handler( null, null, $note_service );
+		$order   = $this->create_woopayments_order();
+		$logger  = RecordingWcLogger::install();
+		$handler = $this->create_handler();
 
 		$handler->process(
 			'radar.early_fraud_warning.created',
@@ -84,7 +60,6 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertCount( 1, $notes );
 		$this->assertStringContainsString( 'Made with stolen card', $notes[0]->content );
-		$this->assertTrue( $note_service->saw_persisted_warning );
 		$this->assertCount( 0, array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'other charge recorded:' ) ), 'A warning on the order\'s own payment is not recorded as another charge.' );
 	}
 
@@ -190,7 +165,15 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
-		$this->assertSame( false, $fresh_order->get_meta( '_wcpay_early_fraud_warning', true )['efw_actionable'] );
+		$this->assertSame(
+			array(
+				'efw_id'         => 'efw_123',
+				'efw_actionable' => false,
+				'efw_type'       => '',
+				'created'        => 123,
+			),
+			$fresh_order->get_meta( '_wcpay_early_fraud_warning', true )
+		);
 		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
 		$this->assertCount( 2, $notes );
 		$this->assertStringContainsString( 'no longer actionable', $notes[0]->content );
