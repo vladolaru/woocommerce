@@ -321,7 +321,6 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					'charge'              => 'ch_123',
 					'amount'              => 400,
 					'currency'            => 'usd',
-					'reason'              => 'Requested by customer',
 					'status'              => 'succeeded',
 					'balance_transaction' => 'txn_123',
 				)
@@ -1050,7 +1049,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.refunded that read the order before an admin refund linked its row, and claims the lock after, reuses that row instead of creating a second refund.
+	 * @testdox A charge.refunded that read the order before an admin refund linked its row, and claims the lock after, finds that row under the lock and adds no second refund.
 	 */
 	public function test_charge_refunded_looks_up_the_linked_refund_under_the_lock(): void {
 		$order   = $this->create_refundable_order();
@@ -1111,6 +1110,54 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$refunds = wc_get_order( $order->get_id() )->get_refunds();
 		$this->assertCount( 1, $refunds, 'One platform refund keeps one local refund row.' );
 		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * @testdox A refund the platform made whose local effects failed keeps only its link, and charge.refunded completes it: one success note, the refund status and the transaction ID, no second refund row.
+	 */
+	public function test_charge_refunded_completes_a_refund_whose_local_effects_failed(): void {
+		$order = $this->create_refundable_order();
+		// An earlier refund attempt on the order failed.
+		$order->update_meta_data( '_wcpay_refund_status', 'failed' );
+		$order->save();
+		$refund   = $this->create_local_refund( $order );
+		$provider = new class( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_123' ) ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Fail the local refund effects after the platform refund succeeded.
+			 *
+			 * @param PaymentOperationContext $context   Payment context.
+			 * @param PaymentOutcome          $outcome   Provider outcome.
+			 * @param string                  $operation Operation name.
+			 * @return PaymentOutcome
+			 * @throws \RuntimeException Always.
+			 */
+			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
+				unset( $context, $outcome, $operation );
+				throw new \RuntimeException( 'Local refund effect failed.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+
+		$this->assertTrue( wc_get_container()->get( PaymentProcessingService::class )->process_refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 4.00, 'Requested by customer' ), $provider ) );
+		$refund = wc_get_order( $refund->get_id() );
+		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
+		$this->assertSame( 're_123', $refund->get_meta( '_wcpay_refund_id', true ), 'The failed effects leave only the link.' );
+		$this->assertSame( '', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+
+		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( $refund->get_id(), $refunds[0]->get_id() );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'txn_123', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$success_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => str_contains( $note->content, 're_123' ) && str_contains( $note->content, 'successfully processed' )
+		);
+		$this->assertCount( 1, $success_notes );
 	}
 
 	/**

@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
@@ -127,7 +128,8 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Process a charge.refunded event: create the local refund with its note and metadata, unless the order already links the refund.
+	 * Process a charge.refunded event: create the local refund with its note and metadata. For a refund the order already
+	 * links, write the note and metadata only when its created note is missing.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @throws RuntimeException When the refund event cannot be processed safely.
@@ -178,9 +180,15 @@ class WooPaymentsRefundEventHandler {
 				return;
 			}
 
-			// The request that linked this refund, the gateway's refund or an earlier delivery of this event, already wrote its
-			// note and metadata (client 11.1.0 class-wc-payments-webhook-processing-service.php:1120-1130).
-			if ( $this->get_refund_by_provider_refund_id( $order, $refund_id ) instanceof WC_Order_Refund ) {
+			// A linked refund whose created note is on the order is complete: the gateway's refund or an earlier delivery of
+			// this event wrote it, and the event returns (client 11.1.0 class-wc-payments-webhook-processing-service.php:1120-1130).
+			// A link without that note was saved alone, after the platform refunded but the local writes failed, or for a
+			// manual refund matched to an earlier attempt; the event writes the note and metadata on that row.
+			$linked_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
+			if ( $linked_refund instanceof WC_Order_Refund ) {
+				if ( ! $this->has_created_refund_note( $order, $refund_id ) ) {
+					$this->add_note_and_metadata_for_created_refund( $order, $linked_refund, $refund_id, $balance_txn_id, $is_pending_refund );
+				}
 				return;
 			}
 
@@ -561,6 +569,24 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Tell whether the order has the created note of a provider refund, pending or successful.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $refund_id Provider refund ID.
+	 * @return bool
+	 */
+	private function has_created_refund_note( WC_Order $order, string $refund_id ): bool {
+		$order_payment_notes = wc_get_container()->get( OrderPaymentNotes::class );
+		foreach ( array( 'created_successful', 'created_pending' ) as $note_type ) {
+			if ( 0 < $order_payment_notes->find_by_identity( $order, 'refund:' . $refund_id . ':' . $note_type, $this->persistence_vocabulary ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

@@ -3540,26 +3540,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded for a refund the order already links changes nothing ($event_status event).
+	 * @testdox charge.refunded for a linked refund that already has its created note changes nothing ($event_status event, $refund_status refund).
 	 *
 	 * @dataProvider linked_refund_charge_refunded_provider
 	 *
 	 * @param string $event_status   Refund status the event carries.
+	 * @param string $note_type      Created-refund note the order already has: created_successful or created_pending.
 	 * @param string $refund_status  Order refund status before the event.
-	 * @param string $transaction_id Refund transaction meta before the event.
 	 */
-	public function test_charge_refunded_for_a_linked_refund_changes_nothing( string $event_status, string $refund_status, string $transaction_id ): void {
+	public function test_charge_refunded_for_a_linked_refund_changes_nothing( string $event_status, string $note_type, string $refund_status ): void {
 		$order  = $this->create_refundable_woopayments_order( '10.00' );
 		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		if ( '' !== $transaction_id ) {
-			$refund->update_meta_data( '_wcpay_refund_transaction_id', $transaction_id );
-		}
+		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
 		$refund->save_meta_data();
-		if ( '' !== $refund_status ) {
-			$order->update_meta_data( '_wcpay_refund_status', $refund_status );
-			$order->save();
-		}
+		$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+		$order->save();
+		// The created note the gateway path writes when it links the refund, with the same identity.
+		wc_get_container()->get( WooPaymentsOrderNoteService::class )->add_note_once( $order, 'Refund re_123 recorded.', 'refund:re_123:' . $note_type );
 		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, $event_status ) );
@@ -3571,19 +3569,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 		$this->assertCount( 1, $order->get_refunds() );
 		$this->assertSame( $refund_status, $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( $transaction_id, $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertSame( 'txn_existing', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
 		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**
-	 * Provide charge.refunded cases for a refund the order already links.
+	 * Provide charge.refunded cases for a linked refund that already has its created note.
 	 *
 	 * @return array<string,array{0:string,1:string,2:string}>
 	 */
 	public function linked_refund_charge_refunded_provider(): array {
 		return array(
-			'succeeded event, nothing recorded yet'   => array( 'succeeded', '', '' ),
-			'pending event after a successful refund' => array( 'pending', 'successful', 'txn_existing' ),
+			'succeeded event, successful refund' => array( 'succeeded', 'created_successful', 'successful' ),
+			'pending event, successful refund'   => array( 'pending', 'created_successful', 'successful' ),
+			'succeeded event, pending refund'    => array( 'succeeded', 'created_pending', 'pending' ),
 		);
 	}
 
@@ -5905,6 +5904,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Create a charge.refunded event.
+	 *
+	 * The Charge fields and `refunds.data[0]` client 11.1.0 reads (class-wc-payments-webhook-processing-service.php:1079-1143).
 	 *
 	 * @param WC_Order            $order         Order object.
 	 * @param int                 $charge_amount Charge amount in provider minor units.
