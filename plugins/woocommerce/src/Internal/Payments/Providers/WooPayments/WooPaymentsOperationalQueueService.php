@@ -952,10 +952,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @return WooPaymentsPostKycActivationEmail|null
 	 */
 	private function get_post_kyc_activation_email(): ?WooPaymentsPostKycActivationEmail {
-		if ( ! WC()->mailer() ) {
-			return null;
-		}
-
 		$emails = WC()->mailer()->get_emails();
 		$email  = $emails[ self::POST_KYC_ACTIVATION_EMAIL_CLASS_KEY ] ?? null;
 

@@ -362,7 +362,7 @@ class WooPaymentsPaymentIntentEventHandler {
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
 		// Client 11.1.0's webhook never retitles an order, so an order of another gateway keeps its payment method title.
 		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
-			$this->apply_completed_payment_method_display_title( $order, $payment_intent );
+			$this->order_effect_applier->apply_payment_method_display_title( $order, $payment_intent, $this->account_service->get_account_country() );
 		}
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
@@ -383,7 +383,7 @@ class WooPaymentsPaymentIntentEventHandler {
 			'_intent_id'             => $this->get_object_id( $payment_intent ),
 			'_charge_id'             => $this->get_charge_id_from_intent( $payment_intent ),
 			'_payment_method_id'     => $this->get_payment_method_id_from_intent( $payment_intent ),
-			// The event's raw, lowercase currency.
+			// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
 			'_wcpay_intent_currency' => isset( $payment_intent['currency'] ) ? (string) $payment_intent['currency'] : '',
 			'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $payment_intent ),
 		);
@@ -401,20 +401,6 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Apply charge-derived display title data before WooCommerce writes completion notes.
-	 *
-	 * @param WC_Order            $order        Order object.
-	 * @param array<string,mixed> $event_object Provider object.
-	 */
-	private function apply_completed_payment_method_display_title( WC_Order $order, array $event_object ): void {
-		$this->order_effect_applier->apply_payment_method_display_title(
-			$order,
-			$event_object,
-			$this->account_service->get_account_country()
-		);
-	}
-
-	/**
 	 * Build the payment lifecycle event for a succeeded payment intent.
 	 *
 	 * @param array<string,mixed> $event_object Provider intent object.
@@ -422,19 +408,19 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @return PaymentLifecycleEvent
 	 */
 	private function build_succeeded_lifecycle_event( array $event_object, WC_Order $order ): PaymentLifecycleEvent {
-		$charge         = $this->get_first_charge_from_intent( $event_object );
-		$completed_note = $this->get_completed_payment_note_data_from_intent( $event_object, $order );
-		$meta           = $this->without_empty_values(
+		$charge          = $this->get_first_charge_from_intent( $event_object );
+		$note_candidates = $this->order_note_service->format_payment_success_note_candidates(
+			$order,
+			$this->get_object_id( $event_object ),
+			$this->get_charge_id_from_intent( $event_object ),
+			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
+		);
+		// write_succeeded_payment_intent_meta() has already saved the intent, charge, payment method, currency and mandate.
+		$meta = $this->without_empty_values(
 			array(
-				'_intent_id'             => $this->get_object_id( $event_object ),
-				'_charge_id'             => $this->get_charge_id_from_intent( $event_object ),
-				'_payment_method_id'     => $this->get_payment_method_id_from_intent( $event_object ),
-				'_intention_status'      => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
-				// Client 11.1.0 stores the event's raw, lowercase currency (class-wc-payments-webhook-processing-service.php:498,515).
-				'_wcpay_intent_currency' => isset( $event_object['currency'] ) ? (string) $event_object['currency'] : '',
-				'_stripe_mandate_id'     => $this->get_mandate_id_from_intent( $event_object ),
-				'_wcpay_mode'            => $this->account_service->get_order_mode(),
-				'_wcpay_ipp_channel'     => $this->get_ipp_channel_from_intent( $event_object ),
+				'_intention_status'  => isset( $event_object['status'] ) ? (string) $event_object['status'] : '',
+				'_wcpay_mode'        => $this->account_service->get_order_mode(),
+				'_wcpay_ipp_channel' => $this->get_ipp_channel_from_intent( $event_object ),
 			)
 		);
 		if ( ! empty( $charge ) ) {
@@ -465,9 +451,9 @@ class WooPaymentsPaymentIntentEventHandler {
 			$this->get_object_id( $event_object ),
 			$meta,
 			array(),
-			$completed_note['note'],
-			$completed_note['type'],
-			$completed_note['equivalents']
+			$note_candidates[0],
+			PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
+			$note_candidates
 		);
 	}
 
@@ -482,16 +468,21 @@ class WooPaymentsPaymentIntentEventHandler {
 	private function build_lifecycle_event( string $event_type, array $event_object, WC_Order $order ): ?PaymentLifecycleEvent {
 		switch ( $event_type ) {
 			case 'payment_intent.payment_failed':
-				if ( ! $this->should_process_payment_failed_event( $event_object, $order ) ) {
+				// process() lets through only a failure that names a payment method of an actionable type.
+				$last_payment_error  = $event_object['last_payment_error'];
+				$payment_method      = $last_payment_error['payment_method'];
+				$payment_method_type = (string) $payment_method['type'];
+
+				// A failure from a superseded attempt (the shopper re-paid with another method) must not flip the order to
+				// failed or overwrite its payment meta with the stale intent. Terminal (card_present) intents are exempt:
+				// their payment method is created at the reader and is never the one stored on the order.
+				if ( 'card_present' !== $payment_method_type && (string) $payment_method['id'] !== (string) $order->get_meta( '_payment_method_id', true ) ) {
 					return null;
 				}
 
-				$last_payment_error  = isset( $event_object['last_payment_error'] ) && is_array( $event_object['last_payment_error'] ) ? $event_object['last_payment_error'] : array();
-				$payment_method      = isset( $last_payment_error['payment_method'] ) && is_array( $last_payment_error['payment_method'] ) ? $last_payment_error['payment_method'] : array();
-				$payment_method_type = isset( $payment_method['type'] ) && is_string( $payment_method['type'] ) ? $payment_method['type'] : '';
-				$intent_id           = $this->get_object_id( $event_object );
-				$charge_id           = $this->get_charge_id_from_intent( $event_object );
-				$note_candidates     = 'card_present' === $payment_method_type
+				$intent_id       = $this->get_object_id( $event_object );
+				$charge_id       = $this->get_charge_id_from_intent( $event_object );
+				$note_candidates = 'card_present' === $payment_method_type
 					? $this->order_note_service->format_terminal_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error )
 					: $this->order_note_service->format_payment_failed_note_candidates( $order, $intent_id, $charge_id, $last_payment_error );
 
@@ -544,27 +535,6 @@ class WooPaymentsPaymentIntentEventHandler {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Tell whether a payment_intent.payment_failed event is actionable.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @param WC_Order            $order        Order resolved for the event.
-	 * @return bool
-	 */
-	private function should_process_payment_failed_event( array $event_object, WC_Order $order ): bool {
-		if ( ! $this->is_actionable_payment_failure( $event_object ) ) {
-			return false;
-		}
-
-		// A failure from a superseded attempt (the shopper re-paid with another method) must not flip the order to
-		// failed or overwrite its payment meta with the stale intent. Terminal (card_present) intents are exempt: their
-		// payment method is created at the reader and is never the one stored on the order.
-		$payment_method      = $event_object['last_payment_error']['payment_method'];
-		$payment_method_type = (string) $payment_method['type'];
-
-		return 'card_present' === $payment_method_type || (string) $payment_method['id'] === (string) $order->get_meta( '_payment_method_id', true );
 	}
 
 	/**
@@ -664,29 +634,6 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Get the completed-payment lifecycle note and note type from a PaymentIntent object.
-	 *
-	 * @param array<string,mixed> $event_object PaymentIntent object.
-	 * @param WC_Order            $order        Order object.
-	 * @return array{note:string,type:string,equivalents:string[]}
-	 */
-	private function get_completed_payment_note_data_from_intent( array $event_object, WC_Order $order ): array {
-		$charge          = $this->get_first_charge_from_intent( $event_object );
-		$note_candidates = $this->order_note_service->format_payment_success_note_candidates(
-			$order,
-			$this->get_object_id( $event_object ),
-			$this->get_charge_id_from_intent( $event_object ),
-			WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null )
-		);
-
-		return array(
-			'note'        => $note_candidates[0],
-			'type'        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_SUCCESS,
-			'equivalents' => $note_candidates,
-		);
-	}
-
-	/**
 	 * Tell whether payment method details are still an empty placeholder.
 	 *
 	 * @param WC_Order $order Order object.
@@ -767,10 +714,6 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @return WooPaymentsIppReceiptEmail|null
 	 */
 	private function get_ipp_receipt_email(): ?WooPaymentsIppReceiptEmail {
-		if ( ! WC()->mailer() ) {
-			return null;
-		}
-
 		$emails = WC()->mailer()->get_emails();
 		$email  = $emails[ WooPaymentsIppReceiptEmail::EMAIL_CLASS_KEY ] ?? null;
 
