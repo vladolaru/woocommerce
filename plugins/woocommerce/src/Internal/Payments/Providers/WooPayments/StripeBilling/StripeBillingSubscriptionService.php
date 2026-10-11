@@ -996,7 +996,7 @@ class StripeBillingSubscriptionService {
 			if ( $unit_amount ) {
 				$data[] = array(
 					'metadata'   => $this->get_item_metadata( $item ),
-					'price_data' => $this->format_item_price_data( $currency, $this->product_service->get_wcpay_product_id_for_item( $item_name ), $unit_amount, $billing_period, $interval ),
+					'price_data' => $this->format_item_price_data( $currency, $this->product_service->get_or_create_wcpay_product_id_for_item( $item_name ), $unit_amount, $billing_period, $interval ),
 				);
 			}
 		}
@@ -1082,12 +1082,12 @@ class StripeBillingSubscriptionService {
 
 			if ( $sign_up_fee ) {
 				$data[] = array(
-					'price_data' => $this->format_item_price_data( $currency, $this->product_service->get_wcpay_product_id_for_item( 'sign_up_fee' ), $sign_up_fee ),
+					'price_data' => $this->format_item_price_data( $currency, $this->product_service->get_or_create_wcpay_product_id_for_item( 'sign_up_fee' ), $sign_up_fee ),
 				);
 			}
 
 			if ( $one_time_shipping ) {
-				$wcpay_item_id = $this->product_service->get_wcpay_product_id_for_item( 'shipping' );
+				$wcpay_item_id = $this->product_service->get_or_create_wcpay_product_id_for_item( 'shipping' );
 				$shipping      = 0.0;
 				$parent        = wc_get_order( $subscription->get_parent_id() );
 

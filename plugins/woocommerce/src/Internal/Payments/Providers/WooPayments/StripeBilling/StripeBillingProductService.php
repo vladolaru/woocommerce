@@ -113,7 +113,7 @@ class StripeBillingProductService {
 	 * @return string Stripe product ID, or an empty string.
 	 */
 	public function get_or_create_wcpay_product_id( WC_Product $product, ?bool $test_mode = null ): string {
-		if ( ! $this->has_wcpay_product_id( $product, $test_mode ) ) {
+		if ( ! $this->ensure_wcpay_product_id_linked( $product, $test_mode ) ) {
 			if ( null === $test_mode || $this->account_service->is_test_mode_enabled() === $test_mode ) {
 				$this->create_product( $product );
 			}
@@ -123,13 +123,13 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Get the Stripe product ID for a one-time item type, such as `shipping`, creating it when needed.
+	 * Get the Stripe product ID for a one-time item type, such as `shipping`, linking or creating it as needed.
 	 *
 	 * @param string $type Item type.
 	 * @return string Stripe product ID.
 	 * @throws WooPaymentsApiException When the Stripe product cannot be created.
 	 */
-	public function get_wcpay_product_id_for_item( string $type ): string {
+	public function get_or_create_wcpay_product_id_for_item( string $type ): string {
 		$type             = sanitize_key( str_replace( ' ', '_', trim( $type ) ) );
 		$option_key       = $this->get_product_id_key() . '_' . $type;
 		$wcpay_product_id = (string) get_option( $option_key );
@@ -232,7 +232,7 @@ class StripeBillingProductService {
 				continue;
 			}
 
-			if ( ! $this->has_wcpay_product_id( $product_to_update ) || $this->product_needs_update( $product_to_update ) ) {
+			if ( ! $this->ensure_wcpay_product_id_linked( $product_to_update ) || $this->product_needs_update( $product_to_update ) ) {
 				$this->products_to_update[ $product_to_update->get_id() ] = $product_to_update->get_id();
 			}
 		}
@@ -279,13 +279,13 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Tell whether a product has a Stripe product ID that belongs to the current account.
+	 * Tell whether a product's Stripe product ID belongs to the current account, linking an unlinked one the platform still has.
 	 *
 	 * @param WC_Product $product   Product.
 	 * @param bool|null  $test_mode Mode to read; null for the current mode.
 	 * @return bool
 	 */
-	private function has_wcpay_product_id( WC_Product $product, ?bool $test_mode = null ): bool {
+	private function ensure_wcpay_product_id_linked( WC_Product $product, ?bool $test_mode = null ): bool {
 		$product_id_key   = $this->get_product_id_key( $test_mode );
 		$wcpay_product_id = $product->get_meta( $product_id_key );
 		if ( empty( $wcpay_product_id ) ) {
@@ -503,7 +503,7 @@ class StripeBillingProductService {
 		$wcpay_product_ids = array();
 		foreach ( array( 'live', 'test' ) as $environment ) {
 			$test_mode = 'test' === $environment;
-			if ( $this->has_wcpay_product_id( $product, $test_mode ) ) {
+			if ( $this->ensure_wcpay_product_id_linked( $product, $test_mode ) ) {
 				$wcpay_product_ids[ $environment ] = (string) $product->get_meta( $this->get_product_id_key( $test_mode ), true );
 			}
 		}

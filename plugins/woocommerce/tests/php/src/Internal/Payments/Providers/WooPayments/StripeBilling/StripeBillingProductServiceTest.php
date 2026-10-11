@@ -199,7 +199,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		switch ( $scenario ) {
 			case "fetching an item's unlinked Stripe product":
 				try {
-					$this->sut->get_wcpay_product_id_for_item( 'shipping' );
+					$this->sut->get_or_create_wcpay_product_id_for_item( 'shipping' );
 				} catch ( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException $exception ) {
 					// The Stripe product the fetch falls back to creating fails too, and that failure is the caller's.
 					unset( $exception );
@@ -613,7 +613,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$this->test_mode = false;
 		$this->queue_recorded_responses( 'create_product' );
 
-		$result = $this->sut->get_wcpay_product_id_for_item( 'Test Tax *&^ name' );
+		$result = $this->sut->get_or_create_wcpay_product_id_for_item( 'Test Tax *&^ name' );
 
 		$this->assertSame( self::RECORDED_PRODUCT_ID, $result );
 		$this->assertFalse( get_option( '_wcpay_product_id_live_Test Tax *&^ name' ) );
@@ -642,7 +642,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		$this->queue_recorded_responses( 'get_product_by_id' );
 		update_option( '_wcpay_product_id_test_shipping', self::RECORDED_PRODUCT_ID );
 
-		$result = $this->sut->get_wcpay_product_id_for_item( 'shipping' );
+		$result = $this->sut->get_or_create_wcpay_product_id_for_item( 'shipping' );
 
 		$this->assertSame( self::RECORDED_PRODUCT_ID, $result );
 		$this->assertSame( array( array( 'GET', '/sites/4/wcpay/products/' . self::RECORDED_PRODUCT_ID . '?test_mode=1', null ) ), $this->get_requests() );
@@ -656,7 +656,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_product_id_test_sign_up_fee', self::OTHER_PRODUCT_ID );
 		update_option( '_wcpay_product_id_test_sign_up_fee_linked_to', self::RECORDED_ACCOUNT_ID );
 
-		$result = $this->sut->get_wcpay_product_id_for_item( 'sign_up_fee' );
+		$result = $this->sut->get_or_create_wcpay_product_id_for_item( 'sign_up_fee' );
 
 		$this->assertSame( self::OTHER_PRODUCT_ID, $result );
 		$this->assertSame( 0, $this->http_client->request_count );
@@ -670,7 +670,7 @@ class StripeBillingProductServiceTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_product_id_test_sign_up_fee', self::OTHER_PRODUCT_ID );
 		update_option( '_wcpay_product_id_test_sign_up_fee_linked_to', self::PREVIOUS_ACCOUNT_ID );
 
-		$result = $this->sut->get_wcpay_product_id_for_item( 'sign_up_fee' );
+		$result = $this->sut->get_or_create_wcpay_product_id_for_item( 'sign_up_fee' );
 
 		$this->assertSame( self::RECORDED_PRODUCT_ID, $result );
 		$this->assertSame(
