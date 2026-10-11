@@ -917,8 +917,8 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the site only uses network-wide saved payment methods.
 	 *
-	 * On such networks the token intentionally lives outside the site, so the local
-	 * repair must not run and re-localize it.
+	 * On such networks the platform picks the network card, so checkout does not refuse a
+	 * request that carries neither a payment method nor a saved token.
 	 *
 	 * @return bool
 	 */

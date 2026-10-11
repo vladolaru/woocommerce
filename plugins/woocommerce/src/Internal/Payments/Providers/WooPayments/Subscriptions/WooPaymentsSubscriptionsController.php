@@ -366,7 +366,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			 * This intentionally keeps the standalone WooPayments plugin's action name
 			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_woopayments_*`
 			 * prefix, for parity: extensions hooked to the plugin's action keep working on the
-			 * native runtime. Do not rename it — see the class doc block for the rationale.
+			 * native runtime. Do not rename it: a new name would stop those callbacks from running.
 			 *
 			 * @param WC_Order $renewal_order     The renewal order that requires authentication.
 			 * @param string   $intent_id         The provider payment intent ID.
@@ -602,7 +602,6 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			return null;
 		}
 	}
-
 
 	/**
 	 * Get the subscription associated with a renewal order.
