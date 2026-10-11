@@ -199,7 +199,7 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Each line carries the client's request context, with the request path but no query string and no referrer.
+	 * @testdox Each line carries the WooPayments extension's request context, with the request path but no query string and no referrer.
 	 *
 	 * Client 11.1.0 `src/Internal/Logger.php:68` merges `src/Internal/LoggerContext.php:140-164` into every line; native leaves
 	 * out the referrer and the query string, which carry order keys on order-pay pages (monitor ruling 2026-10-06).
@@ -239,7 +239,7 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A line written while WooPayments logging is off carries no request context, as the client writes none then.
+	 * @testdox A line written while WooPayments logging is off carries no request context, as the WooPayments extension writes none then.
 	 */
 	public function test_lines_written_with_logging_off_carry_no_request_context(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );

@@ -169,29 +169,29 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Multibanco order-success hooks only when native owns runtime.
+	 * @testdox Should register Multibanco order-success hooks only when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_multibanco_order_success_hooks_only_when_native_owns_runtime(): void {
-		$plugin_owned = $this->create_page( false );
-		$native_owned = $this->create_page( true );
+	public function test_registers_multibanco_order_success_hooks_only_when_builtin_owns_runtime(): void {
+		$extension_owned = $this->create_page( false );
+		$builtin_owned   = $this->create_page( true );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 
-		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $plugin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_details_before_order_table', array( $plugin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $extension_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_order_details_before_order_table', array( $extension_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
 
-		$native_owned->register();
-		$this->registered_pages[] = $native_owned;
+		$builtin_owned->register();
+		$this->registered_pages[] = $builtin_owned;
 
-		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $native_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $native_owned, 'register_payment_method_title_override' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $native_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $native_owned, 'unregister_payment_method_title_override' ) ) );
-		$this->assertSame( 10, has_action( 'wp_enqueue_scripts', array( $native_owned, 'enqueue_assets' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $builtin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $builtin_owned, 'register_payment_method_title_override' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $builtin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $builtin_owned, 'unregister_payment_method_title_override' ) ) );
+		$this->assertSame( 10, has_action( 'wp_enqueue_scripts', array( $builtin_owned, 'enqueue_assets' ) ) );
 	}
 
 	/**
-	 * @testdox Should enqueue native order-success assets on the order-received page of a WooPayments order.
+	 * @testdox Should enqueue the order-success assets on the order-received page of a WooPayments order.
 	 * @testWith ["woocommerce_payments"]
 	 *           ["woocommerce_payments_multibanco"]
 	 *
@@ -215,7 +215,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not enqueue native order-success assets on the order-received page of another gateway's order or a key mismatch.
+	 * @testdox Should not enqueue the order-success assets on the order-received page of another gateway's order or a key mismatch.
 	 * @testWith ["bacs", true]
 	 *           ["cod", true]
 	 *           ["woocommerce_payments", false]
@@ -242,7 +242,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue native order-success assets on the view-order page only for the customer who can view the WooPayments order.
+	 * @testdox Should enqueue the order-success assets on the view-order page only for the customer who can view the WooPayments order.
 	 * @testWith [true, true]
 	 *           [false, false]
 	 *
@@ -547,7 +547,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hook both duplicate-prevention notices into the order-received text when native owns the runtime.
+	 * @testdox Should hook both duplicate-prevention notices into the order-received text when the built-in WooPayments owns the runtime.
 	 */
 	public function test_register_hooks_duplicate_prevention_notices(): void {
 		$page = $this->create_page( true );
@@ -564,7 +564,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hook the failed-order copy replacement into the order-received text when native owns the runtime.
+	 * @testdox Should hook the failed-order copy replacement into the order-received text when the built-in WooPayments owns the runtime.
 	 */
 	public function test_register_hooks_failed_order_copy_replacement(): void {
 		$page = $this->create_page( true );
@@ -578,31 +578,31 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_action( 'wp_footer', array( $page, 'output_footer_scripts' ) );
 		}
 
-		$plugin_owned = $this->create_page( false );
-		$plugin_owned->register();
-		$this->assertFalse( has_filter( 'woocommerce_thankyou_order_received_text', array( $plugin_owned, 'replace_order_received_text_for_failed_orders' ) ) );
+		$extension_owned = $this->create_page( false );
+		$extension_owned->register();
+		$this->assertFalse( has_filter( 'woocommerce_thankyou_order_received_text', array( $extension_owned, 'replace_order_received_text_for_failed_orders' ) ) );
 	}
 
 	/**
-	 * @testdox Should register the paid-intent email-verification exception only when native owns runtime.
+	 * @testdox Should register the paid-intent email-verification exception only when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_paid_intent_email_verification_exception_only_when_native_owns_runtime(): void {
-		$plugin_owned = $this->create_page( false );
-		$native_owned = $this->create_page( true );
+	public function test_registers_paid_intent_email_verification_exception_only_when_builtin_owns_runtime(): void {
+		$extension_owned = $this->create_page( false );
+		$builtin_owned   = $this->create_page( true );
 
-		$plugin_owned->register();
-		$this->assertFalse( has_filter( 'woocommerce_order_email_verification_required', array( $plugin_owned, 'maybe_skip_email_verification_after_payment' ) ) );
+		$extension_owned->register();
+		$this->assertFalse( has_filter( 'woocommerce_order_email_verification_required', array( $extension_owned, 'maybe_skip_email_verification_after_payment' ) ) );
 
-		$native_owned->register();
-		$this->registered_pages[] = $native_owned;
-		$this->assertSame( 10, has_filter( 'woocommerce_order_email_verification_required', array( $native_owned, 'maybe_skip_email_verification_after_payment' ) ) );
+		$builtin_owned->register();
+		$this->registered_pages[] = $builtin_owned;
+		$this->assertSame( 10, has_filter( 'woocommerce_order_email_verification_required', array( $builtin_owned, 'maybe_skip_email_verification_after_payment' ) ) );
 
 		global $wp_filter;
 		$callbacks = $wp_filter['woocommerce_order_email_verification_required']->callbacks[10];
 		$matching  = array_filter(
 			$callbacks,
-			static function ( array $callback ) use ( $native_owned ): bool {
-				return array( $native_owned, 'maybe_skip_email_verification_after_payment' ) === $callback['function'];
+			static function ( array $callback ) use ( $builtin_owned ): bool {
+				return array( $builtin_owned, 'maybe_skip_email_verification_after_payment' ) === $callback['function'];
 			}
 		);
 
@@ -611,7 +611,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should waive order-received email verification for the exact session-paid native intent.
+	 * @testdox Should waive order-received email verification for the exact session-paid intent.
 	 */
 	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
 		$page  = $this->create_page( true );
@@ -832,9 +832,9 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPay known-shopper exception is not registered when native does not own the runtime.
+	 * @testdox The WooPay known-shopper exception is not registered when the built-in WooPayments does not own the runtime.
 	 */
-	public function test_does_not_register_woopay_known_shopper_exception_without_native_runtime(): void {
+	public function test_does_not_register_woopay_known_shopper_exception_without_builtin_runtime(): void {
 		$page = $this->create_page( false );
 		$page->register();
 
@@ -914,17 +914,17 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-success page controller.
 	 *
-	 * @param bool                                       $native_register Whether native should own runtime.
-	 * @param WooPaymentsFrontendTrackingController|null $tracker        Optional tracking controller.
-	 * @param WooPaymentsApiClient|null                  $api_client     Optional API client.
+	 * @param bool                                       $builtin_register Whether the built-in WooPayments owns the runtime.
+	 * @param WooPaymentsFrontendTrackingController|null $tracker          Optional tracking controller.
+	 * @param WooPaymentsApiClient|null                  $api_client       Optional API client.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( bool $native_register, ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
+	private function create_page( bool $builtin_register, ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country' ) )

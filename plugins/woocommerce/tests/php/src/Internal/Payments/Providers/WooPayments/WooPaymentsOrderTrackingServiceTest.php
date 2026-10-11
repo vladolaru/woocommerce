@@ -45,9 +45,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register preserved order-tracking hooks when native owns runtime.
+	 * @testdox Should register preserved order-tracking hooks when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_preserved_order_tracking_hooks_when_native_owns_runtime(): void {
+	public function test_registers_preserved_order_tracking_hooks_when_builtin_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$service->register();
@@ -58,9 +58,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register renewal tracking meta filters when native owns runtime.
+	 * @testdox Should register renewal tracking meta filters when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_renewal_tracking_meta_filter_when_native_owns_runtime(): void {
+	public function test_registers_renewal_tracking_meta_filter_when_builtin_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$service->register();
@@ -76,9 +76,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register order-tracking hooks when plugin owns runtime.
+	 * @testdox Should not register order-tracking hooks when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_order_tracking_hooks_when_plugin_owns_runtime(): void {
+	public function test_registers_no_order_tracking_hooks_when_extension_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$service->register();
@@ -89,9 +89,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register renewal tracking meta filters when plugin owns runtime.
+	 * @testdox Should not register renewal tracking meta filters when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_renewal_tracking_meta_filter_when_plugin_owns_runtime(): void {
+	public function test_registers_no_renewal_tracking_meta_filter_when_extension_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$service->register();
@@ -176,7 +176,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not schedule Sift tracking for split sub-gateway orders — the plugin trains Sift on the card gateway only.
+	 * @testdox Should not schedule Sift tracking for split sub-gateway orders — the WooPayments extension trains Sift on the card gateway only.
 	 */
 	public function test_does_not_schedule_tracking_for_split_sub_gateway_orders(): void {
 		$scheduler = new RecordingActionSchedulerService();
@@ -401,7 +401,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track new orders through the native API and mark creation tracking complete.
+	 * @testdox Should track new orders through the platform API and mark creation tracking complete.
 	 */
 	public function test_track_new_order_posts_order_data_and_marks_complete(): void {
 		$order      = $this->create_order(
@@ -480,7 +480,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track a live order and send the client's `prod` order mode to the platform.
+	 * @testdox Should track a live order and send the WooPayments extension's `prod` order mode to the platform.
 	 *
 	 * Plugin 11.1.0 posts the stored `_wcpay_mode` after matching it with `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:171-190).
 	 */
@@ -503,7 +503,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should skip a live-mode order stored with the account-mode `live` slug, like the client.
+	 * @testdox Should skip a live-mode order stored with the account-mode `live` slug, like the WooPayments extension.
 	 *
 	 * Plugin 11.1.0 treats any value other than the current `Order_Mode` as a mode mismatch (class-wc-payments-action-scheduler-service.php:173-179).
 	 */

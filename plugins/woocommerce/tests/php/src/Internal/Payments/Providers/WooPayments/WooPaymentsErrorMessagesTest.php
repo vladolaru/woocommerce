@@ -20,7 +20,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The localized message catalog preserves the WooPayments oracle message IDs.
+	 * @testdox The localized message catalog preserves the WooPayments extension's message IDs.
 	 */
 	public function test_get_localized_messages_preserves_oracle_messages(): void {
 		$this->assertSame(
@@ -103,7 +103,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Each REC-1 card decline code pair maps to its exact client shopper message, present or mirrored.
+	 * @testdox Each REC-1 card decline code pair maps to the WooPayments extension's exact shopper message, present or mirrored.
 	 *
 	 * REC-1 (`Fixtures/platform-intention-declines.json`) recorded that the platform's `decline_code`
 	 * is present even when it equals `code` (`expired_card`, `incorrect_cvc`, `processing_error`), so
@@ -145,7 +145,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Incorrect postal codes use the oracle's dedicated message.
+	 * @testdox Incorrect postal codes use the WooPayments extension's dedicated message.
 	 */
 	public function test_get_shopper_message_uses_incorrect_zip_message(): void {
 		$this->assertSame(
@@ -167,7 +167,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed transport request uses the client's connection copy instead of the transport diagnostic.
+	 * @testdox A failed transport request uses the WooPayments extension's connection copy instead of the transport diagnostic.
 	 *
 	 * Source: client 11.1.0 `class-wc-payments-utils.php:773-774` (`Connection_Exception` branch).
 	 */
@@ -179,7 +179,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Typeless and unmapped card errors pass the platform message through, as the client does.
+	 * @testdox Typeless and unmapped card errors pass the platform message through, as the WooPayments extension does.
 	 *
 	 * Source: client 11.1.0 `class-wc-payments-utils.php:770` (the message defaults to the exception message) and `:797-819`
 	 * (only typed non-card errors and `wcpay_bad_request` are redacted; unmapped card codes keep the message).
@@ -212,7 +212,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An empty platform message stays empty when the client would pass it through.
+	 * @testdox An empty platform message stays empty when the WooPayments extension would pass it through.
 	 *
 	 * Source: client 11.1.0 `class-wc-payments-utils.php:770`, `:821`. Native callers substitute their own fallback copy.
 	 */

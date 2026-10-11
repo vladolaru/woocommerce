@@ -63,7 +63,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require native provider readiness before exposing payment-request express checkout.
+	 * @testdox Should require provider readiness before exposing payment-request express checkout.
 	 */
 	public function test_payment_request_requires_provider_readiness(): void {
 		$this->set_up_virtual_product_context( 'checkout' );
@@ -104,7 +104,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fire the legacy cart-support filter for each cart product.
+	 * @testdox Should fire the cart-support filter for each cart product.
 	 */
 	public function test_cart_support_filter_is_fired_for_each_cart_product(): void {
 		$first_product    = \WC_Helper_Product::create_simple_product();
@@ -138,7 +138,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should honor the legacy cart-support filter during checkout.
+	 * @testdox Should honor the cart-support filter during checkout.
 	 */
 	public function test_cart_support_filter_is_fired_during_checkout(): void {
 		$product = \WC_Helper_Product::create_simple_product();
@@ -302,7 +302,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a cart with a WooCommerce Pre-Orders product charged $when, as the client does only for upon release.
+	 * @testdox Should refuse a cart with a WooCommerce Pre-Orders product charged $when, as the WooPayments extension does only for upon release.
 	 *
 	 * Client 11.1.0 button helper :717-722.
 	 *
@@ -347,7 +347,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let the legacy itemization filter remove product-page display items.
+	 * @testdox Should let the itemization filter remove product-page display items.
 	 */
 	public function test_hide_itemization_filter_removes_product_display_items(): void {
 		$product = \WC_Helper_Product::create_simple_product(
@@ -866,7 +866,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply suffix and total-label filters once with the exact oracle values and uncast suffix behavior.
+	 * @testdox Should apply suffix and total-label filters once with the WooPayments extension's exact values and uncast suffix behavior.
 	 */
 	public function test_product_total_label_preserves_filter_shape_timing_and_type_behavior(): void {
 		$product = \WC_Helper_Product::create_simple_product(
@@ -1271,9 +1271,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use location-centric payment-request settings when the migrated legacy switch is absent.
+	 * @testdox Should use location-centric payment-request settings when the migrated payment_request switch is absent.
 	 */
-	public function test_payment_request_uses_location_settings_without_legacy_switch(): void {
+	public function test_payment_request_uses_location_settings_without_the_payment_request_switch(): void {
 		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service(
 			array(
@@ -1290,9 +1290,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to the legacy payment-request switch when per-context settings are absent.
+	 * @testdox Should fall back to the payment_request switch when per-context settings are absent.
 	 */
-	public function test_payment_request_uses_legacy_switch_when_context_settings_are_absent(): void {
+	public function test_payment_request_uses_the_payment_request_switch_when_context_settings_are_absent(): void {
 		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service(
 			array(
@@ -1438,7 +1438,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the client's availability conditions holds.
+	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the WooPayments extension's availability conditions holds.
 	 *
 	 * @dataProvider provider_amazon_pay_availability_conditions
 	 *
@@ -1447,7 +1447,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param bool                $in_list   Whether the dynamic checkout feature is on (express methods may sit in the payment-method list).
 	 * @param bool                $expected  Whether Amazon Pay should be usable.
 	 */
-	public function test_amazon_pay_honors_client_availability_conditions( array $settings, bool $test_mode, bool $in_list, bool $expected ): void {
+	public function test_amazon_pay_honors_woopayments_extension_availability_conditions( array $settings, bool $test_mode, bool $in_list, bool $expected ): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', $in_list ? '1' : '0' );
 		$sut = $this->create_service(
 			array_merge(
@@ -1487,7 +1487,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should skip the live-mode HTTPS guard for Amazon Pay in admin, like the client's express availability check.
+	 * @testdox Should skip the live-mode HTTPS guard for Amazon Pay in admin, like the WooPayments extension's express availability check.
 	 */
 	public function test_amazon_pay_skips_https_guard_in_admin(): void {
 		$sut = $this->create_service(
@@ -1683,7 +1683,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should tell express checkout available only when the client's express checkout registration guards hold.
+	 * @testdox Should tell express checkout available only when the WooPayments extension's express checkout registration guards hold.
 	 *
 	 * @dataProvider provider_express_checkout_availability
 	 *

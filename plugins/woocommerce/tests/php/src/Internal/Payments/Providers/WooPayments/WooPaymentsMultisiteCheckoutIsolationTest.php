@@ -168,7 +168,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
-			$this->make_native_active_on_current_site();
+			$this->make_builtin_active_on_current_site();
 			$primary_token_id = $this->create_card_token( $user_id, 'pm_primary' );
 			$gateway          = new WooPaymentsGateway();
 			$provider         = $this->getMockBuilder( WooPaymentsProvider::class )
@@ -217,7 +217,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'no',
 				)
 			);
-			$this->make_native_active_on_current_site();
+			$this->make_builtin_active_on_current_site();
 			$gateway->init_settings();
 			$this->assertTrue( $gateway->is_available() );
 			$this->assertSame( 'no', $gateway->get_option( 'saved_cards' ) );
@@ -243,7 +243,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
-			$this->make_native_active_on_current_site();
+			$this->make_builtin_active_on_current_site();
 			$this->assertSame( array( 'pm_secondary' ), $this->get_payment_method_ids( $gateway ) );
 			$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
 			restore_current_blog();
@@ -276,10 +276,10 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native should own and serve checkout on both a primary and a secondary site once each independently enables it.
+	 * @testdox The built-in WooPayments should own and serve checkout on both a primary and a secondary site once each independently enables it.
 	 * @group multisite
 	 */
-	public function test_native_runtime_serves_both_sites_when_enabled_on_each(): void {
+	public function test_builtin_runtime_serves_both_sites_when_enabled_on_each(): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
@@ -303,7 +303,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
-			$this->make_native_active_on_current_site();
+			$this->make_builtin_active_on_current_site();
 			$runtime_arbiter->invalidate();
 			add_filter( 'wcpay_test_mode', '__return_true' );
 
@@ -341,7 +341,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				)
 			);
-			$this->make_native_active_on_current_site();
+			$this->make_builtin_active_on_current_site();
 			$runtime_arbiter->invalidate();
 
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $runtime_arbiter->get_runtime_owner(), 'Native should also own the secondary site once it enables native, independent of the primary site.' );
@@ -426,7 +426,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 *
 	 * These tests write the account cache and gateway settings as raw options, which bypass that sync.
 	 */
-	private function make_native_active_on_current_site(): void {
+	private function make_builtin_active_on_current_site(): void {
 		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
 		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();

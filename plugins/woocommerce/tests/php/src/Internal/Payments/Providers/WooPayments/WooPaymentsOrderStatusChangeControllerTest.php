@@ -51,9 +51,9 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register or enqueue anything when the native runtime does not own payments.
+	 * @testdox Should not register or enqueue anything when the built-in WooPayments does not own payments.
 	 */
-	public function test_does_nothing_when_native_does_not_own_the_runtime(): void {
+	public function test_does_nothing_when_builtin_does_not_own_the_runtime(): void {
 		$this->sut = $this->create_controller( false );
 		$this->set_current_order( $this->create_order() );
 		$this->set_order_edit_screen( 'shop_order' );
@@ -70,7 +70,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the admin enqueue hook once when the native runtime owns payments.
+	 * @testdox Should register the admin enqueue hook once when the built-in WooPayments owns payments.
 	 */
 	public function test_registers_the_admin_enqueue_hook_once(): void {
 		$this->sut = $this->create_controller( true );
@@ -116,7 +116,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show the WooPayments transaction fee below the order totals, like the client.
+	 * @testdox Should show the WooPayments transaction fee below the order totals, like the WooPayments extension.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:183,1329-1363`.
 	 */
@@ -299,9 +299,9 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `client/components/confirmation-modal/styles.scss`: at most 600px wide, 24px header and
 	 * content padding, paragraphs without margins and a full-width separator above the footer.
 	 *
-	 * @testdox Should size and space the status-change confirmation dialogs like the client.
+	 * @testdox Should size and space the status-change confirmation dialogs like the WooPayments extension.
 	 */
-	public function test_styles_the_confirmation_dialogs_like_the_client(): void {
+	public function test_styles_the_confirmation_dialogs_like_the_woopayments_extension(): void {
 		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
 
 		$this->assertStringContainsString( '.woocommerce-woopayments-order-status-change__modal.woocommerce-woopayments-order-status-change__modal{max-width:600px}', $css );
@@ -315,9 +315,9 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `client/components/inline-notice/styles.scss`: warning notices use the `#fcf9e8` fill, and the
 	 * icon box is a centred flex container, so the one-line test-mode notice is as tall as its 22px icon row.
 	 *
-	 * @testdox Should fill the order screen warning notices and centre their icon like the client.
+	 * @testdox Should fill the order screen warning notices and centre their icon like the WooPayments extension.
 	 */
-	public function test_styles_the_order_notices_like_the_client(): void {
+	public function test_styles_the_order_notices_like_the_woopayments_extension(): void {
 		$css = $this->enqueue_for_a_woopayments_order_and_get_inline_style();
 
 		$this->assertStringContainsString( '#woocommerce-woopayments-order-payment-details .components-notice.is-warning{background-color:#fcf9e8}', $css );
@@ -400,14 +400,14 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $native_register  Whether native owns the runtime.
+	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
 	 * @param bool $asset_available  Whether the script bundle is built.
 	 * @return WooPaymentsOrderStatusChangeController
 	 */
-	private function create_controller( bool $native_register, bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
+	private function create_controller( bool $builtin_register, bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
 		$controller = new WooPaymentsOrderStatusChangeController();
 		$controller->init(
-			new StaticWooPaymentsRuntimeArbiter( $native_register ),
+			new StaticWooPaymentsRuntimeArbiter( $builtin_register ),
 			wc_get_container()->get( WooPaymentsOrderStatusChangeConfirmation::class )
 		);
 

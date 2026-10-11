@@ -33,11 +33,11 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Metadata construction preserves the legacy payment type and three-argument filter shape.
+	 * @testdox Metadata construction preserves the payment type and three-argument filter shape.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_metadata_hook_preserves_legacy_payment_type_and_three_argument_shape(): void {
+	public function test_metadata_hook_preserves_payment_type_and_three_argument_shape(): void {
 		$order           = wc_create_order();
 		$captured_args   = array();
 		$metadata_filter = static function ( array $metadata, WC_Order $filtered_order, $payment_type ) use ( &$captured_args ): array {
@@ -183,7 +183,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 sends its transport user agent and the site URL as the mandate user agent
 	 * (class-wc-payment-gateway-wcpay.php:2596-2604); native sends its own transport identity there.
 	 *
-	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape, with native's user agent.
+	 * @testdox Redirect and mandate runtime values match the WooPayments 11.1 request shape, with the built-in WooPayments user agent.
 	 */
 	public function test_redirect_and_mandate_runtime_values_match_11_1_request_shape(): void {
 		Constants::set_constant( 'WC_VERSION', '10.4.0-rc.1' );
@@ -241,7 +241,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 *
 	 * @testdox A P24 intent request declares the p24 payment method type and a redirect return URL, like client 11.1.0.
 	 */
-	public function test_p24_intent_request_uses_the_client_payment_method_type(): void {
+	public function test_p24_intent_request_uses_the_woopayments_extension_payment_method_type(): void {
 		$order = wc_create_order();
 		$order->set_currency( 'PLN' );
 		$order->set_total( '25.00' );

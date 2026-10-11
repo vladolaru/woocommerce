@@ -65,7 +65,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
 	}
 
-	/** @testdox Provider exposes its Multi-Currency bootstrap root without core-owned composition knowledge. */
+	/** @testdox Provider exposes its Multi-Currency bootstrap root without knowing how core composes it. */
 	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
 		$this->assertTrue( method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) );
 		if ( ! method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) ) {
@@ -99,9 +99,9 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A3 provider publishes money-moving operations once native processing exists.
+	 * @testdox The provider exposes the money-moving operations.
 	 */
-	public function test_provider_publishes_money_moving_operations_for_native_processing(): void {
+	public function test_provider_exposes_the_money_moving_operations(): void {
 		foreach (
 			array(
 				'get_payment_gateways',
@@ -367,7 +367,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Provider should publish gateway identity independently of transient capability state.
 	 */
-	public function test_provider_publishes_native_gateway_instances_for_active_payment_method_definitions(): void {
+	public function test_provider_publishes_gateway_instances_for_active_payment_method_definitions(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -580,15 +580,15 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider availability requires native transport and account readiness.
+	 * @testdox Provider availability requires transport and account readiness.
 	 *
-	 * @dataProvider provider_native_readiness
+	 * @dataProvider provider_readiness
 	 *
 	 * @param bool $transport_available Whether native transport is available.
 	 * @param bool $account_ready       Whether the account can process payments.
 	 * @param bool $expected            Expected readiness.
 	 */
-	public function test_can_process_payments_requires_native_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
+	public function test_can_process_payments_requires_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
 		$payment_operations = $this->createMock( WooPaymentsPaymentOperationService::class );
 		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -651,7 +651,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{bool,bool,bool}>
 	 */
-	public function provider_native_readiness(): array {
+	public function provider_readiness(): array {
 		return array(
 			'transport and account ready' => array( true, true, true ),
 			'transport unavailable'       => array( false, true, false ),
@@ -672,9 +672,9 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Provider should receive the gateway adapter through dependency injection.
+	 * @testdox Provider should receive the payment operation service through dependency injection.
 	 */
-	public function test_provider_gateway_adapter_access_is_injected(): void {
+	public function test_provider_payment_operations_are_injected(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for provider-boundary regression coverage.
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php' );
 

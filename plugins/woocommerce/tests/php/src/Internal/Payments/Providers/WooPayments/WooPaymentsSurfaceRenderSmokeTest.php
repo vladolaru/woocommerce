@@ -41,9 +41,9 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should confirm the native runtime is actually enabled, so the surface assertions are not vacuous.
+	 * @testdox Should confirm the built-in WooPayments is actually enabled, so the surface assertions are not vacuous.
 	 */
-	public function test_native_runtime_is_enabled_for_these_assertions(): void {
+	public function test_builtin_runtime_is_enabled_for_these_assertions(): void {
 		$this->assertTrue(
 			$this->get_arbiter()->is_builtin_enabled(),
 			'The native payments runtime must be enabled, otherwise the surface assertions in this class prove nothing about it.'
@@ -51,9 +51,9 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the public storefront product listing renderable while the native runtime is enabled.
+	 * @testdox Should keep the public storefront product listing renderable while the built-in WooPayments is enabled.
 	 */
-	public function test_storefront_product_listing_renders_with_native_runtime_enabled(): void {
+	public function test_storefront_product_listing_renders_with_builtin_runtime_enabled(): void {
 		$product = \WC_Helper_Product::create_simple_product();
 
 		$markup = do_shortcode( '[products limit="1"]' );
@@ -65,7 +65,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve available payment gateways on the storefront without error while the native runtime is enabled.
+	 * @testdox Should resolve available payment gateways on the storefront without error while the built-in WooPayments is enabled.
 	 */
 	public function test_available_payment_gateways_resolve_on_the_storefront(): void {
 		$gateways = WC()->payment_gateways()->get_available_payment_gateways();
@@ -98,7 +98,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the core My Account navigation intact while the native runtime is enabled.
+	 * @testdox Should keep the core My Account navigation intact while the built-in WooPayments is enabled.
 	 */
 	public function test_my_account_navigation_remains_intact(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
@@ -118,7 +118,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should offer the My Account payment-methods menu entry once native saved cards are enabled.
+	 * @testdox Should offer the My Account payment-methods menu entry once saved cards are enabled.
 	 *
 	 * Unlike the other smokes in this class, this one needs a real, available `WooPaymentsGateway`
 	 * instance in `WC_Payment_Gateways`: `wc_get_account_menu_items()` only offers the entry for a
@@ -128,7 +128,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	 * used by WooPaymentsMoneyMovementRestControllerTest); the gateway itself, its settings, and core's
 	 * menu-building all stay real.
 	 */
-	public function test_my_account_menu_offers_payment_methods_when_native_saved_cards_enabled(): void {
+	public function test_my_account_menu_offers_payment_methods_when_saved_cards_enabled(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
 
 		// The gateway is offered only in the active tier.

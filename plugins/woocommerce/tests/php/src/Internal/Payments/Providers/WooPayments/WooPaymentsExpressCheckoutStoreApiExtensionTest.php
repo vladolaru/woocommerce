@@ -72,9 +72,9 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should register Store API extension hooks only when native WooPayments owns the runtime.
+	 * @testdox Should register Store API extension hooks only when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_hooks_only_when_native_owns_runtime(): void {
+	public function test_registers_hooks_only_when_builtin_owns_runtime(): void {
 		$this->sut = $this->create_extension( false );
 		$this->sut->register();
 
@@ -91,7 +91,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should expose the client's Apple Pay/Google Pay and Amazon Pay methods for the current currency.
+	 * @testdox Should expose the WooPayments extension's Apple Pay/Google Pay and Amazon Pay methods for the current currency.
 	 *
 	 * @dataProvider provider_cart_extension_methods
 	 *
@@ -99,7 +99,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 * @param bool              $amazon_pay      Whether Amazon Pay is usable.
 	 * @param array<int,string> $expected        Expected methods.
 	 */
-	public function test_get_cart_extension_data_returns_client_methods( bool $payment_request, bool $amazon_pay, array $expected ): void {
+	public function test_get_cart_extension_data_returns_woopayments_extension_methods( bool $payment_request, bool $amazon_pay, array $expected ): void {
 		update_option( 'woocommerce_currency', 'EUR' );
 
 		$this->sut = $this->create_extension( true, $payment_request, $amazon_pay, true, 'EUR' );
@@ -246,9 +246,9 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should make the state optional for the client's 26 countries on express checkout Store API requests.
+	 * @testdox Should make the state optional for the WooPayments extension's 26 countries on express checkout Store API requests.
 	 */
-	public function test_express_checkout_request_makes_state_optional_for_client_countries(): void {
+	public function test_express_checkout_request_makes_state_optional_for_woopayments_extension_countries(): void {
 		$this->sut = $this->create_extension( true );
 		$this->set_express_checkout_request();
 
@@ -290,7 +290,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should leave the country locales unchanged when a client express checkout condition does not hold.
+	 * @testdox Should leave the country locales unchanged when one of the WooPayments extension's express checkout conditions does not hold.
 	 *
 	 * @dataProvider provider_non_express_checkout_requests
 	 *
@@ -428,7 +428,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should not register the refresh-ui callback when a client registration guard fails.
+	 * @testdox Should not register the refresh-ui callback when one of the WooPayments extension's registration guards fails.
 	 *
 	 * @dataProvider provider_refresh_ui_registration_guards
 	 *
@@ -517,14 +517,14 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool   $native_register Whether native should register.
-	 * @param bool   $payment_request Whether Apple Pay/Google Pay is enabled.
-	 * @param bool   $amazon_pay      Whether Amazon Pay is usable.
-	 * @param bool   $available       Whether express checkout is available.
-	 * @param string $currency        Expected cart currency.
+	 * @param bool   $builtin_register Whether the built-in WooPayments owns the runtime.
+	 * @param bool   $payment_request  Whether Apple Pay/Google Pay is enabled.
+	 * @param bool   $amazon_pay       Whether Amazon Pay is usable.
+	 * @param bool   $available        Whether express checkout is available.
+	 * @param string $currency         Expected cart currency.
 	 * @return WooPaymentsExpressCheckoutStoreApiExtension
 	 */
-	private function create_extension( bool $native_register, bool $payment_request = true, bool $amazon_pay = false, bool $available = true, string $currency = 'USD' ): WooPaymentsExpressCheckoutStoreApiExtension {
+	private function create_extension( bool $builtin_register, bool $payment_request = true, bool $amazon_pay = false, bool $available = true, string $currency = 'USD' ): WooPaymentsExpressCheckoutStoreApiExtension {
 		$express_checkout_service = $this->getMockBuilder( WooPaymentsExpressCheckoutService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_payment_request_enabled', 'is_amazon_pay_usable', 'is_express_checkout_available' ) )
@@ -543,7 +543,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 			);
 
 		$extension = new WooPaymentsExpressCheckoutStoreApiExtension();
-		$extension->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $express_checkout_service );
+		$extension->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ), $express_checkout_service );
 
 		return $extension;
 	}

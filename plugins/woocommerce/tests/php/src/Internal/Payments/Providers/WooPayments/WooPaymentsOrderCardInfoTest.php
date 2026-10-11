@@ -31,7 +31,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The card info provider loads on every request once WooPayments is connected or active, as the client registers it everywhere.
+	 * @testdox The card info provider loads on every request once WooPayments is connected or active, as the WooPayments extension registers it everywhere.
 	 */
 	public function test_card_info_provider_loads_wherever_an_order_can_render(): void {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
@@ -97,7 +97,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $type terminal card shows its network when the client does ($network over $brand), with the network's icon.
+	 * @testdox A $type terminal card shows its network when the WooPayments extension does ($network over $brand), with the network's icon.
 	 * @testWith ["eftpos_au", "visa", "card_present"]
 	 *           ["cartes_bancaires", "mastercard", "card_present"]
 	 *           ["eftpos_au", "visa", "interac_present"]
@@ -177,7 +177,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed fetch writes the always-on payment-info line once, with logging off, as core's own fallback does (sweep row 220).
+	 * @testdox A failed fetch writes the always-on payment-info line once, with logging off, as core's own fallback does.
 	 */
 	public function test_failed_fetch_writes_one_payment_info_line_with_logging_off(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
@@ -231,7 +231,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Card info values are sanitized as text, as the client returns them.
+	 * @testdox Card info values are sanitized as text, as the WooPayments extension returns them.
 	 */
 	public function test_card_info_values_are_sanitized(): void {
 		$this->register_card_info_service( $this->create_recording_payment_method_client( array() ) );
@@ -253,9 +253,9 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Nothing is registered while the WooPayments plugin owns the runtime.
+	 * @testdox Nothing is registered while the WooPayments extension owns the runtime.
 	 */
-	public function test_card_info_provider_registers_nothing_when_the_plugin_owns_the_runtime(): void {
+	public function test_card_info_provider_registers_nothing_when_the_extension_owns_the_runtime(): void {
 		$card_info = new WooPaymentsOrderCardInfo();
 		$card_info->init( new StaticWooPaymentsRuntimeArbiter( false ) );
 

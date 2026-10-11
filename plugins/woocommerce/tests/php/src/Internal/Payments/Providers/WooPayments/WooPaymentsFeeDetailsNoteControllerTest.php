@@ -134,7 +134,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A success note the order already has, by its identity or its text, schedules nothing, as the client returns once its note exists.
+	 * @testdox A success note the order already has, by its identity or its text, schedules nothing, as the WooPayments extension returns once its note exists.
 	 *
 	 * @dataProvider existing_note_kinds
 	 *
@@ -163,7 +163,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The job carries the store's test mode, as the client's does.
+	 * @testdox The job carries the store's test mode, as the WooPayments extension's does.
 	 */
 	public function test_job_carries_test_mode(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -316,7 +316,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A timeline the job cannot use ($_dataName) is logged as the client logs it, and adds no note.
+	 * @testdox A timeline the job cannot use ($_dataName) is logged as the WooPayments extension logs it, and adds no note.
 	 *
 	 * Client 11.1.0 add_fee_breakdown_to_order_notes() logs both cases through its gated Logger::log() at info level
 	 * (class-wc-payments-order-service.php:845-861).
@@ -326,7 +326,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $timeline Timeline the platform returns.
 	 * @param string              $message  Line the client logs.
 	 */
-	public function test_unusable_timeline_is_logged_as_the_client_logs_it( array $timeline, string $message ): void {
+	public function test_unusable_timeline_is_logged_as_the_woopayments_extension_logs_it( array $timeline, string $message ): void {
 		self::enable_woopayments_debug_logging();
 		$order = wc_create_order();
 		$order->save();
@@ -342,7 +342,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With WooPayments logging off, a timeline the job cannot use ($_dataName) writes no line, as the client's gated logger writes none.
+	 * @testdox With WooPayments logging off, a timeline the job cannot use ($_dataName) writes no line, as the WooPayments extension's gated logger writes none.
 	 *
 	 * @dataProvider unusable_timelines
 	 *

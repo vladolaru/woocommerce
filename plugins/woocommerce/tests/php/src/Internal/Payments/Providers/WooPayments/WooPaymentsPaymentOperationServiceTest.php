@@ -129,7 +129,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Charge should send a positive-amount payment through the platform API.
 	 */
-	public function test_charge_prefers_native_positive_amount_transport_when_available(): void {
+	public function test_charge_sends_a_positive_amount_payment_through_the_platform_api(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
@@ -360,7 +360,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge fails before the API call when the order total is below the cached platform minimum.
+	 * @testdox Charge fails before the API call when the order total is below the cached platform minimum.
 	 */
 	public function test_charge_fails_preflight_below_cached_platform_minimum(): void {
 		delete_transient( 'wcpay_minimum_amount_usd' );
@@ -410,7 +410,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge proceeds to the API when the order total meets the cached platform minimum.
+	 * @testdox Charge proceeds to the API when the order total meets the cached platform minimum.
 	 */
 	public function test_charge_proceeds_when_total_meets_cached_platform_minimum(): void {
 		delete_transient( 'wcpay_minimum_amount_usd' );
@@ -457,9 +457,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge should reuse a persisted key after an ambiguous transport failure.
+	 * @testdox Charge should reuse a persisted key after an ambiguous transport failure.
 	 */
-	public function test_native_charge_reuses_persisted_key_after_ambiguous_transport_failure(): void {
+	public function test_charge_reuses_persisted_key_after_ambiguous_transport_failure(): void {
 		$order            = $this->create_woopayments_order();
 		$order_id         = $order->get_id();
 		$api_client       = new class( $order_id ) extends WooPaymentsApiClient {
@@ -520,9 +520,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge should retire its key after a definitive provider outcome.
+	 * @testdox Charge should retire its key after a definitive provider outcome.
 	 */
-	public function test_native_charge_retires_key_after_definitive_outcome(): void {
+	public function test_charge_retires_key_after_definitive_outcome(): void {
 		$order            = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/** @var string[] */
@@ -569,13 +569,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge should retire its key on a definitive failure even when applying the outcome later fails.
+	 * @testdox Charge should retire its key on a definitive failure even when applying the outcome later fails.
 	 *
 	 * The post-lifecycle retirement never runs when applying the outcome throws (PaymentProcessingService rethrows before
 	 * it), so a decline must retire the key as it is classified; otherwise the next attempt sends the old key and gets the
 	 * stored decline back (area 2a #18). No finalize_charge_idempotency_key() call here models the failed apply.
 	 */
-	public function test_native_charge_retires_key_on_definitive_failure_without_lifecycle(): void {
+	public function test_charge_retires_key_on_definitive_failure_without_lifecycle(): void {
 		$order            = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/** @var string[] */
@@ -639,7 +639,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $key_source Whether the order kept a key from an earlier ambiguous attempt.
 	 * @param bool   $warns      Whether the warning is written.
 	 */
-	public function test_native_charge_warns_when_kept_key_replay_is_refused( string $key_source, bool $warns ): void {
+	public function test_charge_warns_when_unresolved_key_replay_is_refused( string $key_source, bool $warns ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order = $this->create_woopayments_order();
@@ -703,7 +703,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $failure How the first attempt fails.
 	 */
-	public function test_native_charge_keeps_its_key_when_the_failure_may_have_charged( string $failure ): void {
+	public function test_charge_keeps_its_key_when_the_failure_may_have_charged( string $failure ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$json                   = array( 'content-type' => 'application/json; charset=UTF-8' );
@@ -781,9 +781,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge should use the caller key for a different order.
+	 * @testdox Charge should use the caller key for a different order.
 	 */
-	public function test_native_charge_uses_a_different_order_key(): void {
+	public function test_charge_uses_a_different_order_key(): void {
 		$first_order      = $this->create_woopayments_order();
 		$second_order     = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
@@ -823,9 +823,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native SetupIntent failure should retain an ambiguous charge key.
+	 * @testdox SetupIntent failure should retain an ambiguous charge key.
 	 */
-	public function test_native_setup_intent_failure_retains_ambiguous_charge_key(): void {
+	public function test_setup_intent_failure_retains_ambiguous_charge_key(): void {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_ambiguous_charge' );
 		$order->save_meta_data();
@@ -866,9 +866,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native pre-dispatch failure should retain an ambiguous charge key.
+	 * @testdox Pre-dispatch failure should retain an ambiguous charge key.
 	 */
-	public function test_native_pre_dispatch_failure_retains_ambiguous_charge_key(): void {
+	public function test_pre_dispatch_failure_retains_ambiguous_charge_key(): void {
 		set_transient( 'wcpay_minimum_amount_usd', 100, DAY_IN_SECONDS );
 		$order = $this->create_woopayments_order( '0.50' );
 		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_ambiguous_charge' );
@@ -900,13 +900,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An ambiguous charge failure records the order, the customer it was sent with and the time beside the kept key; a definitive one records nothing.
+	 * @testdox An ambiguous charge failure records the order, the customer it was sent with and the time beside the unresolved key; a definitive one records nothing.
 	 *
 	 * The record is what tells a later refused resubmit to look up what this request did. A 502 is the platform's own
 	 * answer when its Stripe call failed (wpcom `wcpay/core/exceptions/class-platform-failure-exception.php:30`), so the
 	 * charge may have gone through.
 	 */
-	public function test_ambiguous_charge_failure_records_the_ambiguity_beside_the_kept_key(): void {
+	public function test_ambiguous_charge_failure_records_the_ambiguity_beside_the_unresolved_key(): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), self::stripe_card_declined() );
@@ -932,7 +932,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A later ambiguous answer under the kept key merges into the record: every customer sent, the earliest failure time and the note flag stay.
+	 * @testdox A later ambiguous answer under the unresolved key merges into the record: every customer sent, the earliest failure time and the note flag stay.
 	 *
 	 * Replacing the record would point the lookup at the later customer and move the account window past the earlier
 	 * intent (review 45 F1). A record in the earlier single-customer shape is read as a list of one.
@@ -1002,7 +1002,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox When the kept key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
+	 * @testdox When the unresolved key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
 	 *
 	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),
 	 * so a resubmit under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
@@ -1011,7 +1011,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * (review 47 F1). The second request may be the one Stripe ran under the key, so the window ends after its failure
 	 * (review 47 F2).
 	 */
-	public function test_kept_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
+	public function test_unresolved_key_sent_with_two_customers_looks_up_the_account_list_from_the_first_failure(): void {
 		$order     = $this->create_woopayments_order();
 		$failed_at = time() - 1000;
 		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
@@ -1099,7 +1099,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * answer through unchanged (wpcom `wcpay/class-base-controller.php:476-490`). So the earlier request finished, and its
 	 * intents can be listed by the customer it was sent with.
 	 */
-	public function test_kept_key_refusal_after_ambiguity_lists_the_customer_intents_first(): void {
+	public function test_unresolved_key_refusal_after_ambiguity_lists_the_customer_intents_first(): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
@@ -1193,9 +1193,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A 409 idempotency_key_in_use under the kept key means the earlier request still runs: no lookup, key and record kept.
+	 * @testdox A 409 idempotency_key_in_use under the unresolved key means the earlier request still runs: no lookup, key and record kept.
 	 */
-	public function test_in_use_conflict_under_the_kept_key_keeps_everything_without_lookup(): void {
+	public function test_in_use_conflict_under_the_unresolved_key_keeps_everything_without_lookup(): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
@@ -1224,7 +1224,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An idempotency_error type on an ambiguous answer ($_dataName) under the kept key looks nothing up and keeps the key and the record.
+	 * @testdox An idempotency_error type on an ambiguous answer ($_dataName) under the unresolved key looks nothing up and keeps the key and the record.
 	 *
 	 * A 409 or a server error means the earlier request may still be running, so its intent may not be listable yet
 	 * (Stripe's docs promise read-after-write consistency for List, https://docs.stripe.com/search, but say nothing about
@@ -1235,7 +1235,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int $status HTTP status of the answer.
 	 */
-	public function test_ambiguous_answer_with_idempotency_type_under_the_kept_key_does_not_look_up( int $status ): void {
+	public function test_ambiguous_answer_with_idempotency_type_under_the_unresolved_key_does_not_look_up( int $status ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$order                  = $this->create_woopayments_order();
@@ -2093,7 +2093,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * `wcpay/core/exceptions/class-rest-exception.php:54-64`, `class-fraud-rule-exception.php:27`,
 	 * `class-api-request-dispatcher.php:156-205`; `wp-includes/rest-api.php:3553-3557`).
 	 */
-	public function test_platform_refusal_under_the_kept_key_keeps_key_and_record(): void {
+	public function test_platform_refusal_under_the_unresolved_key_keeps_key_and_record(): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
@@ -2137,7 +2137,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * before the Stripe charge (wpcom `wcpay/class-intentions-controller.php:1322-1328`) and turns Stripe's missing-customer
 	 * error into a REST error with a top-level code (`stripe/class-stripe-client.php:878-908`, `:920-940`).
 	 */
-	public function test_missing_customer_under_the_kept_key_is_not_recreated_while_the_record_exists(): void {
+	public function test_missing_customer_under_the_unresolved_key_is_not_recreated_while_the_record_exists(): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array(
@@ -2192,19 +2192,19 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the ambiguity record exists, a Stripe $_dataName under the kept key retires the key and the record: $retires.
+	 * @testdox While the ambiguity record exists, a Stripe $_dataName under the unresolved key retires the key and the record: $retires.
 	 *
 	 * Only a card error or a success proves Stripe processed this request under the key, fresh or as the stored result of
 	 * the earlier request, so either settles what the earlier request did. Stripe answers a 429 and most
 	 * parameter-validation 400s before its idempotency layer and stores neither (https://docs.stripe.com/error-low-level),
 	 * so they say nothing about the earlier request: the key and the record stay for the next attempt's lookup.
 	 *
-	 * @dataProvider provide_stripe_answers_under_the_kept_key
+	 * @dataProvider provide_stripe_answers_under_the_unresolved_key
 	 *
 	 * @param array<string,mixed> $answer  Stripe's answer, passed through by the platform.
 	 * @param bool                $retires Whether the key and the record are retired.
 	 */
-	public function test_stripe_answer_under_the_kept_key_retires_only_a_settled_request( array $answer, bool $retires ): void {
+	public function test_stripe_answer_under_the_unresolved_key_retires_only_a_settled_request( array $answer, bool $retires ): void {
 		$order                  = $this->create_woopayments_order();
 		$http_client            = new FakeWooPaymentsHttpClient();
 		$http_client->responses = array( self::platform_bad_gateway(), $answer );
@@ -2226,7 +2226,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{0:array<string,mixed>,1:bool}>
 	 */
-	public function provide_stripe_answers_under_the_kept_key(): array {
+	public function provide_stripe_answers_under_the_unresolved_key(): array {
 		return array(
 			'card decline'                     => array( self::stripe_card_declined(), true ),
 			'PaymentIntent answer'             => array( self::succeeded_charge( 'pi_replayed', 'pm_first' ), true ),
@@ -2642,7 +2642,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge declines write the payment-failed order note with the seller message and allow fraud meta.
+	 * @testdox Charge declines write the payment-failed order note with the seller message and allow fraud meta.
 	 */
 	public function test_charge_decline_composes_failed_note_and_allow_fraud_meta(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
@@ -2699,7 +2699,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge declines without a card error keep the failed note but no fraud meta box type.
+	 * @testdox Charge declines without a card error keep the failed note but no fraud meta box type.
 	 */
 	public function test_charge_decline_without_card_error_writes_note_without_fraud_meta(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
@@ -2743,7 +2743,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge blocked by fraud rules records the block state without failing the order.
+	 * @testdox Charge blocked by fraud rules records the block state without failing the order.
 	 */
 	public function test_charge_blocked_by_fraud_rules_records_block_state(): void {
 		$order      = $this->create_woopayments_order( '25.00' );
@@ -2803,7 +2803,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge treats an incorrect_zip decline as a fraud block only while the AVS rule is enabled.
+	 * @testdox Charge treats an incorrect_zip decline as a fraud block only while the AVS rule is enabled.
 	 */
 	public function test_charge_treats_incorrect_zip_as_block_only_with_avs_rule_enabled(): void {
 		delete_transient( 'wcpay_fraud_protection_settings' );
@@ -2877,9 +2877,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge defers settlement exchange-rate metadata to its effect plan.
+	 * @testdox Charge defers settlement exchange-rate metadata to its effect plan.
 	 */
-	public function test_native_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
+	public function test_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order( '40.00' );
 		$order->set_currency( 'GBP' );
@@ -2979,7 +2979,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should flag platform-created payment methods for WCPay.
+	 * @testdox Charge should flag platform-created payment methods for WooPayments.
 	 */
 	public function test_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
@@ -3052,9 +3052,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should send manual capture mode to native payment intents when enabled.
+	 * @testdox Charge should send manual capture mode to payment intents when enabled.
 	 */
-	public function test_charge_sends_manual_capture_method_to_native_payment_intents_when_enabled(): void {
+	public function test_charge_sends_manual_capture_method_to_payment_intents_when_enabled(): void {
 		$order            = $this->create_woopayments_order( '50.00' );
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
@@ -3344,9 +3344,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge decoding defers account mode metadata to effect application.
+	 * @testdox Charge decoding defers account mode metadata to effect application.
 	 */
-	public function test_native_charge_defers_account_mode_to_effect_application(): void {
+	public function test_charge_defers_account_mode_to_effect_application(): void {
 		$order            = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
 			/**
@@ -3400,7 +3400,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should recreate and retry under a derived key, kept on the order, when the native transport reports a missing customer.
+	 * @testdox Charge should recreate and retry under a derived key, kept on the order, when the transport reports a missing customer.
 	 *
 	 * The retry sends another customer, and Stripe refuses a reused idempotency key with a different body, so the retry
 	 * gets its own key; the order keeps it so an ambiguous failure of the retry replays the retry (area 2a #15).
@@ -3563,7 +3563,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provider_subscription_change_transport_provider
-	 * @testdox Validated subscription changes reuse an existing customer without a provider update for both native intent transports.
+	 * @testdox Validated subscription changes reuse an existing customer without a provider update for both intent transports.
 	 *
 	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
 	 * @param string $expected_intent Expected intent type.
@@ -3601,9 +3601,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ordinary native checkout updates an existing customer before creating its intent.
+	 * @testdox Ordinary checkout updates an existing customer before creating its intent.
 	 */
-	public function test_ordinary_native_charge_updates_existing_customer_with_real_customer_service(): void {
+	public function test_ordinary_charge_updates_existing_customer_with_real_customer_service(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->create_recording_customer_intent_api_client();
 
@@ -3638,7 +3638,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provider_subscription_change_transport_provider
-	 * @testdox Validated subscription changes recreate a missing remote customer and retry the native intent under a derived key.
+	 * @testdox Validated subscription changes recreate a missing remote customer and retry the intent under a derived key.
 	 *
 	 * @param string $total Order total selecting PaymentIntent or SetupIntent transport.
 	 * @param string $expected_intent Expected intent type.
@@ -4076,7 +4076,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A single card checkout without save matches the 11.1.0 request shape.
+	 * @testdox A single card checkout without save matches the WooPayments extension's request shape.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1781-1782` (amount/currency),
 	 * `:1821-1831` (capture_method, customer, payment_method), `:1870-1874` (`setup_future_usage`
@@ -4169,7 +4169,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native redirect mapping sanitizes a provider URL exactly once at the runtime boundary.
+	 * @testdox Redirect mapping sanitizes a provider URL exactly once at the runtime boundary.
 	 */
 	public function test_charge_sanitizes_provider_redirect_exactly_once(): void {
 		$order        = $this->create_woopayments_order( '50.00' );
@@ -4509,7 +4509,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should resolve saved WooCommerce token IDs before native transport.
+	 * @testdox Charge should resolve saved WooCommerce token IDs before the transport call.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's saved-PM
 	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair
@@ -4517,14 +4517,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * 3DS-required card, real from the local platform. The token-resolution guard this test exists
 	 * for moves to the sent request body (`pm_saved`, the resolved token, not a raw context
 	 * credential) rather than a hand-written response validator, following the fake-transport
-	 * pattern {@see self::test_native_charge_decline_envelope_maps_each_card_code} established.
+	 * pattern {@see self::test_charge_decline_envelope_maps_each_card_code} established.
 	 * Oracle: WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:2070-2072` attaches an
 	 * already-saved token to the order (`add_token_to_order()`) unconditionally, before the
 	 * `$needs_frontend_confirmation` check for a `requires_action`/`requires_confirmation` status
 	 * at `:2081` — the saved-token attachment does not wait to see whether the intent needs a
 	 * challenge.
 	 */
-	public function test_charge_resolves_saved_payment_token_before_native_transport(): void {
+	public function test_charge_resolves_saved_payment_token_before_transport(): void {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order();
 		$saved_token           = $this->create_card_token( $user_id, 'pm_saved' );
@@ -4579,7 +4579,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Matches WooPayments 11.1.0 WCPay\Internal\Service\OrderService::get_payment_metadata(), WC_Payments_Subscriptions_Utilities::is_payment_recurring(), and WC_Payment_Gateway_WCPay::process_payment_for_order(). Store API initial and renewal classifications were observed in read-only pinned-client runtime captures; classic initial is source-derived because no paired reference order exists.
 	 *
-	 * @testdox Saved subscription orders compose the pinned recurring request shape through the native adapter.
+	 * @testdox Saved subscription orders compose the pinned recurring request shape through the payment operation service.
 	 *
 	 * @dataProvider subscription_checkout_composition_provider
 	 *
@@ -5009,7 +5009,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A zero-total scheduled Link renewal completes without any intent, as the client's scheduled payment does.
+	 * @testdox A zero-total scheduled Link renewal completes without any intent, as the WooPayments extension's scheduled payment does.
 	 *
 	 * Client scheduled_subscription_payment() builds its payment information from the saved token (subtrait:424-425), so gw:1688
 	 * skips the intent: no transport, so no mandate question either.
@@ -5380,9 +5380,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge should plan requested token persistence without creating tokens during transport.
+	 * @testdox Charge should plan requested token persistence without creating tokens during transport.
 	 */
-	public function test_native_charge_plans_requested_token_persistence_without_writes(): void {
+	public function test_charge_plans_requested_token_persistence_without_writes(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
@@ -5476,9 +5476,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native recurring charge should retain the provider outcome until planned token effects run.
+	 * @testdox Recurring charge should retain the provider outcome until planned token effects run.
 	 */
-	public function test_native_recurring_charge_returns_provider_outcome_with_required_token_plan(): void {
+	public function test_recurring_charge_returns_provider_outcome_with_required_token_plan(): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$api_client       = new class() extends WooPaymentsApiClient {
@@ -5565,9 +5565,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge failures expose localized structured card declines separately from raw diagnostics.
+	 * @testdox Charge failures expose localized structured card declines separately from raw diagnostics.
 	 */
-	public function test_native_charge_failure_maps_structured_card_decline_to_shopper_message(): void {
+	public function test_charge_failure_maps_structured_card_decline_to_shopper_message(): void {
 		$order                 = $this->create_woopayments_order( '50.00' );
 		$account_service       = $this->create_account_service( false );
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -5609,7 +5609,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge decline envelopes recorded from the local platform (REC-1) map each card code to its outcome.
+	 * @testdox Charge decline envelopes recorded from the local platform (REC-1) map each card code to its outcome.
 	 *
 	 * The response status and body are the real decline envelope local WPCOM returned for each Stripe test
 	 * card, recorded in `Fixtures/platform-intention-declines.json` (REC-1). Every field the client reads
@@ -5623,7 +5623,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * definitive and retire the charge idempotency key (`_wcpay_definitive_charge_failure`), giving a
 	 * shopper retry a fresh key rather than replaying the declined one. This is native-only idempotency
 	 * bookkeeping with no client 11.1.0 parity claim: the plugin has no equivalent per-charge
-	 * idempotency-key retirement step. `:627` (`test_native_charge_retires_key_after_definitive_outcome`)
+	 * idempotency-key retirement step. `:627` (`test_charge_retires_key_after_definitive_outcome`)
 	 * proves the retirement mechanics with a synthetic failure; this asserts the classification itself
 	 * against a real recorded envelope.
 	 *
@@ -5645,7 +5645,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $expected_seller_message        Expected `seller_message` fragment in the merchant note, or '' when the code carries none.
 	 * @param bool   $mutate_raw_message             When true, replace the recorded `error.message` with a sentinel absent from any shopper-message catalog entry.
 	 */
-	public function test_native_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message, bool $mutate_raw_message = false ): void {
+	public function test_charge_decline_envelope_maps_each_card_code( string $pair, string $expected_error_code, string $expected_message, string $expected_shopper, string $expected_intent_id, string $expected_seller_message, bool $mutate_raw_message = false ): void {
 		$order           = $this->create_woopayments_order( '10.00' );
 		$account_service = $this->create_account_service( false );
 		$recorded        = $this->load_recorded_decline_entry( $pair );
@@ -5745,10 +5745,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native card decline over a fake transport fails the order exactly once with the recorded intent identity.
+	 * @testdox A card decline over a fake transport fails the order exactly once with the recorded intent identity.
 	 *
 	 * T.3 Task 2 (`plan-task-t3.md`): joins the two halves T.1 proved separately — the adapter's own
-	 * decline-envelope mapping ({@see self::test_native_charge_decline_envelope_maps_each_card_code})
+	 * decline-envelope mapping ({@see self::test_charge_decline_envelope_maps_each_card_code})
 	 * and {@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta}'s
 	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
 	 * {@see PaymentProcessingService::process_checkout_outcome}, real {@see WooPaymentsProvider}, this adapter,
@@ -5760,7 +5760,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $pair                REC-1 fixture pair key.
 	 * @param string $expected_intent_id  Recorded declined PaymentIntent ID.
 	 */
-	public function test_native_card_decline_over_fake_transport_fails_order_once_with_recorded_intent( string $pair, string $expected_intent_id ): void {
+	public function test_card_decline_over_fake_transport_fails_order_once_with_recorded_intent( string $pair, string $expected_intent_id ): void {
 		$order           = $this->create_woopayments_order( '10.00' );
 		$account_service = $this->create_account_service( false );
 		$recorded        = $this->load_recorded_decline_entry( $pair );
@@ -5806,14 +5806,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Afterpay checkout with no usable shipping or billing address fails the order with the client's notice and note, and sends nothing.
+	 * @testdox An Afterpay checkout with no usable shipping or billing address fails the order with the WooPayments extension's notice and note, and sends nothing.
 	 *
 	 * Client 11.1.0 throws Invalid_Address_Exception before any request (class-wc-payment-gateway-wcpay.php:5333-5340); the
 	 * process_payment() catch fails the order, writes "A payment of %1$s <strong>failed</strong> to complete with the
 	 * following message: <code>%2$s</code>." with the message's final period trimmed (:1352-1394), and shows the message
 	 * itself to the shopper through get_filtered_error_message() (:1418; class-wc-payments-utils.php:769-770) (review 36 F5).
 	 */
-	public function test_afterpay_checkout_without_a_usable_address_fails_with_the_client_notice_and_note(): void {
+	public function test_afterpay_checkout_without_a_usable_address_fails_with_the_woopayments_extension_notice_and_note(): void {
 		$order = $this->create_woopayments_order( '80.00' );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' );
 		$order->set_currency( 'USD' );
@@ -6262,9 +6262,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge returns a referenced plan before settlement enrichment runs.
+	 * @testdox Charge returns a referenced plan before settlement enrichment runs.
 	 */
-	public function test_native_charge_returns_referenced_plan_before_settlement_enrichment(): void {
+	public function test_charge_returns_referenced_plan_before_settlement_enrichment(): void {
 		$order              = $this->create_woopayments_order();
 		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -6312,7 +6312,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge decoding should plan card display effects without mutating the order.
+	 * @testdox Charge decoding should plan card display effects without mutating the order.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's new-card
 	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair `new_card_requires_action`), real
@@ -6322,7 +6322,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * `WooPaymentsIntentCodec::outcome_from_intention()` only sets that key when `latest_charge()`
 	 * finds one (`WooPaymentsIntentCodec.php:47-49`).
 	 */
-	public function test_native_charge_returns_display_effect_plan_without_mutating_order(): void {
+	public function test_charge_returns_display_effect_plan_without_mutating_order(): void {
 		$order                 = $this->create_woopayments_order();
 		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-3ds-requires-action.json', 'new_card_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -6364,9 +6364,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge uses the intent WooPay already confirmed instead of creating a second one.
+	 * @testdox Charge uses the intent WooPay already confirmed instead of creating a second one.
 	 */
-	public function test_native_charge_uses_the_woopay_intent_instead_of_creating_one(): void {
+	public function test_charge_uses_the_woopay_intent_instead_of_creating_one(): void {
 		$order      = $this->create_woopayments_order( '10.99' );
 		$api_client = $this->create_woopay_intent_api_client(
 			array(
@@ -6391,9 +6391,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge refuses a WooPay intent whose metadata names another order, with the client's message.
+	 * @testdox Charge refuses a WooPay intent whose metadata names another order, with the WooPayments extension's message.
 	 */
-	public function test_native_charge_refuses_a_woopay_intent_confirmed_for_another_order(): void {
+	public function test_charge_refuses_a_woopay_intent_confirmed_for_another_order(): void {
 		$order      = $this->create_woopayments_order( '10.99' );
 		$other_id   = $order->get_id() + 1;
 		$api_client = $this->create_woopay_intent_api_client(
@@ -6419,9 +6419,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge fails without creating an intent when the WooPay intent cannot be read.
+	 * @testdox Charge fails without creating an intent when the WooPay intent cannot be read.
 	 */
-	public function test_native_charge_fails_when_the_woopay_intent_cannot_be_read(): void {
+	public function test_charge_fails_when_the_woopay_intent_cannot_be_read(): void {
 		$order      = $this->create_woopayments_order( '10.99' );
 		$api_client = $this->create_woopay_intent_api_client(
 			array(),
@@ -6438,9 +6438,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge refuses a malformed WooPay intent id before any request, with the client's message.
+	 * @testdox Charge refuses a malformed WooPay intent id before any request, with the WooPayments extension's message.
 	 */
-	public function test_native_charge_refuses_a_malformed_woopay_intent_id_before_reading_it(): void {
+	public function test_charge_refuses_a_malformed_woopay_intent_id_before_reading_it(): void {
 		$order      = $this->create_woopayments_order( '10.99' );
 		$api_client = $this->create_woopay_intent_api_client( array( 'id' => 'abc123' ) );
 
@@ -6454,9 +6454,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native charge treats a WooPay intent id of "0" as absent, as the client's empty() check does.
+	 * @testdox Charge treats a WooPay intent id of "0" as absent, as the client's empty() check does.
 	 */
-	public function test_native_charge_treats_a_zero_woopay_intent_id_as_absent(): void {
+	public function test_charge_treats_a_zero_woopay_intent_id_as_absent(): void {
 		$order      = $this->create_woopayments_order( '10.99' );
 		$api_client = $this->create_woopay_intent_api_client( array() );
 
@@ -6468,9 +6468,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native zero-total checkout uses the setup intent WooPay already confirmed instead of creating one.
+	 * @testdox Zero-total checkout uses the setup intent WooPay already confirmed instead of creating one.
 	 */
-	public function test_native_setup_intent_uses_the_woopay_setup_intent_instead_of_creating_one(): void {
+	public function test_setup_intent_uses_the_woopay_setup_intent_instead_of_creating_one(): void {
 		$order      = $this->create_woopayments_order( '0.00' );
 		$api_client = $this->create_woopay_intent_api_client(
 			array(),
@@ -6494,9 +6494,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native zero-total checkout fails without creating a setup intent when the WooPay setup intent cannot be read.
+	 * @testdox Zero-total checkout fails without creating a setup intent when the WooPay setup intent cannot be read.
 	 */
-	public function test_native_setup_intent_fails_when_the_woopay_setup_intent_cannot_be_read(): void {
+	public function test_setup_intent_fails_when_the_woopay_setup_intent_cannot_be_read(): void {
 		$order      = $this->create_woopayments_order( '0.00' );
 		$api_client = $this->create_woopay_intent_api_client(
 			array(),
@@ -6513,9 +6513,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native zero-total checkout refuses a WooPay setup intent whose metadata names another order.
+	 * @testdox Zero-total checkout refuses a WooPay setup intent whose metadata names another order.
 	 */
-	public function test_native_setup_intent_refuses_a_woopay_setup_intent_for_another_order(): void {
+	public function test_setup_intent_refuses_a_woopay_setup_intent_for_another_order(): void {
 		$order      = $this->create_woopayments_order( '0.00' );
 		$api_client = $this->create_woopay_intent_api_client(
 			array(),
@@ -6672,7 +6672,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Zero-total card checkout should flag platform-created payment methods for WCPay.
+	 * @testdox Zero-total card checkout should flag platform-created payment methods for WooPayments.
 	 */
 	public function test_zero_total_charge_flags_platform_created_payment_methods_for_wcpay(): void {
 		$order            = $this->create_woopayments_order( '0.00' );
@@ -6838,7 +6838,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Refund should go through the platform API.
 	 */
-	public function test_refund_prefers_native_transport_when_available(): void {
+	public function test_refund_goes_through_the_platform_api(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -6878,9 +6878,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native refund should retain its provider identity before local note formatting runs.
+	 * @testdox A refund should retain its provider identity before local note formatting runs.
 	 */
-	public function test_native_refund_retains_provider_identity_before_local_effects(): void {
+	public function test_refund_retains_provider_identity_before_local_effects(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -6913,9 +6913,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund should fail closed when the native transport returns a failed provider status.
+	 * @testdox Refund should fail closed when the transport returns a failed provider status.
 	 */
-	public function test_refund_fails_closed_for_failed_native_refund_status(): void {
+	public function test_refund_fails_closed_for_failed_refund_status(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -6953,7 +6953,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native refund over a fake transport persists the provider refund identity, status, and exactly one note.
+	 * @testdox A refund over a fake transport persists the provider refund identity, status, and exactly one note.
 	 *
 	 * End to end through the production wiring: this test calls the real
 	 * {@see PaymentProcessingService::process_refund} directly (no gateway
@@ -6979,7 +6979,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string      $reason                Merchant-supplied refund reason.
 	 * @param string|null $expected_wire_reason  Expected `reason` field on the wire: the enum value, or `null` for free text.
 	 */
-	public function test_native_refund_over_fake_transport_persists_refund_identity_status_and_one_note( string $pair, string $currency, string $amount, int $amount_minor, string $charge_id, string $refund_id, string $reason, ?string $expected_wire_reason ): void {
+	public function test_refund_over_fake_transport_persists_refund_identity_status_and_one_note( string $pair, string $currency, string $amount, int $amount_minor, string $charge_id, string $refund_id, string $reason, ?string $expected_wire_reason ): void {
 		$order = $this->create_woopayments_order( $amount );
 		$order->set_currency( $currency );
 		$order->update_meta_data( '_charge_id', $charge_id );
@@ -7050,7 +7050,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * (class-wc-payments-api-client.php:2711-2771). The older manual refund of the same amount is the
 	 * row the derived key used to bind to, which made the retry replay the first failure.
 	 */
-	public function test_native_refund_calls_send_distinct_idempotency_keys_over_fake_transport(): void {
+	public function test_refund_calls_send_distinct_idempotency_keys_over_fake_transport(): void {
 		$order = $this->create_woopayments_order();
 		$order->set_currency( 'USD' );
 		$order->update_meta_data( '_charge_id', 'ch_refund_keys' );
@@ -9798,7 +9798,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native card checkout over a fake transport pays the order exactly once with the recorded intent identity.
+	 * @testdox A card checkout over a fake transport pays the order exactly once with the recorded intent identity.
 	 *
 	 * T.3 Task 2 (`plan-task-t3.md`): joins the request-shape half
 	 * ({@see self::test_single_card_checkout_without_save_matches_11_1_request_shape}) and the
@@ -9827,7 +9827,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string      $transaction_id Recorded balance-transaction ID.
 	 * @param string|null $exchange_rate  Expected `_wcpay_multi_currency_stripe_exchange_rate` meta, or `null` when no conversion applies.
 	 */
-	public function test_native_card_checkout_over_fake_transport_pays_order_once_with_recorded_intent( string $fixture, string $pair, string $currency, string $amount, int $amount_minor, string $customer_id, string $intent_id, string $charge_id, string $transaction_id, ?string $exchange_rate ): void {
+	public function test_card_checkout_over_fake_transport_pays_order_once_with_recorded_intent( string $fixture, string $pair, string $currency, string $amount, int $amount_minor, string $customer_id, string $intent_id, string $charge_id, string $transaction_id, ?string $exchange_rate ): void {
 		$order = $this->create_woopayments_order( $amount );
 		$order->set_currency( $currency );
 		// A physical line item makes the order need processing, matching the recorded checkout's
@@ -9928,7 +9928,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native card checkout with save over a fake transport creates exactly one token from the recorded payment method.
+	 * @testdox A card checkout with save over a fake transport creates exactly one token from the recorded payment method.
 	 *
 	 * T.3 Task 2 (`plan-task-t3.md`): the save path from a real recorded response to exactly one token
 	 * row, joining {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplierTest::test_requested_token_effects_are_idempotent}'s
@@ -9936,7 +9936,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * (`Fixtures/platform-intention-subscription.json`, pair `signup_initial_setup_future_usage`) run through the
 	 * full production stack, including the real {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService}.
 	 */
-	public function test_native_card_checkout_with_save_over_fake_transport_creates_one_token_from_recorded_payment_method(): void {
+	public function test_card_checkout_with_save_over_fake_transport_creates_one_token_from_recorded_payment_method(): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order( '10.99' );
 		$order->set_customer_id( $user_id );
@@ -10138,7 +10138,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * proof that a pending redirect-method refund becomes successful, deleted
 	 * from the browser suite with R4-R7. The first leg runs end to end through
 	 * the same production wiring as
-	 * {@see self::test_native_refund_over_fake_transport_persists_refund_identity_status_and_one_note},
+	 * {@see self::test_refund_over_fake_transport_persists_refund_identity_status_and_one_note},
 	 * fed the recorded Afterpay refund response REC-5a R-a returns while
 	 * `pending` (`Fixtures/platform-refunds.json`, pair
 	 * `afterpay_clearpay_full_refund_pending`); the second leg processes the
@@ -10150,7 +10150,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * webhook leg's own note-once identity is distinct from the pending
 	 * leg's (`wh:355-359`), so the claim is two notes total, not one.
 	 */
-	public function test_native_refund_over_fake_transport_stays_pending_until_webhook_confirms_succeeded(): void {
+	public function test_refund_over_fake_transport_stays_pending_until_webhook_confirms_succeeded(): void {
 		$charge_id = 'py_3UDz8PBzWlxcwgpP1m07cdHy';
 		$refund_id = 'pyr_1UJZaGBzWlxcwgpPIeG7xqIJ';
 		$reason    = 'requested_by_customer';
@@ -10242,7 +10242,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Capture should go through the platform API.
 	 */
-	public function test_capture_prefers_native_transport_when_available(): void {
+	public function test_capture_goes_through_the_platform_api(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -10326,9 +10326,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should send the context amount to the native transport.
+	 * @testdox Capture should send the context amount to the transport.
 	 */
-	public function test_capture_sends_context_amount_to_native_transport(): void {
+	public function test_capture_sends_context_amount_to_transport(): void {
 		$order      = $this->create_woopayments_order( '10.00' );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -10451,9 +10451,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native capture should return fee details as a plan without writing order notes.
+	 * @testdox Capture should return fee details as a plan without writing order notes.
 	 */
-	public function test_native_capture_returns_fee_effect_plan_without_writing_notes(): void {
+	public function test_capture_returns_fee_effect_plan_without_writing_notes(): void {
 		$order              = $this->create_woopayments_order( '50.00' );
 		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -10547,9 +10547,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should preserve authorized payment metadata on native capture failures.
+	 * @testdox Capture should preserve authorized payment metadata when the capture fails.
 	 */
-	public function test_capture_preserves_authorized_meta_for_native_failure(): void {
+	public function test_capture_preserves_authorized_meta_when_the_capture_fails(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -10602,7 +10602,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed native cancel re-fetches the intent and treats an already-canceled authorization as canceled.
+	 * @testdox A failed cancel re-fetches the intent and treats an already-canceled authorization as canceled.
 	 */
 	public function test_cancel_exception_self_heals_when_intent_is_already_canceled(): void {
 		$order      = $this->create_woopayments_order();
@@ -10644,7 +10644,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed native cancel stays failed when the re-fetched intent is not canceled.
+	 * @testdox A failed cancel stays failed when the re-fetched intent is not canceled.
 	 */
 	public function test_cancel_exception_stays_failed_when_intent_is_not_canceled(): void {
 		$order      = $this->create_woopayments_order();
@@ -10681,7 +10681,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed native cancel whose re-fetch also fails keeps the plain failed outcome.
+	 * @testdox A failed cancel whose re-fetch also fails keeps the plain failed outcome.
 	 */
 	public function test_cancel_exception_without_refetch_keeps_plain_failure(): void {
 		$order      = $this->create_woopayments_order();
@@ -10708,7 +10708,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed native capture re-fetches the intent and flags an expired authorization.
+	 * @testdox A failed capture re-fetches the intent and flags an expired authorization.
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
 		$order      = $this->create_woopayments_order();
@@ -10751,7 +10751,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed native capture keeps the plain failure effects when the re-fetch itself fails.
+	 * @testdox A failed capture keeps the plain failure effects when the re-fetch itself fails.
 	 */
 	public function test_capture_exception_keeps_failure_effects_when_refetch_fails(): void {
 		$order      = $this->create_woopayments_order();
@@ -10811,9 +10811,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native capture defers settlement exchange-rate metadata to its effect plan.
+	 * @testdox Capture defers settlement exchange-rate metadata to its effect plan.
 	 */
-	public function test_native_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
+	public function test_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = $this->create_woopayments_order( '40.00' );
 		$order->set_currency( 'GBP' );
@@ -10937,7 +10937,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Cancel should go through the platform API.
 	 */
-	public function test_cancel_prefers_native_transport_when_available(): void {
+	public function test_cancel_goes_through_the_platform_api(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -10975,9 +10975,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed native cancellation results retain diagnostics without success effects.
+	 * @testdox Failed cancellation results retain diagnostics without success effects.
 	 */
-	public function test_failed_native_cancel_retains_plan_without_success_effect_data(): void {
+	public function test_failed_cancel_retains_plan_without_success_effect_data(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()

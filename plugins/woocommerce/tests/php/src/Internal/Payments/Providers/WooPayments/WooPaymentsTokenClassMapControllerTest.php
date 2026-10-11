@@ -23,9 +23,9 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map preserved WooPayments token rows to native token classes.
+	 * @testdox Should map preserved WooPayments token rows to the token classes.
 	 */
-	public function test_maps_preserved_woopayments_token_rows_to_native_classes(): void {
+	public function test_maps_preserved_woopayments_token_rows_to_token_classes(): void {
 		$user_id  = $this->factory()->user->create();
 		$token_id = $this->create_raw_payment_token(
 			$user_id,
@@ -76,9 +76,9 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments token class names to native token classes.
+	 * @testdox Should map the WooPayments extension's token class names to the token classes.
 	 */
-	public function test_maps_legacy_woopayments_token_class_names_to_native_classes(): void {
+	public function test_maps_woopayments_extension_token_class_names_to_token_classes(): void {
 		$sut = new WooPaymentsTokenClassMapController();
 
 		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
@@ -89,9 +89,9 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register token class mapping when native does not own runtime.
+	 * @testdox Should not register token class mapping when the built-in WooPayments does not own the runtime.
 	 */
-	public function test_does_not_register_mapping_when_native_does_not_own_runtime(): void {
+	public function test_does_not_register_mapping_when_builtin_does_not_own_runtime(): void {
 		$sut = new WooPaymentsTokenClassMapController();
 
 		$sut->init( new StaticWooPaymentsRuntimeArbiter( false ) );

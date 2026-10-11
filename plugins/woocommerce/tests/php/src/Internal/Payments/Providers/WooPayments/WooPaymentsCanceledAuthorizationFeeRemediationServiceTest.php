@@ -42,9 +42,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox Preserved remediation hooks are registered when native owns runtime.
+	 * @testdox Preserved remediation hooks are registered when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_preserved_actions_when_native_owns_runtime(): void {
+	public function test_registers_preserved_actions_when_builtin_owns_runtime(): void {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array( $this->sut, 'process_batch' ) ) );
@@ -53,9 +53,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox Remediation hooks are not registered while the standalone plugin owns runtime.
+	 * @testdox Remediation hooks are not registered while the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_actions_when_plugin_owns_runtime(): void {
+	public function test_registers_no_actions_when_extension_owns_runtime(): void {
 		$service = $this->create_service( false );
 
 		$service->register();
@@ -316,7 +316,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	/**
 	 * @testdox Remediation deletes only WooPayments refunds, removes stale metadata, and records a detailed note.
 	 */
-	public function test_remediate_order_deletes_only_wcpay_refunds_and_removes_fee_metadata(): void {
+	public function test_remediate_order_deletes_only_woopayments_refunds_and_removes_fee_metadata(): void {
 		$order         = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
 		$wcpay_refund  = $this->create_refund( $order, 'WooPayments refund', 're_wcpay' );
 		$manual_refund = $this->create_refund( $order, 'Manual refund' );
@@ -437,9 +437,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox Processing a live batch updates stats and reschedules the next batch in the legacy hyphenated group.
+	 * @testdox Processing a live batch updates stats and reschedules the next batch in the hyphenated woocommerce-payments group.
 	 */
-	public function test_process_batch_reschedules_next_batch_with_legacy_group(): void {
+	public function test_process_batch_reschedules_next_batch_in_the_hyphenated_group(): void {
 		$this->create_order_fixture( array( 'status' => 'cancelled' ) );
 
 		$this->sut->process_batch();
@@ -493,12 +493,12 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	/**
 	 * Create a remediation service.
 	 *
-	 * @param bool $native Whether native owns runtime.
+	 * @param bool $builtin Whether the built-in WooPayments owns the runtime.
 	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
 	 */
-	private function create_service( bool $native ): WooPaymentsCanceledAuthorizationFeeRemediationService {
+	private function create_service( bool $builtin ): WooPaymentsCanceledAuthorizationFeeRemediationService {
 		$service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$service->init( new StaticWooPaymentsRuntimeArbiter( $native ) );
+		$service->init( new StaticWooPaymentsRuntimeArbiter( $builtin ) );
 
 		return $service;
 	}

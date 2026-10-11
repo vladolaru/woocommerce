@@ -117,7 +117,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve native WooPayments tokens already attached to a renewal order.
+	 * @testdox Should resolve WooPayments tokens already attached to a renewal order.
 	 */
 	public function test_resolves_payment_method_id_from_order_attached_token(): void {
 		$user_id       = $this->factory()->user->create();
@@ -493,9 +493,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register saved-payment-method lifecycle hooks when native does not own runtime.
+	 * @testdox Should not register saved-payment-method lifecycle hooks when the built-in WooPayments does not own the runtime.
 	 */
-	public function test_registers_no_saved_payment_method_lifecycle_hooks_when_native_does_not_own_runtime(): void {
+	public function test_registers_no_saved_payment_method_lifecycle_hooks_when_builtin_does_not_own_runtime(): void {
 		$sut = $this->create_service( array(), null, null, null, new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$this->assertFalse( has_action( 'woocommerce_payment_token_deleted', array( $sut, 'handle_woocommerce_payment_token_deleted' ) ) );
@@ -576,19 +576,19 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear cached payment methods when a native WooPayments card token is deleted.
+	 * @testdox Should clear cached payment methods when a WooPayments card token is deleted.
 	 */
-	public function test_clears_cached_payment_methods_when_native_card_token_is_deleted(): void {
-		$user_id       = $this->factory()->user->create();
-		$other_user_id = $this->factory()->user->create();
-		$native_token  = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
-		$other_token   = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
+	public function test_clears_cached_payment_methods_when_a_woopayments_card_token_is_deleted(): void {
+		$user_id           = $this->factory()->user->create();
+		$other_user_id     = $this->factory()->user->create();
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
+		$other_token       = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_delete' ) );
 		update_user_meta( $other_user_id, '_wcpay_payment_methods', array( 'pm_other' ) );
 		$this->create_service();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+		do_action( 'woocommerce_payment_token_deleted', $woopayments_token->get_id(), $woopayments_token );
 
 		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Deleting a native card token should clear that customer cache.' );
 		$this->assertSame( array( 'pm_other' ), get_user_meta( $other_user_id, '_wcpay_payment_methods', true ), 'Deleting one customer token should not clear another customer cache.' );
@@ -602,12 +602,12 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detach native WooPayments card payment methods when a saved token is deleted.
+	 * @testdox Should detach WooPayments card payment methods when a saved token is deleted.
 	 */
-	public function test_detaches_native_card_payment_methods_when_token_is_deleted(): void {
-		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
-		$api_client   = new class() extends WooPaymentsApiClient {
+	public function test_detaches_woopayments_card_payment_methods_when_token_is_deleted(): void {
+		$user_id           = $this->factory()->user->create();
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
+		$api_client        = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -630,7 +630,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->create_service( array(), $api_client, null, $this->create_account_service( true ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+		do_action( 'woocommerce_payment_token_deleted', $woopayments_token->get_id(), $woopayments_token );
 
 		$this->assertSame( array( 'pm_delete' ), $api_client->detached_payment_method_ids );
 	}
@@ -664,9 +664,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should not detach live payment methods from admin screens on non-production environments.
 	 */
 	public function test_does_not_detach_live_payment_methods_from_non_production_admin_screens(): void {
-		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_live' );
-		$api_client   = new class() extends WooPaymentsApiClient {
+		$user_id           = $this->factory()->user->create();
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_live' );
+		$api_client        = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -690,7 +690,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		set_current_screen( 'users' );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $native_token->get_id(), $native_token );
+		do_action( 'woocommerce_payment_token_deleted', $woopayments_token->get_id(), $woopayments_token );
 
 		$this->assertSame( array(), $api_client->detached_payment_method_ids );
 	}
@@ -1661,17 +1661,17 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear cached payment methods when a native WooPayments card token becomes default.
+	 * @testdox Should clear cached payment methods when a WooPayments card token becomes default.
 	 */
-	public function test_clears_cached_payment_methods_when_native_card_token_becomes_default(): void {
-		$user_id      = $this->factory()->user->create();
-		$native_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
-		$other_token  = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
+	public function test_clears_cached_payment_methods_when_a_woopayments_card_token_becomes_default(): void {
+		$user_id           = $this->factory()->user->create();
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
+		$other_token       = $this->create_card_token( $user_id, 'cheque', 'pm_cheque' );
 		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'pm_default' ) );
 		$this->create_service();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
-		do_action( 'woocommerce_payment_token_set_default', $native_token->get_id(), $native_token );
+		do_action( 'woocommerce_payment_token_set_default', $woopayments_token->get_id(), $woopayments_token );
 
 		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'Setting a native card token as default should clear that customer cache.' );
 
@@ -1684,12 +1684,12 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should set the remote customer default payment method when a native card token becomes default.
+	 * @testdox Should set the remote customer default payment method when a WooPayments card token becomes default.
 	 */
-	public function test_sets_remote_default_payment_method_when_native_card_token_becomes_default(): void {
-		$user_id          = $this->factory()->user->create();
-		$native_token     = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
-		$customer_service = new class() extends WooPaymentsCustomerService {
+	public function test_sets_remote_default_payment_method_when_a_woopayments_card_token_becomes_default(): void {
+		$user_id           = $this->factory()->user->create();
+		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
+		$customer_service  = new class() extends WooPaymentsCustomerService {
 			/**
 			 * Customer IDs keyed by WordPress user ID.
 			 *
@@ -1732,7 +1732,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->create_service( array(), null, $customer_service );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
-		do_action( 'woocommerce_payment_token_set_default', $native_token->get_id(), $native_token );
+		do_action( 'woocommerce_payment_token_set_default', $woopayments_token->get_id(), $woopayments_token );
 
 		$this->assertSame(
 			array(
@@ -1746,9 +1746,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep only locally supported WooPayments tokens in native token lists.
+	 * @testdox Should keep only locally supported WooPayments tokens in token lists.
 	 */
-	public function test_keeps_only_supported_native_tokens_in_customer_token_lists(): void {
+	public function test_keeps_only_supported_woopayments_tokens_in_customer_token_lists(): void {
 		$user_id    = $this->factory()->user->create();
 		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
 		$link_token = new WooPaymentsLinkToken();
@@ -1899,7 +1899,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should format native WooPayments non-card tokens in saved payment method lists.
+	 * @testdox Should format WooPayments non-card tokens in saved payment method lists.
 	 * @dataProvider non_card_saved_payment_method_list_item_data
 	 *
 	 * @param string                           $payment_method_id Provider payment method ID.
@@ -2126,7 +2126,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The filtered read should pick the customer id with the plugin's mode rule, not the account's liveness.
+	 * @testdox The filtered read should pick the customer id with the WooPayments extension's mode rule, not the account's liveness.
 	 * @dataProvider provide_mode_cases
 	 *
 	 * Source: client 11.1.0 class-wc-payments-token-service.php:199-256 leaves tokens the provider still holds untouched;
@@ -2138,7 +2138,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @param bool   $account_is_live      Cached account liveness.
 	 * @param string $mode_customer_id     Customer id the client's mode rule selects.
 	 */
-	public function test_filtered_read_resolves_customer_id_with_the_plugin_mode_rule( string $onboarding_test_mode, string $test_mode_setting, bool $account_is_live, string $mode_customer_id ): void {
+	public function test_filtered_read_resolves_customer_id_with_the_woopayments_extension_mode_rule( string $onboarding_test_mode, string $test_mode_setting, bool $account_is_live, string $mode_customer_id ): void {
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		update_option( 'wcpay_onboarding_test_mode', $onboarding_test_mode );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => $test_mode_setting ) );
@@ -2233,7 +2233,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A cached provider list for the same customer that lacks a stored card should drop that card, as the plugin does.
+	 * @testdox A cached provider list for the same customer that lacks a stored card should drop that card, as the WooPayments extension does.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-token-service.php:271-290 serves `_wcpay_payment_methods` for a matching customer id,
 	 * and :241-247 deletes every stored token the list does not name.

@@ -84,7 +84,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 sends every billing address field the country's checkout shows, empty ones included, and drops
 	 * only an empty country (class-wc-payments-order-service.php:1455-1488).
 	 *
-	 * @testdox Billing details keep the empty address fields the client sends and drop an empty country.
+	 * @testdox Billing details keep the empty address fields the WooPayments extension sends and drop an empty country.
 	 */
 	public function test_get_billing_data_from_order_keeps_empty_address_fields(): void {
 		$order = wc_create_order();
@@ -120,7 +120,7 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $name Case name in `Fixtures/captured-event-fee-notes.json`.
 	 */
-	public function test_get_fee_breakdown_note_from_timeline_event_renders_the_client_note( string $name ): void {
+	public function test_get_fee_breakdown_note_from_timeline_event_renders_the_woopayments_extension_note( string $name ): void {
 		$case = CapturedEventFeeNotes::get( $name );
 
 		$this->assertSame( '<strong>Fee details:</strong>' . $case['client_html'], $this->sut->get_fee_breakdown_note_from_timeline_event( $case['event'] ) );

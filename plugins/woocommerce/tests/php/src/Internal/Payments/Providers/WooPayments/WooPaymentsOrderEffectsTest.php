@@ -206,7 +206,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>  $charge   Charge.
 	 * @param array<string,string> $expected Fee meta the client writes.
 	 */
-	public function test_attached_fee_meta_follows_the_client( array $charge, array $expected ): void {
+	public function test_attached_fee_meta_follows_the_woopayments_extension( array $charge, array $expected ): void {
 		$this->assertSame( $expected, WooPaymentsOrderEffects::attached_fee_meta( $charge ) );
 	}
 
@@ -241,7 +241,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>  $charge   First charge of the event's intent.
 	 * @param array<string,string> $expected Fee meta the client writes.
 	 */
-	public function test_webhook_fee_meta_follows_the_client( array $charge, array $expected ): void {
+	public function test_webhook_fee_meta_follows_the_woopayments_extension( array $charge, array $expected ): void {
 		$intent = array(
 			'amount'   => 1234,
 			'currency' => 'eur',
@@ -452,9 +452,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Display projection returns identity and metadata without dispatching title filters.
+	 * @testdox Display details return identity and metadata without dispatching title filters.
 	 */
-	public function test_display_projection_does_not_dispatch_the_title_suffix_filter(): void {
+	public function test_display_details_do_not_dispatch_the_title_suffix_filter(): void {
 		$filter_calls = 0;
 		add_filter(
 			'wcpay_payment_request_payment_method_title_suffix',
@@ -493,9 +493,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Display projection stores card details without rendering a title.
+	 * @testdox Display details store card details without rendering a title.
 	 */
-	public function test_display_projection_composes_card_metadata(): void {
+	public function test_display_details_compose_card_metadata(): void {
 		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
 			array(
 				'charges' => array(
@@ -523,9 +523,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent card projection requires the provider's exact raw card type.
+	 * @testdox SetupIntent card display details require the provider's exact raw card type.
 	 */
-	public function test_setup_intent_display_projection_requires_exact_raw_card_type(): void {
+	public function test_setup_intent_display_details_require_exact_raw_card_type(): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			array(
 				'type' => 'Card',
@@ -541,12 +541,12 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent card projection rejects incoherent card identity details.
+	 * @testdox SetupIntent card display details reject incoherent card identity details.
 	 * @dataProvider incoherent_setup_intent_card_details_data
 	 *
 	 * @param array<string,mixed> $payment_method Incoherent provider payment-method details.
 	 */
-	public function test_setup_intent_card_display_projection_rejects_incoherent_details( array $payment_method ): void {
+	public function test_setup_intent_card_display_details_reject_incoherent_details( array $payment_method ): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details( $payment_method );
 
 		$this->assertSame( array(), $effects );
@@ -607,9 +607,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent card projection caches only its normalized type and card subtree.
+	 * @testdox SetupIntent card display details cache only their normalized type and card subtree.
 	 */
-	public function test_setup_intent_card_display_projection_omits_top_level_provider_data_from_cache(): void {
+	public function test_setup_intent_card_display_details_omit_top_level_provider_data_from_cache(): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			array(
 				'id'              => 'pm_card_identity',
@@ -637,9 +637,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent Link projection does not cache provider payment-method details.
+	 * @testdox SetupIntent Link display details do not cache provider payment-method details.
 	 */
-	public function test_setup_intent_link_display_projection_avoids_payment_method_details_cache(): void {
+	public function test_setup_intent_link_display_details_avoid_payment_method_details_cache(): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			array(
 				'id'              => 'pm_link_identity',
@@ -657,9 +657,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Wrapped Link card projection uses Link without retaining card details.
+	 * @testdox Wrapped Link card display details use Link without retaining card details.
 	 */
-	public function test_setup_intent_wrapped_link_card_display_projection_uses_plain_link_title(): void {
+	public function test_setup_intent_wrapped_link_card_display_details_use_plain_link_title(): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			array(
 				'type' => 'card',
@@ -706,9 +706,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SEPA payment method details metadata keeps the full charge shape, including the expected debit date, like the client.
+	 * @testdox SEPA payment method details metadata keeps the full charge shape, including the expected debit date, like the WooPayments extension.
 	 */
-	public function test_display_projection_keeps_full_sepa_details(): void {
+	public function test_display_details_keep_full_sepa_details(): void {
 		$effects = WooPaymentsOrderEffects::compose_payment_method_display_details(
 			array(
 				'charges' => array(
@@ -726,7 +726,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed-charge backfill stores the full SEPA details, including the expected debit date, like the client.
+	 * @testdox Completed-charge backfill stores the full SEPA details, including the expected debit date, like the WooPayments extension.
 	 */
 	public function test_completed_charge_backfill_keeps_full_sepa_details(): void {
 		$meta = WooPaymentsOrderEffects::completed_charge_payment_method_backfill_meta(
@@ -741,9 +741,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund projection accepts a separately rendered note without container resolution.
+	 * @testdox Refund effect data accepts a separately rendered note without container resolution.
 	 */
-	public function test_refund_projection_accepts_rendered_note_separately_without_container_resolution(): void {
+	public function test_refund_effect_data_accepts_rendered_note_separately_without_container_resolution(): void {
 		$equivalent_notes = array(
 			'Already rendered refund note.',
 			'Legacy catalog refund note.',

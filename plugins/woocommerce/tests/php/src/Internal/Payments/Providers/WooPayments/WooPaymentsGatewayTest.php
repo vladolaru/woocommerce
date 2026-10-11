@@ -196,7 +196,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should brand the gateway titles by account country like the reference client
+	 * @testdox Should brand the gateway titles by account country like the WooPayments extension
 	 */
 	public function test_gateway_titles_follow_account_country_branding(): void {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
@@ -705,9 +705,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `P24Definition.php` supports EUR and PLN for Polish shoppers; `class-upe-payment-method.php` applies the
 	 * currencies in `is_currency_valid()` (:311-326) and hands the countries to checkout through `get_countries()` (:386-397).
 	 *
-	 * @testdox Should offer the P24 gateway only for the client's P24 currencies and keep its Polish shopper rule.
+	 * @testdox Should offer the P24 gateway only for the WooPayments extension's P24 currencies and keep its Polish shopper rule.
 	 */
-	public function test_p24_gateway_availability_follows_client_currencies_and_shopper_country(): void {
+	public function test_p24_gateway_availability_follows_woopayments_extension_currencies_and_shopper_country(): void {
 		$this->activate_builtin_tier();
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'p24' );
 		$this->assertNotNull( $definition );
@@ -2430,7 +2430,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show the client's filtered message when the setup intent lookup fails with an API error: $_dataName.
+	 * @testdox Should show the WooPayments extension's filtered message when the setup intent lookup fails with an API error: $_dataName.
 	 *
 	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4469-4470` passes every exception through
 	 * `WC_Payments_Utils::get_filtered_error_message()` (`class-wc-payments-utils.php:769-819`) and logs it at info
@@ -2441,7 +2441,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiException $exception Exception thrown by the setup intent lookup.
 	 * @param string                  $expected  Expected shopper notice.
 	 */
-	public function test_add_payment_method_filters_api_errors_like_the_client( WooPaymentsApiException $exception, string $expected ): void {
+	public function test_add_payment_method_filters_api_errors_like_the_woopayments_extension( WooPaymentsApiException $exception, string $expected ): void {
 		wc_clear_notices();
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -2771,9 +2771,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should record a failed order when the client reports a payment method creation error.
+	 * @testdox Should record a failed order when checkout reports a payment method creation error.
 	 */
-	public function test_process_payment_fails_order_for_client_payment_method_error(): void {
+	public function test_process_payment_fails_order_for_payment_method_creation_error(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -2809,13 +2809,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep an order whose intent already succeeded when the client reports a payment method creation error.
+	 * @testdox Should keep an order whose intent already succeeded when checkout reports a payment method creation error.
 	 *
 	 * WooPayments 11.1.0 throws the client error inside process_payment()'s try (`gw:1664-1666`), so the catch's
 	 * succeeded-intent check (`gw:1283-1304`) runs before the failed status (`gw:1326-1327`) and the failure note.
 	 * The order is still pending here: the earlier duplicate checks found no paid status and no attached PaymentIntent.
 	 */
-	public function test_process_payment_client_payment_method_error_on_succeeded_intent_keeps_order(): void {
+	public function test_process_payment_method_creation_error_on_succeeded_intent_keeps_order(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_intention_status', 'succeeded' );
 		$order->save();
@@ -2837,9 +2837,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not flip the order status for a client payment method error on a subscription payment-method change.
+	 * @testdox Should not flip the order status for a payment method creation error on a subscription payment-method change.
 	 */
-	public function test_process_payment_client_error_keeps_status_on_subscription_change(): void {
+	public function test_process_payment_method_creation_error_keeps_status_on_subscription_change(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -2863,9 +2863,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to a generic message when the client error carries none.
+	 * @testdox Should fall back to a generic message when the payment method creation error carries none.
 	 */
-	public function test_process_payment_client_error_uses_generic_message_fallback(): void {
+	public function test_process_payment_method_creation_error_uses_generic_message_fallback(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -3226,7 +3226,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a billing phone over 20 characters before any other check, as the client does.
+	 * @testdox Should refuse a billing phone over 20 characters before any other check, as the WooPayments extension does.
 	 *
 	 * Client 11.1.0 throws Invalid_Phone_Number_Exception first thing in process_payment()'s try
 	 * (`class-wc-payment-gateway-wcpay.php:1204-1209`), ahead of the fraud-prevention token check; the
@@ -3261,7 +3261,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should accept a billing phone of exactly 20 characters, as the client does.
+	 * @testdox Should accept a billing phone of exactly 20 characters, as the WooPayments extension does.
 	 */
 	public function test_process_payment_accepts_a_billing_phone_of_20_characters(): void {
 		wc_clear_notices();
@@ -5425,7 +5425,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should pass the WooPay intent id through provider data with the client's sanitize rule.
+	 * @testdox Should pass the WooPay intent id through provider data with the WooPayments extension's sanitize rule.
 	 */
 	public function test_process_payment_passes_the_sanitized_woopay_intent_to_provider_data(): void {
 		$order   = $this->create_order();
@@ -5483,7 +5483,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep one is_woopay entry when a WooPay order is paid again, as the client adds it as unique.
+	 * @testdox Should keep one is_woopay entry when a WooPay order is paid again, as the WooPayments extension adds it as unique.
 	 */
 	public function test_process_payment_keeps_one_is_woopay_entry_on_a_retry(): void {
 		$order = $this->create_order();
@@ -5505,9 +5505,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should mark a WooPay order before the client payment-method error check, as the client does.
+	 * @testdox Should mark a WooPay order before the payment method creation error check, as the WooPayments extension does.
 	 */
-	public function test_process_payment_marks_a_woopay_order_before_the_client_error_check(): void {
+	public function test_process_payment_marks_a_woopay_order_before_the_payment_method_creation_error_check(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -5853,7 +5853,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a refund with no refund row before the platform call, returning the client's refund-not-found error.
+	 * @testdox Should refuse a refund with no refund row before the platform call, returning the WooPayments extension's refund-not-found error.
 	 *
 	 * Client 11.1.0 refunds first and then returns `wcpay_edit_order_refund_not_found` after tracking the
 	 * success (class-wc-payment-gateway-wcpay.php:2979, :3003-3007). The gateway keeps the code and message but
@@ -5973,7 +5973,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A split gateway renders its payment fields with the card gateway's supports, as the client's one checkout does.
+	 * @testdox A split gateway renders its payment fields with the card gateway's supports, as the WooPayments extension's one checkout does.
 	 */
 	public function test_split_gateway_payment_fields_use_the_card_gateway_supports(): void {
 		$registry          = new WooPaymentsPaymentMethodRegistry();
@@ -6264,7 +6264,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string $saved_cards       Saved cards setting.
 	 * @param string $currency          Store currency.
 	 */
-	public function test_payment_fields_offer_no_saving_the_client_does_not_offer( string $scenario, string $payment_method_id, string $saved_cards, string $currency ): void {
+	public function test_payment_fields_offer_no_saving_the_woopayments_extension_does_not_offer( string $scenario, string $payment_method_id, string $saved_cards, string $currency ): void {
 		unset( $scenario );
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
@@ -6443,7 +6443,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The save checkbox reads the client's label on a $cart cart.
+	 * @testdox The save checkbox reads the WooPayments extension's label on a $cart cart.
 	 *
 	 * Client 11.1.0 labels the checkbox "Save payment information to my account for future purchases." (gw:1160), visible
 	 * or forced; core's "Save to account" never shows.
@@ -6453,7 +6453,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $cart Cart kind.
 	 */
-	public function test_save_payment_method_checkbox_uses_the_client_label( string $cart ): void {
+	public function test_save_payment_method_checkbox_uses_the_woopayments_extension_label( string $cart ): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = 'subscription' === $cart;
 		$gateway = new WooPaymentsGateway();
@@ -7723,7 +7723,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only a new card checkout should be treated as a platform-created payment method, like the client's checkout service.
+	 * @testdox Only a new card checkout should be treated as a platform-created payment method, like the WooPayments extension's checkout service.
 	 * @dataProvider platform_payment_method_submission_provider
 	 *
 	 * @param string               $payment_method_id Payment method definition ID.
@@ -8026,7 +8026,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should report a partially onboarded account while a connected account has not submitted its details.
 	 */
-	public function test_is_account_partially_onboarded_matches_client(): void {
+	public function test_is_account_partially_onboarded_matches_the_woopayments_extension(): void {
 		$this->assertTrue(
 			$this->gateway_with_account( $this->sandbox_account( false, false ) )->is_account_partially_onboarded(),
 			'A connected account without submitted details is partially onboarded.'
@@ -8044,7 +8044,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should need setup without an account, with incomplete account status, or while payments are disabled.
 	 */
-	public function test_needs_setup_matches_client(): void {
+	public function test_needs_setup_matches_the_woopayments_extension(): void {
 		$without_status = $this->sandbox_account( true, true );
 		unset( $without_status['status'] );
 

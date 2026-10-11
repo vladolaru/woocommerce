@@ -147,7 +147,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The order-status callback of a zero-total order completes it and schedules no job, as the client does.
+	 * @testdox The order-status callback of a zero-total order completes it and schedules no job, as the WooPayments extension does.
 	 *
 	 * Client 11.1.0's callback completes a zero-total order itself with a plain note; its order service then sees a paid
 	 * order and writes no success note, so it schedules no job (class-wc-payment-gateway-wcpay.php:4249-4276).
@@ -183,7 +183,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A redirect return of a zero-total order schedules the job once for its setup intent, as the client does, and the same return loaded again schedules none.
+	 * @testdox A redirect return of a zero-total order schedules the job once for its setup intent, as the WooPayments extension does, and the same return loaded again schedules none.
 	 */
 	public function test_redirect_return_for_a_setup_intent(): void {
 		$order        = $this->create_zero_total_order( 'seti_redirect' );

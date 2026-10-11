@@ -26,7 +26,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native intent decoding contains no order-effect data.
+	 * @testdox Intent decoding contains no order-effect data.
 	 */
 	public function test_outcome_from_intention_contains_no_order_effect_data(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(

@@ -82,7 +82,7 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Once Action Scheduler runs, a job already pending keeps its first timestamp (recorded difference: the client replaces it).
+	 * @testdox Once Action Scheduler runs, a job already pending keeps its first timestamp (recorded difference: the WooPayments extension replaces it).
 	 */
 	public function test_schedule_job_keeps_the_first_timestamp_of_a_pending_job(): void {
 		$first = time() + 60;

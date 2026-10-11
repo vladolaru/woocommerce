@@ -45,17 +45,17 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registration should hook created-customer promotion only when native owns the runtime.
+	 * @testdox Registration should hook created-customer promotion only when the built-in WooPayments owns the runtime.
 	 */
-	public function test_register_hooks_created_customer_promotion_only_for_native_runtime(): void {
-		$native_sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-		$native_sut->register();
-		$this->assertNotFalse( has_action( 'woocommerce_created_customer', array( $native_sut, 'handle_woocommerce_created_customer' ) ) );
+	public function test_register_hooks_created_customer_promotion_only_for_builtin_runtime(): void {
+		$builtin_sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
+		$builtin_sut->register();
+		$this->assertNotFalse( has_action( 'woocommerce_created_customer', array( $builtin_sut, 'handle_woocommerce_created_customer' ) ) );
 
-		$plugin_sut = new WooPaymentsCustomerService();
-		$plugin_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
-		$plugin_sut->register();
-		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $plugin_sut, 'handle_woocommerce_created_customer' ) ), 'The promotion hook must not register while the standalone plugin owns the runtime.' );
+		$extension_sut = new WooPaymentsCustomerService();
+		$extension_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
+		$extension_sut->register();
+		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $extension_sut, 'handle_woocommerce_created_customer' ) ), 'The promotion hook must not register while the standalone plugin owns the runtime.' );
 	}
 
 	/**
@@ -175,7 +175,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ship order billing data only on genuine pay-for-order requests like the reference client
+	 * @testdox Should ship order billing data only on genuine pay-for-order requests like the WooPayments extension
 	 */
 	public function test_get_prepared_customer_data_requires_pay_for_order_on_order_pay(): void {
 		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
@@ -254,7 +254,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy customer IDs should migrate to the live key when the account is live, even in test mode.
+	 * @testdox Deprecated customer IDs should migrate to the live key when the account is live, even in test mode.
 	 */
 	public function test_migration_targets_live_key_when_account_is_live_even_in_test_mode(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-account' ) );
@@ -270,7 +270,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy customer IDs on a live account in live mode should migrate and resolve immediately.
+	 * @testdox Deprecated customer IDs on a live account in live mode should migrate and resolve immediately.
 	 */
 	public function test_migration_resolves_live_key_on_live_account_in_live_mode(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-live' ) );
@@ -284,7 +284,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy customer IDs should migrate to the test key when the account is not live.
+	 * @testdox Deprecated customer IDs should migrate to the test key when the account is not live.
 	 */
 	public function test_migration_targets_test_key_when_account_is_not_live(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-test-account' ) );
@@ -308,7 +308,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy customer IDs should default to the live key when the account liveness is unknown.
+	 * @testdox Deprecated customer IDs should default to the live key when the account liveness is unknown.
 	 */
 	public function test_migration_defaults_to_live_key_when_account_liveness_is_unknown(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-unknown-account' ) );
@@ -323,9 +323,9 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The legacy customer option should be kept when the migrated write cannot be confirmed.
+	 * @testdox The deprecated customer option should be kept when the migrated write cannot be confirmed.
 	 */
-	public function test_migration_keeps_legacy_option_when_the_write_fails(): void {
+	public function test_migration_keeps_the_deprecated_option_when_the_write_fails(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-write-failure' ) );
 		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
 		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_legacy' );

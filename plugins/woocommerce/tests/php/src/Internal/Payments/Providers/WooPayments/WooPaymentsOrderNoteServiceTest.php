@@ -100,7 +100,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund and payment notes follow the client explicit-price rule.
+	 * @testdox Refund and payment notes follow the WooPayments extension's explicit-price rule.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-order-service.php:2630-2631 (created refund note), :2904-2910 (order amount) and
 	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
@@ -113,7 +113,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected_default    Default the filter must receive.
 	 * @param string      $code                Expected currency code suffix, including its leading space, or ''.
 	 */
-	public function test_notes_follow_the_client_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $code ): void {
+	public function test_notes_follow_the_woopayments_extension_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $code ): void {
 		$this->configure_second_currency();
 		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
 		$this->set_core_multi_currency( $core_multi_currency );
@@ -475,7 +475,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Held-for-review notes use exact Core and plugin candidates with shared labels.
+	 * @testdox Held-for-review notes use exact Core and WooPayments extension candidates with shared labels.
 	 */
 	public function test_formats_fraud_held_for_review_note_candidates_and_ruleset_labels(): void {
 		$order = wc_create_order();
@@ -543,7 +543,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Every known lifecycle note exposes finite exact Core and plugin catalog candidates.
+	 * @testdox Every known lifecycle note exposes finite exact Core and WooPayments extension catalog candidates.
 	 */
 	public function test_lifecycle_note_candidate_matrix(): void {
 		update_option( 'woocommerce_currency', 'USD' );
@@ -691,7 +691,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Created-refund candidates retain exact Core and plugin reason/success renderings.
+	 * @testdox Created-refund candidates retain exact Core and WooPayments extension reason/success renderings.
 	 */
 	public function test_created_refund_candidates_for_reason_and_success(): void {
 		$order = wc_create_order();
@@ -727,9 +727,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let the public filter suppress the native refund-note fallback currency output.
+	 * @testdox Should let the public filter suppress the refund-note fallback currency output.
 	 */
-	public function test_public_filter_suppresses_native_refund_note_fallback_currency_output(): void {
+	public function test_public_filter_suppresses_refund_note_fallback_currency_output(): void {
 		$this->configure_second_currency();
 		$this->set_core_multi_currency( true );
 		$defaults = array();
@@ -755,9 +755,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not apply the public filter to hidden plugin refund candidates.
+	 * @testdox Should not apply the public filter to hidden WooPayments extension refund candidates.
 	 */
-	public function test_public_filter_does_not_apply_to_hidden_plugin_refund_candidates(): void {
+	public function test_public_filter_does_not_apply_to_hidden_woopayments_extension_refund_candidates(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_currency( 'USD' );
@@ -780,7 +780,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Created-refund candidates retain the plugin pending hyperlink without a reason.
+	 * @testdox Created-refund candidates retain the WooPayments extension pending hyperlink without a reason.
 	 */
 	public function test_created_refund_candidates_for_pending_without_reason(): void {
 		$order = wc_create_order();
@@ -1021,7 +1021,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		return $this->gettext_replacements[ $domain ][ $text ] ?? $translation;
 	}
 	/**
-	 * @testdox Should render the plugin's failed-cancel notes with and without a provider message.
+	 * @testdox Should render the WooPayments extension's failed-cancel notes with and without a provider message.
 	 */
 	public function test_format_cancel_failed_note_candidates(): void {
 		$sut = new WooPaymentsOrderNoteService();
@@ -1054,9 +1054,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve distinct Core and seeded plugin catalog candidates for cutover deduplication.
+	 * @testdox Should preserve distinct Core and seeded WooPayments extension catalog candidates for cutover deduplication.
 	 */
-	public function test_formats_seeded_plugin_catalog_early_fraud_warning_note_candidate(): void {
+	public function test_formats_seeded_woopayments_extension_catalog_early_fraud_warning_note_candidate(): void {
 		$this->install_test_translations(
 			array(
 				'woocommerce-payments' => array(

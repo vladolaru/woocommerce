@@ -81,9 +81,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should localize no checkout config from the fallback while the WooPayments plugin owns payments.
+	 * @testdox Should localize no checkout config from the fallback while the WooPayments extension owns payments.
 	 */
-	public function test_after_checkout_form_fallback_does_nothing_when_native_does_not_own_payments(): void {
+	public function test_after_checkout_form_fallback_does_nothing_when_builtin_does_not_own_payments(): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		$sut = new WooPaymentsCheckoutAssets();
 		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
@@ -729,9 +729,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `P24Definition.php` titles the method "Przelewy24 (P24)", ships `p24.svg` as every icon and limits shoppers
 	 * to Poland; `class-upe-payment-method.php::get_countries()` (:386-397) is what checkout filters billing countries by.
 	 *
-	 * @testdox Should expose the P24 split gateway to checkout with the client's title, icon and Polish shopper rule.
+	 * @testdox Should expose the P24 split gateway to checkout with the WooPayments extension's title, icon and Polish shopper rule.
 	 */
-	public function test_get_payment_fields_js_config_exposes_p24_like_the_client(): void {
+	public function test_get_payment_fields_js_config_exposes_p24_like_the_woopayments_extension(): void {
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -949,9 +949,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should source add-payment-method billing details from the native customer service.
+	 * @testdox Should source add-payment-method billing details from the customer service.
 	 */
-	public function test_get_payment_fields_js_config_uses_native_customer_data_on_add_payment_method_page(): void {
+	public function test_get_payment_fields_js_config_uses_customer_data_on_add_payment_method_page(): void {
 		$user_id = self::factory()->user->create(
 			array(
 				'first_name' => 'Ada',
@@ -1280,7 +1280,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * `paymentMethodsConfig`, `currency` and `cartTotal` (client 11.1.0 includes/class-wc-payments-checkout.php:353); the
 	 * amount decides between a payment and a setup Payment Element.
 	 *
-	 * @testdox Should enqueue core-owned checkout assets and print the $surface amount, currency and identity in the rendered form.
+	 * @testdox Should enqueue the checkout assets and print the $surface amount, currency and identity in the rendered form.
 	 * @testWith ["checkout page"]
 	 *           ["order-pay page"]
 	 *
@@ -1674,7 +1674,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * class-wc-payments-checkout.php:183-274 (payment fields config), class-wc-payments-woopay-button-handler.php:144-160
 	 * (WooPay button keys) and class-woopay-tracker.php:660-662 (isShopperTrackingEnabled).
 	 */
-	private const CLIENT_BLOCKS_DATA_KEYS = array(
+	private const WOOPAYMENTS_EXTENSION_BLOCKS_DATA_KEYS = array(
 		'title',
 		'description',
 		'is_admin',
@@ -1734,7 +1734,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * Native-only Blocks data keys that the native Blocks bundle reads (client/blocks/assets/js/extensions/payment-methods/woopayments).
 	 */
-	private const NATIVE_BLOCKS_DATA_KEYS_WITH_CONSUMERS = array(
+	private const BLOCKS_BUNDLE_DATA_KEYS_WITH_CONSUMERS = array(
 		'fraudPreventionToken',            // index.js:113-116, the only token source on Blocks pages.
 		'isCoreNativeCheckoutAvailable',   // index.js:1040,1268 and woopay/index.js:736,748.
 		'paymentMethodTypes',              // index.js:517-521, the split gateway's own Stripe method type.
@@ -1818,12 +1818,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks payment method data carries exactly the client's keys plus the native keys the Blocks bundle reads.
+	 * @testdox Blocks payment method data carries exactly the WooPayments extension's keys plus the keys the Blocks bundle reads.
 	 */
-	public function test_get_blocks_payment_method_data_has_the_client_key_set_plus_consumed_native_keys(): void {
+	public function test_get_blocks_payment_method_data_has_the_woopayments_extension_key_set_plus_the_keys_the_blocks_bundle_reads(): void {
 		$data = $this->create_assets_with_full_woopay_config()->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
-		$expected = array_merge( self::CLIENT_BLOCKS_DATA_KEYS, self::NATIVE_BLOCKS_DATA_KEYS_WITH_CONSUMERS );
+		$expected = array_merge( self::WOOPAYMENTS_EXTENSION_BLOCKS_DATA_KEYS, self::BLOCKS_BUNDLE_DATA_KEYS_WITH_CONSUMERS );
 		sort( $expected );
 		$actual = array_keys( $data );
 		sort( $actual );
@@ -1832,9 +1832,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks payment method data never carries the dropped native-only keys, while the classic config keeps them.
+	 * @testdox Blocks payment method data never carries the classic-only keys, while the classic config keeps them.
 	 */
-	public function test_get_blocks_payment_method_data_omits_dropped_native_keys(): void {
+	public function test_get_blocks_payment_method_data_omits_classic_only_keys(): void {
 		$assets = $this->create_assets_with_full_woopay_config();
 		$data   = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 		$shared = new \ArrayObject();
@@ -1852,7 +1852,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks payment method data reports is_admin like the client: false on the storefront, true in wp-admin.
+	 * @testdox Blocks payment method data reports is_admin like the WooPayments extension: false on the storefront, true in wp-admin.
 	 */
 	public function test_get_blocks_payment_method_data_reports_is_admin(): void {
 		$assets = $this->create_assets_with_full_woopay_config();
@@ -1892,7 +1892,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * @testdox Blocks data carries the client's express checkout switches for the checkout page's own location settings.
+	 * @testdox Blocks data carries the WooPayments extension's express checkout switches for the checkout page's own location settings.
 	 *
 	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
 	 *
@@ -1918,7 +1918,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Blocks data reports Amazon Pay off once the merchant switched it off or the account cannot use it.
 	 */
-	public function test_blocks_data_amazon_pay_switch_uses_native_amazon_pay_availability(): void {
+	public function test_blocks_data_amazon_pay_switch_uses_amazon_pay_availability(): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		$toggled_off = $this->create_assets_for_express_handlers( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
@@ -1930,7 +1930,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data outside the product, cart and checkout pages reports the switches without a location, as the client does.
+	 * @testdox Blocks data outside the product, cart and checkout pages reports the switches without a location, as the WooPayments extension does.
 	 *
 	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
 	 *
@@ -1951,7 +1951,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data leaves out the express checkout switches while the client's express checkout handler does not run.
+	 * @testdox Blocks data leaves out the express checkout switches while express checkout is off.
 	 *
 	 * @dataProvider provider_express_handler_off
 	 *
@@ -1959,7 +1959,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $account_data Account data overrides.
 	 * @param bool                $change_page  Whether the request is a change payment method page.
 	 */
-	public function test_blocks_data_omits_express_switches_while_the_client_handler_is_off( array $settings, array $account_data, bool $change_page ): void {
+	public function test_blocks_data_omits_express_switches_while_express_checkout_is_off( array $settings, array $account_data, bool $change_page ): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		if ( $change_page ) {
 			$_GET['change_payment_method'] = '123';
@@ -1993,9 +1993,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data carries the client's order-pay keys on a pay-for-order link, with the order's email for its own customer.
+	 * @testdox Blocks data carries the WooPayments extension's order-pay keys on a pay-for-order link, with the order's email for its own customer.
 	 */
-	public function test_blocks_data_carries_the_client_order_pay_keys(): void {
+	public function test_blocks_data_carries_the_woopayments_extension_order_pay_keys(): void {
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order       = \WC_Helper_Order::create_order( $customer_id );
 		$order->set_billing_email( 'order@example.com' );
@@ -2125,7 +2125,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data leaves out the order-pay keys on a subscription's change payment method page, where the client skips its config filters.
+	 * @testdox Blocks data leaves out the order-pay keys on a subscription's change payment method page, where the WooPayments extension skips its config filters.
 	 */
 	public function test_blocks_data_omits_order_pay_keys_while_changing_a_subscription_payment_method(): void {
 		$this->report_subscriptions_loaded();
@@ -2156,7 +2156,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data carries the client's WooPay button keys while WooPay and its express button are enabled.
+	 * @testdox Blocks data carries the WooPayments extension's WooPay button keys while WooPay and its express button are enabled.
 	 */
 	public function test_blocks_data_carries_woopay_button_keys_while_woopay_is_enabled(): void {
 		$data = $this->create_assets_for_express_handlers( array(), array(), true )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
@@ -2167,7 +2167,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Blocks data leaves out the WooPay button keys while the client's WooPay button handler does not run.
+	 * @testdox Blocks data leaves out the WooPay button keys while the WooPay button is off.
 	 *
 	 * @dataProvider provider_woopay_button_handler_off
 	 *
@@ -2302,9 +2302,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide checkout surface controls when the Core-owned account readiness fails.
+	 * @testdox Should hide checkout surface controls when the account readiness fails.
 	 */
-	public function test_get_payment_fields_js_config_hides_native_controls_when_account_is_not_ready(): void {
+	public function test_get_payment_fields_js_config_hides_controls_when_account_is_not_ready(): void {
 		$account_service = $this->create_account_service( false );
 
 		$assets = new WooPaymentsCheckoutAssets();

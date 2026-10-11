@@ -397,7 +397,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
 	 *
 	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/platform-intention-declines.json`)
-	 * as `WooPaymentsPaymentOperationServiceTest::test_native_charge_decline_envelope_maps_each_card_code` proves
+	 * as `WooPaymentsPaymentOperationServiceTest::test_charge_decline_envelope_maps_each_card_code` proves
 	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
 	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
 	 * fraud meta box `allow` for a `card_error` decline (`:1372`). A plain checkout decline is not the card-testing

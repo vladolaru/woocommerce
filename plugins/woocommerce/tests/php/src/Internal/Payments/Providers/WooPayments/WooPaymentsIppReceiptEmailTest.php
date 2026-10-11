@@ -148,7 +148,7 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Oracle normalization handles an order ID that matches the rendered timestamp minute.
+	 * @testdox Fixture normalization handles an order ID that matches the rendered timestamp minute.
 	 */
 	public function test_oracle_normalization_handles_order_id_inside_rendered_timestamp(): void {
 		$order = $this->getMockBuilder( WC_Order::class )
@@ -170,7 +170,7 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Oracle normalization leaves a price alone when it starts with the order ID.
+	 * @testdox Fixture normalization leaves a price alone when it starts with the order ID.
 	 */
 	public function test_oracle_normalization_handles_order_id_inside_price(): void {
 		$order = $this->getMockBuilder( WC_Order::class )
@@ -192,7 +192,7 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Oracle normalization leaves a postcode alone when it starts with the order ID.
+	 * @testdox Fixture normalization leaves a postcode alone when it starts with the order ID.
 	 */
 	public function test_oracle_normalization_handles_order_id_inside_postcode(): void {
 		$order = $this->getMockBuilder( WC_Order::class )

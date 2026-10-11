@@ -12,7 +12,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsLocaleUtilsTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should convert WordPress locales to the closest Stripe-supported locale like the reference client
+	 * @testdox Should convert WordPress locales to the closest Stripe-supported locale like the WooPayments extension
 	 * @dataProvider provider_locales
 	 *
 	 * @param string $wp_locale     WordPress locale.

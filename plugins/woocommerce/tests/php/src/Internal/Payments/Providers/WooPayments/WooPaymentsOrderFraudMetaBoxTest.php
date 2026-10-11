@@ -37,23 +37,23 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the meta box hook only when native owns the runtime.
+	 * @testdox Should register the meta box hook only when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_meta_box_hook_only_when_native_owns_runtime(): void {
-		$plugin_owned = $this->create_meta_box( false );
-		$plugin_owned->register();
+	public function test_registers_meta_box_hook_only_when_builtin_owns_runtime(): void {
+		$extension_owned = $this->create_meta_box( false );
+		$extension_owned->register();
 
 		$this->assertFalse(
-			has_action( 'add_meta_boxes', array( $plugin_owned, 'handle_add_meta_boxes' ) ),
+			has_action( 'add_meta_boxes', array( $extension_owned, 'handle_add_meta_boxes' ) ),
 			'Plugin-owned runtime should not register native order meta boxes.'
 		);
 
-		$native_owned = $this->create_meta_box( true );
-		$native_owned->register();
+		$builtin_owned = $this->create_meta_box( true );
+		$builtin_owned->register();
 
 		$this->assertSame(
 			10,
-			has_action( 'add_meta_boxes', array( $native_owned, 'handle_add_meta_boxes' ) ),
+			has_action( 'add_meta_boxes', array( $builtin_owned, 'handle_add_meta_boxes' ) ),
 			'Native-owned runtime should register the Fraud & Risk meta box callback.'
 		);
 	}
@@ -125,7 +125,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should honor native fraud outcome status when the preserved meta box type is allow.
+	 * @testdox Should honor the fraud outcome status when the preserved meta box type is allow.
 	 *
 	 * @dataProvider fraud_outcome_status_provider
 	 *
@@ -133,7 +133,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 * @param string $expected_status      Expected status copy.
 	 * @param string $expected_description Expected description copy.
 	 */
-	public function test_honors_native_fraud_outcome_status_when_meta_box_type_is_allow( string $fraud_outcome_status, string $expected_status, string $expected_description ): void {
+	public function test_honors_fraud_outcome_status_when_meta_box_type_is_allow( string $fraud_outcome_status, string $expected_status, string $expected_description ): void {
 		$order = $this->create_woopayments_order(
 			array(
 				'_wcpay_fraud_meta_box_type'  => 'allow',
@@ -532,14 +532,14 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $native_register Whether native should register.
+	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
 	 * @return object
 	 */
-	private function create_meta_box( bool $native_register ) {
+	private function create_meta_box( bool $builtin_register ) {
 		$this->assertTrue( class_exists( WooPaymentsOrderFraudMetaBox::class ), 'WooPaymentsOrderFraudMetaBox should exist.' );
 
 		$meta_box = new WooPaymentsOrderFraudMetaBox();
-		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $native_register ) );
+		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ) );
 
 		$this->meta_boxes[] = $meta_box;
 

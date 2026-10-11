@@ -29,14 +29,14 @@ use WC_Unit_Test_Case;
 class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Shared intent confirmation should apply the native payment lifecycle directly.
+	 * @testdox Shared intent confirmation should apply the payment lifecycle directly.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`):
 	 * a classic checkout that finished a hosted 3DS challenge, obtained via one API-only GET of the
 	 * resulting PaymentIntent through native transport after a real Playwright run.
 	 */
-	public function test_confirm_intent_for_order_applies_native_payment_lifecycle(): void {
+	public function test_confirm_intent_for_order_applies_payment_lifecycle(): void {
 		$order = $this->create_woopayments_order( '10.99' );
 
 		$recorded              = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );

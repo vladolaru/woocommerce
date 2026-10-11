@@ -94,7 +94,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should complete a zero-total order from the native SetupIntent.
+	 * @testdox Order-status callback should complete a zero-total order from the SetupIntent.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-5's succeeded
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `my_account_setup_intent_challenge_completed`):
@@ -711,7 +711,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should use the Core-owned account service for lifecycle mode metadata.
+	 * @testdox Order-status callback should use the account service for lifecycle mode metadata.
 	 */
 	public function test_update_order_status_uses_account_service_mode_for_lifecycle_meta(): void {
 		$order = $this->create_woopayments_order( '50.00' );
@@ -890,7 +890,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should persist settlement exchange-rate meta for converted-currency native charges.
+	 * @testdox Order-status callback should persist settlement exchange-rate meta for converted-currency charges.
 	 */
 	public function test_update_order_status_persists_settlement_exchange_rate_meta_for_converted_currency_charge(): void {
 		update_option( 'woocommerce_currency', 'USD' );
@@ -2875,7 +2875,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Setup-intent callback should return the native SetupIntent response envelope.
+	 * @testdox Setup-intent callback should return the SetupIntent response envelope.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): the `requires_action` row is REC-3DS-4's recorded envelope
 	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
@@ -2892,7 +2892,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param string $customer_id           Customer id the mocked customer service returns.
 	 * @param bool   $use_recorded_envelope Whether to feed REC-3DS-4's recorded envelope through a fake transport.
 	 */
-	public function test_create_setup_intent_returns_native_response_envelope( string $payment_method_id, string $customer_id, bool $use_recorded_envelope ): void {
+	public function test_create_setup_intent_returns_response_envelope( string $payment_method_id, string $customer_id, bool $use_recorded_envelope ): void {
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 		$http_client = null;
@@ -3313,7 +3313,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Setup-intent requests with an invalid nonce answer 400, as the client's exception does.
+	 * @testdox Setup-intent requests with an invalid nonce answer 400, as the WooPayments extension's exception does.
 	 *
 	 * Source: client 11.1.0 `gw:4568-4574` (`Add_Payment_Method_Exception`) and `utils:878-891` (default 400).
 	 */

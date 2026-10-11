@@ -107,7 +107,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
 	}
 
-	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available native tier. */
+	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available setup tier. */
 	public function test_provider_matrix_bounds_cutover_reconciliation_to_admin_and_cron_roots(): void {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 

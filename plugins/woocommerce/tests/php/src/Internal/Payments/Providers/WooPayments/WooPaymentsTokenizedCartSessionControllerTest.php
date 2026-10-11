@@ -76,9 +76,9 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register tokenized cart session hooks only when native owns WooPayments.
+	 * @testdox Should register tokenized cart session hooks only when the built-in WooPayments owns payments.
 	 */
-	public function test_registers_session_handler_filter_only_for_native_runtime(): void {
+	public function test_registers_session_handler_filter_only_for_builtin_runtime(): void {
 		$this->sut = $this->create_controller( true );
 		$this->sut->register();
 
@@ -474,15 +474,15 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $native_register Whether native should register hooks.
+	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
 	 * @return WooPaymentsTokenizedCartSessionController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsTokenizedCartSessionController {
+	private function create_controller( bool $builtin_register ): WooPaymentsTokenizedCartSessionController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
 
 		$controller = new WooPaymentsTokenizedCartSessionController();
 		$controller->init( $arbiter );

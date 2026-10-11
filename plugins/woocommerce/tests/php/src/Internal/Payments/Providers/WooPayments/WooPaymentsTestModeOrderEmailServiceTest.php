@@ -47,7 +47,7 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Email values remain unchanged for live, legacy, malformed, and non-order filter inputs.
+	 * @testdox Email values remain unchanged for live orders, orders without a mode, malformed values, and non-order filter inputs.
 	 */
 	public function test_leaves_ineligible_email_values_unchanged(): void {
 		$live_order = wc_create_order();
@@ -69,9 +69,9 @@ class WooPaymentsTestModeOrderEmailServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Email filters stay unregistered while the native runtime is not the owner.
+	 * @testdox Email filters stay unregistered while the built-in WooPayments is not the owner.
 	 */
-	public function test_does_not_register_email_filters_when_native_does_not_own_runtime(): void {
+	public function test_does_not_register_email_filters_when_builtin_does_not_own_runtime(): void {
 		$sut = new WooPaymentsTestModeOrderEmailService();
 
 		$sut->init( new StaticWooPaymentsRuntimeArbiter( false ) );

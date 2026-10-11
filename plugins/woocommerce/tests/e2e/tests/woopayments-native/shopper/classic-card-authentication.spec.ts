@@ -1102,7 +1102,7 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 			} finally {
 				// Deleting the customer deletes its saved tokens locally
 				// (`wc_delete_user_data`) and native detaches them at the
-				// provider (`WooPaymentsTokenServiceTest::test_detaches_native_card_payment_methods_when_token_is_deleted`),
+				// provider (`WooPaymentsTokenServiceTest::test_detaches_woopayments_card_payment_methods_when_token_is_deleted`),
 				// so this leaves no live credential without a separate
 				// My Account delete step.
 				await restApi.delete( `wc/v3/customers/${ created.id }`, {

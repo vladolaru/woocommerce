@@ -140,14 +140,14 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the order as refundable when the native gateway can refund it.
+	 * @testdox Should report the order as refundable when the WooPayments gateway can refund it.
 	 */
-	public function test_reports_order_as_refundable_when_native_gateway_can_refund(): void {
+	public function test_reports_order_as_refundable_when_the_woopayments_gateway_can_refund(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_charge_id', 'ch_mock' );
 		$order->save();
 
-		$this->fake_order_gateway( $this->create_native_gateway() );
+		$this->fake_order_gateway( $this->create_woopayments_gateway() );
 
 		$config = $this->sut->get_config( $order );
 
@@ -160,7 +160,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	public function test_reports_order_as_not_refundable_without_a_provider_charge(): void {
 		$order = $this->create_order();
 
-		$this->fake_order_gateway( $this->create_native_gateway() );
+		$this->fake_order_gateway( $this->create_woopayments_gateway() );
 
 		$config = $this->sut->get_config( $order );
 
@@ -168,9 +168,9 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the order as not refundable when no native gateway is resolved.
+	 * @testdox Should report the order as not refundable when no WooPayments gateway is resolved.
 	 */
-	public function test_reports_order_as_not_refundable_without_a_native_gateway(): void {
+	public function test_reports_order_as_not_refundable_without_a_woopayments_gateway(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_charge_id', 'ch_mock' );
 		$order->save();
@@ -185,7 +185,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the provider charge only when the order and account modes match.
 	 *
-	 * @dataProvider charge_projection_mode_provider
+	 * @dataProvider charge_mode_provider
 	 *
 	 * @param string|null $order_mode      Persisted order mode, or null for a legacy order.
 	 * @param bool        $account_is_test Whether the active account is in test mode.
@@ -216,7 +216,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{0:string|null,1:bool,2:string}>
 	 */
-	public function charge_projection_mode_provider(): array {
+	public function charge_mode_provider(): array {
 		return array(
 			'legacy order in live mode' => array( null, false, 'ch_mode_matched' ),
 			'legacy order in test mode' => array( null, true, 'ch_mode_matched' ),
@@ -232,7 +232,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject malformed provider charge and mode metadata.
 	 */
-	public function test_rejects_malformed_charge_projection_metadata(): void {
+	public function test_rejects_malformed_charge_metadata(): void {
 		$order = $this->create_order();
 		$order->update_meta_data( '_charge_id', array( 'ch_not_scalar' ) );
 		$order->update_meta_data( '_wcpay_mode', array( 'live' ) );
@@ -411,7 +411,7 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	 *
 	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway(): WooPaymentsGateway {
+	private function create_woopayments_gateway(): WooPaymentsGateway {
 		return new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
 	}
 

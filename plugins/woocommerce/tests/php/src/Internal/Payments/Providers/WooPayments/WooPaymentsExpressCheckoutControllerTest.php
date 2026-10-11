@@ -61,9 +61,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register express checkout frontend hooks when native owns runtime and payment request is available.
+	 * @testdox Should register express checkout frontend hooks when the built-in WooPayments owns the runtime and payment request is available.
 	 */
-	public function test_registers_frontend_hooks_when_native_owns_runtime_and_payment_request_is_available(): void {
+	public function test_registers_frontend_hooks_when_builtin_owns_runtime_and_payment_request_is_available(): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$this->sut->register();
@@ -75,9 +75,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register no hooks when native does not own the runtime.
+	 * @testdox Should register no hooks when the built-in WooPayments does not own the runtime.
 	 */
-	public function test_registers_no_hooks_when_native_does_not_own_runtime(): void {
+	public function test_registers_no_hooks_when_builtin_does_not_own_runtime(): void {
 		$this->sut = $this->create_controller( false, true );
 
 		$this->sut->register();
@@ -962,18 +962,18 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                                   $native_register     Whether native should register hooks.
-	 * @param bool                                   $payment_request_on  Whether payment request should be available.
+	 * @param bool                                   $builtin_register   Whether the built-in WooPayments owns the runtime.
+	 * @param bool                                   $payment_request_on Whether payment request should be available.
 	 * @param WooPaymentsExpressCheckoutService|null $service            Optional service double.
 	 * @param string                                 $woopay_button      WooPay placeholder markup the WooPay controller returns.
 	 * @return WooPaymentsExpressCheckoutController
 	 */
-	private function create_controller( bool $native_register, bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null, string $woopay_button = '' ): WooPaymentsExpressCheckoutController {
+	private function create_controller( bool $builtin_register, bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null, string $woopay_button = '' ): WooPaymentsExpressCheckoutController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
 
 		$service = $service ?? new RecordingExpressCheckoutService();
 		if ( $service instanceof RecordingExpressCheckoutService ) {

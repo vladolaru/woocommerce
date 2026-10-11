@@ -49,9 +49,9 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing plugin runtime returns no details.
+	 * @testdox A missing WooPayments extension runtime returns no details.
 	 */
-	public function test_returns_empty_when_plugin_runtime_is_absent(): void {
+	public function test_returns_empty_when_the_woopayments_extension_runtime_is_absent(): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'class_exists' => function ( $class_name, $autoload = true ) {
@@ -67,9 +67,9 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing plugin runtime falls back to the native API client when native owns the runtime.
+	 * @testdox A missing WooPayments extension runtime falls back to the API client when the built-in WooPayments owns the runtime.
 	 */
-	public function test_falls_back_to_native_api_client_when_plugin_runtime_is_absent(): void {
+	public function test_falls_back_to_the_api_client_when_the_woopayments_extension_runtime_is_absent(): void {
 		// A Stripe PaymentMethod object (Stripe API PaymentMethod; the client reads type and card.brand/last4 at
 		// class-wc-payments-payment-method-service.php:98-116, fetched through WC_Payments_API_Client::get_payment_method()).
 		$details = array(
@@ -130,9 +130,9 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Plugin runtime requests proxy to the WooPayments API client.
+	 * @testdox WooPayments extension runtime requests proxy to its API client.
 	 */
-	public function test_proxies_plugin_api_client_when_plugin_runtime_is_active(): void {
+	public function test_proxies_the_woopayments_extension_api_client_when_its_runtime_is_active(): void {
 		// The payment method shape the client's API client returns (class-wc-payments-payment-method-service.php:98-116 reads it).
 		$details = array(
 			'type' => 'card',

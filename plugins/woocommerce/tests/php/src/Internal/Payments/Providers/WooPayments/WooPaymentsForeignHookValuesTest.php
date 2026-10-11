@@ -39,9 +39,9 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	 * @param array<int,mixed> $extra_args    Arguments after the filtered value, as core passes them.
 	 * @param mixed            $foreign_value Value an earlier callback returned.
 	 */
-	public function test_native_callback_passes_on_a_foreign_value( string $hook, array $extra_args, $foreign_value ): void {
+	public function test_woopayments_callback_passes_on_a_foreign_value( string $hook, array $extra_args, $foreign_value ): void {
 		remove_all_filters( $hook );
-		$this->register_native_callback( $hook );
+		$this->register_woopayments_callback( $hook );
 		add_filter(
 			$hook,
 			static function () use ( $foreign_value ) {
@@ -63,7 +63,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	 */
 	public function test_token_class_callback_passes_on_the_class_for_a_non_string_type(): void {
 		remove_all_filters( 'woocommerce_payment_token_class' );
-		$this->register_native_callback( 'woocommerce_payment_token_class' );
+		$this->register_woopayments_callback( 'woocommerce_payment_token_class' );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the shared filter as its caller does.
 		$filtered = apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_CC', array( 'CC' ) );
@@ -103,7 +103,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $hook Filter name.
 	 */
-	private function register_native_callback( string $hook ): void {
+	private function register_woopayments_callback( string $hook ): void {
 		$arbiter   = new StaticWooPaymentsRuntimeArbiter( true );
 		$container = wc_get_container();
 

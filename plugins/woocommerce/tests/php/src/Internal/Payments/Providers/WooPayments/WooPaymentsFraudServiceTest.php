@@ -78,7 +78,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should print the Sift page tracker in the footer of a WooCommerce admin page, as the client does.
+	 * @testdox Should print the Sift page tracker in the footer of a WooCommerce admin page, as the WooPayments extension does.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-fraud-service.php:83`, `:207-243`; the merchant's account id is the Sift user
 	 * id in the admin (`:348-358`).
@@ -431,7 +431,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox On the first request after a login with Sift enabled, the pre-login session is linked to the shopper's customer with the client's request.
+	 * @testdox On the first request after a login with Sift enabled, the pre-login session is linked to the shopper's customer with the WooPayments extension's request.
 	 *
 	 * Client 11.1.0 link_session_if_user_just_logged_in() (class-wc-payments-fraud-service.php:150-197) sends
 	 * link_session_to_customer( get_sift_session_id(), customer ) (class-wc-payments-session-service.php:71-94), which POSTs
@@ -571,7 +571,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The session link runs on init, as the client hooks it.
+	 * @testdox The session link runs on init, as the WooPayments extension hooks it.
 	 */
 	public function test_registers_session_link_on_init(): void {
 		$sut = $this->make_sut();

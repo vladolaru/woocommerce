@@ -70,9 +70,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Register should wire each order workflow hook once when native owns the runtime.
+	 * @testdox Register should wire each order workflow hook once when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_order_workflow_hooks_idempotently_for_native_runtime(): void {
+	public function test_registers_order_workflow_hooks_idempotently_for_builtin_runtime(): void {
 		$this->sut = $this->create_controller( true );
 
 		$this->sut->register();
@@ -86,9 +86,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Register should wire no order workflow hooks when the plugin owns the runtime.
+	 * @testdox Register should wire no order workflow hooks when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_nothing_when_native_does_not_own_runtime(): void {
+	public function test_registers_nothing_when_builtin_does_not_own_runtime(): void {
 		$this->sut = $this->create_controller( false );
 
 		$this->sut->register();
@@ -645,7 +645,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An automatic cancel failure should preserve status, add the generic oracle note, and not escape.
+	 * @testdox An automatic cancel failure should preserve status, add the WooPayments extension's generic note, and not escape.
 	 */
 	public function test_automatic_cancel_failure_preserves_status_and_adds_generic_note(): void {
 		$order     = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'cancelled' );
@@ -664,7 +664,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Automatic capture exceptions should add the generic oracle note without escaping the status hook.
+	 * @testdox Automatic capture exceptions should add the WooPayments extension's generic note without escaping the status hook.
 	 */
 	public function test_automatic_capture_exception_adds_generic_note_without_escaping(): void {
 		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'completed' );
@@ -703,7 +703,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The capture-charge order action should send one capture request for the authorized total and mark the order processing.
 	 *
 	 * T.3 Task 3 (`plan-task-t3.md`): joins the request-shape half
-	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::test_capture_sends_context_amount_to_native_transport})
+	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::test_capture_sends_context_amount_to_transport})
 	 * and the on-hold half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLifecycleServiceTest::test_authorized_event_moves_order_on_hold})
 	 * by driving the real "Capture charge" order action through
 	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
@@ -742,7 +742,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( $recorded_capture['body'] ),
 		);
 
-		$provider  = $this->create_native_provider_over_fake_transport( $http_client );
+		$provider  = $this->create_provider_over_fake_transport( $http_client );
 		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
 
@@ -803,17 +803,17 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller with explicit dependencies.
 	 *
-	 * @param bool                          $native_owner       Whether native owns the runtime.
+	 * @param bool                          $builtin_owner      Whether the built-in WooPayments owns the runtime.
 	 * @param PaymentProcessingService|null $processing_service Processing service override.
 	 * @param WooPaymentsProvider|null      $provider           Provider override.
 	 * @return WooPaymentsOrderAdminActionsController
 	 */
-	private function create_controller( bool $native_owner, ?PaymentProcessingService $processing_service = null, ?WooPaymentsProvider $provider = null ): WooPaymentsOrderAdminActionsController {
+	private function create_controller( bool $builtin_owner, ?PaymentProcessingService $processing_service = null, ?WooPaymentsProvider $provider = null ): WooPaymentsOrderAdminActionsController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$controller = new WooPaymentsOrderAdminActionsController();
 		$controller->init(
@@ -1022,7 +1022,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param FakeWooPaymentsHttpClient $http_client Fake transport queued with the recorded response(s).
 	 * @return WooPaymentsProvider
 	 */
-	private function create_native_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
+	private function create_provider_over_fake_transport( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'get_cached_account_data', 'get_account_default_currency', 'get_account_country' ) )

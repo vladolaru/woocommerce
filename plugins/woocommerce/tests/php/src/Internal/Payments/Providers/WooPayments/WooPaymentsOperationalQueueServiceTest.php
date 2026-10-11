@@ -86,9 +86,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Operational queue hooks are registered when native owns runtime.
+	 * @testdox Operational queue hooks are registered when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_preserved_operational_hooks_when_native_owns_runtime(): void {
+	public function test_registers_preserved_operational_hooks_when_builtin_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$service->register();
@@ -111,9 +111,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Operational queue hooks are not registered when plugin owns runtime.
+	 * @testdox Operational queue hooks are not registered when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_operational_hooks_when_plugin_owns_runtime(): void {
+	public function test_registers_no_operational_hooks_when_extension_owns_runtime(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$service->register();
@@ -668,7 +668,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report Multi-Currency as enabled by default when the flag option was never written, matching the plugin.
+	 * @testdox Should report Multi-Currency as enabled by default when the flag option was never written, matching the WooPayments extension.
 	 */
 	public function test_store_setup_sync_defaults_multi_currency_flag_to_enabled(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
@@ -1257,12 +1257,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC completion schedules activation emails under the plugin's post-KYC group.
+	 * @testdox Post-KYC completion schedules activation emails under the hyphenated woocommerce-payments group.
 	 *
 	 * Client 11.1.0 class-wc-payments-post-kyc-activation-email-service.php:113 schedules each stage
 	 * under the literal 'woocommerce-payments', not the scheduler service's 'woocommerce_payments'.
 	 */
-	public function test_post_kyc_completion_schedules_emails_under_plugin_group(): void {
+	public function test_post_kyc_completion_schedules_emails_under_the_hyphenated_group(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsActionSchedulerService() );
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );

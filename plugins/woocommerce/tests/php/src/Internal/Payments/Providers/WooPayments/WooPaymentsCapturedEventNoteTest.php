@@ -24,7 +24,7 @@ class WooPaymentsCapturedEventNoteTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $event       Captured timeline event.
 	 * @param string              $client_html Note the client rendered for it.
 	 */
-	public function test_note_matches_the_client_rendering( array $event, string $client_html ): void {
+	public function test_note_matches_the_woopayments_extension_rendering( array $event, string $client_html ): void {
 		$this->assertSame( $client_html, ( new WooPaymentsCapturedEventNote( $event ) )->generate_html_note() );
 	}
 
@@ -41,7 +41,7 @@ class WooPaymentsCapturedEventNoteTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only captured events can be rendered, as in the client.
+	 * @testdox Only captured events can be rendered, as in the WooPayments extension.
 	 */
 	public function test_rejects_an_event_that_is_not_captured(): void {
 		$this->expectException( InvalidArgumentException::class );
