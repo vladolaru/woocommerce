@@ -2624,7 +2624,7 @@ class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$order->save();
 		}
 
-		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( WooPaymentsSubscriptionAdminPaymentMethodHandler::instance(), 'update_payment_method_for_subscriptions' ), 10 );
+		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ), 10 );
 	}
 
 	/**

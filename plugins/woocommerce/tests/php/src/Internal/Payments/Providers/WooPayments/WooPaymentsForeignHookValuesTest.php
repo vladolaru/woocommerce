@@ -137,7 +137,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				add_filter( 'wp_privacy_personal_data_erasers', array( WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
 				break;
 			case 'user_has_cap':
-				WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
+				wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
 				break;
 			case 'woocommerce_email_classes':
 				// WooPaymentsSubscriptionRenewalHooks attaches it at this priority when Subscriptions is active.

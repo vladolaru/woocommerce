@@ -35,13 +35,6 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	private const PAYMENT_METHOD_META_KEY = 'token';
 
 	/**
-	 * Singleton instance used by gateway instances to avoid duplicate hook identities.
-	 *
-	 * @var self|null
-	 */
-	private static ?self $instance = null;
-
-	/**
 	 * WooPayments token service.
 	 *
 	 * @var WooPaymentsTokenService
@@ -49,25 +42,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	private WooPaymentsTokenService $token_service;
 
 	/**
-	 * Initialize the handler.
+	 * Initialize the class instance.
+	 *
+	 * @internal
 	 *
 	 * @param WooPaymentsTokenService $token_service WooPayments token service.
 	 */
-	public function __construct( WooPaymentsTokenService $token_service ) {
+	final public function init( WooPaymentsTokenService $token_service ): void {
 		$this->token_service = $token_service;
-	}
-
-	/**
-	 * Get the shared handler instance.
-	 *
-	 * @return self
-	 */
-	public static function instance(): self {
-		if ( null === self::$instance ) {
-			self::$instance = new self( wc_get_container()->get( WooPaymentsTokenService::class ) );
-		}
-
-		return self::$instance;
 	}
 
 	/**

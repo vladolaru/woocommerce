@@ -118,7 +118,7 @@ class WooPaymentsSubscriptionRenewalHooks implements RegisterHooksInterface {
 			add_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $handler, 'update_failing_payment_method' ), 10, 2 );
 		}
 
-		WooPaymentsSubscriptionAdminPaymentMethodHandler::instance()->register_hooks();
+		wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
 
 		if ( ! WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
 			add_filter( 'wcs_renewal_order_items', array( self::class, 'check_renewal_mode' ), 10, 3 );

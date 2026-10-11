@@ -45,7 +45,8 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$this->token_class_map = new WooPaymentsTokenClassMapController();
 		$this->token_class_map->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->token_class_map->register();
-		$this->sut = new WooPaymentsSubscriptionAdminPaymentMethodHandler( wc_get_container()->get( WooPaymentsTokenService::class ) );
+		$this->sut = new WooPaymentsSubscriptionAdminPaymentMethodHandler();
+		$this->sut->init( wc_get_container()->get( WooPaymentsTokenService::class ) );
 	}
 
 	/**

@@ -176,7 +176,8 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	 * `trait-wc-payment-gateway-wcpay-subscriptions.php:646-666`), so a SEPA subscription has no token field in the admin.
 	 */
 	public function test_admin_subscription_select_lists_disabled_tokens_only_under_their_own_gateway(): void {
-		$handler      = new WooPaymentsSubscriptionAdminPaymentMethodHandler( $this->create_service( array( 'card' ) ) );
+		$handler = new WooPaymentsSubscriptionAdminPaymentMethodHandler();
+		$handler->init( $this->create_service( array( 'card' ) ) );
 		$subscription = wc_create_order( array( 'customer_id' => $this->user_id ) );
 
 		$fields = $this->get_admin_payment_meta_fields( $handler, $subscription );
