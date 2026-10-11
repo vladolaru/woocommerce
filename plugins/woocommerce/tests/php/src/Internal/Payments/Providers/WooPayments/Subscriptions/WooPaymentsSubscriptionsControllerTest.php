@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -13,11 +14,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -116,20 +119,28 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Attaching the renewal handler resolves none of the services a renewal uses.
+	 * @testdox Building the renewal handler and attaching its hooks resolve none of the services a renewal uses, beyond what the admin payment method handler needs.
 	 */
-	public function test_connected_store_attaches_the_renewal_root_without_resolving_renewal_services(): void {
+	public function test_attaching_the_renewal_handler_resolves_no_renewal_service(): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
+		$renewal_services = array( PaymentProcessingService::class, WooPaymentsProvider::class, WooPaymentsTokenService::class, WooPaymentsStripeBillingModule::class, WooPaymentsAccountService::class, WooPaymentsLogger::class );
 
-		$this->register_native_payments_and_run_init();
+		// Attaching also registers the admin payment method handler, which needs the token service; what it resolves is allowed.
+		wc_get_container()->reset_all_resolved();
+		wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class );
+		$resolved_by_admin_handler = $this->get_resolved_class_names();
 
-		$root = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
-		foreach ( array( 'processing_service', 'provider', 'token_service' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, $property );
-			$reflection->setAccessible( true );
-			$this->assertNull( $reflection->getValue( $root ), "Attaching the renewal hooks must not resolve the $property." );
+		wc_get_container()->reset_all_resolved();
+		$root             = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+		$resolved_by_init = $this->get_resolved_class_names();
+		$root->register();
+		$resolved_by_attach = array_diff( $this->get_resolved_class_names(), $resolved_by_init, $resolved_by_admin_handler );
+
+		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ), 'The renewal hooks must be attached.' );
+		foreach ( $renewal_services as $service ) {
+			$this->assertNotContains( $service, $resolved_by_init, "Building the renewal handler must not resolve $service." );
+			$this->assertNotContains( $service, $resolved_by_attach, "Attaching the renewal hooks must not resolve $service." );
 		}
 	}
 
@@ -393,8 +404,12 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		 */
 		do_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', 12.0, wc_get_order( $order->get_id() ) );
 
+		$this->assertSame( 1, $service->checkout_attempt_count, 'The renewal must be charged once.' );
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
+		// Client 11.1.0 renews Amazon Pay on its card gateway (`includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:294-298`).
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id(), 'Subscriptions renewals charge under the card gateway ID.' );
+		$this->assertSame( (string) $active_token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] ?? null, 'The renewal must charge the active saved token.' );
 		$this->assertSame(
 			array(
 				'scheduled_subscription_payment'    => true,
@@ -445,6 +460,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				unset( $idempotency_key );
 				$this->last_request_data = $request_data;
 
+				// The platform's error code for a saved method that can no longer be charged, as the client's renewal tests
+				// raise it (client 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay-subscriptions.php:700-704,740-767`).
 				throw new WooPaymentsApiException( 'Provider diagnostic for pm_unusable_saved_method.', 'payment_method_no_longer_available', 400, 'invalid_request_error', '', array(), 'pi_unusable_saved_method' );
 			}
 		};
@@ -497,6 +514,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$order->save_meta_data();
 			$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
 
+			// Synthetic event: a Stripe `payment_intent.payment_failed` body carrying the fields the client reads for it, the
+			// intent's metadata `order_id` and `order_key` (client 11.1.0 `includes/class-wc-payments-webhook-processing-service.php:972-986`)
+			// and `last_payment_error` with its code, message and payment method (`:446-449`, `:1037-1040`).
 			wc_get_container()->get( WooPaymentsEventIngestor::class )->process(
 				array(
 					'id'   => 'evt_unusable_method_replay',
@@ -1603,6 +1623,18 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Get the classes the container has resolved since it was last reset.
+	 *
+	 * @return string[]
+	 */
+	private function get_resolved_class_names(): array {
+		$resolved = new \ReflectionProperty( RuntimeContainer::class, 'resolved_cache' );
+		$resolved->setAccessible( true );
+
+		return array_keys( $resolved->getValue( wc_get_container() ) );
+	}
+
+	/**
 	 * Build the renewal handler with the given services in the container, where it resolves them when a renewal runs.
 	 *
 	 * @param PaymentProcessingService     $processing_service Payment processing service.
@@ -1786,6 +1818,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			return;
 		}
 
+		// Stands in for WooCommerce Subscriptions' `wcs_get_subscriptions_for_renewal_order( $order )` (9.2.0
+		// `includes/core/wcs-renewal-functions.php:173-175`), which returns the renewal order's subscriptions.
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
 		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 	}
