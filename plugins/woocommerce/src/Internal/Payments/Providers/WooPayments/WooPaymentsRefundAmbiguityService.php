@@ -27,7 +27,7 @@ use WC_Order_Refund;
  * (`class-wc-payments-api-client.php:2690`) and never looks for the earlier refund.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsRefundAmbiguityService {
 
@@ -102,7 +102,7 @@ class WooPaymentsRefundAmbiguityService {
 	private const ALREADY_RECORDED_WINDOW_SECONDS = 900;
 
 	/**
-	 * Native API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -113,7 +113,7 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client Native API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
@@ -140,7 +140,7 @@ class WooPaymentsRefundAmbiguityService {
 		}
 
 		// Without the row this call links (a direct wc_refund_payment() caller), the order's other rows cannot be told
-		// apart from it, so the manual-record rule and the backstop do not run (monitor ruling 2026-10-10 14:10).
+		// apart from it, so the manual-record rule and the backstop do not run.
 		if ( 0 < $own_row_id && '' !== $record['found_refund_id'] && $this->clear_found_refund_the_order_cannot_refund( $order, $record, $own_row_id ) ) {
 			return array( 'action' => self::ACTION_SEND );
 		}
@@ -340,8 +340,7 @@ class WooPaymentsRefundAmbiguityService {
 		$is_same_amount = $request['amount'] === $refund_amount && strtolower( (string) $order->get_currency() ) === $refund_currency;
 		if ( ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			// The merchant may have recorded it with Refund manually: that row records it, so this call is a refund of its
-			// own (monitor rulings 2026-10-10 13:20 and 13:17).
-			// The rows are in the order's currency, so only a refund in that currency can be one of them (Codex review 201 M4).
+			// own. The rows are in the order's currency, so only a refund in that currency can be one of them.
 			$manual_row = 0 < $own_row_id && strtolower( (string) $order->get_currency() ) === $refund_currency
 				? self::find_manual_record_row( $this->get_earlier_refund_rows( $order, $own_row_id ), (string) $order->get_currency(), $refund_amount, (int) $record['failed_at'] )
 				: null;
@@ -364,8 +363,8 @@ class WooPaymentsRefundAmbiguityService {
 			return $this->refuse_earlier_found( $order, $record, $refund, $refund_id, $refund_amount );
 		}
 
-		// After row 4 told the merchant to refund the found amount, its webhook row may have recorded it meanwhile: that
-		// refund is refused at any time, once, since the hold is cleared with it.
+		// After refuse_earlier_found() told the merchant to refund the found amount, the webhook may have recorded it
+		// meanwhile: that refund is refused at any time, once, since the hold is cleared with it.
 		if ( $is_same_amount && ( '' !== $record['found_refund_id'] || time() - $record['last_failed_at'] <= self::ALREADY_RECORDED_WINDOW_SECONDS ) ) {
 			$this->clear_record( $order );
 
@@ -463,7 +462,7 @@ class WooPaymentsRefundAmbiguityService {
 	 *
 	 * A record naming another order or charge was copied or left stale, and is deleted with a warning. A record never
 	 * expires: losing the key at Stripe after 24 hours does not settle what the earlier request did, so only the lookup
-	 * does (monitor ruling 2026-10-10 13:45, Codex review 201 H3).
+	 * does.
 	 *
 	 * @param WC_Order $order     Order being refunded.
 	 * @param string   $charge_id The order's charge.
@@ -541,10 +540,10 @@ class WooPaymentsRefundAmbiguityService {
 	 * Clear a hold that found its refund when the order can no longer refund the found amount, before reading the
 	 * charge's refunds.
 	 *
-	 * The hold then protects nothing: whatever recorded the earlier refund, refunding its amount is no longer possible
-	 * (Opus review F2, monitor ruling 2026-10-10 13:20). The row this call links, by the ID the runtime handed over, does
-	 * not count. When a manual row records the found refund (the usual reason the order cannot refund it), it is linked
-	 * first, unless the found refund is already recorded on the order (monitor ruling 2026-10-10 14:10, L1).
+	 * The hold then protects nothing: whatever recorded the earlier refund, refunding its amount is no longer possible.
+	 * The row this call links, by the ID the runtime handed over, does not count. When a manual row records the found
+	 * refund (the usual reason the order cannot refund it), it is linked first, unless the found refund is already
+	 * recorded on the order.
 	 *
 	 * @param WC_Order            $order      Order being refunded.
 	 * @param array<string,mixed> $record     The order's record, holding a found refund.
@@ -559,7 +558,7 @@ class WooPaymentsRefundAmbiguityService {
 
 		// Another request's gateway refund may still be running and fail, whenever its row was created; only the rows already
 		// settled count, which can only keep the hold: a manual record, a refund through the gateway, or a row linked to a
-		// provider refund, money that has moved (monitor rulings 2026-10-10 15:05, 17:40; Codex review 206 F1).
+		// provider refund, money that has moved.
 		$settled_rows = array_filter(
 			$rows,
 			static fn( WC_Order_Refund $refund ): bool => self::is_manual_record_row( $refund )
@@ -637,8 +636,7 @@ class WooPaymentsRefundAmbiguityService {
 	 * Tell whether a refund row is marked as one the merchant recorded without refunding through a gateway (RefundRowCapture).
 	 *
 	 * A row without the mark is never taken for the merchant's record: a gateway refund, a row still inside its datastore
-	 * write, or one saved by code that never fires `woocommerce_create_refund` (Codex review 205 R1, monitor ruling
-	 * 2026-10-10 17:40).
+	 * write, or one saved by code that never fires `woocommerce_create_refund`.
 	 *
 	 * @param WC_Order_Refund $refund Refund row.
 	 * @return bool

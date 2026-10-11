@@ -17,15 +17,14 @@ use WC_Order;
 use WC_Order_Refund;
 
 /**
- * Native owner for WooPayments canceled-authorization fee remediation jobs.
+ * Removes the transaction fee meta and refund rows WooPayments wrote on canceled authorizations between April 2023 and
+ * November 2025, in batches through Action Scheduler.
  *
- * Between April 2023 and November 2025, canceled authorizations in WooPayments
- * could have transaction fee metadata and refund objects created. This service
- * preserves the standalone plugin's remediation hooks so in-flight background
- * jobs continue after native Core takes over.
+ * Its hooks, options and Action Scheduler group are the WooPayments extension's, so a remediation the extension queued
+ * goes on here after the switch.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterHooksInterface {
 
@@ -58,21 +57,21 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	const STATS_OPTION_KEY = 'wcpay_fee_remediation_stats';
 
 	/**
-	 * Preserved live remediation hook.
+	 * Action Scheduler hook of a live remediation batch.
 	 *
 	 * @var string
 	 */
 	const ACTION_HOOK = 'wcpay_remediate_canceled_authorization_fees';
 
 	/**
-	 * Preserved dry-run remediation hook.
+	 * Action Scheduler hook of a dry-run batch.
 	 *
 	 * @var string
 	 */
 	const DRY_RUN_ACTION_HOOK = 'wcpay_remediate_canceled_authorization_fees_dry_run';
 
 	/**
-	 * Preserved affected-orders check hook.
+	 * Action Scheduler hook of the affected-orders check.
 	 *
 	 * @var string
 	 */
@@ -93,7 +92,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	const DRY_RUN_OPTION_KEY = 'wcpay_fee_remediation_dry_run';
 
 	/**
-	 * Legacy Action Scheduler group used by existing queued jobs.
+	 * Action Scheduler group of the remediation jobs.
 	 *
 	 * @var string
 	 */
@@ -167,7 +166,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Register preserved remediation queue consumers.
+	 * Register the batch, dry-run and check handlers while the built-in WooPayments owns payments.
 	 */
 	public function register() {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -537,7 +536,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Tell whether cutover can safely hand off canceled-authorization fee remediation.
+	 * Tell whether the switch can hand off the remediation: nothing is affected, or Action Scheduler can run it.
 	 *
 	 * @return bool True when there is no affected data or Action Scheduler can run the migration.
 	 */
@@ -550,7 +549,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Ensure native owns a live remediation job after WooPayments plugin cutover.
+	 * Make sure a live remediation job is scheduled after the switch from the WooPayments extension.
 	 *
 	 * @return string Scheduling status: completed, not_needed, unavailable, already_scheduled, or scheduled.
 	 */
@@ -596,7 +595,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * Tell whether a live remediation batch is scheduled.
 	 *
 	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::is_remediation_running()` checks the live hook in
-	 * any group and ignores dry runs.
+	 * any group and ignores dry runs (notes/class-wc-payments-notes-canceled-auth-remediation.php:141-147).
 	 *
 	 * @since 11.2.0
 	 *
@@ -609,7 +608,8 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Schedule the background affected-orders check, so the query never runs on the request that asks.
 	 *
-	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::schedule_check()`.
+	 * Client 11.1.0 `WC_Payments_Notes_Canceled_Auth_Remediation::schedule_check()`
+	 * (notes/class-wc-payments-notes-canceled-auth-remediation.php:121-133).
 	 *
 	 * @since 11.2.0
 	 */
@@ -887,7 +887,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Schedule a remediation action in the preserved legacy group.
+	 * Schedule a remediation action in the remediation group.
 	 *
 	 * @param string $hook      Hook name.
 	 * @param int    $timestamp Scheduled timestamp.
@@ -917,7 +917,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Tell whether Action Scheduler queue functions are available.
 	 *
-	 * @return bool True when native can schedule and inspect remediation jobs.
+	 * @return bool True when Action Scheduler can schedule and inspect remediation jobs.
 	 */
 	protected function is_action_scheduler_available(): bool {
 		return function_exists( 'as_schedule_single_action' ) && function_exists( 'as_has_scheduled_action' );
@@ -949,7 +949,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Reset dry-run processing state before cutover starts live remediation.
+	 * Reset dry-run processing state before the switch starts live remediation.
 	 */
 	private function reset_live_processing_state(): void {
 		delete_option( self::LAST_ORDER_ID_OPTION_KEY );

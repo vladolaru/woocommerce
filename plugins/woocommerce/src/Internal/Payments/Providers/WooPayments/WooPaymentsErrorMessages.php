@@ -11,15 +11,15 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Maps WooPayments provider errors to safe shopper-facing messages.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsErrorMessages {
 
 	/**
 	 * Get a safe shopper-facing message for a provider error.
 	 *
-	 * Follows the plugin's `get_filtered_error_message()` order: typed non-card errors are redacted, typeless and
-	 * unmapped card errors keep the platform message.
+	 * Follows client 11.1.0's `get_filtered_error_message()` order (class-wc-payments-utils.php:769): typed non-card errors
+	 * are redacted, typeless and unmapped card errors keep the platform message.
 	 *
 	 * @since 11.0.0
 	 *
@@ -27,7 +27,7 @@ class WooPaymentsErrorMessages {
 	 * @param string $error_code       Provider error code.
 	 * @param string $decline_code     Provider decline code.
 	 * @param string $platform_message Normalized platform message.
-	 * @param bool   $blocked_by_fraud_rules Whether fraud rules blocked the payment (client utils.php:799 then keeps the platform message).
+	 * @param bool   $blocked_by_fraud_rules Whether fraud rules blocked the payment (client 11.1.0 class-wc-payments-utils.php:799 then keeps the platform message).
 	 * @return string
 	 */
 	public static function get_shopper_message( string $error_type, string $error_code, string $decline_code = '', string $platform_message = '', bool $blocked_by_fraud_rules = false ): string {
@@ -110,6 +110,8 @@ class WooPaymentsErrorMessages {
 	public static function get_localized_messages(): array {
 		/**
 		 * Filters the localized, customer-facing Stripe error messages.
+		 *
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * @since 10.7.0
 		 *

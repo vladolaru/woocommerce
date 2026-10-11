@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * WooPayments-compatible payment type value object.
+ * The payment type the `wcpay_metadata_from_order` filter receives, single or recurring, shaped as the WooPayments
+ * extension's `Payment_Type` so callbacks written for it keep working.
  *
  * @since 11.0.0
- * @internal Transitional compatibility object for WooPayments metadata filters.
+ * @internal
  */
 class WooPaymentsPaymentType implements \JsonSerializable {
 
@@ -51,7 +52,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	 */
 	final private function __construct( string $value ) {
 		if ( ! defined( static::class . "::$value" ) ) {
-			throw new \InvalidArgumentException( "Constant with name '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserves the WooPayments oracle exception contract.
+			throw new \InvalidArgumentException( "Constant with name '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Same message as client 11.1.0's Base_Constant (includes/constants/class-base-constant.php:46).
 		}
 
 		$this->value = $value;
@@ -76,7 +77,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 	}
 
 	/**
-	 * Create a payment type from an oracle constant name.
+	 * Create a payment type from its constant name.
 	 *
 	 * @param string $name      Constant name.
 	 * @param array  $arguments Unused static-call arguments.
@@ -128,7 +129,7 @@ class WooPaymentsPaymentType implements \JsonSerializable {
 		$constants = ( new \ReflectionClass( static::class ) )->getConstants();
 		$name      = array_search( $value, $constants, true );
 		if ( false === $name ) {
-			throw new \InvalidArgumentException( "Constant with value '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Preserves the WooPayments oracle exception contract.
+			throw new \InvalidArgumentException( "Constant with value '$value' does not exist." ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Same message as client 11.1.0's Base_Constant (includes/constants/class-base-constant.php:84).
 		}
 
 		return $name;

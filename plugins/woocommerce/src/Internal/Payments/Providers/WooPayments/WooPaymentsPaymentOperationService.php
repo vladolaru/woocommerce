@@ -18,12 +18,12 @@ use WC_Order;
  * Sends WooPayments charges, zero-total setups, refunds, captures and cancels to the platform and maps each answer to a payment outcome.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPaymentOperationService {
 
 	/**
-	 * Order meta key holding the native charge idempotency key.
+	 * Order meta key holding the charge idempotency key, kept until a definitive outcome.
 	 *
 	 * @var string
 	 * @since 11.2.0
@@ -60,14 +60,14 @@ class WooPaymentsPaymentOperationService {
 	public const PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE = 'capture_on_status_change';
 
 	/**
-	 * Outcome data key marking a definitive native charge failure.
+	 * Outcome data key marking a definitive charge failure.
 	 *
 	 * @var string
 	 */
 	private const DEFINITIVE_CHARGE_FAILURE_DATA_KEY = '_wcpay_definitive_charge_failure';
 
 	/**
-	 * Native API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -134,7 +134,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client         Native API client.
+	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
 	 * @param WooPaymentsCustomerService        $customer_service   Customer service.
 	 * @param WooPaymentsIntentRequestBuilder   $request_builder    Request builder.
 	 * @param WooPaymentsAccountService         $account_service    Account service.
@@ -297,8 +297,8 @@ class WooPaymentsPaymentOperationService {
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		// Like the client, each capture request carries its own key, so a merchant's retry after a
-		// failed capture reaches the provider instead of replaying the stored failure.
+		// Each capture request carries its own key, as in client 11.1.0 (wc-payment-api/class-wc-payments-api-client.php:2690),
+		// so a merchant's retry after a failed capture reaches the provider instead of replaying the stored failure.
 		unset( $idempotency_key );
 
 		$order = $context->get_order();
@@ -308,7 +308,7 @@ class WooPaymentsPaymentOperationService {
 				$amount_to_capture = $this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
 				// order's Level 3 data with it (:3984-3986), so it never meets a partial capture. The order's line items add up to
-				// the order total only, so a native partial capture goes without Level 3 data (native decision, audit L2, N-315).
+				// the order total only, so a partial capture here goes without Level 3 data.
 				$is_order_total = $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ) === $amount_to_capture;
 				try {
 					$result  = $this->api_client->capture_intention(
@@ -371,7 +371,7 @@ class WooPaymentsPaymentOperationService {
 					// The provider may have canceled the intent already (an expired authorization
 					// whose charge.expired webhook was missed, or a cancel that completed despite
 					// the transport error): a re-fetched canceled intent is a completed cancel,
-					// as in the plugin's cancel_authorization().
+					// as in client 11.1.0's cancel_authorization() (class-wc-payment-gateway-wcpay.php:4083-4102).
 					$intent = $this->refetch_intent_after_failure( $intent_id );
 					if ( null !== $intent && 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
 						return WooPaymentsIntentCodec::outcome_from_cancel_result( $intent )
@@ -381,7 +381,8 @@ class WooPaymentsPaymentOperationService {
 					$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'cancel', $exception, $intent_id );
 
 					// Not canceled: the plan carries the status the provider still reports so
-					// the applier records it with the failure note, as the plugin does.
+					// the applier records it with the failure note, as client 11.1.0 does
+					// (class-wc-payment-gateway-wcpay.php:4104-4110).
 					return null !== $intent
 						? $outcome->with_effect_plan( WooPaymentsOrderEffectPlan::for_cancel( $intent ) )
 						: $outcome;
@@ -832,8 +833,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * Only a card error proves that Stripe ran this request fresh, so that nothing was stored under the key and the earlier
 	 * request took nothing. The platform's own refusals never reach Stripe: they come as WordPress REST errors with no
-	 * Stripe error object (wpcom `wcpay/core/exceptions/class-rest-exception.php:54-64`), so they have no error type,
-	 * while Stripe's answers always have one (`wcpay/class-base-controller.php:476-490`). Stripe answers a 429 or a
+	 * Stripe error object, so they have no error type, while Stripe's answers always have one. Stripe answers a 429 or a
 	 * parameter-validation 400 before its idempotency layer and stores neither (https://docs.stripe.com/error-low-level).
 	 * A scheduled renewal stays out of the lookup, so there only a platform refusal keeps the key.
 	 *
@@ -894,7 +894,7 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Retire a native charge idempotency key after a definitive lifecycle outcome.
+	 * Retire the order's charge idempotency key after a definitive outcome.
 	 *
 	 * Covers a PaymentIntent response; a definitive dispatch failure was already retired by failed_charge_outcome().
 	 *
@@ -958,18 +958,16 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Build a failed charge outcome carrying the plugin's decline order effects.
-	 *
-	 * Mirrors the plugin's process_payment catch block: the order receives a
-	 * payment-failed note with the raw diagnostics (and the card_declined
-	 * seller message when the charge outcome carried one), and a card error
-	 * marks the fraud meta box allow because fraud checks passed.
+	 * Build the failed outcome of a charge, with the decline effects client 11.1.0's process_payment() catch gives the order
+	 * (class-wc-payment-gateway-wcpay.php:1355-1400): a payment-failed note with the raw diagnostics and, when the charge
+	 * outcome carried one, the card_declined seller message (:1365-1367); and, on a card error, the fraud meta box set to
+	 * allow, since fraud checks passed (:1369-1373).
 	 *
 	 * A PaymentIntent dispatch failure decides the order's kept charge key. An ambiguous one keeps it and records the
 	 * failure for a later lookup, merged into the order's record when one exists. A definitive one retires both, except
-	 * that while this order's record exists only a card error does: any other refusal (the platform's own, a Stripe rate
-	 * limit, a validation error) says nothing about the earlier request under the key, so both stay for the next attempt's
-	 * lookup.
+	 * while this order's record names a customer to look up: then a platform refusal keeps both, and so does any Stripe
+	 * answer other than a card error unless the payment is a scheduled renewal, since such an answer says nothing about
+	 * the earlier request under the key.
 	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
@@ -1087,9 +1085,9 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Build the failed outcome for a charge blocked by fraud rules.
 	 *
-	 * Mirrors the plugin's mark_order_blocked_for_fraud effects: the order keeps
-	 * its status (the merchant decides whether to cancel), records the block
-	 * state and the fired ruleset results, and gets the blocked-payment note.
+	 * Gives the order client 11.1.0's mark_order_blocked_for_fraud() effects (class-wc-payment-gateway-wcpay.php:1340-1353):
+	 * the order keeps its status (the merchant decides whether to cancel), records the block state and the fired ruleset
+	 * results, and gets the blocked-payment note.
 	 *
 	 * @param WC_Order                $order     Order object.
 	 * @param WooPaymentsApiException $exception Transport exception.
@@ -1118,8 +1116,8 @@ class WooPaymentsPaymentOperationService {
 		}
 		$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = $meta;
 		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ]         = true;
-		// Client 11.1.0 gw:1426 passes the fraud flag, so the postal-code hint is withheld and the platform message shows.
-		// Authorized divergence: verification-ledger.md V432 decision C23 (client Blocks gw:1519-1531 drops the flag; not ported).
+		// Client 11.1.0 gw:1425 passes the fraud flag, so the postal-code hint is withheld and the platform message shows.
+		// Its Blocks checkout path drops the flag (gw:1519-1531); this code passes it there too.
 		$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] = WooPaymentsErrorMessages::get_shopper_message(
 			$exception->get_error_type(),
 			$exception->get_error_code(),
@@ -1178,9 +1176,9 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Fail a sub-minimum charge before the API call using the cached platform floor.
 	 *
-	 * Mirrors the plugin's pre-flight check: once the platform has reported a
-	 * per-currency minimum, later attempts below it fail locally with the same
-	 * shopper message instead of burning another provider round trip.
+	 * As client 11.1.0's check before the request (class-wc-payment-gateway-wcpay.php:1785-1787): once the platform has
+	 * reported a per-currency minimum, later attempts below it fail locally with the same shopper message instead of
+	 * burning another provider round trip.
 	 *
 	 * @param WC_Order $order Order object.
 	 * @throws WooPaymentsApiException When the order total is below the cached platform minimum.
@@ -1215,8 +1213,8 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether a $0 order saves a new payment method, the only case client 11.1.0 creates a SetupIntent for.
 	 *
-	 * The client saves when the shopper did not pick a saved token and the payment is recurring or the shopper asked to
-	 * save (`Payment_Information::should_save_payment_method_to_store()`, subtrait:382-394).
+	 * Client 11.1.0 saves when the shopper did not pick a saved token and the payment is recurring or the shopper asked to
+	 * save (class-payment-information.php:429-431, trait-wc-payment-gateway-wcpay-subscriptions.php:382-394).
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param bool                    $is_recurring Whether the payment is recurring.
@@ -1230,7 +1228,7 @@ class WooPaymentsPaymentOperationService {
 		$payment_data  = $context->get_payment_data();
 		$provider_data = $context->get_provider_data();
 
-		// The client counts a payment method change request as recurring (trait-wc-payments-subscriptions-utilities.php:53-66).
+		// Client 11.1.0 counts a payment method change request as recurring (trait-wc-payments-subscriptions-utilities.php:53-66).
 		return $is_recurring
 			|| ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
 			|| ! empty( $payment_data['save_payment_method'] );
@@ -1312,7 +1310,7 @@ class WooPaymentsPaymentOperationService {
 			$result,
 			$is_recurring,
 			array(
-				// Plugin 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
+				// Client 11.1.0 stores the order currency for setup intents (class-wc-payments-order-service.php:1361).
 				'_wcpay_intent_currency' => (string) $order->get_currency(),
 				'_wcpay_mode'            => $this->account_service->get_order_mode(),
 			)
@@ -1334,7 +1332,8 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Refuse a malformed Stripe id before any request, as the plugin's Request::validate_stripe_id() does.
+	 * Refuse a malformed Stripe id before any request, as client 11.1.0's Request::validate_stripe_id() does
+	 * (core/server/class-request.php:669).
 	 *
 	 * @param string $id Stripe object id.
 	 * @return void
@@ -1358,7 +1357,8 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Refuse a WooPay intent whose metadata names another order, as the plugin's Order_ID_Mismatch_Exception does.
+	 * Refuse a WooPay intent whose metadata names another order, as client 11.1.0 does with Order_ID_Mismatch_Exception
+	 * (class-wc-payment-gateway-wcpay.php:1806, :1939).
 	 *
 	 * @param array<string,mixed> $intent            Intent WooPay confirmed.
 	 * @param WC_Order            $order             Order being paid.
@@ -1374,7 +1374,7 @@ class WooPaymentsPaymentOperationService {
 			return;
 		}
 
-		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is structured data, worded and escaped exactly as the plugin's.
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is structured data, worded and escaped as client 11.1.0's.
 		if ( $is_payment_intent ) {
 			throw new WooPaymentsApiException(
 				sprintf(
@@ -1392,7 +1392,7 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Resolve the customer required for a native provider request.
+	 * Resolve the customer a charge or setup request is sent with.
 	 *
 	 * @param PaymentOperationContext $context Payment context.
 	 * @return string
@@ -1434,7 +1434,7 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Snapshot runtime facts needed by the pure intent codec.
+	 * Collect the order facts the intent codec needs to map the platform's answer.
 	 *
 	 * @param array<string,mixed>     $result               Provider intent response.
 	 * @param PaymentOperationContext $context              Payment context.
@@ -1538,9 +1538,8 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Build the metadata re-sent on capture.
 	 *
-	 * The plugin re-sends the full order-derived metadata on every capture so
-	 * the platform's copy reflects the order at capture time, not at
-	 * authorization time.
+	 * Client 11.1.0 sends the full order metadata again on every capture (class-wc-payment-gateway-wcpay.php:3977-3982), so
+	 * the platform's copy reflects the order at capture time, not at authorization time.
 	 *
 	 * @param \WC_Order $order Order being captured.
 	 * @return array<string,mixed>
@@ -1552,8 +1551,8 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Re-fetch an intent after a failed capture or cancel to learn its real state.
 	 *
-	 * Fetch errors are swallowed on purpose: the original capture/cancel error is the
-	 * actionable one, matching the plugin's capture_charge and cancel_authorization.
+	 * Fetch errors are swallowed on purpose: the original capture or cancel error is the actionable one, as in
+	 * client 11.1.0's capture_charge() and cancel_authorization() (class-wc-payment-gateway-wcpay.php:4022-4029, :4092-4098).
 	 *
 	 * @param string $intent_id Intent ID.
 	 * @return array<string,mixed>|null The intent, or null when it cannot be fetched.
@@ -1569,7 +1568,7 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Build the Level 3 data sent on capture.
 	 *
-	 * Amazon Pay captures skip Level 3, matching the plugin.
+	 * Amazon Pay captures skip Level 3, as in client 11.1.0 (class-wc-payment-gateway-wcpay.php:3984).
 	 *
 	 * @param \WC_Order $order Order being captured.
 	 * @return array<string,mixed>

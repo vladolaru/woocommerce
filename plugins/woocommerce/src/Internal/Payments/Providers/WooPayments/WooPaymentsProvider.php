@@ -30,12 +30,11 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterf
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 
 /**
- * First-party WooPayments provider skeleton for the native payments runtime.
- *
- * A3 exposes WooPayments money-moving operations behind the provider contract.
+ * Connects WooPayments to the payments runtime: its gateways, its charge, capture, cancel and refund operations with their
+ * order effects, and the classes each setup tier loads on each request type.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
 
@@ -47,7 +46,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	private WooPaymentsPaymentOperationService $payment_operations;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -68,7 +67,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
-	 * Request-scoped native payment gateways keyed by payment method ID.
+	 * This request's payment gateways, keyed by payment method ID.
 	 *
 	 * @var array<string,WooPaymentsGateway>|null
 	 */
@@ -87,7 +86,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @internal
 	 *
 	 * @param WooPaymentsPaymentOperationService    $payment_operations      WooPayments payment operation service.
-	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
+	 * @param WooPaymentsApiClient                  $api_client              WooPayments API client.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
 	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
@@ -108,7 +107,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Get the provider-owned roots for each native dormancy tier and request class.
+	 * Get the provider's root classes for each setup tier and request type.
 	 *
 	 * @since 11.2.0
 	 *
@@ -167,8 +166,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				WooPaymentsCustomerService::class,
 				WooPaymentsOrderAdminActionsController::class,
 				WooPaymentsWooPayOrderStatusSync::class,
-				// Plugins are also (de)activated over REST (wp/v2/plugins); the client hooks the WooPay extension sync on every
-				// request (client 11.1.0 `includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
+				// Plugins are also (de)activated over REST (wp/v2/plugins); client 11.1.0 hooks the WooPay extension sync on every
+				// request (`includes/class-wc-payments.php:597`, `includes/woopay/class-woopay-scheduler.php:45-52`).
 				WooPaymentsWooPayExtensionSync::class,
 				WooPaymentsApplePayDomainService::class,
 			),
@@ -201,7 +200,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		$gateway_prefix             = array(
 			self::class,
 			WooPaymentsGatewayListController::class,
-			// Card info for orders paid with WooPayments, wherever an order renders: the client registers it on every request.
+			// Card info for orders paid with WooPayments, wherever an order renders: client 11.1.0 registers it on every request
+			// (`includes/class-wc-payments.php:674-675`).
 			WooPaymentsOrderCardInfo::class,
 		);
 		$active_maintenance_prefix  = array_merge(
@@ -240,7 +240,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsWooPayExtensionSync::class,
 						WooPaymentsExpressCheckoutController::class,
 						// The Cart and Checkout blocks preload the Store API cart inside the page request (Blocks Cart.php:263),
-						// so its wcpay extension data must exist there too; client 11.1.0 registers it on every request
+						// so the express checkout data it adds to that cart must exist there too; client 11.1.0 registers it on every request
 						// (class-wc-payments.php:697-709).
 						WooPaymentsExpressCheckoutStoreApiExtension::class,
 						WooPaymentsPaymentMethodMessaging::class,
@@ -295,16 +295,16 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			),
 		);
 
-		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. The client attaches its
-		// scheduled-action handlers whenever it loads (client 11.1.0 `includes/class-wc-payments.php:603,657`).
+		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. Client 11.1.0 attaches its
+		// scheduled-action handlers whenever it loads (`includes/class-wc-payments.php:603,657`).
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			$matrix[ $state ]['cli'] = $matrix[ $state ]['cron'];
 		}
 
-		// WordPress fires the plugin lifecycle hooks in whatever request activates or deactivates a plugin: wp-admin, admin-ajax,
-		// the plugin REST routes, Action Scheduler, WP-CLI, and XML-RPC (a front request), where Jetpack's remote plugin
-		// management runs. The client registers its lifecycle callbacks on every request (client 11.1.0
-		// `woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
+		// WordPress fires its plugin lifecycle hooks in whatever request activates or deactivates a plugin: wp-admin,
+		// admin-ajax, the plugins REST routes (wp/v2/plugins), Action Scheduler, WP-CLI, and XML-RPC (a front request), where
+		// Jetpack's remote plugin management runs. Client 11.1.0 registers its lifecycle callbacks on every request
+		// (`woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsCutoverPluginLifecycleListener::class;
@@ -316,8 +316,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionsController::class;
-				// Every request that can write a WooPayments log line numbers it under one request id, as the client's logger
-				// context does on every request (client 11.1.0 `includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
+				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
+				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
 				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;
 				$matrix[ $state ][ $request ][] = WooPaymentsStripeBillingModule::class;
 				$matrix[ $state ][ $request ][] = WooPaymentsTokenService::class;
@@ -330,18 +330,18 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				// `includes/class-wc-payments-order-success-page.php:40`).
 				$matrix[ $state ][ $request ][] = WooPaymentsOrderSuccessPage::class;
 				// Theme, template and style saves happen in admin, REST, AJAX and WP-CLI requests, and a WooCommerce update
-				// finishes on the init of any request; each must drop the stored checkout appearance version, as the client's
-				// hooks on every request do (client 11.1.0 `includes/class-wc-payments.php:378-383`).
+				// finishes on the init of any request; each must drop the stored checkout appearance version, as client 11.1.0's
+				// hooks on every request do (`includes/class-wc-payments.php:378-383`).
 				$matrix[ $state ][ $request ][] = WooPaymentsFrontendStylesService::class;
 				// The client refreshes the account and syncs the store setup on its own update (client 11.1.0
-				// `includes/class-wc-payments-account.php:143-147`); for native, a WooCommerce update is that event.
+				// `includes/class-wc-payments-account.php:143-147`); here, a WooCommerce update is that event.
 				$matrix[ $state ][ $request ][] = WooPaymentsWooCommerceUpdateListener::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
 				}
-				// The first page after a login links the pre-login Sift session; the client hooks it on init of every request,
-				// returns early without a connection, and skips AJAX, REST and WP-CLI (client 11.1.0 `includes/class-wc-payments.php:605`,
+				// The first page after a login links the pre-login Sift session; client 11.1.0 hooks it on init of every request,
+				// returns early without a connection, and skips AJAX, REST and WP-CLI (`includes/class-wc-payments.php:605`,
 				// `includes/class-wc-payments-fraud-service.php:82,151-177`).
 				if ( 'front' === $request || 'admin' === $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsFraudService::class;
@@ -393,7 +393,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Get the provider persistence profile.
+	 * Get the WooPayments persistence vocabulary.
 	 *
 	 * @return ProviderPersistenceVocabularyInterface
 	 *
@@ -404,7 +404,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Map a neutral outcome to WooPayments order metadata.
+	 * Map a payment outcome to WooPayments order meta.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
@@ -440,7 +440,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Get a native WooPayments gateway for a payment method or gateway ID.
+	 * Get the WooPayments gateway for a payment method or gateway ID.
 	 *
 	 * @param string $payment_method_or_gateway_id Payment method ID or gateway ID.
 	 * @return WooPaymentsGateway|null
@@ -455,7 +455,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Tell whether WooPayments can currently process native money operations.
+	 * Tell whether WooPayments can process payments: the platform can be reached and the account can take payments.
 	 *
 	 * @return bool
 	 */
@@ -464,10 +464,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Tell whether WooPayments can perform native onboarding/admin account operations.
-	 *
-	 * Unlike money-moving readiness, onboarding availability must not require an established WPCOM connection.
-	 * The onboarding flow creates that connection before native account operations use the API client.
+	 * Tell whether WooPayments onboarding and account operations can run: always, since onboarding creates the
+	 * WordPress.com connection that payments need.
 	 *
 	 * @return bool
 	 */
@@ -495,7 +493,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$outcome = $this->get_payment_operations()->capture( $context, $idempotency_key );
-		// Plugin 11.1.0 records this after every capture attempt (`WC_Payment_Gateway_WCPay::capture_charge()`).
+		// Client 11.1.0 records this after every capture attempt (class-wc-payment-gateway-wcpay.php:4032).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 
 		return $outcome;
@@ -615,7 +613,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Get the request-scoped native gateway map.
+	 * Get this request's gateway map.
 	 *
 	 * @return array<string,WooPaymentsGateway>
 	 */
@@ -628,7 +626,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Build native gateway instances for the payment methods WooPayments registers on this store.
+	 * Build the gateway instances for the payment methods WooPayments registers on this store.
 	 *
 	 * @return array<string,WooPaymentsGateway>
 	 */

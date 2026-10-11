@@ -14,10 +14,11 @@ use WC_Customer;
 use WC_Order;
 
 /**
- * Core-owned customer persistence for the native WooPayments runtime.
+ * Creates and stores the WooPayments customer of a user or a guest session, and moves a guest's customer onto the account
+ * created at checkout.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCustomerService implements RegisterHooksInterface {
 
@@ -42,7 +43,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	public const CUSTOMER_ID_SESSION_KEY = 'wcpay_customer_id';
 
 	/**
-	 * Native API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -63,7 +64,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsSessionService $session_service;
 
 	/**
-	 * Native runtime owner arbiter.
+	 * Runtime owner arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter|null
 	 */
@@ -74,10 +75,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client      Native API client.
+	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService      $account_service WooPayments account service.
 	 * @param WooPaymentsSessionService      $session_service WooPayments session service.
-	 * @param WooPaymentsRuntimeArbiter|null $arbiter         Native runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter         Runtime owner arbiter.
 	 */
 	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->api_client      = $api_client;
@@ -144,7 +145,8 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	public function get_prepared_customer_data(): array {
 		// Only genuine pay-for-order requests ship order billing data; change-payment
-		// and hand-built order-pay URLs get none, like the reference client.
+		// and hand-built order-pay URLs get none, as in client 11.1.0
+		// (class-wc-payments-customer-service.php:507-511).
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only prefill gate on a public URL flag.
 		$pay_for_order = isset( $_GET['pay_for_order'] ) && 'true' === sanitize_text_field( wp_unslash( $_GET['pay_for_order'] ) );
 		$order_id      = absint( get_query_var( 'order-pay' ) );
@@ -235,8 +237,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		// acquires it creates while the losers re-read the persisted ID. Guests
 		// keep their ID in the request-local session and are unaffected, so they
 		// skip the lock. Without a persistent object cache the lock is
-		// request-local and every request falls through to create, exactly as
-		// before -- never worse than today.
+		// request-local and every request creates, as with no lock.
 		$lock_key = null === $user_id ? '' : 'wcpay_customer_create_' . $user_id;
 
 		// wp_cache_add() both acquires the lock and reports contention: it
@@ -251,7 +252,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 				return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
 			}
 			// The lock holder has not persisted yet (or there is no persistent
-			// object cache); create anyway to avoid regressing below today. We
+			// object cache); create anyway, as with no lock. We
 			// do not own the lock, so we must not release it on the way out.
 		}
 
@@ -468,7 +469,8 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a user's or guest's customer ID, first trying the legacy migration when the current mode's user option is missing.
+	 * Get a user's or guest's customer ID, first moving the deprecated `_wcpay_customer_id` option to the current mode's
+	 * option when that one is missing.
 	 *
 	 * Not a pure read: when the mode-aware option is missing, it migrates the deprecated
 	 * `_wcpay_customer_id` user option to the live or test option and deletes the deprecated one.
@@ -495,8 +497,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Read a persisted customer ID without migrating or deleting user options.
 	 *
-	 * This accessor is intended for evidence and diagnostic paths where reading
-	 * the observed state must not change it.
+	 * For a check that must change nothing, such as the redirect return's SetupIntent customer check.
 	 *
 	 * @param int|null $user_id WordPress user ID or null for guests.
 	 * @return string|null
@@ -602,7 +603,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Attach the shopper's Sift session ID to a customer-create payload.
 	 *
-	 * Create-only, matching the WooPayments plugin: the platform links the
+	 * Create-only, as in client 11.1.0 (class-wc-payments-customer-service.php:150): the platform links the
 	 * browsing session to the new customer for fraud scoring; updates never
 	 * carry it.
 	 *

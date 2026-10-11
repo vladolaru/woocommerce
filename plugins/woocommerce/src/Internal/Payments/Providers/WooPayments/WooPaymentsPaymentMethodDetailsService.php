@@ -12,22 +12,23 @@ use Exception;
 use Throwable;
 
 /**
- * Retrieves WooPayments payment method details through a namespaced core seam.
+ * Fetches a payment method's details from the platform, through the WooPayments extension's API client while the
+ * extension is loaded.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPaymentMethodDetailsService {
 
 	/**
-	 * WooPayments legacy runtime.
+	 * The WooPaymentsLegacyRuntime instance.
 	 *
 	 * @var WooPaymentsLegacyRuntime
 	 */
 	private WooPaymentsLegacyRuntime $legacy_runtime;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -45,8 +46,8 @@ class WooPaymentsPaymentMethodDetailsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime  $legacy_runtime WooPayments legacy runtime.
-	 * @param WooPaymentsApiClient      $api_client     Native WooPayments API client.
+	 * @param WooPaymentsLegacyRuntime  $legacy_runtime The WooPaymentsLegacyRuntime instance.
+	 * @param WooPaymentsApiClient      $api_client     WooPayments API client.
 	 * @param WooPaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
 	 */
 	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
@@ -56,11 +57,11 @@ class WooPaymentsPaymentMethodDetailsService {
 	}
 
 	/**
-	 * Get payment method details from the active WooPayments runtime or native transport.
+	 * Get a payment method's details, or none when they cannot be fetched.
 	 *
 	 * @since 11.0.0
 	 *
-	 * A failed fetch is logged and returns no details. A PHP Error is not caught: the client's callers catch only
+	 * A failed fetch is logged and returns no details. A PHP Error is not caught: client 11.1.0's callers catch only
 	 * Exception (`class-wc-payments-token-service.php:136` does not catch at all), so the caller decides.
 	 *
 	 * @param string $payment_method_id Payment method ID.
@@ -79,9 +80,9 @@ class WooPaymentsPaymentMethodDetailsService {
 	/**
 	 * Get payment method details, letting every failure through to the caller.
 	 *
-	 * For core's PaymentInfo, which logs a failed fetch under `payment-info` whatever the WooPayments logging setting,
-	 * as trunk does (review 37 F4). With neither the plugin nor native running there is nothing to ask, so it returns no
-	 * details without a request, as trunk's PaymentInfo did without the plugin.
+	 * For core's PaymentInfo, which logs a failed fetch under `payment-info` whatever the WooPayments logging setting.
+	 * With neither the WooPayments extension loaded nor the built-in WooPayments owning payments, there is nothing to ask,
+	 * so it returns no details without a request.
 	 *
 	 * @since 11.2.0
 	 *
@@ -114,7 +115,7 @@ class WooPaymentsPaymentMethodDetailsService {
 	}
 
 	/**
-	 * Log a payment method details fetch error through the gated WooPayments logger, as the client's callers do (gw:5086),
+	 * Log a failed payment method details fetch only when WooPayments logging is on, as client 11.1.0's callers do (gw:5086),
 	 * with the platform's status and code instead of its message.
 	 *
 	 * @param string    $payment_method_id Payment method ID.

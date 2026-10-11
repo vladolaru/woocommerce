@@ -14,13 +14,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use WC_Order;
 
 /**
- * Adapts WooCommerce runtime state to WooPayments request payloads.
- *
- * This compatibility boundary is intentionally impure: it resolves tokens, settings, hooks,
- * nonces, request identity, and site data before transport.
+ * Builds the WooPayments PaymentIntent and SetupIntent requests from the order, its payment data and saved token, the
+ * gateway settings and the site.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsIntentRequestBuilder {
 
@@ -119,7 +117,7 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Build the native WooPayments charge request payload.
+	 * Build the PaymentIntent request for a charge.
 	 *
 	 * @param PaymentOperationContext $context            Payment context.
 	 * @param string                  $payment_credential Payment method or confirmation token.
@@ -170,10 +168,11 @@ class WooPaymentsIntentRequestBuilder {
 			}
 		}
 
-		// Only reusable payment methods may request future usage: the plugin
-		// silently omits setup_future_usage for non-reusable types (BNPL,
+		// Only reusable payment methods may request future usage: client 11.1.0
+		// leaves setup_future_usage out for non-reusable types (BNPL,
 		// single-use redirects) even when a save was requested — the provider
-		// rejects the combination outright, failing the whole checkout.
+		// rejects the combination outright, failing the whole checkout
+		// (class-wc-payment-gateway-wcpay.php:1870-1875).
 		if ( ! $is_scheduled_renewal && $save_payment_method && $this->are_payment_method_types_reusable( $payment_method_types ) ) {
 			$request_data['setup_future_usage'] = 'off_session';
 		}
@@ -211,9 +210,9 @@ class WooPaymentsIntentRequestBuilder {
 
 		$request_data = WooPaymentsPlatformPaymentMethodContext::from_provider_data( $provider_data )->apply_to_request_data( $request_data );
 
-		// A saved-token payment must not re-save to the platform: the plugin derives the
+		// A saved-token payment must not re-save to the platform: client 11.1.0 derives the
 		// flag as ! is_using_saved_payment_method() && opt-in, so a stale session opt-in
-		// cannot ride a token confirmation.
+		// cannot ride a token confirmation (class-payment-information.php:438-440).
 		if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 			unset( $request_data[ WooPaymentsPlatformPaymentMethodContext::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] );
 		}
@@ -224,7 +223,7 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Get the shipping address an Afterpay intent requires: the order's shipping address, or else its billing address.
 	 *
-	 * Port of client 11.1.0 `handle_afterpay_shipping_requirement()` and `retrieve_usable_shipping_data_from_order()`
+	 * Client 11.1.0 does the same in `handle_afterpay_shipping_requirement()` and `retrieve_usable_shipping_data_from_order()`
 	 * (class-wc-payment-gateway-wcpay.php:1849, :5333-5402).
 	 *
 	 * @param WC_Order $order Order being charged.
@@ -251,7 +250,8 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Tell whether an address has every field the country requires, as the client checks it for Afterpay.
+	 * Tell whether an address has every field the country requires, as client 11.1.0 checks it for Afterpay
+	 * (class-wc-payment-gateway-wcpay.php:5333-5402).
 	 *
 	 * @param array<string,mixed> $address Address in the provider's shape.
 	 * @return bool
@@ -284,7 +284,7 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Build the native WooPayments setup-intent request payload.
+	 * Build the SetupIntent request.
 	 *
 	 * @param PaymentOperationContext $context            Payment context.
 	 * @param string                  $payment_credential Payment method or confirmation token.
@@ -361,6 +361,8 @@ class WooPaymentsIntentRequestBuilder {
 		 *
 		 * The order_id and order_key keys are set back from the order after this filter.
 		 *
+		 * Keeps this name because extensions listen to it.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<string,mixed>   $metadata     Metadata being sent to WooPayments.
@@ -382,7 +384,7 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the subscriptions-aware capture metadata for an order.
 	 *
-	 * Derives the payment type the way the plugin's capture path does
+	 * Derives the payment type as client 11.1.0's capture_charge() does (class-wc-payment-gateway-wcpay.php:3976-3977)
 	 * (recurring when the order contains a subscription or renewal) and runs
 	 * the result through metadata_from_order(), which carries the
 	 * wcpay_metadata_from_order filter.
@@ -404,8 +406,8 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the Stripe-dashboard intention description.
 	 *
-	 * Format matches the WooPayments plugin (no i18n on purpose — the text is
-	 * only ever shown in the provider dashboard).
+	 * Client 11.1.0's format (core/server/request/trait-intention.php:42), not translated, since only the Stripe
+	 * dashboard shows it.
 	 *
 	 * @param string $order_number Order number (may differ from the ID).
 	 * @return string
@@ -426,11 +428,11 @@ class WooPaymentsIntentRequestBuilder {
 	/**
 	 * Build the buyer-fingerprinting risk metadata for a payment context.
 	 *
-	 * Mirrors the WooPayments plugin's Buyer_Fingerprinting_Service: sha512 of
-	 * the shopper IP, the browser-computed device fingerprint as the UA hash,
-	 * the geolocated IP country, and the purchase size — with empty values
-	 * dropped and the availability flag always set, so platform risk rules
-	 * keyed on these fields score native charges the same as plugin charges.
+	 * As client 11.1.0's Buyer_Fingerprinting_Service and set_fingerprint() build it
+	 * (fraud-prevention/class-buyer-fingerprinting-service.php:64-90, core/server/request/trait-intention.php:25): sha512 of
+	 * the shopper IP, the browser-computed device fingerprint as the UA hash, the geolocated IP country, and the purchase
+	 * size, with empty values dropped and the availability flag always set, so the platform's risk rules keyed on these
+	 * fields see the same values.
 	 * The purchase size prefers the live cart and falls back to the order's
 	 * item count, which covers pay-for-order and off-session renewals.
 	 *
@@ -450,7 +452,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * Build the buyer-fingerprinting risk metadata from a raw device fingerprint.
 	 *
 	 * Order-less callers (the add-payment-method setup intent) get the cart
-	 * count only when a live cart exists, matching the plugin.
+	 * count only when a live cart exists, as in client 11.1.0 (class-buyer-fingerprinting-service.php:66).
 	 *
 	 * @param string        $fingerprint Browser-computed device fingerprint.
 	 * @param WC_Order|null $order       Order to fall back to for the purchase size.
@@ -470,7 +472,7 @@ class WooPaymentsIntentRequestBuilder {
 				'fraud_prevention_data_cart_contents'   => $cart_contents,
 			),
 			static function ( $value ): bool {
-				// Same semantics as the plugin's strlen filter: drop null,
+				// As client 11.1.0's strlen filter (class-buyer-fingerprinting-service.php:81-89): drop null,
 				// false and empty strings while keeping zero values.
 				return null !== $value && false !== $value && '' !== $value;
 			}
@@ -556,7 +558,7 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Get Stripe payment method types for a native WooPayments request.
+	 * Get the Stripe payment method types a request declares.
 	 *
 	 * @param PaymentOperationContext $context  Payment context.
 	 * @param string                  $currency Order currency.
@@ -582,7 +584,7 @@ class WooPaymentsIntentRequestBuilder {
 			}
 
 			// Saved card tokens follow the same card/link fold as fresh card payments,
-			// matching the extension's token branch.
+			// as client 11.1.0's token branch does (class-wc-payment-gateway-wcpay.php:2537-2541).
 			if ( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD === $saved_payment_method_type ) {
 				return $this->card_payment_method_types( $currency );
 			}
@@ -690,7 +692,8 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Build the WooPayments 10.8-compatible redirect return URL.
+	 * Build the URL a redirect payment method returns the shopper to: the order-received page with the gateway ID, a nonce
+	 * and the save flag.
 	 *
 	 * @param WC_Order $order               Order being charged.
 	 * @param bool     $save_payment_method Whether the return should preserve token-save context.

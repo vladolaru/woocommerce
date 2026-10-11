@@ -14,8 +14,9 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Renders the "Fee details" order note from a captured timeline event.
  *
- * A port of client 11.1.0 `WC_Payments_Captured_Event_Note`: the note comes from the event's `fee_breakdown_v1` envelope when it
- * is renderable, and from `fee_rates` and `transaction_details` otherwise. Output must stay byte-identical to the client's.
+ * Client 11.1.0 renders the same note in `WC_Payments_Captured_Event_Note` (class-wc-payments-captured-event-note.php): from
+ * the event's `fee_breakdown_v1` envelope when it is renderable, and from `fee_rates` and `transaction_details`
+ * otherwise. For a renderable event the output must stay byte-identical to client 11.1.0's.
  *
  * @since 11.2.0
  * @internal
@@ -50,7 +51,8 @@ class WooPaymentsCapturedEventNote {
 	/**
 	 * Generate the HTML note.
 	 *
-	 * @return string Empty when the event has neither a renderable envelope nor fee rates; the client errors out and adds no note then.
+	 * @return string Empty when the event has neither a renderable envelope nor fee rates; client 11.1.0 stops with a
+	 *                TypeError then and adds no note (class-wc-payments-captured-event-note.php:551-554).
 	 */
 	public function generate_html_note(): string {
 		if ( ! empty( $this->captured_event['fee_breakdown_v1'] )
@@ -78,7 +80,8 @@ class WooPaymentsCapturedEventNote {
 		}
 
 		if ( $this->has_tax() ) {
-			// A zero tax gives null, which the client still prints as an empty paragraph.
+			// A zero tax gives null, which client 11.1.0 still prints as an empty paragraph
+			// (class-wc-payments-captured-event-note.php:80, :87).
 			$lines[] = (string) $this->compose_tax_string();
 		}
 
@@ -218,7 +221,7 @@ class WooPaymentsCapturedEventNote {
 	}
 
 	/**
-	 * Wrap note lines in the client's markup.
+	 * Wrap note lines in client 11.1.0's markup (class-wc-payments-captured-event-note.php:85-92).
 	 *
 	 * @param string[] $lines Note lines.
 	 * @return string
@@ -576,7 +579,8 @@ class WooPaymentsCapturedEventNote {
 			$is_capped       = isset( $fee['capped'] ) && true === $fee['capped'];
 
 			$percentage_rate_formatted = self::format_fee( $percentage_rate );
-			// The client converts the fixed rate as a two-decimal amount whatever its currency.
+			// Client 11.1.0 converts the fixed rate as a two-decimal amount whatever its currency
+			// (class-wc-payments-captured-event-note.php:696).
 			$fix_rate_formatted = WooPaymentsCurrencyUtils::format_currency(
 				WooPaymentsCurrencyUtils::amount_from_minor_units( $fixed_rate, 'usd' ),
 				$currency
@@ -586,7 +590,8 @@ class WooPaymentsCapturedEventNote {
 				$fix_rate_formatted = $fix_rate_formatted . ' ' . $data['transaction_details']['store_currency'];
 			}
 
-			// An unknown fee type has no format; the client then prints an empty label.
+			// An unknown fee type has no format; client 11.1.0 then prints an empty label
+			// (class-wc-payments-captured-event-note.php:704-708).
 			$label = sprintf(
 				$this->fee_label_mapping( $fixed_rate, $is_capped )[ $label_type ] ?? '',
 				$percentage_rate_formatted,
@@ -898,7 +903,8 @@ class WooPaymentsCapturedEventNote {
 		$fee_exchange_rate = $this->captured_event['fee_rates']['fee_exchange_rate'] ?? null;
 		$store_currency    = (string) ( $this->captured_event['transaction_details']['store_currency'] ?? '' );
 		if ( ( strtoupper( $fee_currency ) === strtoupper( $store_currency ) ) || ! $this->is_fx_event() || ! $fee_exchange_rate ) {
-			// The client passes this float to an int parameter, which drops any fraction.
+			// Client 11.1.0 passes this float to an int parameter, which drops any fraction
+			// (class-wc-payments-captured-event-note.php:1042).
 			return WooPaymentsCurrencyUtils::format_currency(
 				-abs( WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $fee_amount, $fee_currency ) ),
 				$fee_currency

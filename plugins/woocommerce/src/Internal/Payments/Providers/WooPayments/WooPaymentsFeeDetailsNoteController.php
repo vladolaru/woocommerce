@@ -22,9 +22,11 @@ defined( 'ABSPATH' ) || exit;
  * Schedules the "Fee details" note job when a payment's success or capture note is first added, and runs it.
  *
  * Client 11.1.0 schedules `wcpay_add_fee_breakdown_to_order_notes` from `mark_payment_completed()` and
- * `mark_payment_capture_completed()`, which return early once their note exists, so the job runs once per completed
- * payment or capture, never when the same payment is reported again, and the note never depends on a webhook
- * (class-wc-payments-order-service.php:1565-1599, :1659-1668). The job adds its note every time it runs.
+ * `mark_payment_capture_completed()`, which return early once their note exists, and after the capture an order status
+ * change runs (class-wc-payments-order-service.php:1565-1599, :1659-1668, :1873-1874). So the job runs once per
+ * completed payment or capture, never when the same payment is reported again, and the note never depends on a webhook.
+ * This code schedules on the status-change capture too (WooPaymentsOrderAdminActionsController::run_operation()); a
+ * job with the same arguments already pending is not scheduled again. The job adds its note every time it runs.
  *
  * @since 11.2.0
  * @internal
@@ -32,7 +34,8 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 	/**
-	 * Action Scheduler hook of the job that adds the "Fee details" note, as the client names it.
+	 * Action Scheduler hook of the job that adds the "Fee details" note, client 11.1.0's name for it
+	 * (class-wc-payments-order-service.php:29).
 	 *
 	 * @var string
 	 */
@@ -142,7 +145,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	/**
 	 * Add fee-breakdown details to an order note from the intent timeline.
 	 *
-	 * The job runs in the test mode it was scheduled in. Like the client's, it adds its note every time it runs, and logs a
+	 * The job runs in the test mode it was scheduled in. Like client 11.1.0's, it adds its note every time it runs, and logs a
 	 * timeline it cannot use (client 11.1.0 class-wc-payments-order-service.php:845-861).
 	 *
 	 * @internal
@@ -185,7 +188,8 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 
 				foreach ( $events['data'] as $event ) {
 					if ( is_array( $event ) && 'captured' === ( $event['type'] ?? null ) ) {
-						// The client adds the note every time the job runs; the job is scheduled once per completed payment or capture.
+						// Client 11.1.0 adds the note every time the job runs (class-wc-payments-order-service.php:864-877); the job
+						// is scheduled once per completed payment or capture.
 						$note = $this->order_data_service->get_fee_breakdown_note_from_timeline_event( $event );
 						if ( '' !== $note ) {
 							$order->add_order_note( $note );

@@ -28,12 +28,12 @@ use WC_Payment_Tokens;
  * (`woocommerce_get_customer_payment_tokens`): checkout, Blocks, the admin select and My Account.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTokenService implements RegisterHooksInterface {
 
 	/**
-	 * Preserved WooPayments cached payment-method user meta key.
+	 * User meta caching a user's payment methods from the platform, keyed by customer and type.
 	 *
 	 * @var string
 	 */
@@ -94,21 +94,21 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Native API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native customer service.
+	 * Customer service.
 	 *
 	 * @var WooPaymentsCustomerService
 	 */
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
-	 * Native account service.
+	 * Account service.
 	 *
 	 * @var WooPaymentsAccountService
 	 */
@@ -126,14 +126,14 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * Every dependency is required, as the client's constructor requires its API client and customer service
+	 * Every dependency is required, as client 11.1.0's constructor requires its API client and customer service
 	 * (`class-wc-payments-token-service.php:49-52`): a dependency that cannot be built fails this service's resolution.
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
 	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
-	 * @param WooPaymentsApiClient                   $api_client                     Native API client.
-	 * @param WooPaymentsCustomerService             $customer_service               Native customer service.
-	 * @param WooPaymentsAccountService              $account_service                Native account service.
+	 * @param WooPaymentsApiClient                   $api_client                     WooPayments API client.
+	 * @param WooPaymentsCustomerService             $customer_service               Customer service.
+	 * @param WooPaymentsAccountService              $account_service                Account service.
 	 * @param WooPaymentsOrderDataService            $order_data_service             Order data service.
 	 */
 	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
@@ -242,8 +242,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Restore the casing of the SEPA and Link saved-method brands after core title-cases them.
 	 *
-	 * Core's wc_get_credit_card_type_label() turns an unknown brand into "Sepa Iban" or "Stripe Link Email"; the client
-	 * restores its labels the same way (client 11.1.0 `includes/class-wc-payments-token-service.php:65-66,529-549`).
+	 * Core's wc_get_credit_card_type_label() turns an unknown brand into "Sepa Iban" or "Stripe Link Email"; client 11.1.0
+	 * restores its labels the same way (`includes/class-wc-payments-token-service.php:65-66,529-549`).
 	 *
 	 * @internal
 	 *
@@ -293,7 +293,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		try {
 			$this->api_client->detach_payment_method( (string) $token->get_token() );
 		} catch ( Throwable $exception ) {
-			// Client 11.1.0 ts:420 logs this at info level, with the platform's message; native logs its status and code instead.
+			// Client 11.1.0 ts:420 logs this at info level, with the platform's message; this line logs its status and code instead.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error detaching payment method.', $exception, array(), 'info' );
 		}
 
@@ -578,7 +578,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Stripe payment method type for a native WooPayments token.
+	 * Get the Stripe payment method type for a WooPayments token.
 	 *
 	 * @since 11.0.0
 	 *
@@ -682,9 +682,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Get provider details only when their identity matches the requested payment method.
 	 *
-	 * The details service logs a failed fetch and returns no details. A PHP Error stops a token from being created, as on
-	 * the client (`class-wc-payments-token-service.php:136` does not catch), so a renewal token repair fails its scheduled
-	 * action instead of the renewal (review 34 F1); the caller logs it. A display read logs it here whatever the logging
+	 * The details service logs a failed fetch and returns no details. A PHP Error stops a token from being created, as in
+	 * client 11.1.0 (`class-wc-payments-token-service.php:136` does not catch), so a renewal token repair fails its
+	 * scheduled action instead of the renewal; the caller logs it. A display read logs it here whatever the logging
 	 * setting and goes on without details.
 	 *
 	 * @param string $payment_method_id Provider payment method ID.
@@ -909,8 +909,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Log a failed token save at info level, with the platform's status and code instead of its message.
 	 *
-	 * Client 11.1.0 logs it through its gated Logger::log() at info level, at checkout (gw:2066) and on the order-status
-	 * callback (gw:4312); a PHP Error is always written. The client's line carries the platform's message.
+	 * Client 11.1.0 logs it at info level only when WooPayments logging is on, at checkout (gw:2066) and on the order-status
+	 * callback (gw:4312); a PHP Error is always written. Client 11.1.0's line carries the platform's message.
 	 *
 	 * @since 11.2.0
 	 *
@@ -931,7 +931,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear preserved WooPayments cached payment methods for all users.
+	 * Clear the cached WooPayments payment methods of all users.
 	 *
 	 * @since 11.0.0
 	 * @return void
@@ -973,7 +973,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear preserved WooPayments cached payment methods for a user.
+	 * Clear the cached WooPayments payment methods of a user.
 	 *
 	 * @internal
 	 *
@@ -1086,7 +1086,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * with one entry per payment method type; it is busted whenever the customer ID
 	 * changes and cleared by the token lifecycle handlers.
 	 *
-	 * @param WooPaymentsCustomerService $customer_service Native customer service.
+	 * @param WooPaymentsCustomerService $customer_service Customer service.
 	 * @param int                        $user_id          WooCommerce user ID.
 	 * @param string                     $customer_id      Provider customer ID.
 	 * @param string[]                   $types_to_retrieve Payment method types retrieved for this request.
@@ -1170,8 +1170,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Check whether a payment method type is enabled in the gateway settings.
 	 *
-	 * Card remains available under the existing reconciliation contract. Other
-	 * reusable types require an explicit enabled-method setting.
+	 * Card is always enabled; another reusable type only while the enabled payment method setting lists it.
 	 *
 	 * @param string        $payment_method_type Payment method type.
 	 * @param string[]|null $enabled_method_ids  Enabled payment method IDs, or null when unavailable.

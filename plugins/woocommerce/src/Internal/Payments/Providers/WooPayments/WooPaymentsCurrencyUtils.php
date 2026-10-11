@@ -14,10 +14,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocaliza
 use WC_Order;
 
 /**
- * WooPayments currency helpers for provider-boundary amount handling.
+ * Converts amounts to and from the platform's minor units, formats them in their own currency, and caches the platform's
+ * minimum charge per currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsCurrencyUtils {
 
@@ -286,8 +287,8 @@ final class WooPaymentsCurrencyUtils {
 	/**
 	 * Cache the platform-reported per-currency minimum charge amount.
 	 *
-	 * Uses the same transient the WooPayments plugin writes, so the learned
-	 * floor survives switching between the plugin and the native runtime.
+	 * Uses client 11.1.0's transient (class-wc-payments-utils.php:973-974), so the cached minimum carries over when the
+	 * store switches between the WooPayments extension and the built-in WooPayments.
 	 *
 	 * @since 11.0.0
 	 *

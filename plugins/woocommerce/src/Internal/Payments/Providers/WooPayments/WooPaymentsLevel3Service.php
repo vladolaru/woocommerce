@@ -14,9 +14,9 @@ use WC_Order_Item_Product;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Level 3 (enhanced interchange) data for native WooPayments charges.
+ * Builds the Level 3 (enhanced interchange) data sent with WooPayments charges and captures.
  *
- * Ports the WooPayments plugin's Level3Service: for US merchant accounts,
+ * As client 11.1.0's Level3Service (src/Internal/Service/Level3Service.php:67-129): for US merchant accounts,
  * every charge and capture carries per-line-item card-network data so
  * commercial-card transactions qualify for Level 2/3 interchange rates.
  * Non-US accounts send nothing — the networks only price it domestically.
@@ -100,8 +100,7 @@ class WooPaymentsLevel3Service {
 		/**
 		 * Filters the Level 3 data based on order.
 		 *
-		 * Kept under the WooPayments plugin's filter name: extensions (gift
-		 * cards, for example) already hook it to adjust discounts.
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * @since 11.0.0
 		 *
@@ -124,7 +123,8 @@ class WooPaymentsLevel3Service {
 
 		// The provider requires at least one line item; an item-less order
 		// (fees stripped by the filter, deposits, zero-item edge cases) gets
-		// the plugin's synthetic placeholder instead of an empty list.
+		// client 11.1.0's placeholder item instead of an empty list
+		// (core/server/request/trait-level3.php:20-37).
 		if ( ! isset( $level3_data['line_items'] ) || ! is_array( $level3_data['line_items'] ) || 0 === count( $level3_data['line_items'] ) ) {
 			$level3_data['line_items'] = array(
 				(object) array(
@@ -160,8 +160,8 @@ class WooPaymentsLevel3Service {
 
 		$description = substr( $item->get_name(), 0, 26 );
 		// Admin-created orders can carry zero-quantity items; never divide by
-		// zero on the money path (the plugin would fatal here — deliberate
-		// hardening, not parity).
+		// zero on the money path. Client 11.1.0 divides by the quantity
+		// unguarded (src/Internal/Service/Level3Service.php:154-157).
 		$quantity   = max( 1, (int) ceil( (float) $item->get_quantity() ) );
 		$tax_amount = $this->order_data_service->prepare_amount( (float) $item->get_total_tax(), $currency );
 		if ( $subtotal >= 0 ) {

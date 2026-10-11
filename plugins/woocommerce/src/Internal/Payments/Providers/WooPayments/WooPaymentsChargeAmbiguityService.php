@@ -18,12 +18,12 @@ use WC_Order;
  * After an ambiguous charge failure the order keeps its idempotency key, and a resubmit with another body under that key
  * is refused by Stripe with an idempotency error, which means the earlier request finished. Its money call is a single
  * create-and-confirm carrying the order's id and key in its metadata, so the customer's PaymentIntents (or the account's,
- * when the customer's cannot be listed) show whether it created an intent and whether that intent moved money. Client
- * 11.1.0 has no equivalent: it sends a fresh key per
- * request (`class-wc-payments-api-client.php:2690`) and charges the resubmit.
+ * when the customer's cannot be listed) show whether it created an intent and whether that intent moved money.
+ * Client 11.1.0 has no equivalent: it sends a fresh key per request (`class-wc-payments-api-client.php:2690`) and
+ * charges the resubmit.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsChargeAmbiguityService {
 
@@ -72,7 +72,7 @@ class WooPaymentsChargeAmbiguityService {
 	private const ACCOUNT_LOOKAHEAD_SECONDS = 3600;
 
 	/**
-	 * Native API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -83,7 +83,7 @@ class WooPaymentsChargeAmbiguityService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client Native API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;

@@ -10,15 +10,16 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use WC_Order;
 
 /**
- * Builds WooPayments-compatible order data payloads and notes.
+ * Builds the order data sent to the platform (billing details, shipping, amounts in minor units, the settlement exchange
+ * rate) and the Fee details note.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderDataService {
 
 	/**
-	 * WC session key that proves this session completed a native PaymentIntent.
+	 * WC session key that proves this session completed a WooPayments PaymentIntent.
 	 */
 	public const PAID_INTENT_ID_SESSION_KEY = 'wcpay_paid_intent_id';
 
@@ -28,8 +29,8 @@ class WooPaymentsOrderDataService {
 	 * Build the billing-details payload for payment method updates.
 	 *
 	 * Sends each billing field the checkout shows for the order's country, empty ones included, so a cleared field
-	 * also clears at the provider; only an empty country is dropped. Port of client 11.1.0
-	 * `WC_Payments_Order_Service::get_billing_data_from_order()` (class-wc-payments-order-service.php:1455-1488).
+	 * also clears at the provider; only an empty country is dropped. Client 11.1.0 does the
+	 * same in `WC_Payments_Order_Service::get_billing_data_from_order()` (class-wc-payments-order-service.php:1455-1488).
 	 *
 	 * @since 11.0.0
 	 *
@@ -74,7 +75,7 @@ class WooPaymentsOrderDataService {
 	/**
 	 * Build the shipping payload for a provider intent from the order's shipping address.
 	 *
-	 * Port of client 11.1.0 `WC_Payments_Order_Service::get_shipping_data_from_order()` (class-wc-payments-order-service.php:1426-1446).
+	 * Client 11.1.0 does the same in `WC_Payments_Order_Service::get_shipping_data_from_order()` (class-wc-payments-order-service.php:1426-1446).
 	 *
 	 * @since 11.2.0
 	 *
@@ -100,7 +101,7 @@ class WooPaymentsOrderDataService {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param array<string,mixed> $event Native timeline event.
+	 * @param array<string,mixed> $event Platform timeline event.
 	 * @return string Empty when the event is not a captured event or cannot be rendered.
 	 */
 	public function get_fee_breakdown_note_from_timeline_event( array $event ): string {
@@ -132,7 +133,7 @@ class WooPaymentsOrderDataService {
 	 * @since 11.0.0
 	 *
 	 * @param WC_Order            $order                    Order being charged.
-	 * @param array<string,mixed> $charge                   Native Charge response.
+	 * @param array<string,mixed> $charge                   Platform Charge response.
 	 * @param string              $account_default_currency WooPayments account default currency.
 	 * @return array<string,string>
 	 */

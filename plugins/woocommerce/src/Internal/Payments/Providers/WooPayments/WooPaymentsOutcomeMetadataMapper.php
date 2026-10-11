@@ -11,10 +11,10 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 
 /**
- * Maps neutral payment outcomes to WooPayments-owned order metadata.
+ * Maps a payment outcome to the WooPayments order meta: intent, payment method, customer and intention status.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataMapperInterface {
 
@@ -26,7 +26,7 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	public const OUTCOME_META_KEY = 'meta';
 
 	/**
-	 * Map a neutral outcome to WooPayments order metadata.
+	 * Map a payment outcome to WooPayments order meta.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
@@ -53,7 +53,7 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 			$meta['_stripe_customer_id'] = $outcome->get_customer_id();
 		}
 
-		// A $0 order confirmed without an intent has no intention status; the client writes none there (gw:1673-1771).
+		// A $0 order confirmed without an intent has no intention status; client 11.1.0 writes none there (gw:1673-1771).
 		$plan = $outcome->get_effect_plan();
 		if ( ! isset( $meta['_intention_status'] ) && ! ( $plan instanceof WooPaymentsOrderEffectPlan && WooPaymentsOrderEffectPlan::TYPE_ZERO_AMOUNT_WITHOUT_INTENT === $plan->get_type() ) ) {
 			$meta['_intention_status'] = $this->get_default_intention_status( $outcome );
@@ -79,7 +79,7 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	}
 
 	/**
-	 * Get a default WooPayments-compatible intention status for an outcome.
+	 * Get the intention status an outcome implies when it sets none.
 	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return string
