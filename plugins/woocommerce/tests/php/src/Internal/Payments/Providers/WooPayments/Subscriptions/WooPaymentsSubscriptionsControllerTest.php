@@ -308,6 +308,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The failed-renewal authentication email the renewal root registers updates the retry rules for renewals that need authentication.
+	 *
+	 * The rule is WooCommerce Subscriptions 9.3.0's second default retry rule (includes/payment-retry/class-wcs-retry-rules.php:29-42);
+	 * client 11.1.0 changes the same two fields (includes/compat/subscriptions/class-wc-payments-email-failed-renewal-authentication.php:209-234).
 	 */
 	public function test_failed_renewal_authentication_email_updates_retry_rules(): void {
 		$this->load_subscriptions();
@@ -325,23 +328,16 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$email  = $emails['WC_Payments_Email_Failed_Renewal_Authentication'];
 
 		$email->object = $order;
+		$retry_rule    = array(
+			'retry_after_interval'            => DAY_IN_SECONDS / 2,
+			'email_template_customer'         => 'WCS_Email_Customer_Payment_Retry',
+			'email_template_admin'            => 'WCS_Email_Payment_Retry',
+			'status_to_apply_to_order'        => 'pending',
+			'status_to_apply_to_subscription' => 'on-hold',
+		);
 
-		$customer_rule = $email->prevent_retry_notification_email(
-			array(
-				'email_template_customer' => 'WCS_Email_Customer_Renewal_Invoice',
-				'email_template_admin'    => 'WCS_Email_Payment_Retry',
-			),
-			1,
-			$order->get_id()
-		);
-		$admin_rule    = $email->set_store_owner_custom_email(
-			array(
-				'email_template_customer' => 'WCS_Email_Customer_Renewal_Invoice',
-				'email_template_admin'    => 'WCS_Email_Payment_Retry',
-			),
-			1,
-			$order->get_id()
-		);
+		$customer_rule = $email->prevent_retry_notification_email( $retry_rule, 1, $order->get_id() );
+		$admin_rule    = $email->set_store_owner_custom_email( $retry_rule, 1, $order->get_id() );
 
 		$this->assertSame( '', $customer_rule['email_template_customer'] );
 		$this->assertSame( 'WC_Payments_Email_Failed_Authentication_Retry', $admin_rule['email_template_admin'] );

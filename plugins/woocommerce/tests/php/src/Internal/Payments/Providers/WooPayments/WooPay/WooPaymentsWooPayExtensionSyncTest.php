@@ -99,6 +99,48 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay compatibility validation is asked for as one unique daily action of the WooPayments group, with no args.
+	 *
+	 * Unique keeps two requests that ensure recurring actions at the same time from both scheduling it; the existence check
+	 * alone cannot. The request is read where Action Scheduler receives it and nothing is stored.
+	 */
+	public function test_schedule_asks_for_a_unique_daily_compatibility_action(): void {
+		$sync     = $this->create_sync( true );
+		$requests = array();
+		$capture  = static function ( $pre, $timestamp, $interval, $hook, $args, $group, $priority, $unique ) use ( &$requests ) {
+			unset( $pre, $timestamp, $priority );
+			$requests[] = array(
+				'interval' => $interval,
+				'hook'     => $hook,
+				'args'     => $args,
+				'group'    => $group,
+				'unique'   => $unique,
+			);
+			return 1;
+		};
+		add_filter( 'pre_as_schedule_recurring_action', $capture, 10, 8 );
+
+		try {
+			$sync->schedule();
+		} finally {
+			remove_filter( 'pre_as_schedule_recurring_action', $capture, 10 );
+		}
+
+		$this->assertSame(
+			array(
+				array(
+					'interval' => DAY_IN_SECONDS,
+					'hook'     => 'validate_woopay_compatibility',
+					'args'     => array(),
+					'group'    => 'woocommerce_payments',
+					'unique'   => true,
+				),
+			),
+			$requests
+		);
+	}
+
+	/**
 	 * @testdox WooPay compatibility validation is scheduled once through the recurring-actions hook.
 	 */
 	public function test_recurring_action_ensure_hook_schedules_one_compatibility_action(): void {
@@ -239,7 +281,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * Create a sync instance.
 	 *
 	 * @param bool                $native_register Whether native should register.
-	 * @param array<string,mixed> $compatibility   Compatibility response.
+	 * @param array<string,mixed> $compatibility   Compatibility response, with the keys client 11.1.0 reads (includes/woopay/class-woopay-scheduler.php:82-87).
 	 * @return WooPaymentsWooPayExtensionSync
 	 */
 	private function create_sync( bool $native_register, array $compatibility = array() ): WooPaymentsWooPayExtensionSync {

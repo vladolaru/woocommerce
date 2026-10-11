@@ -4069,6 +4069,40 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox charge.refund.updated refuses the status spelling cancelled and leaves the refund, the order and its refund status alone.
+	 *
+	 * Client 11.1.0 accepts only `canceled` (`includes/constants/class-refund-status.php:23`) and throws "Invalid refund
+	 * update status" for anything else (`includes/class-wc-payments-webhook-processing-service.php:344-361`).
+	 */
+	public function test_charge_refund_updated_refuses_the_cancelled_spelling(): void {
+		$order  = $this->create_refundable_woopayments_order( '10.00' );
+		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		$refund->save_meta_data();
+		$order->set_status( 'refunded' );
+		$order->save();
+		$get_refund_ids = static fn( WC_Order $refunded_order ): array => array_map( static fn( $local_refund ) => $local_refund->get_id(), $refunded_order->get_refunds() );
+		$refund_ids     = $get_refund_ids( wc_get_order( $order->get_id() ) );
+
+		$failure = '';
+		try {
+			$this->sut->process( $this->create_refund_updated_event( array( 'status' => 'cancelled' ) ) );
+		} catch ( RuntimeException $exception ) {
+			$failure = $exception->getMessage();
+		}
+
+		$this->assertSame( 'Invalid refund update status: cancelled', $failure, 'The cancelled spelling must fail the delivery.' );
+
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'refunded', $order->get_status() );
+		$this->assertContains( $refund->get_id(), $refund_ids );
+		$this->assertSame( $refund_ids, $get_refund_ids( $order ), 'No local refund may be deleted or added.' );
+		$this->assertSame( '', $order->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
 	 * @testdox charge.refund.updated notes include explicit currency when Multi-Currency has additional currencies.
 	 */
 	public function test_charge_refund_updated_uses_explicit_currency_in_failed_refund_notes(): void {
