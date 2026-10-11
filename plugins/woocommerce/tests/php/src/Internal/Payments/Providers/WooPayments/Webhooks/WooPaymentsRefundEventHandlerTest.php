@@ -297,18 +297,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 			$refund->save_meta_data();
 			$order->update_meta_data( '_wcpay_refund_status', 'successful' );
-			$plugin_note = sprintf(
-				WooPaymentsHtmlUtils::escape_interpolated_html(
-					/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
-					__( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
-					array( 'code' => '<code>' )
-				),
-				wc_price( 4.00, array( 'currency' => 'USD' ) ),
-				'WooPayments',
-				'Requested by customer',
-				're_123',
-				__( 'was successfully processed', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
-			);
+			$plugin_note = $this->get_extension_created_refund_note();
 			$order->add_order_note( $plugin_note );
 			$order->save();
 
@@ -347,6 +336,32 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				? delete_option( 'wcpay_multi_currency_enabled_currencies' )
 				: update_option( 'wcpay_multi_currency_enabled_currencies', $previous_enabled_currencies );
 		}
+	}
+
+	/**
+	 * @testdox A delayed pending charge.refunded for a refund the WooPayments extension completed before the switch changes nothing.
+	 */
+	public function test_charge_refunded_leaves_a_refund_the_extension_completed(): void {
+		$order  = $this->create_refundable_order();
+		$refund = $this->create_local_refund( $order );
+		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
+		$refund->save_meta_data();
+		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
+		$order->add_order_note( $this->get_extension_created_refund_note() );
+		$order->save();
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$charge                                 = $this->get_successful_refund_charge();
+		$charge['refunds']['data'][0]['status'] = 'pending';
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'txn_existing', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**
@@ -1237,6 +1252,28 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					),
 				),
 			),
+		);
+	}
+
+	/**
+	 * Build the successful created-refund note the WooPayments extension writes for `re_123`, in its own text domain.
+	 *
+	 * Client 11.1.0 adds it with `add_order_note()` and no identity (class-wc-payments-order-service.php:1935-1939).
+	 *
+	 * @return string
+	 */
+	private function get_extension_created_refund_note(): string {
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
+				__( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
+				array( 'code' => '<code>' )
+			),
+			wc_price( 4.00, array( 'currency' => 'USD' ) ),
+			'WooPayments',
+			'Requested by customer',
+			're_123',
+			__( 'was successfully processed', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The fixture emulates the legacy plugin catalog.
 		);
 	}
 
