@@ -150,7 +150,7 @@ class WooPaymentsRefundEventHandler {
 		$refund_amount     = $this->get_required_int( $refund, 'amount' );
 		$refund_reason     = $this->get_optional_string( $refund, 'reason' );
 		$refund_status     = $this->get_optional_string( $refund, 'status' );
-		$balance_txn_id    = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
+		$balance_txn_id    = WooPaymentsIntentCodec::balance_transaction_id( $refund['balance_transaction'] ?? null );
 		$refunded_amount   = WooPaymentsCurrencyUtils::amount_from_minor_units( $refund_amount, $currency );
 		$is_partial_refund = $refund_amount < $charge_amount;
 		$is_pending_refund = WooPaymentsIntentCodec::is_pending_refund_status( $refund_status );
@@ -222,7 +222,7 @@ class WooPaymentsRefundEventHandler {
 		$amount         = $this->get_required_int( $refund, 'amount' );
 		$currency       = $this->get_required_string( $refund, 'currency' );
 		$status         = $this->get_required_string( $refund, 'status' );
-		$balance_txn_id = $this->get_refund_balance_transaction_id( $refund['balance_transaction'] ?? null );
+		$balance_txn_id = WooPaymentsIntentCodec::balance_transaction_id( $refund['balance_transaction'] ?? null );
 		$order          = $this->get_order_for_charge_id( $charge_id );
 
 		// Each branch decides, and looks the local refund up again, on the order read under the lock, as charge.refunded
@@ -230,7 +230,6 @@ class WooPaymentsRefundEventHandler {
 		switch ( $status ) {
 			case 'failed':
 			case 'canceled':
-			case 'cancelled':
 				$lock_token = $this->claim_refund_lock( $order, $refund_id );
 				try {
 					$order = $this->get_fresh_order( $order );
@@ -302,11 +301,6 @@ class WooPaymentsRefundEventHandler {
 			throw new RuntimeException( esc_html( sprintf( 'Could not create local refund for order %1$d: %2$s', $order->get_id(), $refund->get_error_message() ) ) );
 		}
 
-		if ( ! $refund instanceof WC_Order_Refund ) {
-			$this->log_refund_failure( $order, 'wc_create_refund returned an unexpected value.' );
-			throw new RuntimeException( esc_html( sprintf( 'Could not create local refund for order %d.', $order->get_id() ) ) );
-		}
-
 		return $refund;
 	}
 
@@ -350,7 +344,7 @@ class WooPaymentsRefundEventHandler {
 	 * @param string               $failure_reason Provider failure reason.
 	 * @throws RuntimeException When WooCommerce cannot delete the local refund.
 	 */
-	private function handle_failed_refund( WC_Order $order, string $refund_id, int $amount, string $currency, ?WC_Order_Refund $wc_refund, bool $is_cancelled = false, string $failure_reason = '' ): void {
+	private function handle_failed_refund( WC_Order $order, string $refund_id, int $amount, string $currency, ?WC_Order_Refund $wc_refund, bool $is_cancelled, string $failure_reason ): void {
 		if ( $wc_refund instanceof WC_Order_Refund ) {
 			$wc_refund_id = $wc_refund->get_id();
 			$deleted      = $wc_refund->delete( true );
@@ -487,13 +481,12 @@ class WooPaymentsRefundEventHandler {
 	/**
 	 * Resolve the order of a charge ID, whatever its payment method, as client 11.1.0 does (webhook processing service :1108-1119).
 	 *
-	 * @param string              $charge_id    Charge ID.
-	 * @param array<string,mixed> $event_object Provider object.
+	 * @param string $charge_id Charge ID.
 	 * @return WC_Order
-	 * @throws RuntimeException When the charge resolves to no order, or to one whose key does not match the event.
+	 * @throws RuntimeException When the charge resolves to no order.
 	 */
-	private function get_order_for_charge_id( string $charge_id, array $event_object = array() ): WC_Order {
-		$order = $this->event_order_resolver->find_order_by_charge_id( $charge_id, $event_object );
+	private function get_order_for_charge_id( string $charge_id ): WC_Order {
+		$order = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
 		if ( ! $order instanceof WC_Order ) {
 			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 		}
@@ -740,24 +733,6 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return $value;
-	}
-
-	/**
-	 * Get a refund balance transaction ID from a provider value.
-	 *
-	 * @param mixed $balance_transaction Balance transaction value.
-	 * @return string
-	 */
-	private function get_refund_balance_transaction_id( $balance_transaction ): string {
-		if ( is_string( $balance_transaction ) ) {
-			return $balance_transaction;
-		}
-
-		if ( is_array( $balance_transaction ) && isset( $balance_transaction['id'] ) ) {
-			return (string) $balance_transaction['id'];
-		}
-
-		return '';
 	}
 
 	/**
