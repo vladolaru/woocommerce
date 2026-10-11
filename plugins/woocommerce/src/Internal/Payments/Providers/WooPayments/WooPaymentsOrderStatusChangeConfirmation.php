@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOrderStatusChangeProjectionService class file.
+ * WooPaymentsOrderStatusChangeConfirmation class file.
  */
 
 declare( strict_types = 1 );
@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Order;
 
 /**
- * Projects the order-edit status-change confirmation config consumed by the browser.
+ * Decides whether changing a WooPayments order's status from the edit screen asks for confirmation, and builds the amounts the confirmation shows.
  *
  * Moving a WooPayments order to Refunded from the order-edit status dropdown must open a confirmation
  * modal that refunds at the provider, rather than letting core's `wc_order_fully_refunded()` record a
@@ -28,7 +28,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsOrderStatusChangeProjectionService {
+class WooPaymentsOrderStatusChangeConfirmation {
 
 	/**
 	 * Prefix used by the order-edit status dropdown option values.

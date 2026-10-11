@@ -19,7 +19,7 @@ use WC_Order;
  * to Refunded raises a confirmation modal that refunds at the provider, instead of core silently
  * recording a local-only refund the customer never receives.
  *
- * All business rules live in {@see WooPaymentsOrderStatusChangeProjectionService}; this controller only
+ * All business rules live in {@see WooPaymentsOrderStatusChangeConfirmation}; this controller only
  * decides when to load the asset and hands the projected config to the browser.
  *
  * @since 11.0.0
@@ -63,11 +63,11 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Status-change confirmation projection service.
+	 * Status-change confirmation.
 	 *
-	 * @var WooPaymentsOrderStatusChangeProjectionService
+	 * @var WooPaymentsOrderStatusChangeConfirmation
 	 */
-	private WooPaymentsOrderStatusChangeProjectionService $projection_service;
+	private WooPaymentsOrderStatusChangeConfirmation $confirmation;
 
 	/**
 	 * Admin asset availability resolver.
@@ -88,12 +88,12 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                     $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsOrderStatusChangeProjectionService $projection_service Status-change confirmation projection service.
+	 * @param WooPaymentsRuntimeArbiter                $arbiter      Runtime owner arbiter.
+	 * @param WooPaymentsOrderStatusChangeConfirmation $confirmation Status-change confirmation.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderStatusChangeProjectionService $projection_service ): void {
-		$this->arbiter            = $arbiter;
-		$this->projection_service = $projection_service;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderStatusChangeConfirmation $confirmation ): void {
+		$this->arbiter      = $arbiter;
+		$this->confirmation = $confirmation;
 	}
 
 	/**
@@ -227,7 +227,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * @param mixed $order The order being displayed.
 	 */
 	public function render_payment_details_container( $order = null ): void {
-		if ( ! $order instanceof WC_Order || ! $this->projection_service->should_offer_confirmation( $order ) ) {
+		if ( ! $order instanceof WC_Order || ! $this->confirmation->should_offer_confirmation( $order ) ) {
 			return;
 		}
 
@@ -247,7 +247,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 		}
 
 		$order = wc_get_order();
-		if ( ! $order instanceof WC_Order || ! $this->projection_service->should_offer_confirmation( $order ) ) {
+		if ( ! $order instanceof WC_Order || ! $this->confirmation->should_offer_confirmation( $order ) ) {
 			return;
 		}
 
@@ -266,7 +266,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 		wp_add_inline_script(
 			self::SCRIPT_HANDLE,
 			'window.' . self::CONFIG_OBJECT_NAME . ' = ' . wp_json_encode(
-				$this->projection_service->get_config( $order ),
+				$this->confirmation->get_config( $order ),
 				JSON_HEX_TAG | JSON_UNESCAPED_SLASHES
 			) . ';',
 			'before'

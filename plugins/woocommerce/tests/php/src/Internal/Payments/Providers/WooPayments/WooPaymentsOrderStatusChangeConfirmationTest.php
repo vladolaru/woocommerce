@@ -5,20 +5,20 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeProjectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeConfirmation;
 use WC_Install;
 use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsOrderStatusChangeProjectionService class.
+ * Tests for the WooPaymentsOrderStatusChangeConfirmation class.
  */
-class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Case {
+class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsOrderStatusChangeProjectionService
+	 * @var WooPaymentsOrderStatusChangeConfirmation
 	 */
 	private $sut;
 
@@ -28,7 +28,7 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->sut = wc_get_container()->get( WooPaymentsOrderStatusChangeProjectionService::class );
+		$this->sut = wc_get_container()->get( WooPaymentsOrderStatusChangeConfirmation::class );
 	}
 
 	/**
