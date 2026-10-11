@@ -4538,6 +4538,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * Build a real WooPayments provider that returns a held-for-review PaymentIntent response.
 	 *
 	 * The adapter isolates only its remote transport; the production provider, effect applier, and payment lifecycle remain in use.
+	 * The intent carries the fraud outcome and the JSON-encoded fired filters in its metadata, where client 11.1.0 reads them
+	 * (class-wc-payments-order-service.php:2957-2959).
 	 *
 	 * @param array<string,string> $ruleset_results Fired fraud-rule results.
 	 * @return WooPaymentsProvider

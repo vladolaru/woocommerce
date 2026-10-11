@@ -630,6 +630,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Dispute events that write a note linking to the disputed charge.
 	 *
+	 * Stripe Dispute objects with the fields client 11.1.0 reads for each event (class-wc-payments-webhook-processing-service.php:
+	 * created :699-710, closed :748-754, updated :794-806); the test adds the charge.
+	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
 	 */
 	public function provider_dispute_note_events(): array {
@@ -684,6 +687,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( 'Dispute has been closed with status ' . $status . '. See <a href="' . $this->get_woopayments_extension_dispute_url( 'ch_cutover' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' . ( $with_dispute_id ? ' (Dispute ID: dp_cutover)' : '' ) );
 
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754), and amount and currency for a lost close.
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
@@ -767,6 +772,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( 'Payment dispute has been updated. See <a href="' . add_query_arg( array( 'id' => 'ch_cutover_updated' ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) ) . '">dispute overview</a> for more details.' . ( $with_dispute_id ? ' (Dispute ID: dp_cutover_updated)' : '' ) );
 
+		// A Stripe Dispute, as charge.dispute.updated carries it; client 11.1.0 reads id and charge
+		// (class-wc-payments-webhook-processing-service.php:794-806), and native also reads its status.
 		$this->sut->process(
 			'charge.dispute.updated',
 			array(
@@ -999,6 +1006,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Build a dispute created event object fixture.
+	 *
+	 * A Stripe Dispute, as charge.dispute.created carries it; client 11.1.0 reads id, charge, reason, amount,
+	 * evidence_details.due_by and status (class-wc-payments-webhook-processing-service.php:699-710). Tests add the charge.
 	 *
 	 * @param string $dispute_id Dispute ID.
 	 * @param string $status     Dispute status.

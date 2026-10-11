@@ -5272,7 +5272,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Get the dispute details URL as the WooPayments extension puts it in its dispute update notes: unescaped, with the
-	 * path not encoded and the charge ID only.
+	 * charge ID only (add_query_arg() re-encodes the path it is given, so the link reads path=%2Fpayments%2F…).
 	 *
 	 * Client 11.1.0 class-wc-payments-webhook-processing-service.php:825-832.
 	 *

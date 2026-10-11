@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -90,6 +91,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->original_multi_currency_options = array();
+		delete_option( 'wcpay_account_data' );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		$this->reset_container_replacements();
 		parent::tearDown();
 	}
@@ -125,6 +128,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		);
 		$order = $this->create_refundable_order();
 
+		// A Refund object, as charge.refund.updated carries it; client 11.1.0 reads id, charge, amount, currency, status,
+		// balance_transaction and failure_reason (class-wc-payments-webhook-processing-service.php:300-353).
 		$this->sut->process(
 			'charge.refund.updated',
 			array(
@@ -187,19 +192,25 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 writes the failed or cancelled note in handle_failed_refund() (class-wc-payments-order-service.php:1979-1999),
 	 * deduped by exact text, and the insufficient-balance note with FROD support in handle_insufficient_balance_for_refund()
-	 * and get_frod_support_note() (:3065-3077, :3157-3170). The amount is wc_price() output, whose <bdi> the notes keep.
+	 * and get_frod_support_note() (:3065-3077, :3157-3170), or without FROD support get_insufficient_balance_note() (:3178-3189).
+	 * The amount is wc_price() output, whose <bdi> the notes keep.
 	 *
 	 * @dataProvider woopayments_extension_failed_refund_note_provider
 	 *
 	 * @param string $status                Refund status in the event.
 	 * @param string $failure_reason        Refund failure reason in the event.
 	 * @param string $extension_note_format The extension's note, with %s for the formatted amount.
+	 * @param string $account_country       WooPayments account country, or '' for the test store's default (US).
 	 */
-	public function test_failed_refund_update_recognises_the_woopayments_extension_note( string $status, string $failure_reason, string $extension_note_format ): void {
+	public function test_failed_refund_update_recognises_the_woopayments_extension_note( string $status, string $failure_reason, string $extension_note_format, string $account_country ): void {
 		$order          = $this->create_refundable_order();
 		$extension_note = sprintf( $extension_note_format, wc_price( 4.00, array( 'currency' => 'USD' ) ) );
 		$order->add_order_note( $extension_note );
+		if ( '' !== $account_country ) {
+			$this->set_woopayments_account_country( $account_country );
+		}
 
+		// A Refund object, as charge.refund.updated carries it (class-wc-payments-webhook-processing-service.php:300-353).
 		$this->sut->process(
 			'charge.refund.updated',
 			array(
@@ -225,13 +236,14 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Refund failure notes as the WooPayments extension writes them.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
+	 * @return array<string,array{0:string,1:string,2:string,3:string}>
 	 */
 	public function woopayments_extension_failed_refund_note_provider(): array {
 		return array(
-			'failed, lost or stolen card' => array( 'failed', 'lost_or_stolen_card', 'A refund of %s was <strong>unsuccessful</strong> using WooPayments (<code>re_123</code>): The card used for the original payment has been reported lost or stolen.' ),
-			'canceled'                    => array( 'canceled', 'merchant_request', 'A refund of %s was <strong>cancelled</strong> using WooPayments (<code>re_123</code>).' ),
-			'failed, insufficient funds'  => array( 'failed', 'insufficient_funds', 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds" target="_blank" rel="noopener noreferrer">Learn more</a>.' ),
+			'failed, lost or stolen card' => array( 'failed', 'lost_or_stolen_card', 'A refund of %s was <strong>unsuccessful</strong> using WooPayments (<code>re_123</code>): The card used for the original payment has been reported lost or stolen.', '' ),
+			'canceled'                    => array( 'canceled', 'merchant_request', 'A refund of %s was <strong>cancelled</strong> using WooPayments (<code>re_123</code>).', '' ),
+			'failed, insufficient funds'  => array( 'failed', 'insufficient_funds', 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds" target="_blank" rel="noopener noreferrer">Learn more</a>.', '' ),
+			'failed, insufficient funds, FROD not supported' => array( 'failed', 'insufficient_funds', 'Refund of %s <strong>failed</strong> due to insufficient funds in your WooPayments balance.', 'HK' ),
 		);
 	}
 
@@ -1050,7 +1062,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * charge.refunded carries the Charge with its refunds list and the store's metadata; client 11.1.0 reads status,
 	 * captured, amount, currency, metadata and refunds.data[0] (class-wc-payments-webhook-processing-service.php:1079-1143).
-	 * charge.refund.updated carries the Refund (:300-309).
+	 * charge.refund.updated carries the Refund (:300-353).
 	 *
 	 * @param string   $event_type Refund event type.
 	 * @param WC_Order $order      Order holding the charge.
@@ -1513,6 +1525,44 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$this->sut->process( 'charge.refund.updated', $refund_object );
 
 		$this->assertSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
+	 * Cache a fresh live account with this country, readable through the account service while the platform is connected.
+	 *
+	 * The same account cache the ingestor test sets (WooPaymentsEventIngestorTest::set_woopayments_account_country()).
+	 *
+	 * @param string $country Account country.
+	 */
+	private function set_woopayments_account_country( string $country ): void {
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		// The option envelope client 11.1.0 Database_Cache writes (class-database-cache.php:377-382), with the account fields
+		// recorded in ../Fixtures/platform-test-drive-account.json `account`; `is_live` true keeps onboarding test mode off.
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+					'country'    => $country,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		wc_get_container()->replace(
+			WooPaymentsApiClient::class,
+			new class() extends WooPaymentsApiClient {
+				/**
+				 * Report the platform as connected, so the account service reads the cached account.
+				 *
+				 * @return bool
+				 */
+				public function is_available(): bool {
+					return true;
+				}
+			}
+		);
 	}
 
 	/**

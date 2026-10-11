@@ -240,6 +240,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			$store,
 			new StaticFailedEventsProvider(
 				array(
+					// The last entry is deliberately malformed: an event without an ID, which the fetch skips.
 					'data'     => array_merge( $events, array( array( 'type' => 'missing.id' ) ) ),
 					'has_more' => false,
 				)
