@@ -2863,9 +2863,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to a generic message when the payment method creation error carries none.
+	 * @testdox Should fail the payment and the order when the payment method creation error carries no message.
 	 */
-	public function test_process_payment_method_creation_error_uses_generic_message_fallback(): void {
+	public function test_process_payment_method_creation_error_without_a_message_fails_the_order(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();

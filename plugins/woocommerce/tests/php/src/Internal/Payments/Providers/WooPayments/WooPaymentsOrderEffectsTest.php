@@ -657,9 +657,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Wrapped Link card display details use Link without retaining card details.
+	 * @testdox Wrapped Link card display details keep only the Link wallet, with no express checkout type and no card metadata.
 	 */
-	public function test_setup_intent_wrapped_link_card_display_details_use_plain_link_title(): void {
+	public function test_setup_intent_wrapped_link_card_display_details_keep_only_the_link_wallet(): void {
 		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
 			array(
 				'type' => 'card',

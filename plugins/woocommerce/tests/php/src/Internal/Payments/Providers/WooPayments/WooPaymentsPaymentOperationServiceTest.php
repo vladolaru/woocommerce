@@ -149,6 +149,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					throw new \RuntimeException( 'Unexpected native charge request payload.' );
 				}
 
+				// Shape: the platform's create-and-confirm answer in Fixtures/platform-intention-basic-card.json (pair
+				// basic_card_usd_create_and_confirm), trimmed to the fields read here; fee_breakdown_v1 takes the
+				// totals shape of the fetched charge in Fixtures/platform-eur-charge.json (pair eur_charge_get_charge).
 				return array(
 					'id'             => 'pi_native',
 					'status'         => 'succeeded',
@@ -6463,7 +6466,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$outcome = $this->charge_with_woopay_intent( $order, $api_client, '0' );
 
 		$this->assertSame( array(), $api_client->payment_intent_reads );
-		$this->assertSame( 1, $api_client->creates, 'Client 11.1.0 guards the fetch with ! empty() (class-wc-payment-gateway-wcpay.php:1799) and creates the intent instead.' );
+		$this->assertSame( 1, $api_client->creates, 'Client 11.1.0 guards the fetch with ! empty() (class-wc-payment-gateway-wcpay.php:1797-1801) and creates the intent instead.' );
 		$this->assertSame( 'pi_second', $outcome->get_provider_payment_id() );
 	}
 
@@ -10547,9 +10550,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture should preserve authorized payment metadata when the capture fails.
+	 * @testdox A capture the platform leaves uncaptured fails with the platform's message and the intent ID, and returns no order meta or note.
 	 */
-	public function test_capture_preserves_authorized_meta_when_the_capture_fails(): void {
+	public function test_failed_capture_returns_the_platform_error_without_order_meta_or_note(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()

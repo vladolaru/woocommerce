@@ -29,14 +29,14 @@ use WC_Unit_Test_Case;
 class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Shared intent confirmation should apply the payment lifecycle directly.
+	 * @testdox Confirming an intent for an order fetches it once and saves its intent and payment method IDs on the order.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`):
 	 * a classic checkout that finished a hosted 3DS challenge, obtained via one API-only GET of the
 	 * resulting PaymentIntent through native transport after a real Playwright run.
 	 */
-	public function test_confirm_intent_for_order_applies_payment_lifecycle(): void {
+	public function test_confirm_intent_for_order_fetches_the_intent_once_and_saves_intent_and_payment_method_ids(): void {
 		$order = $this->create_woopayments_order( '10.99' );
 
 		$recorded              = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' );
