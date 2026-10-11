@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
@@ -119,22 +119,22 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider exposes and delegates the optional pre- and post-lifecycle effect ports.
 	 */
 	public function test_provider_delegates_woopayments_operation_effects(): void {
-		$order           = wc_create_order();
-		$context         = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
-		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
-		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
-		$call_sequence   = array();
-		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+		$order              = wc_create_order();
+		$context            = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
+		$effect_plan        = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
+		$outcome            = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
+		$call_sequence      = array();
+		$payment_operations = $this->getMockBuilder( WooPaymentsPaymentOperationService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'finalize_charge_idempotency_key' ) )
 			->getMock();
-		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$effect_applier  = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+		$effect_applier     = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'apply', 'apply_payment_method_display_details' ) )
 			->getMock();
@@ -150,7 +150,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$effect_applier->expects( $this->never() )
 			->method( 'apply_payment_method_display_details' )
 			->with( $order, array( 'status' => 'succeeded' ) );
-		$gateway_adapter->expects( $this->once() )
+		$payment_operations->expects( $this->once() )
 			->method( 'finalize_charge_idempotency_key' )
 			->with( $order, $outcome )
 			->willReturnCallback(
@@ -160,7 +160,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			);
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $gateway_adapter, $api_client, $account_service, null, $effect_applier );
+		$provider->init( $payment_operations, $api_client, $account_service, null, $effect_applier );
 
 		$this->assertInstanceOf( ProviderOperationEffectApplierInterface::class, $provider );
 		$this->assertInstanceOf( ProviderPostLifecycleEffectApplierInterface::class, $provider );
@@ -236,7 +236,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$effect_applier->method( 'apply' )->willReturn( $outcome );
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsPaymentOperationService::class ),
 			$this->createMock( WooPaymentsApiClient::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
 			null,
@@ -298,7 +298,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$effect_applier->method( 'apply' )->willReturn( $outcome );
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsPaymentOperationService::class ),
 			$this->createMock( WooPaymentsApiClient::class ),
 			$this->createMock( WooPaymentsAccountService::class ),
 			null,
@@ -545,13 +545,13 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsProvider
 	 */
 	private function create_provider_with_capabilities( array $capabilities, array $account_data = array() ): WooPaymentsProvider {
-		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+		$payment_operations = $this->getMockBuilder( WooPaymentsPaymentOperationService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
 			->getMock();
@@ -562,7 +562,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			);
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $gateway_adapter, $api_client, $account_service );
+		$provider->init( $payment_operations, $api_client, $account_service );
 
 		return $provider;
 	}
@@ -589,8 +589,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @param bool $expected            Expected readiness.
 	 */
 	public function test_can_process_payments_requires_native_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
-		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
-		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$payment_operations = $this->createMock( WooPaymentsPaymentOperationService::class );
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -615,7 +615,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		}
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $gateway_adapter, $api_client, $account_service );
+		$provider->init( $payment_operations, $api_client, $account_service );
 
 		$this->assertSame( $expected, $provider->can_process_payments() );
 	}
@@ -624,8 +624,8 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Provider onboarding availability does not require an established WPCOM transport.
 	 */
 	public function test_can_manage_onboarding_before_wpcom_transport_is_connected(): void {
-		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
-		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$payment_operations = $this->createMock( WooPaymentsPaymentOperationService::class );
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -641,7 +641,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			->method( 'can_process_payments' );
 
 		$provider = new WooPaymentsProvider();
-		$provider->init( $gateway_adapter, $api_client, $account_service );
+		$provider->init( $payment_operations, $api_client, $account_service );
 
 		$this->assertTrue( $provider->can_manage_onboarding() );
 	}
@@ -679,7 +679,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php' );
 
 		$this->assertDoesNotMatchRegularExpression(
-			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsProviderGatewayAdapter::class\s*\)/',
+			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsPaymentOperationService::class\s*\)/',
 			$source,
 			'WooPaymentsProvider should receive the gateway adapter through init injection.'
 		);

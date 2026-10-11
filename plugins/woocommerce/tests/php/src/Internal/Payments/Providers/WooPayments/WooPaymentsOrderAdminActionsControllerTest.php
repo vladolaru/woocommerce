@@ -27,7 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
@@ -346,7 +346,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $last_capture_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_capture_context->get_gateway_id() );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
-		$this->assertArrayNotHasKey( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
+		$this->assertArrayNotHasKey( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'Shared capture success note.' );
 	}
@@ -410,7 +410,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $last_capture_context );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
-		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
+		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
 	}
 
 	/**
@@ -703,11 +703,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The capture-charge order action should send one capture request for the authorized total and mark the order processing.
 	 *
 	 * T.3 Task 3 (`plan-task-t3.md`): joins the request-shape half
-	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapterTest::test_capture_sends_context_amount_to_native_transport})
+	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::test_capture_sends_context_amount_to_native_transport})
 	 * and the on-hold half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLifecycleServiceTest::test_authorized_event_moves_order_on_hold})
 	 * by driving the real "Capture charge" order action through
 	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
-	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsProviderGatewayAdapter} and
+	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsPaymentOperationService} and
 	 * {@see WooPaymentsApiClient} over a fake transport queued with REC-CAP's recorded
 	 * `capture_full_amount` response (`Fixtures/rec-t3-manual-capture.json`,
 	 * `data/rec-t3-api-recordings.md`): a 10.99 USD manual-capture authorization captured
@@ -1017,7 +1017,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a real WooPayments provider wired to the real gateway adapter and API client
 	 * over a fake transport, the pattern used by
-	 * {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapterTest::create_provider_over_fake_transport()}.
+	 * {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::create_provider_over_fake_transport()}.
 	 *
 	 * @param FakeWooPaymentsHttpClient $http_client Fake transport queued with the recorded response(s).
 	 * @return WooPaymentsProvider
@@ -1039,8 +1039,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
-		$adapter = new WooPaymentsProviderGatewayAdapter();
-		$adapter->init(
+		$payment_operations = new WooPaymentsPaymentOperationService();
+		$payment_operations->init(
 			$api_client,
 			$this->createMock( WooPaymentsCustomerService::class ),
 			$this->createMock( WooPaymentsIntentRequestBuilder::class ),
@@ -1054,7 +1054,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			$api_client,
 			$account_service,
 			null,

@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use WP_UnitTestCase;
 
@@ -771,17 +771,17 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			'wcpay_upe_available_payment_methods',
 			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
 		);
-		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+		$payment_operations = $this->getMockBuilder( WooPaymentsPaymentOperationService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+		$account_service    = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$provider        = new WooPaymentsProvider();
-		$provider->init( $gateway_adapter, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry() );
+		$provider           = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry() );
 		$asset_api       = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();

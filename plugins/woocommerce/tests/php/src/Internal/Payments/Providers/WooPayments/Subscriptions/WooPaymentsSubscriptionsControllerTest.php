@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -337,13 +337,13 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
 			$data = array(
-				WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META => 'key_parent_charge',
-				WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META => array(
+				WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META => 'key_parent_charge',
+				WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META => array(
 					'order_id'  => 123,
 					'customer'  => 'cus_parent',
 					'failed_at' => 1700000000,
 				),
-				WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META => array(
+				WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META => array(
 					'order_id'  => 123,
 					'charge_id' => 'ch_parent',
 					'key'       => 'key_parent_refund',

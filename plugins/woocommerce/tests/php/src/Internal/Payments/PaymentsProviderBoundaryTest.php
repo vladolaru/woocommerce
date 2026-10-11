@@ -44,7 +44,7 @@ class PaymentsProviderBoundaryTest extends WC_Unit_Test_Case {
 			'instanceof'                      => array( '$is = $provider instanceof Providers\WooPayments\WooPaymentsProvider;', true ),
 			'class string'                    => array( '$id = \'Automattic\\\\WooCommerce\\\\Internal\\\\Payments\\\\Providers\\\\WooPayments\\\\WooPaymentsProvider\';', true ),
 			'line comment'                    => array( '// Mirrors Providers\WooPayments\WooPaymentsProvider.', false ),
-			'docblock'                        => array( '/** {@see Providers\WooPayments\WooPaymentsProviderGatewayAdapter} */', false ),
+			'docblock'                        => array( '/** {@see Providers\WooPayments\WooPaymentsPaymentOperationService} */', false ),
 			'plugin prose and slug'           => array( '$file = \'woocommerce-payments/woocommerce-payments.php\'; $label = \'WooPayments\';', false ),
 			'lower-case use import'           => array( 'use automattic\woocommerce\internal\payments\providers\woopayments\WooPaymentsProvider;', true ),
 			'mixed-case relative new'         => array( '$provider = new providers\WOOPAYMENTS\WooPaymentsProvider();', true ),

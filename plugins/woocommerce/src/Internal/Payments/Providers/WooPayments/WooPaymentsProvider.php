@@ -40,11 +40,11 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierI
 class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectApplierInterface, ProviderOutcomeMetadataMapperInterface, ProviderPostLifecycleEffectApplierInterface {
 
 	/**
-	 * WooPayments gateway adapter.
+	 * WooPayments payment operation service.
 	 *
-	 * @var WooPaymentsProviderGatewayAdapter
+	 * @var WooPaymentsPaymentOperationService
 	 */
-	private WooPaymentsProviderGatewayAdapter $gateway_adapter;
+	private WooPaymentsPaymentOperationService $payment_operations;
 
 	/**
 	 * Native WooPayments API client.
@@ -86,20 +86,20 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsProviderGatewayAdapter     $gateway_adapter         WooPayments gateway adapter.
+	 * @param WooPaymentsPaymentOperationService    $payment_operations      WooPayments payment operation service.
 	 * @param WooPaymentsApiClient                  $api_client              Native WooPayments API client.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry|null $payment_method_registry Optional payment method registry.
 	 * @param WooPaymentsOrderEffectApplier|null    $order_effect_applier    Optional order effect applier.
 	 */
 	final public function init(
-		WooPaymentsProviderGatewayAdapter $gateway_adapter,
+		WooPaymentsPaymentOperationService $payment_operations,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
 		?WooPaymentsOrderEffectApplier $order_effect_applier = null
 	): void {
-		$this->gateway_adapter         = $gateway_adapter;
+		$this->payment_operations      = $payment_operations;
 		$this->api_client              = $api_client;
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry ?? new WooPaymentsPaymentMethodRegistry();
@@ -483,7 +483,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_gateway_adapter()->charge( $context, $idempotency_key );
+		return $this->get_payment_operations()->charge( $context, $idempotency_key );
 	}
 
 	/**
@@ -494,7 +494,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		$outcome = $this->get_gateway_adapter()->capture( $context, $idempotency_key );
+		$outcome = $this->get_payment_operations()->capture( $context, $idempotency_key );
 		// Plugin 11.1.0 records this after every capture attempt (`WC_Payment_Gateway_WCPay::capture_charge()`).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 
@@ -509,7 +509,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_gateway_adapter()->cancel( $context, $idempotency_key );
+		return $this->get_payment_operations()->cancel( $context, $idempotency_key );
 	}
 
 	/**
@@ -520,7 +520,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_gateway_adapter()->refund( $context, $idempotency_key );
+		return $this->get_payment_operations()->refund( $context, $idempotency_key );
 	}
 
 	/**
@@ -558,7 +558,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 *
 	 * It schedules the Fee details job when the lifecycle added the payment's success or capture note, and after a charge
 	 * it also retires the order's charge idempotency key once the outcome is definitive, through
-	 * WooPaymentsProviderGatewayAdapter::finalize_charge_idempotency_key().
+	 * WooPaymentsPaymentOperationService::finalize_charge_idempotency_key().
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Applied provider outcome.
@@ -579,17 +579,17 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		}
 
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
-			$this->get_gateway_adapter()->finalize_charge_idempotency_key( $context->get_order(), $outcome );
+			$this->get_payment_operations()->finalize_charge_idempotency_key( $context->get_order(), $outcome );
 		}
 	}
 
 	/**
-	 * Get the WooPayments gateway adapter.
+	 * Get the WooPayments payment operation service.
 	 *
-	 * @return WooPaymentsProviderGatewayAdapter
+	 * @return WooPaymentsPaymentOperationService
 	 */
-	private function get_gateway_adapter(): WooPaymentsProviderGatewayAdapter {
-		return $this->gateway_adapter;
+	private function get_payment_operations(): WooPaymentsPaymentOperationService {
+		return $this->payment_operations;
 	}
 
 	/**

@@ -265,7 +265,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 						$order,
 						WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 						(float) $order->get_total(),
-						$on_status_change ? array( WooPaymentsProviderGatewayAdapter::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) : array()
+						$on_status_change ? array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) : array()
 					),
 					$this->provider
 				)

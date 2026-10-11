@@ -19,7 +19,7 @@ import {
  * afterpay_clearpay, bancontact, klarna, and the protection-on twins) was
  * deleted in T.1, and its assertions moved to PHPUnit and Jest: the exact
  * method/amount/currency/return-URL request shape now lives in
- * `WooPaymentsProviderGatewayAdapterTest::test_charge_sends_split_redirect_method_request`
+ * `WooPaymentsPaymentOperationServiceTest::test_charge_sends_split_redirect_method_request`
  * (which also independently re-proves `A1`'s alipay shape at a lower layer),
  * the redirect-return settlement in
  * `WooPaymentsRedirectReturnControllerTest::test_handle_wp_confirms_redirect_method_return`,

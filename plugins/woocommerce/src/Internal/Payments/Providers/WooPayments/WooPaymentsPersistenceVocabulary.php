@@ -213,7 +213,7 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 * @since 11.2.0
 	 */
 	public function get_charge_idempotency_key_meta_key(): string {
-		return WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META;
+		return WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META;
 	}
 
 	/**

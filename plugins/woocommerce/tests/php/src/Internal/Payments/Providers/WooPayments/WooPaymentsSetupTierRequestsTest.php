@@ -24,7 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
 use WC_Order_Refund;
@@ -112,7 +112,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )->onlyMethods( array( 'can_process_payments' ) )->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->init(
-			wc_get_container()->get( WooPaymentsProviderGatewayAdapter::class ),
+			wc_get_container()->get( WooPaymentsPaymentOperationService::class ),
 			wc_get_container()->get( WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class )
 		);
@@ -173,7 +173,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( wc_get_container()->get( WooPaymentsProviderGatewayAdapter::class ), $api_client, $account_service );
+		$provider->init( wc_get_container()->get( WooPaymentsPaymentOperationService::class ), $api_client, $account_service );
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
 
 		$this->run_bootstrap( '__return_false' );
@@ -432,7 +432,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		}
-		$adapter = new class() extends WooPaymentsProviderGatewayAdapter {
+		$payment_operations = new class() extends WooPaymentsPaymentOperationService {
 			/**
 			 * Operations that reached the adapter, in order.
 			 *
@@ -492,7 +492,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
 			}
 		};
-		wc_get_container()->replace( WooPaymentsProviderGatewayAdapter::class, $adapter );
+		wc_get_container()->replace( WooPaymentsPaymentOperationService::class, $payment_operations );
 		$this->arrange_request( $request );
 
 		$this->run_bootstrap( 'rest' === $request ? '__return_true' : '__return_false' );
@@ -521,7 +521,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->assertSame( $builtin_owner, in_array( WooPaymentsGateway::class, $gateway_classes, true ), 'Checkout, order-pay and refunds reach the built-in gateway only through the gateway list.' );
 		$this->assertSame( $builtin_owner, $renewal_hooked, 'Subscription renewals reach the built-in gateway only through this handler.' );
 		$this->assertSame( $builtin_owner ? 2 : 0, count( $authorization_routes ), 'The capture and cancel authorization routes register only while the built-in WooPayments owns payments.' );
-		$this->assertSame( $builtin_owner ? array( 'capture', 'cancel', 'capture', 'cancel', 'refund' ) : array(), $adapter->operations, 'Only a request the built-in WooPayments owns may reach the gateway adapter.' );
+		$this->assertSame( $builtin_owner ? array( 'capture', 'cancel', 'capture', 'cancel', 'refund' ) : array(), $payment_operations->operations, 'Only a request the built-in WooPayments owns may reach the gateway adapter.' );
 	}
 
 	/**
@@ -535,7 +535,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_core_refund_hands_its_row_to_the_provider(): void {
 		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
-		$adapter = new class() extends WooPaymentsProviderGatewayAdapter {
+		$payment_operations = new class() extends WooPaymentsPaymentOperationService {
 			/**
 			 * Refund row IDs the refund calls were handed.
 			 *
@@ -566,7 +566,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_entry_points_core_refund' );
 			}
 		};
-		wc_get_container()->replace( WooPaymentsProviderGatewayAdapter::class, $adapter );
+		wc_get_container()->replace( WooPaymentsPaymentOperationService::class, $payment_operations );
 		$this->arrange_request( 'rest' );
 		$this->run_bootstrap( '__return_true' );
 		$this->reload_payment_gateways();
@@ -582,8 +582,8 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$this->assertSame( array( $refund->get_id() ), $adapter->refund_row_ids, 'The provider gets the row wc_create_refund() created.' );
-		$this->assertSame( array( '' ), $adapter->manual_marks, 'The gateway refund row is not a manual record.' );
+		$this->assertSame( array( $refund->get_id() ), $payment_operations->refund_row_ids, 'The provider gets the row wc_create_refund() created.' );
+		$this->assertSame( array( '' ), $payment_operations->manual_marks, 'The gateway refund row is not a manual record.' );
 
 		$manual = wc_create_refund(
 			array(

@@ -32,7 +32,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
@@ -397,7 +397,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
 	 *
 	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/rec-1-intention-declines.json`)
-	 * as `WooPaymentsProviderGatewayAdapterTest::test_native_charge_decline_envelope_maps_each_card_code` proves
+	 * as `WooPaymentsPaymentOperationServiceTest::test_native_charge_decline_envelope_maps_each_card_code` proves
 	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
 	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
 	 * fraud meta box `allow` for a `card_error` decline (`:1372`). A plain checkout decline is not the card-testing
@@ -1321,7 +1321,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				: array( 'transport:direct', 'suffix', 'display-sync', 'lifecycle:Link (WooPayments)', 'finalization' ),
 			$sequence->getArrayCopy()
 		);
-		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame( 'Link (WooPayments)', $subscription->get_payment_method_title() );
@@ -1406,7 +1406,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				: array( 'transport:direct', 'lifecycle:Visa credit card', 'finalization' ),
 			$sequence->getArrayCopy()
 		);
-		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 	}
 
 	/**
@@ -1458,7 +1458,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'completed', $order->get_status() );
 		$this->assertSame( $expected_title, $order->get_payment_method_title() );
 		$this->assertSame( array( 'transport:direct', 'suffix', 'lifecycle:' . $expected_title, 'finalization' ), $sequence->getArrayCopy() );
-		$this->assertSame( '', $order->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 	}
 
 	/**
@@ -1887,7 +1887,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$first_outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
 		$after_first   = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $after_first );
-		$unresolved_key = (string) $after_first->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true );
+		$unresolved_key = (string) $after_first->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $first_outcome->get_status() );
 		$this->assertSame( 'failed', $after_first->get_status() );
 		$this->assertSame( '', $after_first->get_meta( '_intent_id', true ) );
@@ -1981,8 +1981,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order_status, $paid->get_status() );
 		$this->assertSame( 'pi_earlier', $paid->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'pm_earlier', $paid->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( '', $paid->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertSame( '', $paid->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertSame( '', $paid->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertSame( '', $paid->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 	}
 
 	/**
@@ -2011,7 +2011,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_first' ), $provider );
 		$resubmit = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $resubmit );
-		$this->assertNotSame( '', $resubmit->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertNotSame( '', $resubmit->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 
 		wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor::class )->process(
 			array(
@@ -2123,8 +2123,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $refused->get_status() );
 		$this->assertSame( 'wcpay_charge_lookup_failed', $refused->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
 		$this->assertSame( 'pending', $kept->get_status() );
-		$this->assertNotSame( '', $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertIsArray( $kept->get_meta( WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, true ) );
+		$this->assertNotSame( '', $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
+		$this->assertIsArray( $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertCount( 3, $http_client->requests, 'A failed lookup must not charge.' );
 
 		$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $kept, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new' ), $provider );
@@ -2151,7 +2151,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $loaded );
 
 		$order->set_status( $status );
-		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, $unresolved_key );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, $unresolved_key );
 		$order->save();
 
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
@@ -4408,8 +4408,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
 		$refund_ambiguity_service->init( $api_client );
-		$adapter = new WooPaymentsProviderGatewayAdapter();
-		$adapter->init(
+		$payment_operations = new WooPaymentsPaymentOperationService();
+		$payment_operations->init(
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
@@ -4422,7 +4422,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			$api_client,
 			$account_service,
 			null,
@@ -4441,7 +4441,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsProvider
 	 */
 	private function review_payment_intent_provider( array $ruleset_results ): WooPaymentsProvider {
-		$adapter  = new class( $ruleset_results ) extends WooPaymentsProviderGatewayAdapter {
+		$payment_operations = new class( $ruleset_results ) extends WooPaymentsPaymentOperationService {
 			/**
 			 * Fired fraud-rule results returned by the isolated transport.
 			 *
@@ -4490,9 +4490,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				return ( new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_review_replay', '', 'pm_review_replay' ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $result, false ) );
 			}
 		};
-		$provider = new WooPaymentsProvider();
+		$provider           = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			null,
@@ -4573,8 +4573,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
 		$refund_ambiguity_service->init( $api_client );
-		$adapter = new WooPaymentsProviderGatewayAdapter();
-		$adapter->init(
+		$payment_operations = new WooPaymentsPaymentOperationService();
+		$payment_operations->init(
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
@@ -4587,7 +4587,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			$api_client,
 			$account_service,
 			null,
@@ -4631,8 +4631,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$ambiguity_service->init( $api_client );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
 		$refund_ambiguity_service->init( $api_client );
-		$adapter = new WooPaymentsProviderGatewayAdapter();
-		$adapter->init(
+		$payment_operations = new WooPaymentsPaymentOperationService();
+		$payment_operations->init(
 			$api_client,
 			$customer_service,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
@@ -4645,7 +4645,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			$api_client,
 			$account_service,
 			null,
@@ -4678,7 +4678,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsProvider
 	 */
 	private function completed_payment_intent_provider( array $result, \ArrayObject $sequence ): WooPaymentsProvider {
-		$adapter  = new class( $result, $sequence ) extends WooPaymentsProviderGatewayAdapter {
+		$payment_operations = new class( $result, $sequence ) extends WooPaymentsPaymentOperationService {
 			/**
 			 * Expanded PaymentIntent transport result.
 			 *
@@ -4735,9 +4735,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				$this->sequence[] = 'finalization';
 			}
 		};
-		$provider = new WooPaymentsProvider();
+		$provider           = new WooPaymentsProvider();
 		$provider->init(
-			$adapter,
+			$payment_operations,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class ),
 			null,

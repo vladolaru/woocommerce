@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsProviderGatewayAdapter class file.
+ * WooPaymentsPaymentOperationService class file.
  */
 
 declare( strict_types = 1 );
@@ -15,12 +15,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use WC_Order;
 
 /**
- * Runs WooPayments payment operations against the platform API and delegates provider mapping.
+ * Sends WooPayments charges, zero-total setups, refunds, captures and cancels to the platform and maps each answer to a payment outcome.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsProviderGatewayAdapter {
+class WooPaymentsPaymentOperationService {
 
 	/**
 	 * Order meta key holding the native charge idempotency key.
@@ -31,10 +31,10 @@ class WooPaymentsProviderGatewayAdapter {
 	public const CHARGE_IDEMPOTENCY_KEY_META = '_wcpay_charge_idempotency_key';
 
 	/**
-	 * Order meta key recording the ambiguous charge failure that kept the order's charge idempotency key.
+	 * Order meta key recording the ambiguous charge failure that left the order's charge idempotency key unresolved.
 	 *
 	 * An array with the order ID, every customer a failed request under the key was sent with, the time of the first
-	 * failure and whether the merchant was told the payment cannot be checked. It lives and dies with the kept key, and
+	 * failure and whether the merchant was told the payment cannot be checked. It lives and dies with the unresolved key, and
 	 * lets a refused resubmit look up what the failed requests did.
 	 *
 	 * @var string
@@ -180,8 +180,8 @@ class WooPaymentsProviderGatewayAdapter {
 		if ( $this->api_client->is_available() ) {
 			try {
 				$outcome = 0.0 < (float) $context->get_order()->get_total()
-					? $this->charge_via_native_transport( $context, $idempotency_key )
-					: $this->setup_intent_via_native_transport( $context, $idempotency_key );
+					? $this->charge_order_total( $context, $idempotency_key )
+					: $this->set_up_payment_method_for_zero_total( $context, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
 				$outcome = $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
@@ -393,7 +393,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Charge an order through the native WooPayments transport.
+	 * Charge an order's total through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt. A charge key already stored on
@@ -401,7 +401,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
-	private function charge_via_native_transport( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+	private function charge_order_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
@@ -432,7 +432,7 @@ class WooPaymentsProviderGatewayAdapter {
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$result,
-			$this->native_mapping_context( $result, $context, $payment_credential, $customer_id )
+			$this->build_mapping_context( $result, $context, $payment_credential, $customer_id )
 		);
 
 		$this->maybe_add_customer_notification_note( $order, $result );
@@ -485,12 +485,12 @@ class WooPaymentsProviderGatewayAdapter {
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
 		} catch ( WooPaymentsApiException $exception ) {
-			if ( $this->is_kept_key_refusal_after_ambiguity( $order, $attempt_key, $sent_key, $exception, $context ) ) {
+			if ( $this->is_unresolved_key_refusal_after_ambiguity( $order, $attempt_key, $sent_key, $exception, $context ) ) {
 				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key );
 			}
 
 			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $exception->has_ambiguous_outcome() ) {
-				$this->log_kept_charge_key_refused( $order, $sent_key );
+				$this->log_unresolved_charge_key_refused( $order, $sent_key );
 			}
 
 			// While the record exists the recovery would charge under a key Stripe never saw, with no lookup of the earlier
@@ -515,7 +515,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Tell whether Stripe refused the order's kept charge key after an ambiguous failure because the new request differs.
+	 * Tell whether Stripe refused the order's unresolved charge key after an ambiguous failure because the new request differs.
 	 *
 	 * All four must hold: a kept key was sent instead of the attempt's own; Stripe answered with an idempotency error, which
 	 * it raises only when it holds a finished result for the key, and the answer is not ambiguous (a 409 or a server error
@@ -530,7 +530,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param PaymentOperationContext $context     Payment context.
 	 * @return bool
 	 */
-	private function is_kept_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
+	private function is_unresolved_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
 			&& ! $exception->has_ambiguous_outcome()
@@ -828,7 +828,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Tell whether a definitive failure under a key kept after an ambiguous failure leaves the earlier request unsettled.
+	 * Tell whether a definitive failure under an unresolved charge key leaves the earlier request unsettled.
 	 *
 	 * Only a card error proves that Stripe ran this request fresh, so that nothing was stored under the key and the earlier
 	 * request took nothing. The platform's own refusals never reach Stripe: they come as WordPress REST errors with no
@@ -842,7 +842,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param bool                    $is_scheduled_renewal Whether the payment is a scheduled subscription renewal.
 	 * @return bool
 	 */
-	private function is_unsettling_answer_under_kept_ambiguous_key( WC_Order $order, WooPaymentsApiException $exception, bool $is_scheduled_renewal ): bool {
+	private function is_unsettling_answer_under_unresolved_key( WC_Order $order, WooPaymentsApiException $exception, bool $is_scheduled_renewal ): bool {
 		if ( null === $this->get_charge_ambiguity_record( $order ) ) {
 			return false;
 		}
@@ -853,7 +853,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Warn that a kept charge key could not replay the earlier request and no lookup settles what that request did.
+	 * Warn that an unresolved charge key could not replay the earlier request and no lookup settles what that request did.
 	 *
 	 * The new attempt sent a different body (a new card, for example), so it failed instead of replaying. With no record
 	 * of an ambiguous failure under the key (a request cut off mid-send), a record that names no customer to look up, or
@@ -866,7 +866,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param WC_Order $order           Order being charged.
 	 * @param string   $idempotency_key Kept charge key that was refused.
 	 */
-	private function log_kept_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
+	private function log_unresolved_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 			sprintf(
 				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, the record names no customer to look up, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
@@ -983,7 +983,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $exception->has_ambiguous_outcome() ) {
 			$this->record_charge_ambiguity( $order, $customer_id );
-		} elseif ( $is_payment_intent_dispatch && ! $this->is_unsettling_answer_under_kept_ambiguous_key( $order, $exception, $is_scheduled_renewal ) ) {
+		} elseif ( $is_payment_intent_dispatch && ! $this->is_unsettling_answer_under_unresolved_key( $order, $exception, $is_scheduled_renewal ) ) {
 			$data[ self::DEFINITIVE_CHARGE_FAILURE_DATA_KEY ] = true;
 			// Retired now rather than only after the lifecycle: a local failure applying this outcome must not leave the
 			// key for the next attempt, which would get the stored failure back.
@@ -1250,14 +1250,14 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Create or confirm a zero-amount setup intent through native transport.
+	 * Create or confirm a zero-amount setup intent through the WooPayments platform API.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
 	 * @throws WooPaymentsApiException When the provider request fails.
 	 */
-	private function setup_intent_via_native_transport( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+	private function set_up_payment_method_for_zero_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
 		$order              = $context->get_order();
 		$payment_credential = $this->request_builder->payment_credential_from_context( $context );
@@ -1306,7 +1306,7 @@ class WooPaymentsProviderGatewayAdapter {
 		$confirmation_token = WooPaymentsIntentCodec::is_confirmation_token( $payment_credential ) ? $payment_credential : '';
 		$outcome            = WooPaymentsIntentCodec::outcome_from_intention(
 			$result,
-			$this->native_mapping_context( $result, $context, $payment_credential, $customer_id, 'si', $confirmation_token )
+			$this->build_mapping_context( $result, $context, $payment_credential, $customer_id, 'si', $confirmation_token )
 		);
 		$plan               = WooPaymentsOrderEffectPlan::for_setup_intent(
 			$result,
@@ -1434,7 +1434,7 @@ class WooPaymentsProviderGatewayAdapter {
 	}
 
 	/**
-	 * Snapshot runtime facts needed by the pure native codec.
+	 * Snapshot runtime facts needed by the pure intent codec.
 	 *
 	 * @param array<string,mixed>     $result               Provider intent response.
 	 * @param PaymentOperationContext $context              Payment context.
@@ -1444,7 +1444,7 @@ class WooPaymentsProviderGatewayAdapter {
 	 * @param string                  $confirmation_token   Confirmation token.
 	 * @return WooPaymentsIntentMappingContext
 	 */
-	private function native_mapping_context(
+	private function build_mapping_context(
 		array $result,
 		PaymentOperationContext $context,
 		string $payment_credential,

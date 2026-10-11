@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -185,7 +185,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 */
 	public static function exclude_charge_idempotency_key( $data ) {
 		if ( is_array( $data ) ) {
-			unset( $data[ WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META ], $data[ WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META ], $data[ WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META ] );
+			unset( $data[ WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META ], $data[ WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META ], $data[ WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META ] );
 		}
 
 		return $data;
@@ -204,7 +204,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			return $meta_query;
 		}
 
-		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s', '%s')", WooPaymentsProviderGatewayAdapter::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsProviderGatewayAdapter::CHARGE_AMBIGUITY_META, WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META );
+		return $meta_query . sprintf( " AND `meta_key` NOT IN ('%s', '%s', '%s')", WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META );
 	}
 
 	/**

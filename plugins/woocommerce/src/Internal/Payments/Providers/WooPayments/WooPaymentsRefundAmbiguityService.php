@@ -193,7 +193,7 @@ class WooPaymentsRefundAmbiguityService {
 			);
 		}
 
-		$order->update_meta_data( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, $record );
+		$order->update_meta_data( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, $record );
 		$order->save_meta_data();
 
 		$this->log(
@@ -221,7 +221,7 @@ class WooPaymentsRefundAmbiguityService {
 	 * @return array{action:string,key?:string,request?:array{charge:string,amount:int,reason:string,source:string},refund?:array<string,mixed>,code?:string,message?:string}|null A refusal decision, or null to apply the refund to this call.
 	 */
 	public function settle_held_key_answer( WC_Order $order, array $refund ): ?array {
-		$record = $order->get_meta( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, true );
+		$record = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
 		$key    = is_array( $record ) ? (string) ( $record['key'] ?? '' ) : '';
 		$this->clear_record( $order );
 
@@ -406,7 +406,7 @@ class WooPaymentsRefundAmbiguityService {
 			$record['found_refund_id'] = $refund_id;
 			$record['found_amount']    = $refund_amount;
 			$record['found_currency']  = strtolower( (string) ( $refund['currency'] ?? '' ) );
-			$order->update_meta_data( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, $record );
+			$order->update_meta_data( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, $record );
 			$order->save_meta_data();
 			$order->add_order_note(
 				sprintf(
@@ -470,7 +470,7 @@ class WooPaymentsRefundAmbiguityService {
 	 * @return array{order_id:int,charge_id:string,key:string,amount:int,currency:string,request:array{charge:string,amount:int,reason:string,source:string},wc_refund_id:int,failed_at:int,last_failed_at:int,found_refund_id:string,found_amount:int,found_currency:string}|null
 	 */
 	private function read_record( WC_Order $order, string $charge_id ): ?array {
-		$stored = $order->get_meta( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META, true );
+		$stored = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
 		if ( '' === $stored || null === $stored ) {
 			return null;
 		}
@@ -513,7 +513,7 @@ class WooPaymentsRefundAmbiguityService {
 	 * @param WC_Order $order Order being refunded.
 	 */
 	private function clear_record( WC_Order $order ): void {
-		$order->delete_meta_data( WooPaymentsProviderGatewayAdapter::REFUND_AMBIGUITY_META );
+		$order->delete_meta_data( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META );
 		$order->save_meta_data();
 	}
 

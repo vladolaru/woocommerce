@@ -2497,7 +2497,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox A log handler that throws on the error line of a 500 answer still lets the platform error reach the caller.
 	 *
 	 * The refund hold records an ambiguous refund answer only when send_refund() catches a WooPaymentsApiException
-	 * (WooPaymentsProviderGatewayAdapter::send_refund()), so a log handler's own exception must never replace it. The error
+	 * (WooPaymentsPaymentOperationService::send_refund()), so a log handler's own exception must never replace it. The error
 	 * envelope is the one client 11.1.0 parses: error.code, error.message, error.type
 	 * (includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871).
 	 */
