@@ -1355,10 +1355,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 always computes this field as the account's domestic currency (`class-wc-rest-payments-settings-controller.php:574`
 	 * through the gateway's `get_option()` override, `class-wc-payment-gateway-wcpay.php:3090-3091`).
 	 *
-	 * @testdox Should report the account country's currency as the domestic currency, not the account's default currency or a stored value.
+	 * @testdox Should report the account country's currency as the domestic currency, not the account's default currency or a stored value ($_dataName).
+	 * @dataProvider provide_stored_domestic_currency_settings
+	 *
+	 * @param array<string,string> $stored_settings Stored gateway settings.
 	 */
-	public function test_get_settings_reports_the_account_country_currency_as_the_domestic_currency(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_domestic_currency' => 'usd' ) );
+	public function test_get_settings_reports_the_account_country_currency_as_the_domestic_currency( array $stored_settings ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
 		// A CA account whose default currency is USD. The account fields follow the recorded
 		// Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
 		update_option(
@@ -1378,6 +1381,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( 'cad', $this->sut->get_settings()['account_domestic_currency'] );
+	}
+
+	/**
+	 * Stored gateway settings with and without an account_domestic_currency value.
+	 *
+	 * @return array<string,array{0:array<string,string>}>
+	 */
+	public function provide_stored_domestic_currency_settings(): array {
+		return array(
+			'no stored value'  => array( array() ),
+			'stored usd value' => array( array( 'account_domestic_currency' => 'usd' ) ),
+		);
 	}
 
 	/**

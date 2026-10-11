@@ -298,6 +298,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$api_client->method( 'track_order' )->willReturnCallback(
 			static function () use ( &$tracked_orders ): array {
 				++$tracked_orders;
+				// The platform's tracking response, as client 11.1.0 reads it (class-wc-payments-action-scheduler-service.php:195).
 				return array( 'result' => 'success' );
 			}
 		);
