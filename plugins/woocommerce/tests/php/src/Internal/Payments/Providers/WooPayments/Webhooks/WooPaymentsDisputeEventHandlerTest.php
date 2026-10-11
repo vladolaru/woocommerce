@@ -602,6 +602,69 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $event_type event on a charge ID carrying markup writes a note whose link holds the ID percent-encoded, with no injected element.
+	 *
+	 * Provider charge IDs (ch_, py_) are left as they are by the encoding, so the note stays the WooPayments extension's.
+	 *
+	 * @dataProvider provider_dispute_note_events
+	 *
+	 * @param string              $event_type Dispute event type.
+	 * @param array<string,mixed> $dispute    Dispute object fields of the event.
+	 * @param string              $note       Fragment that finds the note.
+	 */
+	public function test_dispute_note_link_encodes_a_malformed_charge_id( string $event_type, array $dispute, string $note ): void {
+		$charge_id = 'ch_x"><script>alert(1)</script><a href="https://example.test/';
+		$order     = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', $charge_id );
+		$order->save();
+
+		$this->sut->process( $event_type, array_merge( $dispute, array( 'charge' => $charge_id ) ) );
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<script', $notes[0]->content );
+		$this->assertStringNotContainsString( 'example.test/"', $notes[0]->content );
+		$this->assertStringContainsString( 'id=' . rawurlencode( $charge_id ) . '"', $notes[0]->content );
+	}
+
+	/**
+	 * Dispute events that write a note linking to the disputed charge.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
+	 */
+	public function provider_dispute_note_events(): array {
+		return array(
+			'created' => array(
+				'charge.dispute.created',
+				array(
+					'id'               => 'dp_markup',
+					'status'           => 'needs_response',
+					'amount'           => 1000,
+					'reason'           => 'fraudulent',
+					'evidence_details' => array( 'due_by' => 1893456000 ),
+				),
+				'Payment has been disputed',
+			),
+			'closed'  => array(
+				'charge.dispute.closed',
+				array(
+					'id'     => 'dp_markup',
+					'status' => 'won',
+				),
+				'Dispute has been closed',
+			),
+			'updated' => array(
+				'charge.dispute.updated',
+				array(
+					'id'     => 'dp_markup',
+					'status' => 'under_review',
+				),
+				'Payment dispute has been updated',
+			),
+		);
+	}
+
+	/**
 	 * @testdox A $status close replayed onto the closed note the WooPayments extension wrote (dispute ID suffix: $with_dispute_id) changes nothing.
 	 *
 	 * Client 11.1.0 writes the note in generate_dispute_closed_note() (class-wc-payments-order-service.php:2516-2558) with

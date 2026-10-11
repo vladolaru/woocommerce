@@ -326,12 +326,13 @@ class WooPaymentsDisputeEventHandler {
 		}
 
 		// As client 11.1.0 writes it (class-wc-payments-webhook-processing-service.php:825-845): the link is not escaped and
-		// carries the charge ID only, so a note the extension wrote counts as the same note, and the other way round.
+		// carries the charge ID only, so a note the extension wrote counts as the same note, and the other way round. The ID
+		// is percent-encoded, which leaves a provider charge ID as it is.
 		$note_without_id = sprintf(
 			/* translators: %1: the dispute message, %2: the dispute details URL */
 			__( '%1$s. See <a href="%2$s">dispute overview</a> for more details.', 'woocommerce' ),
 			$message,
-			add_query_arg( array( 'id' => $charge_id ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) )
+			add_query_arg( array( 'id' => rawurlencode( $charge_id ) ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) )
 		);
 		$note = $this->append_dispute_id_to_note( $note_without_id, $dispute_id );
 
@@ -629,13 +630,16 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Get the dispute details URL.
 	 *
+	 * The notes interpolate it unescaped, as the extension does, so the charge ID is percent-encoded: a provider charge ID
+	 * is left as it is, and one carrying markup cannot leave the link.
+	 *
 	 * @param string $charge_id Charge ID.
 	 * @return string
 	 */
 	private function get_dispute_url( string $charge_id ): string {
 		return Utils::wc_payments_legacy_admin_url(
 			rawurlencode( '/payments/transactions/details' ),
-			array( 'id' => $charge_id )
+			array( 'id' => rawurlencode( $charge_id ) )
 		);
 	}
 
