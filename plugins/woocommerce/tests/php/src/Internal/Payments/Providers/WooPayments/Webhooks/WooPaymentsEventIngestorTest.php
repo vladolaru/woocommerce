@@ -3275,21 +3275,25 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires the refund deleted hook and marks the refunded order failed.
+	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires the refund deleted hook and leaves a $order_status order $expected_status.
+	 *
+	 * Client 11.1.0 marks the order failed only when it is refunded (class-wc-payments-order-service.php:2002-2005).
 	 *
 	 * @dataProvider provider_refund_update_failure_deletes_the_linked_refund
 	 *
-	 * @param string   $status         Refund status in the event.
-	 * @param string   $failure_reason Refund failure reason in the event, '' for none.
-	 * @param string[] $note_fragments Fragments of the note.
+	 * @param string   $status          Refund status in the event.
+	 * @param string   $failure_reason  Refund failure reason in the event, '' for none.
+	 * @param string[] $note_fragments  Fragments of the note.
+	 * @param string   $order_status    Order status before the event.
+	 * @param string   $expected_status Order status after the event.
 	 */
-	public function test_refund_update_failure_deletes_the_linked_refund( string $status, string $failure_reason, array $note_fragments ): void {
+	public function test_refund_update_failure_deletes_the_linked_refund( string $status, string $failure_reason, array $note_fragments, string $order_status, string $expected_status ): void {
 		$order     = $this->create_refundable_woopayments_order( '10.00' );
 		$refund    = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund_id = $refund->get_id();
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
 		$refund->save_meta_data();
-		$order->set_status( 'refunded' );
+		$order->set_status( $order_status );
 		$order->save();
 		$hook_calls              = array();
 		$refund_deleted_callback = function ( int $deleted_refund_id, int $deleted_order_id ) use ( &$hook_calls ): void {
@@ -3315,7 +3319,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
+		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertFalse( wc_get_order( $refund_id ), 'The matched local refund object should be deleted after the provider marks it ' . $status . '.' );
 		$this->assertNull( get_post( $refund_id ), 'The matched local refund post should be deleted after the provider marks it ' . $status . '.' );
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
@@ -3326,12 +3330,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Refund updates that undo a linked local refund.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string[]}>
+	 * @return array<string,array{0:string,1:string,2:string[],3:string,4:string}>
 	 */
 	public function provider_refund_update_failure_deletes_the_linked_refund(): array {
+		$failed = array( 'A refund of', 'unsuccessful', 'WooPayments', 're_123', 'lost or stolen' );
+
 		return array(
-			'failed, lost or stolen card' => array( 'failed', 'lost_or_stolen_card', array( 'A refund of', 'unsuccessful', 'WooPayments', 're_123', 'lost or stolen' ) ),
-			'canceled'                    => array( 'canceled', '', array( 'A refund of', 'cancelled', 'WooPayments', 're_123' ) ),
+			'failed, lost or stolen card'                 => array( 'failed', 'lost_or_stolen_card', $failed, 'refunded', 'failed' ),
+			'canceled'                                    => array( 'canceled', '', array( 'A refund of', 'cancelled', 'WooPayments', 're_123' ), 'refunded', 'failed' ),
+			'failed partial refund on a processing order' => array( 'failed', 'lost_or_stolen_card', $failed, 'processing', 'processing' ),
 		);
 	}
 
@@ -3468,7 +3475,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 0, $order->get_refunds() );
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'Refund of', 'failed', 'insufficient funds in your WooPayments balance' ) );
+		$refund_notes = array_values(
+			array_filter(
+				$this->get_order_notes_containing( $order, 'insufficient funds in your WooPayments balance' ),
+				static fn( $note ): bool => false !== strpos( (string) $note->content, 'Refund of' ) && false !== strpos( (string) $note->content, 'failed' )
+			)
+		);
+		$this->assertCount( 1, $refund_notes );
+		$this->assertSame( $frod_notes, substr_count( (string) $refund_notes[0]->content, 'Future Refunds or Disputes (FROD) balance' ), 'The FROD advice belongs to the refund note.' );
 		$this->assertCount( $frod_notes, $this->get_order_notes_containing( $order, 'Future Refunds or Disputes (FROD) balance' ) );
 	}
 

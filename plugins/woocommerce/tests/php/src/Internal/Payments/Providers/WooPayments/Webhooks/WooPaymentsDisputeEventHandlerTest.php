@@ -91,6 +91,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_charge_id', 'ch_123' );
 		$order->save();
 
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
@@ -203,6 +205,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$make_refund( $order );
 
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
@@ -263,6 +267,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b1)' ) );
 		$this->assertNotEmpty( $this->find_order_note( $order, '(Dispute ID: dp_b2)' ) );
 
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
@@ -277,6 +283,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'dp_b2' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
 		$this->assertNotEmpty( $this->find_order_note( $order, 'The order was not marked as completed because 1 other dispute on this payment is still open.' ) );
 
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
+		// (class-wc-payments-webhook-processing-service.php:748-754).
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
@@ -677,8 +685,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$order->save();
 		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.closed', $status, 'ch_cutover' ) . ' (Dispute ID: dp_cutover)' );
 
-		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
-		// (class-wc-payments-webhook-processing-service.php:748-754), and amount and currency for a lost close.
+		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id, then fetches the
+		// dispute summary (class-wc-payments-webhook-processing-service.php:748-781). Amount and currency are read only by
+		// native, for a lost close whose summary cannot be fetched.
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(

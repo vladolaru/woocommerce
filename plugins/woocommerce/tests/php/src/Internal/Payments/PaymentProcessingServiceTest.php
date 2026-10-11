@@ -4539,7 +4539,10 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The adapter isolates only its remote transport; the production provider, effect applier, and payment lifecycle remain in use.
 	 * The intent carries the fraud outcome and the JSON-encoded fired filters in its metadata, where client 11.1.0 reads them
-	 * (class-wc-payments-order-service.php:2957-2959).
+	 * (class-wc-payments-order-service.php:2957-2959). Its other fields, id, status, currency and the charge's id, currency
+	 * and payment_method_details, are ones the client's deserializers read too (wc-payment-api/class-wc-payments-api-client.php:
+	 * 2392-2435, :3046-3076). Native adds none; the fields those deserializers require and native does not read (created,
+	 * amount, client_secret, charges.total_count) are left out.
 	 *
 	 * @param array<string,string> $ruleset_results Fired fraud-rule results.
 	 * @return WooPaymentsProvider

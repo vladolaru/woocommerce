@@ -1060,9 +1060,11 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a refund event object for a refundable order, as the WooPayments ingestor tests did.
 	 *
-	 * charge.refunded carries the Charge with its refunds list and the store's metadata; client 11.1.0 reads status,
-	 * captured, amount, currency, metadata and refunds.data[0] (class-wc-payments-webhook-processing-service.php:1079-1143).
-	 * charge.refund.updated carries the Refund (:300-353).
+	 * charge.refunded carries the Charge with its refunds list and the store's metadata. Client 11.1.0 reads id, status,
+	 * captured, amount, currency and refunds.data[0], and resolves the order by the charge ID
+	 * (class-wc-payments-webhook-processing-service.php:1079-1143); the metadata's order key is read only by native, whose
+	 * order resolver refuses an order with another key. charge.refund.updated carries the Refund; the client reads id,
+	 * charge, amount, currency and status, and balance_transaction and failure_reason when present (:300-353).
 	 *
 	 * @param string   $event_type Refund event type.
 	 * @param WC_Order $order      Order holding the charge.
