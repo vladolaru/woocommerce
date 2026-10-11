@@ -62,9 +62,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The webhook route is not registered when the plugin owns runtime.
+	 * @testdox The webhook route is not registered when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_route_when_plugin_owns_runtime(): void {
+	public function test_registers_no_route_when_extension_owns_runtime(): void {
 		$this->fake_plugin( true );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
@@ -74,9 +74,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The controller registers POST /wc/v3/payments/webhook when native owns runtime.
+	 * @testdox The controller registers POST /wc/v3/payments/webhook when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_wc_v3_payments_webhook_when_native_owns_runtime(): void {
+	public function test_registers_wc_v3_payments_webhook_when_builtin_owns_runtime(): void {
 		$this->fake_plugin( false );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
@@ -239,7 +239,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund event that fails for a passing reason is not kept or retried: it gets one attempt, as on the client.
+	 * @testdox A refund event that fails for a passing reason is not kept or retried: it gets one attempt, as with the WooPayments extension.
 	 */
 	public function test_failed_event_off_the_retried_list_is_not_kept(): void {
 		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new RuntimeException( 'database error' ) ) );

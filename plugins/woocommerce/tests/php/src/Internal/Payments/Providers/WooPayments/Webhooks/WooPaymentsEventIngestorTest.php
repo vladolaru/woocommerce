@@ -260,7 +260,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event whose mode differs from the store's is skipped with one error line naming it, as on the client.
+	 * @testdox An event whose mode differs from the store's is skipped with one error line naming it, as with the WooPayments extension.
 	 */
 	public function test_webhook_mode_mismatch_logs_the_event(): void {
 		$order = $this->create_woopayments_order();
@@ -859,9 +859,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replay de-duplicates a persisted test-mode legacy-catalog completion note.
+	 * @testdox A replay de-duplicates a persisted test-mode completion note from the WooPayments extension catalog.
 	 */
-	public function test_payment_intent_succeeded_replay_deduplicates_persisted_test_mode_plugin_catalog_note(): void {
+	public function test_payment_intent_succeeded_replay_deduplicates_persisted_test_mode_woopayments_extension_catalog_note(): void {
 		$this->install_test_translations_for_domain(
 			'woocommerce-payments',
 			array(
@@ -1024,7 +1024,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded that completes the order schedules the Fee details job and writes no fee note itself, as the client does.
+	 * @testdox payment_intent.succeeded that completes the order schedules the Fee details job and writes no fee note itself, as the WooPayments extension does.
 	 */
 	public function test_payment_intent_succeeded_schedules_the_fee_details_job(): void {
 		$order = $this->create_woopayments_order();
@@ -1130,7 +1130,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * and payment method IDs, the event's lowercase currency, the mandate, and the envelope's fee and net
 	 * (class-wc-payments-webhook-processing-service.php:510-569, written before any status logic).
 	 */
-	public function test_payment_intent_succeeded_after_checkout_still_writes_the_client_meta(): void {
+	public function test_payment_intent_succeeded_after_checkout_still_writes_the_charge_meta(): void {
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_intent_id', 'pi_123' );
 		$order->save();
@@ -1190,7 +1190,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A replayed payment_intent.succeeded schedules no second Fee details job, as the client returns once the payment note exists.
+	 * @testdox A replayed payment_intent.succeeded schedules no second Fee details job, as the WooPayments extension returns once the payment note exists.
 	 */
 	public function test_replayed_payment_intent_succeeded_schedules_no_fee_details_job(): void {
 		$order = $this->create_woopayments_order();
@@ -1750,9 +1750,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed adopts the exact German plugin-catalog note.
+	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension catalog note.
 	 */
-	public function test_payment_intent_failed_deduplicates_german_plugin_note(): void {
+	public function test_payment_intent_failed_deduplicates_german_woopayments_extension_note(): void {
 		$this->install_test_translations_for_domain(
 			'woocommerce',
 			array(
@@ -1812,9 +1812,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.payment_failed adopts the exact German plugin terminal note with a mapped suffix.
+	 * @testdox payment_intent.payment_failed adopts the exact German WooPayments extension terminal note with a mapped suffix.
 	 */
-	public function test_terminal_payment_intent_failed_deduplicates_german_plugin_note(): void {
+	public function test_terminal_payment_intent_failed_deduplicates_german_woopayments_extension_note(): void {
 		$this->install_test_translations_for_domain(
 			'woocommerce',
 			array(
@@ -2243,9 +2243,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.expired adopts the exact German plugin-catalog note.
+	 * @testdox charge.expired adopts the exact German WooPayments extension catalog note.
 	 */
-	public function test_charge_expired_deduplicates_german_plugin_note(): void {
+	public function test_charge_expired_deduplicates_german_woopayments_extension_note(): void {
 		$this->install_test_translations_for_domain(
 			'woocommerce',
 			array( 'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).' => 'Core-Autorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>).' )
@@ -3254,7 +3254,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Without the Stripe Billing module, $event_type is refused with the client's reason, after the before-delivery hook only, is not marked processed and is not logged here.
+	 * @testdox Without the Stripe Billing module, $event_type is refused with the WooPayments extension's reason, after the before-delivery hook only, is not marked processed and is not logged here.
 	 *
 	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws
 	 * `Invalid_Webhook_Data_Exception` (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), so the
@@ -3266,7 +3266,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $event_type Invoice event type.
 	 * @param string $reason     The client's refusal reason.
 	 */
-	public function test_invoice_event_without_the_stripe_billing_module_is_refused_like_the_client( string $event_type, string $reason ): void {
+	public function test_invoice_event_without_the_stripe_billing_module_is_refused_like_the_woopayments_extension( string $event_type, string $reason ): void {
 		$logger = RecordingWcLogger::install();
 		$sut    = $this->create_ingestor_without_the_stripe_billing_module();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -3315,7 +3315,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Without the Stripe Billing module, an invoice event in the other mode is dropped by the mode check first, as on the client.
+	 * @testdox Without the Stripe Billing module, an invoice event in the other mode is dropped by the mode check first, as with the WooPayments extension.
 	 */
 	public function test_invoice_event_without_the_stripe_billing_module_is_dropped_on_mode_mismatch(): void {
 		$logger = RecordingWcLogger::install();
@@ -3506,7 +3506,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A succeeded intent that carries an invoice and no order ID is left to its invoice event, as on the client.
+	 * @testdox A succeeded intent that carries an invoice and no order ID is left to its invoice event, as with the WooPayments extension.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:968-993`. The recorded renewal intent
 	 * (`Fixtures/platform-invoice-events.json`, `payment_intent_succeeded_with_invoice`) reaches the store about one
@@ -3603,7 +3603,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded notes include explicit currency when native multi-currency has additional currencies.
+	 * @testdox charge.refunded notes include explicit currency when Multi-Currency has additional currencies.
 	 */
 	public function test_charge_refunded_uses_explicit_currency_in_created_refund_notes(): void {
 		$this->enable_core_multi_currency_with_second_currency();
@@ -4084,7 +4084,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refund.updated notes include explicit currency when native multi-currency has additional currencies.
+	 * @testdox charge.refund.updated notes include explicit currency when Multi-Currency has additional currencies.
 	 */
 	public function test_charge_refund_updated_uses_explicit_currency_in_failed_refund_notes(): void {
 		$this->enable_core_multi_currency_with_second_currency();

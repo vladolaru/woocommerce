@@ -94,7 +94,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed refund notes follow the client explicit-price rule.
+	 * @testdox Failed refund notes follow the WooPayments extension's explicit-price rule.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-order-service.php:1969-1972 (failed refund note amount) and
 	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
@@ -107,7 +107,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected_default    Default the filter must receive.
 	 * @param string      $expected_note       Expected plain-text note.
 	 */
-	public function test_failed_refund_note_follows_the_client_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $expected_note ): void {
+	public function test_failed_refund_note_follows_the_woopayments_extension_explicit_price_rule( bool $core_multi_currency, ?string $plugin_flag, ?bool $filter_result, bool $expected_default, string $expected_note ): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
@@ -275,9 +275,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A German plugin-era refund note is adopted without adding the Core-catalog rendering.
+	 * @testdox A German refund note from the WooPayments extension is adopted without adding the Core-catalog rendering.
 	 */
-	public function test_german_plugin_refund_note_followed_by_webhook_converges(): void {
+	public function test_german_woopayments_extension_refund_note_followed_by_webhook_converges(): void {
 		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', false );
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );

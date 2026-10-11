@@ -101,11 +101,11 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A warning whose fields arrive as other scalar types is stored with the client's casts, not refused.
+	 * @testdox A warning whose fields arrive as other scalar types is stored with the WooPayments extension's casts, not refused.
 	 *
 	 * Client 11.1.0 casts actionable, fraud_type and created as it stores them (class-wc-payments-webhook-processing-service.php:900).
 	 */
-	public function test_casts_scalar_fields_of_another_type_as_the_client_does(): void {
+	public function test_casts_scalar_fields_of_another_type_as_the_woopayments_extension_does(): void {
 		$order   = $this->create_woopayments_order();
 		$handler = $this->create_handler();
 
@@ -975,9 +975,9 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should recognize the client's exact persisted note as the same warning across cutover.
+	 * @testdox Should recognize the WooPayments extension's exact persisted note as the same warning across cutover.
 	 */
-	public function test_seeded_plugin_catalog_note_deduplicates_during_cutover(): void {
+	public function test_seeded_woopayments_extension_catalog_note_deduplicates_during_cutover(): void {
 		$order           = $this->create_woopayments_order();
 		$note_service    = new WooPaymentsOrderNoteService();
 		$transaction_url = $note_service->transaction_url( '', 'ch_early_warning' );

@@ -165,9 +165,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the legacy encoded path shape in dispute URLs.
+	 * @testdox Should preserve the encoded wc-admin path shape in dispute URLs.
 	 */
-	public function test_dispute_url_preserves_encoded_legacy_path(): void {
+	public function test_dispute_url_preserves_encoded_wc_admin_path(): void {
 		$url = $this->invoke_private( 'get_dispute_url', array( 'ch_123', 'txn_123' ) );
 
 		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
@@ -176,7 +176,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dispute amounts follow the client explicit-price rule.
+	 * @testdox Dispute amounts follow the WooPayments extension's explicit-price rule.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 (dispute amount) and
 	 * class-wc-payments-explicit-price-formatter.php:55-74,167-190 (Multi-Currency on with a second currency, then the filter).
@@ -191,7 +191,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @param bool        $expected_default    Default the filter must receive.
 	 * @param string      $expected            Expected plain-text amount.
 	 */
-	public function test_formatted_dispute_amount_follows_the_client_explicit_price_rule( bool $core_multi_currency, array $enabled_currencies, ?string $plugin_flag, ?bool $filter_result, string $order_currency, bool $expected_default, string $expected ): void {
+	public function test_formatted_dispute_amount_follows_the_woopayments_extension_explicit_price_rule( bool $core_multi_currency, array $enabled_currencies, ?string $plugin_flag, ?bool $filter_result, string $order_currency, bool $expected_default, string $expected ): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
@@ -819,9 +819,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A closed note written by a pre-suffix plugin version suppresses the replayed close.
+	 * @testdox A closed note written by a pre-suffix WooPayments extension version suppresses the replayed close.
 	 */
-	public function test_plugin_era_closed_note_suppresses_replayed_close(): void {
+	public function test_woopayments_extension_era_closed_note_suppresses_replayed_close(): void {
 		$order = $this->create_disputable_order();
 		$order->set_status( 'on-hold' );
 		$order->save();
@@ -851,9 +851,9 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A created note written by a pre-suffix plugin version suppresses the replayed created event.
+	 * @testdox A created note written by a pre-suffix WooPayments extension version suppresses the replayed created event.
 	 */
-	public function test_plugin_era_created_note_suppresses_replayed_created(): void {
+	public function test_woopayments_extension_era_created_note_suppresses_replayed_created(): void {
 		$order = $this->create_disputable_order();
 
 		$event       = $this->get_created_event_object( 'dp_cutover_created', 'needs_response' );

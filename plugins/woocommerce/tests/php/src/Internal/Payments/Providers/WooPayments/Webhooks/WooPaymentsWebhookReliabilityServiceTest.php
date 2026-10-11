@@ -72,9 +72,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reliability hooks are not registered when the plugin owns runtime.
+	 * @testdox Reliability hooks are not registered when the WooPayments extension owns the runtime.
 	 */
-	public function test_registers_no_actions_when_plugin_owns_runtime(): void {
+	public function test_registers_no_actions_when_extension_owns_runtime(): void {
 		$this->fake_plugin( true );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
@@ -86,9 +86,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Preserved reliability hooks are registered when native owns runtime.
+	 * @testdox Preserved reliability hooks are registered when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_preserved_actions_when_native_owns_runtime(): void {
+	public function test_registers_preserved_actions_when_builtin_owns_runtime(): void {
 		$this->fake_plugin( false );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 
@@ -813,7 +813,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund event that fails gets one attempt, as on the client: no retry is scheduled.
+	 * @testdox A refund event that fails gets one attempt, as with the WooPayments extension: no retry is scheduled.
 	 */
 	public function test_process_event_does_not_retry_an_event_type_off_the_list(): void {
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
@@ -877,7 +877,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refused event is dropped, one error line names it and the job completes, as on the client.
+	 * @testdox A refused event is dropped, one error line names it and the job completes, as with the WooPayments extension.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:136-149`: the stored event is deleted, and an
 	 * `Invalid_Webhook_Data_Exception` is logged as "Failed processing event {id}. Reason: {message}" and not re-thrown.

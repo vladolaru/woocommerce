@@ -18,9 +18,9 @@ class WooPaymentsFailedEventsProviderTest extends WC_Unit_Test_Case {
 	use ProviderTextLogAssertions;
 
 	/**
-	 * @testdox Failed webhook events are fetched from the native API client and normalized.
+	 * @testdox Failed webhook events are fetched from the API client and normalized.
 	 */
-	public function test_get_failed_webhook_events_uses_native_api_client(): void {
+	public function test_get_failed_webhook_events_uses_the_api_client(): void {
 		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Get failed webhook events.
