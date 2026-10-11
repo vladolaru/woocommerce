@@ -43,6 +43,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\G
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\InstallmentsProductStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ResumedOrderShippingRestorer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\SendOnlyCountryNotice;
@@ -366,6 +367,12 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				if ( $apm_capability_status instanceof ApmCapabilityStatus ) {
 					$apm_capability_status->clear();
 				}
+
+				// Clear PWC status.
+				$pwc_product_status = $c->get( 'wcgateway.pwc-product-status' );
+				if ( $pwc_product_status instanceof PWCProductStatus ) {
+					$pwc_product_status->clear();
+				}
 			}
 		);
 
@@ -425,6 +432,9 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 				$installments_product_status = $c->get( 'wcgateway.installments-product-status' );
 				assert( $installments_product_status instanceof InstallmentsProductStatus );
 
+				$pwc_product_status = $c->get( 'wcgateway.pwc-product-status' );
+				assert( $pwc_product_status instanceof PWCProductStatus );
+
 				$contact_module_check = $c->get( 'wcgateway.contact-module.eligibility.check' );
 				assert( is_callable( $contact_module_check ) );
 
@@ -447,6 +457,10 @@ class WCGatewayModule implements ServiceModule, ExtendingModule, ExecutableModul
 
 				$features[ FeaturesDefinition::FEATURE_INSTALLMENTS ] = array(
 					'enabled' => $installments_product_status->is_active(),
+				);
+
+				$features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] = array(
+					'enabled' => $pwc_product_status->is_active(),
 				);
 
 				$features[ FeaturesDefinition::FEATURE_CONTACT_MODULE ] = array(

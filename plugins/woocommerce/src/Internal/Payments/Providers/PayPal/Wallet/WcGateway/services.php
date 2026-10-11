@@ -55,6 +55,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PaymentMethodTitleEnricher;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\RefundFeesUpdater;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ResumedOrderShippingRestorer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\SettingsStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Notice\AuthorizeOrderActionNotice;
@@ -507,6 +508,14 @@ return array(
 	},
 	'wcgateway.installments-product-status'               => static function ( ContainerInterface $container ): InstallmentsProductStatus {
 		return new InstallmentsProductStatus(
+			$container->get( 'settings.flag.is-connected' ),
+			$container->get( 'api.endpoint.partners' ),
+			$container->get( 'api.helper.failure-registry' ),
+			$container->get( 'api.helper.product-status-result-cache' )
+		);
+	},
+	'wcgateway.pwc-product-status'                        => static function ( ContainerInterface $container ): PWCProductStatus {
+		return new PWCProductStatus(
 			$container->get( 'settings.flag.is-connected' ),
 			$container->get( 'api.endpoint.partners' ),
 			$container->get( 'api.helper.failure-registry' ),

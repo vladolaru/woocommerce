@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\A
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
@@ -27,8 +28,8 @@ use WC_Session_Handler;
 
 /**
  * The listener WCGatewayModule::run() registers on woocommerce_paypal_payments_clear_apm_product_status clears the
- * cached product statuses, including the APM capability that Pay Later messaging reads. The module also decides, from
- * the shopper's session, whether an order that carries PayPal meta is still being paid with PayPal.
+ * cached product statuses, including the APM capability that Pay Later messaging reads and the Pay with Crypto answer. The
+ * module also decides, from the shopper's session, whether an order that carries PayPal meta is still being paid with PayPal.
  *
  * The session cases use a real session handler. No case chooses the credit card gateway, which core no longer has: a
  * gateway ID with the "ppcp-" prefix covers the prefix rule.
@@ -38,14 +39,14 @@ use WC_Session_Handler;
 class WCGatewayModuleTest extends WalletTestCase {
 
 	/**
-	 * The result cache shared by the three statuses, as in the real container.
+	 * The result cache shared by the four statuses, as in the real container.
 	 *
 	 * @var ProductStatusResultCache
 	 */
 	private ProductStatusResultCache $status_cache;
 
 	/**
-	 * Register the module's listeners over a container that only knows the three product statuses.
+	 * Register the module's listeners over a container that only knows the four product statuses.
 	 *
 	 * Registration is lazy: run() only adds hooks, and the closures ask the container when they fire.
 	 */
@@ -59,6 +60,7 @@ class WCGatewayModuleTest extends WalletTestCase {
 		$services = array(
 			'wcgateway.helper.dcc-product-status' => $this->make_status( DCCProductStatus::class ),
 			'wcgateway.apm-capability-status'     => $this->make_status( ApmCapabilityStatus::class ),
+			'wcgateway.pwc-product-status'        => $this->make_status( PWCProductStatus::class ),
 			// run() reads the fees renderer eagerly, while registering the order totals hook.
 			'wcgateway.admin.fees-renderer'       => $this->mock( FeesRenderer::class ),
 		);
@@ -122,17 +124,16 @@ class WCGatewayModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave a Pay with Crypto answer in the shared cache alone, as core no longer manages it.
+	 * @testdox Should clear the cached Pay with Crypto answer together with the other product statuses.
 	 */
-	public function test_clear_hook_leaves_a_pay_with_crypto_answer_in_the_cache(): void {
-		// The extension's cache key for Pay with Crypto: core has no class for it, so it stays a literal.
-		$this->status_cache->set( 'products_pwc_enabled', 'yes' );
+	public function test_clear_hook_clears_the_pay_with_crypto_answer(): void {
+		$this->status_cache->set( PWCProductStatus::KEY, 'yes' );
 		$this->status_cache->set( DCCProductStatus::KEY, 'yes' );
 
 		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 
+		$this->assertSame( '', $this->stored_answer( PWCProductStatus::KEY ), 'The Pay with Crypto answer should be gone' );
 		$this->assertSame( '', $this->stored_answer( DCCProductStatus::KEY ), 'The DCC status should be gone' );
-		$this->assertSame( 'yes', $this->stored_answer( 'products_pwc_enabled' ), 'An entry core does not own should stay' );
 	}
 
 	/**

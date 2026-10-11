@@ -16,13 +16,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\A
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\ApmCapabilityStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\DCCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\InstallmentsProductStatus;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\WCGatewayModule;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 
 /**
  * The gateway module answers the merchant features filter from the seller-status capabilities. Pay Later messaging reads
- * the alternative payment methods capability as a proxy, so it follows that capability on its own.
+ * the alternative payment methods capability as a proxy, so it follows that capability on its own. The Pay with Crypto row
+ * follows its own product status.
  *
  * @group paypal-wallet
  */
@@ -37,7 +39,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	 * Run the module over a container holding the given product statuses and return the filter's answer.
 	 *
 	 * @param array $flags     What the statuses report: connected, capability, dcc, dcc_applies, reference, installments,
-	 *                         contact, save. Missing flags are off.
+	 *                         pwc, contact, save. Missing flags are off.
 	 * @param array $features  What the filter receives.
 	 * @return array
 	 */
@@ -50,6 +52,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 				'dcc_applies'  => false,
 				'reference'    => false,
 				'installments' => false,
+				'pwc'          => false,
 				'contact'      => false,
 				'save'         => false,
 			),
@@ -66,6 +69,8 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 		$reference->shouldReceive( 'reference_transaction_enabled' )->andReturn( $flags['reference'] );
 		$installments = $this->mock( InstallmentsProductStatus::class );
 		$installments->shouldReceive( 'is_active' )->andReturn( $flags['installments'] );
+		$pwc = $this->mock( PWCProductStatus::class );
+		$pwc->shouldReceive( 'is_active' )->andReturn( $flags['pwc'] );
 
 		$services = array(
 			'wcgateway.admin.fees-renderer'              => $this->mock( FeesRenderer::class ),
@@ -75,6 +80,7 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 			'api.helpers.dccapplies'                     => $dcc_applies,
 			'wcgateway.apm-capability-status'            => $capability,
 			'wcgateway.installments-product-status'      => $installments,
+			'wcgateway.pwc-product-status'               => $pwc,
 			'wcgateway.contact-module.eligibility.check' => static fn(): bool => $flags['contact'],
 			'save-payment-methods.eligibility.check'     => static fn(): bool => $flags['save'],
 		);
@@ -191,21 +197,32 @@ class MerchantFeaturesFilterTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report exactly the kept feature rows and no Pay with Crypto row.
+	 * @testdox Should report the kept feature rows and the Pay with Crypto row from its product status.
 	 */
-	public function test_the_features_list_has_no_pay_with_crypto_row(): void {
-		$features = $this->features( array() );
+	public function test_the_features_list_has_the_pay_with_crypto_row_from_its_product_status(): void {
+		$features = $this->features( array( 'pwc' => true ) );
 
-		$this->assertArrayNotHasKey( 'pwc', $features );
+		$this->assertTrue( $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] );
+		$this->assertSame( 'pwc', FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO );
 		$this->assertEqualsCanonicalizing(
 			array(
 				FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO,
 				FeaturesDefinition::FEATURE_ADVANCED_CREDIT_AND_DEBIT_CARDS,
 				FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING,
 				FeaturesDefinition::FEATURE_INSTALLMENTS,
+				FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO,
 				FeaturesDefinition::FEATURE_CONTACT_MODULE,
 			),
 			array_keys( $features )
 		);
+	}
+
+	/**
+	 * @testdox Should report the Pay with Crypto row as off when its product status is not active.
+	 */
+	public function test_the_pay_with_crypto_row_is_off_when_its_status_is_not_active(): void {
+		$features = $this->features( array( 'pwc' => false ) );
+
+		$this->assertFalse( $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] );
 	}
 }
