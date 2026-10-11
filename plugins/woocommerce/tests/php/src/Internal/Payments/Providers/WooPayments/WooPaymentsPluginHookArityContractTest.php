@@ -783,7 +783,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		$api_client->init( $this->fake_http_client(), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$customer_service = $this->createStub( WooPaymentsCustomerService::class );
-		$customer_service->method( 'get_customer_id_by_user_id' )->willReturn( 'cus_hook_shape' );
+		$customer_service->method( 'migrate_and_get_customer_id' )->willReturn( 'cus_hook_shape' );
 
 		$token_service = $this->createStub( WooPaymentsTokenService::class );
 		$token_service->method( 'get_or_create_token_for_user' )->willReturn( $token );

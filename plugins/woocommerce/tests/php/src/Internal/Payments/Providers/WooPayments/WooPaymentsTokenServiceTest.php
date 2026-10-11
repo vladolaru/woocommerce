@@ -775,7 +775,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			 * @param int|null $user_id User ID.
 			 * @return string|null
 			 */
-			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 				return null === $user_id ? null : $this->customer_ids_by_user_id[ $user_id ] ?? null;
 			}
 
@@ -1432,7 +1432,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			 * @param int|null $user_id User ID.
 			 * @return string|null
 			 */
-			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 				unset( $user_id );
 				return 'cus_test';
 			}
@@ -1707,7 +1707,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			 * @param int|null $user_id User ID.
 			 * @return string|null
 			 */
-			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 				return null === $user_id ? null : $this->customer_ids_by_user_id[ $user_id ] ?? null;
 			}
 
@@ -2592,7 +2592,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			 * @param int|null $user_id User ID.
 			 * @return string|null
 			 */
-			public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 				unset( $user_id );
 
 				return $this->customer_id;

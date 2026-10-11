@@ -241,9 +241,9 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_customer_id_by_user_id', 'get_payment_methods_for_customer' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id', 'get_payment_methods_for_customer' ) )
 			->getMock();
-		$customer_service->method( 'get_customer_id_by_user_id' )->willReturn( empty( $provider_methods ) ? null : 'cus_surfaces' );
+		$customer_service->method( 'migrate_and_get_customer_id' )->willReturn( empty( $provider_methods ) ? null : 'cus_surfaces' );
 		$customer_service->method( 'get_payment_methods_for_customer' )->willReturnCallback(
 			static function ( string $customer_id, string $type = 'card' ) use ( $provider_methods ): array {
 				unset( $customer_id );

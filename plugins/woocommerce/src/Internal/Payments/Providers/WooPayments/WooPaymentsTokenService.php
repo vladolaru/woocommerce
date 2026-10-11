@@ -316,7 +316,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return;
 		}
 
-		$customer_id = $this->customer_service->get_customer_id_by_user_id( $token->get_user_id() );
+		$customer_id = $this->customer_service->migrate_and_get_customer_id( $token->get_user_id() );
 		if ( null !== $customer_id ) {
 			try {
 				$this->customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
@@ -1015,7 +1015,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$customer_service = $this->customer_service;
 
 		try {
-			$customer_id = $customer_service->get_customer_id_by_user_id( $user_id );
+			$customer_id = $customer_service->migrate_and_get_customer_id( $user_id );
 			if ( null === $customer_id ) {
 				return $tokens;
 			}

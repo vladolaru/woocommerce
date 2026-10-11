@@ -890,7 +890,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 			// The My Account form creates the customer before the SetupIntent, so a user without one cannot own the
 			// intent; the client refuses before reading it (client 11.1.0 gw:4434-4439).
-			$user_customer = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
+			$user_customer = (string) $this->get_customer_service()->migrate_and_get_customer_id( $user_id );
 			if ( '' === $user_customer ) {
 				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}

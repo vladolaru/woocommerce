@@ -236,7 +236,7 @@ async function readProviderPaymentMethodIds(
 ): Promise< string[] > {
 	const providerCustomerId = await wpEvalJson< string >( String.raw`
 		$service = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService::class );
-		return (string) $service->get_customer_id_by_user_id( ${ customerId } );
+		return (string) $service->migrate_and_get_customer_id( ${ customerId } );
 	` );
 	const methods = (
 		await restApi.get(

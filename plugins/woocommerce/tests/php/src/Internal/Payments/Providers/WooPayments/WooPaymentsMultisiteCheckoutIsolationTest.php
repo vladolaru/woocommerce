@@ -559,7 +559,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		$this->assertSame( $fixture['country'], $account_service->get_account_country() );
 		$this->assertSame( 'live', $account_service->get_mode() );
 		$this->assertSame( 'yes', $account_service->get_gateway_setting( 'saved_cards' ) );
-		$this->assertSame( 'cus_' . $slug, $customer_service->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_' . $slug, $customer_service->migrate_and_get_customer_id( $user_id ) );
 		$this->assertSame( $fixture['generation'], $cutover_store->get_record()['generation'] ?? null );
 		$this->assertSame( 'pm_' . $slug, $token_service->resolve_payment_method_id_from_token_id( (string) $fixture['token_id'], $user_id ) );
 

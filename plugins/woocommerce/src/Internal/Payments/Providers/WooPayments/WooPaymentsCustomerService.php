@@ -193,7 +193,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_order( WC_Order $order ): string {
-		return $this->resolve_customer_id_for_order( $order, true );
+		return $this->get_or_create_customer_id( $order, true );
 	}
 
 	/**
@@ -205,17 +205,17 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_subscription_payment_method_change( WC_Order $order ): string {
-		return $this->resolve_customer_id_for_order( $order, false );
+		return $this->get_or_create_customer_id( $order, false );
 	}
 
 	/**
-	 * Resolve a customer ID and optionally refresh an existing customer from the order.
+	 * Get or create the customer ID for an order, updating an existing customer from the order when asked.
 	 *
 	 * @param WC_Order $order                  Order being charged.
 	 * @param bool     $should_update_customer Whether an existing customer should be refreshed.
 	 * @return string
 	 */
-	private function resolve_customer_id_for_order( WC_Order $order, bool $should_update_customer ): string {
+	private function get_or_create_customer_id( WC_Order $order, bool $should_update_customer ): string {
 
 		$order_customer_id = (string) $order->get_meta( '_stripe_customer_id', true );
 		if ( '' !== $order_customer_id ) {
@@ -223,7 +223,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		}
 
 		$user_id     = $this->get_order_user_id( $order );
-		$customer_id = $this->get_customer_id_by_user_id( $user_id );
+		$customer_id = $this->migrate_and_get_customer_id( $user_id );
 
 		if ( null !== $customer_id ) {
 			return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
@@ -245,7 +245,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		$acquired_lock = '' !== $lock_key && wp_cache_add( $lock_key, 1, 'woopayments', 10 );
 
 		if ( '' !== $lock_key && ! $acquired_lock ) {
-			$customer_id = $this->get_customer_id_by_user_id( $user_id );
+			$customer_id = $this->migrate_and_get_customer_id( $user_id );
 			if ( null !== $customer_id ) {
 				// The winning request already created and persisted the customer.
 				return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
@@ -318,7 +318,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_user( int $user_id ): string {
-		$customer_id = $this->get_customer_id_by_user_id( $user_id );
+		$customer_id = $this->migrate_and_get_customer_id( $user_id );
 		if ( null !== $customer_id ) {
 			return $customer_id;
 		}
@@ -468,7 +468,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the persisted customer ID for a user or guest checkout.
+	 * Get a user's or guest's customer ID, moving a deprecated user option to the current mode's option when that one is empty.
 	 *
 	 * Not a pure read: when the mode-aware option is missing, it migrates the deprecated
 	 * `_wcpay_customer_id` user option to the live or test option and deletes the deprecated one.
@@ -477,7 +477,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @param int|null $user_id WordPress user ID or null for guests.
 	 * @return string|null
 	 */
-	public function get_customer_id_by_user_id( ?int $user_id ): ?string {
+	public function migrate_and_get_customer_id( ?int $user_id ): ?string {
 		if ( null === $user_id || 0 === $user_id ) {
 			$customer_id = WC()->session ? WC()->session->get( self::CUSTOMER_ID_SESSION_KEY ) : null;
 			return is_string( $customer_id ) && '' !== $customer_id ? $customer_id : null;

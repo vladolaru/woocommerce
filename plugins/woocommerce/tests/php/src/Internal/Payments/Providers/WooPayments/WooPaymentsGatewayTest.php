@@ -2208,10 +2208,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
 		$customer_service
-			->method( 'get_customer_id_by_user_id' )
+			->method( 'migrate_and_get_customer_id' )
 			->with( $user_id )
 			->willReturn( 'cus_me' );
 
@@ -2265,10 +2265,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
 		$customer_service
-			->method( 'get_customer_id_by_user_id' )
+			->method( 'migrate_and_get_customer_id' )
 			->with( $user_id )
 			->willReturn( 'cus_me' );
 
@@ -2366,9 +2366,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	private function create_customer_service_for_user( int $user_id, ?string $customer_id ): WooPaymentsCustomerService {
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$customer_service->method( 'get_customer_id_by_user_id' )->with( $user_id )->willReturn( $customer_id );
+		$customer_service->method( 'migrate_and_get_customer_id' )->with( $user_id )->willReturn( $customer_id );
 
 		return $customer_service;
 	}

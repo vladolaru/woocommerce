@@ -262,7 +262,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), true );
 
-		$this->assertNull( $sut->get_customer_id_by_user_id( $user_id ), 'A live-account legacy ID must not resolve as the test-mode customer.' );
+		$this->assertNull( $sut->migrate_and_get_customer_id( $user_id ), 'A live-account legacy ID must not resolve as the test-mode customer.' );
 
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ), 'A live account\'s legacy customer must land under the live key regardless of the store mode.' );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
@@ -278,7 +278,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), true );
 
-		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ) );
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
 	}
@@ -292,7 +292,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), false );
 
-		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ) );
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
@@ -302,7 +302,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$live_mode_sut = $this->create_sut( false, $this->create_customer_api_client( array() ), false );
 
-		$this->assertNull( $live_mode_sut->get_customer_id_by_user_id( $other_user_id ), 'A test-account legacy ID must not resolve as the live-mode customer.' );
+		$this->assertNull( $live_mode_sut->migrate_and_get_customer_id( $other_user_id ), 'A test-account legacy ID must not resolve as the live-mode customer.' );
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $other_user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $other_user_id ) );
 	}
@@ -316,7 +316,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null );
 
-		$this->assertSame( 'cus_legacy', $sut->get_customer_id_by_user_id( $user_id ), 'Unknown account liveness must be treated as live to avoid losing live customer data.' );
+		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ), 'Unknown account liveness must be treated as live to avoid losing live customer data.' );
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
@@ -332,7 +332,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), true );
 
-		$this->assertNull( $sut->get_customer_id_by_user_id( $user_id ) );
+		$this->assertNull( $sut->migrate_and_get_customer_id( $user_id ) );
 		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ), 'The legacy option must survive when the migrated write is not confirmed.' );
 	}
 
@@ -420,7 +420,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		global $wpdb;
 		$this->assertSame( 'cus_network', get_user_meta( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'Under network saved cards the customer ID must live under the unprefixed (network-wide) key.' );
 		$this->assertSame( '', get_user_meta( $user_id, $wpdb->get_blog_prefix() . WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, true ), 'No per-site copy should be written in network mode.' );
-		$this->assertSame( 'cus_network', $sut->get_customer_id_by_user_id( $user_id ), 'Reads must resolve the network-wide value through the get_user_option fallback.' );
+		$this->assertSame( 'cus_network', $sut->migrate_and_get_customer_id( $user_id ), 'Reads must resolve the network-wide value through the get_user_option fallback.' );
 	}
 
 	/**
@@ -593,13 +593,13 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
 
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
 		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// The fast-path read misses; the re-read after losing the lock finds the
 		// ID that the winning concurrent request just persisted.
-		$sut->method( 'get_customer_id_by_user_id' )
+		$sut->method( 'migrate_and_get_customer_id' )
 			->willReturnOnConsecutiveCalls( null, 'cus_existing' );
 
 		// Simulate another concurrent request already holding the creation lock.
@@ -631,10 +631,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
 
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
 		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
-		$sut->method( 'get_customer_id_by_user_id' )->willReturnOnConsecutiveCalls( null, 'cus_existing' );
+		$sut->method( 'migrate_and_get_customer_id' )->willReturnOnConsecutiveCalls( null, 'cus_existing' );
 
 		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
 
@@ -663,13 +663,13 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
 
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->onlyMethods( array( 'get_customer_id_by_user_id' ) )
+			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
 		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// Both the fast-path read and the re-read after losing the lock miss: the
 		// lock holder has not persisted the ID yet, so this request must create.
-		$sut->method( 'get_customer_id_by_user_id' )->willReturn( null );
+		$sut->method( 'migrate_and_get_customer_id' )->willReturn( null );
 
 		// Simulate another concurrent request already holding the creation lock.
 		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );

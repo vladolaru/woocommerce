@@ -180,7 +180,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return;
 		}
 
-		$customer_id = $this->customer_service->get_customer_id_by_user_id( get_current_user_id() );
+		$customer_id = $this->customer_service->migrate_and_get_customer_id( get_current_user_id() );
 		if ( null === $customer_id ) {
 			return;
 		}
@@ -304,7 +304,7 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 			return $this->account_service->get_account_id();
 		}
 
-		$customer_id = $this->customer_service->get_customer_id_by_user_id( get_current_user_id() );
+		$customer_id = $this->customer_service->migrate_and_get_customer_id( get_current_user_id() );
 
 		return null !== $customer_id ? $customer_id : '';
 	}
