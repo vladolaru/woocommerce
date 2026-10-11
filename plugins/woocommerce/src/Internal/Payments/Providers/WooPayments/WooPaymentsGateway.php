@@ -2539,6 +2539,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->supports = array_values( array_unique( $this->supports ) );
+
+		// The controller attaches the subscription hooks on plugins_loaded on connected and active stores. A card gateway
+		// built earlier (before WooCommerce builds its mailer), or on another tier through the compat facade, attaches
+		// them too; WordPress keeps one copy of each identical callback.
+		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id && $this->is_subscriptions_enabled() && wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
+			$this->get_subscriptions_controller()->handle_plugins_loaded();
+		}
 	}
 
 	/**

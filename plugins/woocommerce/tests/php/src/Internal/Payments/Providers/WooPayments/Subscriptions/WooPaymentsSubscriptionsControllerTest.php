@@ -348,6 +348,55 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A card gateway built before the renewal root attaches registers the failed-renewal emails for a mailer built in the same request.
+	 *
+	 * WooCommerce builds its email classes once, when the mailer is first created (`includes/class-wc-emails.php:59-63`),
+	 * so a plugin that builds the gateway and the mailer before `plugins_loaded` priority 11 would miss them.
+	 */
+	public function test_gateway_built_before_the_root_registers_the_failed_renewal_emails(): void {
+		global $wp_actions;
+
+		$this->load_subscriptions();
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
+		unset( $wp_actions['plugins_loaded'] );
+		wc_get_container()->get( WooPaymentsSubscriptionsController::class )->register();
+		$mailer = new \ReflectionProperty( \WC_Emails::class, 'instance' );
+		$mailer->setAccessible( true );
+		$original_mailer = $mailer->getValue();
+		$mailer->setValue( null, null );
+
+		try {
+			new WooPaymentsGateway();
+			$emails = WC()->mailer()->get_emails();
+		} finally {
+			$mailer->setValue( null, $original_mailer );
+		}
+
+		$this->assertArrayHasKey( 'WC_Payments_Email_Failed_Renewal_Authentication', $emails );
+		$this->assertArrayHasKey( 'WC_Payments_Email_Failed_Authentication_Retry', $emails );
+	}
+
+	/**
+	 * @testdox On a built-in-owned store in the available tier, a card gateway the compat facade builds refuses a renewal across test and live mode.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_available_tier_gateway_from_the_compat_facade_refuses_a_renewal_across_modes(): void {
+		$this->load_subscriptions();
+		$this->arrange_ownership( false, true, WooPaymentsSetupTier::AVAILABLE );
+		if ( ! class_exists( 'WC_Payments', false ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-compat/class-wc-payments.php';
+		}
+		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
+		$this->assertInstanceOf( WooPaymentsGateway::class, \WC_Payments::get_gateway() );
+		$this->use_order_mode( 'prod' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.' );
+		apply_filters( 'wcs_renewal_order_items', array( 'line_item_a' ), new WC_Order(), $this->create_subscription_paid_in_mode( 'test' ) );
+	}
+
+	/**
 	 * @testdox A store where nobody owns payments attaches no renewal handler when the compat facade builds the gateway.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled

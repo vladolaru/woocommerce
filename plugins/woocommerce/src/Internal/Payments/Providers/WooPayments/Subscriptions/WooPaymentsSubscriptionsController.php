@@ -87,6 +87,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	/**
 	 * Attach the renewal hooks when Subscriptions is available.
 	 *
+	 * The card gateway calls it too when it is built; attaching twice adds nothing, since every callback is the same.
+	 *
 	 * @internal
 	 */
 	public function handle_plugins_loaded(): void {
