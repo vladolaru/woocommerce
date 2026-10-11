@@ -2551,6 +2551,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		if ( 'lookup_throws' === $refusal ) {
 			$intent_lookup->willThrowException( new \RuntimeException( 'Unexpected failure.' ) );
 		} else {
+			// The subset of the SetupIntent response that add_payment_method() reads, as client 11.1.0 maps it
+			// (includes/wc-payment-api/class-wc-payments-api-client.php:2457-2469).
 			$intent_lookup->willReturn(
 				array_filter(
 					array(
