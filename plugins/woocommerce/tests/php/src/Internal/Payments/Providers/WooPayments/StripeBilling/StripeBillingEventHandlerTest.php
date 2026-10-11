@@ -590,7 +590,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox On WooCommerce Subscriptions before 7.9.0, a failed-payment update whose renewal is the subscription's last order goes through payment_failed(), as the client does.
+	 * @testdox On WooCommerce Subscriptions before 7.9.0, a failed-payment update whose renewal is the subscription's last order goes through payment_failed(), as the WooPayments extension does.
 	 */
 	public function test_failed_invoice_update_for_the_last_renewal_uses_payment_failed_before_wcs_7_9(): void {
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::BEFORE_RELATED_ORDER_FAILURE ] = true;

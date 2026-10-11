@@ -88,7 +88,7 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A customer with subscriptions in another currency fails with that currency, as the client's Cannot_Combine_Currencies_Exception.
+	 * @testdox A customer with subscriptions in another currency fails with that currency, as the WooPayments extension's Cannot_Combine_Currencies_Exception.
 	 */
 	public function test_mixed_currencies_carry_the_existing_currency(): void {
 		$entry       = $this->get_entry( 'error_combine_currencies' );
@@ -106,7 +106,7 @@ class StripeBillingApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An ID that could change the request path is refused before any request, as the client does.
+	 * @testdox An ID that could change the request path is refused before any request, as the WooPayments extension does.
 	 */
 	public function test_unsafe_id_is_refused_before_the_request(): void {
 		list( $sut, $http_client ) = $this->make_sut( $this->get_entry( 'cancel_subscription' ) );

@@ -78,9 +78,9 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not load while the WooPayments plugin owns payments.
+	 * @testdox Should not load while the WooPayments extension owns payments.
 	 */
-	public function test_does_not_load_while_the_plugin_owns_payments(): void {
+	public function test_does_not_load_while_the_extension_owns_payments(): void {
 		$this->load_subscriptions();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
 
@@ -375,15 +375,15 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	/**
 	 * Build and register the module with the given ownership decision.
 	 *
-	 * @param bool $native_owns Whether native owns payments.
+	 * @param bool $builtin_owns Whether the built-in WooPayments owns payments.
 	 * @return WooPaymentsStripeBillingModule
 	 */
-	private function register_module( bool $native_owns ): WooPaymentsStripeBillingModule {
+	private function register_module( bool $builtin_owns ): WooPaymentsStripeBillingModule {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owns );
 
 		$sut = new WooPaymentsStripeBillingModule();
 		$sut->init( $arbiter );
