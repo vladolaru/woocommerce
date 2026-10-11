@@ -95,16 +95,16 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A native-owned $state store has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
-	 * @dataProvider native_owned_states
+	 * @testdox A $state store the built-in WooPayments owns has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
+	 * @dataProvider builtin_owned_states
 	 *
 	 * @param string $state Stored native tier.
 	 */
-	public function test_native_owned_store_has_renewal_handlers_after_init( string $state ): void {
+	public function test_builtin_owned_store_has_renewal_handlers_after_init( string $state ): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, $state );
 
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertTrue( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "The $gateway_id renewal handler must be attached." );
@@ -145,21 +145,21 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $label store has no native renewal handler and no native failed-renewal email after init.
-	 * @dataProvider stores_without_native_renewals
+	 * @testdox A $label store has no built-in renewal handler and no built-in failed-renewal email after init.
+	 * @dataProvider stores_without_builtin_renewals
 	 *
-	 * @param string $label        Case label.
-	 * @param bool   $plugin_owned Whether the WooPayments plugin is active.
-	 * @param bool   $native       Whether native payments is enabled.
-	 * @param string $state        Stored native tier.
+	 * @param string $label           Case label.
+	 * @param bool   $extension_owned Whether the WooPayments plugin is active.
+	 * @param bool   $builtin_enabled Whether the built-in WooPayments is enabled.
+	 * @param string $state           Stored native tier.
 	 */
-	public function test_store_without_native_ownership_has_no_native_renewal_handlers( string $label, bool $plugin_owned, bool $native, string $state ): void {
+	public function test_store_without_builtin_ownership_has_no_renewal_handlers( string $label, bool $extension_owned, bool $builtin_enabled, string $state ): void {
 		unset( $label );
 		$this->load_subscriptions();
-		$this->arrange_ownership( $plugin_owned, $native, $state );
+		$this->arrange_ownership( $extension_owned, $builtin_enabled, $state );
 
-		$this->register_native_payments_and_run_init();
-		if ( $plugin_owned ) {
+		$this->run_payments_bootstrap_and_init();
+		if ( $extension_owned ) {
 			// Other code can still build the native card gateway, for example the legacy facade; it must not attach either.
 			new WooPaymentsGateway();
 		}
@@ -171,13 +171,13 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A scheduled renewal on a connected store with the gateway disabled finds the native gateway and reaches the native handler.
+	 * @testdox A scheduled renewal on a connected store with the gateway disabled finds the WooPayments gateway and reaches the subscriptions controller once.
 	 */
-	public function test_scheduled_renewal_reaches_the_native_handler(): void {
+	public function test_scheduled_renewal_reaches_the_subscriptions_controller(): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
 		$controller = $this->install_spy_controller();
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 		$this->reload_payment_gateways();
 		list( $subscription, $renewal_order ) = $this->create_subscription_with_renewal_order();
 
@@ -221,7 +221,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
 		$controller = $this->install_spy_controller();
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 		$this->reload_payment_gateways();
 		list( , $renewal_order ) = $this->create_subscription_with_renewal_order();
 
@@ -232,9 +232,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The renewal root attaches on plugins_loaded priority 11 when WooCommerce loads earlier, as the client does.
+	 * @testdox The renewal root attaches on plugins_loaded priority 11 when WooCommerce loads earlier, as the WooPayments extension does.
 	 */
-	public function test_renewal_root_attaches_at_the_client_timing(): void {
+	public function test_renewal_root_attaches_at_the_woopayments_extension_timing(): void {
 		global $wp_actions;
 
 		$this->load_subscriptions();
@@ -252,11 +252,11 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store where nobody owns payments attaches no renewal handler when the legacy facade builds the gateway.
+	 * @testdox A store where nobody owns payments attaches no renewal handler when the compat facade builds the gateway.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_owner_none_gateway_from_the_legacy_facade_attaches_no_handler(): void {
+	public function test_owner_none_gateway_from_the_compat_facade_attaches_no_handler(): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, false, WooPaymentsSetupTier::CONNECTED );
 		if ( ! class_exists( 'WC_Payments', false ) ) {
@@ -301,7 +301,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A staging copy does not refuse renewals over the mode, as in the client.
+	 * @testdox A staging copy does not refuse renewals over the mode, as in the WooPayments extension.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -310,7 +310,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		require_once __DIR__ . '/../Fixtures/DuplicateSiteSubscriptionsStaging.php';
 		class_alias( \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\DuplicateSiteSubscriptionsStaging::class, 'WCS_Staging' );
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 		$this->use_order_mode( 'prod' );
 		$items = array( 'line_item_a' );
 
@@ -333,7 +333,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	public function test_subscriptions_copies_leave_out_the_charge_idempotency_key(): void {
 		$this->load_subscriptions( true );
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 
 		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
 			$data = array(
@@ -370,7 +370,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	public function test_subscriptions_without_the_data_copier_leave_out_the_charge_idempotency_key(): void {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::ACTIVE );
-		$this->register_native_payments_and_run_init();
+		$this->run_payments_bootstrap_and_init();
 		$query = 'SELECT `meta_key`, `meta_value` FROM wp_postmeta WHERE `post_id` = 123';
 
 		foreach ( array( 'subscription', 'parent', 'renewal_order', 'resubscribe_order' ) as $copy_type ) {
@@ -1449,7 +1449,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/** @return array<string,array{string}> */
-	public static function native_owned_states(): array {
+	public static function builtin_owned_states(): array {
 		return array(
 			'connected, gateway disabled' => array( WooPaymentsSetupTier::CONNECTED ),
 			'active'                      => array( WooPaymentsSetupTier::ACTIVE ),
@@ -1457,7 +1457,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/** @return array<string,array{string,bool,bool,string}> */
-	public static function stores_without_native_renewals(): array {
+	public static function stores_without_builtin_renewals(): array {
 		return array(
 			'plugin-owned, native tier clamped' => array( 'plugin-owned', true, true, WooPaymentsSetupTier::ACTIVE ),
 			'plugin-owned, native not enabled'  => array( 'plugin-owned', true, false, WooPaymentsSetupTier::DISABLED ),
@@ -1581,17 +1581,17 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange payments ownership and the stored tier for a fresh request.
 	 *
-	 * @param bool   $plugin_owned Whether the WooPayments plugin is active.
-	 * @param bool   $native       Whether native payments is enabled.
-	 * @param string $state        Stored native tier.
+	 * @param bool   $extension_owned Whether the WooPayments plugin is active.
+	 * @param bool   $builtin_enabled Whether the built-in WooPayments is enabled.
+	 * @param string $state           Stored native tier.
 	 */
-	private function arrange_ownership( bool $plugin_owned, bool $native, string $state ): void {
+	private function arrange_ownership( bool $extension_owned, bool $builtin_enabled, string $state ): void {
 		$active_plugins = array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
-		if ( $plugin_owned ) {
+		if ( $extension_owned ) {
 			$active_plugins[] = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		}
 		update_option( 'active_plugins', $active_plugins );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $native ? '__return_true' : '__return_false' );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_enabled ? '__return_true' : '__return_false' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
@@ -1601,7 +1601,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * Run the native payments bootstrap for a shopper request, as WooCommerce does when it loads, then run the `init`
 	 * callbacks it added. The rest of `init` already ran when the test suite loaded WordPress.
 	 */
-	private function register_native_payments_and_run_init(): void {
+	private function run_payments_bootstrap_and_init(): void {
 		global $wp_filter;
 
 		$before = isset( $wp_filter['init'] ) ? $wp_filter['init']->callbacks : array();

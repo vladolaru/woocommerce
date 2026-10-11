@@ -50,7 +50,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should register the WCS admin payment-method hooks for native WooPayments.
+	 * @testdox Should register the WCS admin payment-method hooks for WooPayments.
 	 */
 	public function test_register_hooks_registers_subscription_admin_callbacks(): void {
 		$this->sut->register_hooks();
@@ -126,7 +126,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should reject invalid WCS admin token metadata for native WooPayments.
+	 * @testdox Should reject invalid WCS admin token metadata for WooPayments.
 	 */
 	public function test_validate_subscription_payment_meta_rejects_invalid_tokens(): void {
 		$user_id      = self::factory()->user->create();
@@ -226,7 +226,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	/**
 	 * @testdox Should update the subscription method and token when WCS changes the default payment token.
 	 */
-	public function test_update_subscription_token_sets_native_gateway_token_and_payment_meta(): void {
+	public function test_update_subscription_token_sets_woopayments_gateway_token_and_payment_meta(): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
 		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
@@ -334,7 +334,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should display the saved token for native WooPayments subscriptions.
+	 * @testdox Should display the saved token for WooPayments subscriptions.
 	 */
 	public function test_renders_subscription_payment_method_from_saved_token(): void {
 		$user_id      = self::factory()->user->create();
@@ -434,7 +434,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should stop WCS from updating subscriptions when native WooPayments needs to process a new payment method.
+	 * @testdox Should stop WCS from updating subscriptions when WooPayments needs to process a new payment method.
 	 */
 	public function test_update_payment_method_for_subscriptions_stops_new_payment_methods(): void {
 		$subscription = $this->create_subscription_order( self::factory()->user->create() );
@@ -450,7 +450,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox A saved-card change notes the card the shopper posted, in the client's format, while the subscription still carries the old card last.
+	 * @testdox A saved-card change notes the card the shopper posted, in the WooPayments extension's format, while the subscription still carries the old card last.
 	 *
 	 * Task 6.3 R3: WCS writes this note before the payment runs, so the last token is still the previous card; native named it as the new one.
 	 */
@@ -481,7 +481,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox A new-card change notes the gateway title with the new card's last four, as the client builds it from the payment method.
+	 * @testdox A new-card change notes the gateway title with the new card's last four, as the WooPayments extension builds it from the payment method.
 	 */
 	public function test_new_card_change_names_the_gateway_title_and_last_four(): void {
 		$user_id      = self::factory()->user->create();
