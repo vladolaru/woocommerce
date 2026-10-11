@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use WC_Form_Handler;
 use WC_Payment_Gateway;
 use WC_Rate_Limiter;
@@ -79,7 +79,7 @@ class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
 	 * @testdox Should surface the WooPayments error only from the WooPayments gateway itself, proving the isolation assertion is not vacuous.
 	 */
 	public function test_woopayments_gateway_still_reports_its_own_missing_setup_intent(): void {
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$result = $gateway->add_payment_method();
 

@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -182,9 +182,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Build the card gateway on the given checkout assets, with saved cards on, so it adds its classic checkout fallback hooks.
 	 *
 	 * @param WooPaymentsCheckoutAssets $assets Checkout assets under test.
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_card_gateway( WooPaymentsCheckoutAssets $assets ): NativeWooPaymentsGateway {
+	private function create_card_gateway( WooPaymentsCheckoutAssets $assets ): WooPaymentsGateway {
 		$this->reset_classic_checkout_fallback_hooks_flag();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array( 'saved_cards' => 'yes' ) );
@@ -192,7 +192,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$provider = $this->createMock( WooPaymentsProvider::class );
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $this->createMock( PaymentProcessingService::class ), $provider, $assets );
 
 		return $gateway;
@@ -202,7 +202,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * Let the next card gateway add its classic checkout fallback hooks again.
 	 */
 	private function reset_classic_checkout_fallback_hooks_flag(): void {
-		$hooks_added = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$hooks_added = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$hooks_added->setAccessible( true );
 		$hooks_added->setValue( null, false );
 	}

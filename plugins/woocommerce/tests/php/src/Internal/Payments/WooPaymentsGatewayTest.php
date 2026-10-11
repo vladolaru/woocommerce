@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -52,9 +52,9 @@ use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the NativeWooPaymentsGateway class.
+ * Tests for the WooPaymentsGateway class.
  */
-class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
+class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
@@ -122,7 +122,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription_handlers = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$subscription_handlers->setAccessible( true );
 		$subscription_handlers->setValue( null, false );
-		$classic_checkout_fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$classic_checkout_fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$classic_checkout_fallback_hooks->setAccessible( true );
 		$classic_checkout_fallback_hooks->setValue( null, false );
 		remove_all_filters( 'woocommerce_email_classes' );
@@ -166,7 +166,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'saved_cards' => 'no' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $gateway->id );
 				$this->assertSame( 'woocommerce_woocommerce_payments_settings', $gateway->get_option_key() );
@@ -208,7 +208,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 			$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 			$gateway->handle_init();
 
@@ -235,7 +235,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 		$gateway->handle_init();
 
@@ -275,7 +275,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway();
+			$gateway = new WooPaymentsGateway();
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertFalse( $gateway->is_available(), 'EUR store must be unavailable when the account only supports usd.' );
@@ -343,7 +343,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertSame( $expected, $gateway->is_available() );
@@ -400,7 +400,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertFalse( $gateway->is_available() );
@@ -447,9 +447,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
+			$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
-			$card_gateway = new NativeWooPaymentsGateway();
+			$card_gateway = new WooPaymentsGateway();
 			$card_gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 			$this->assertTrue( $gateway->is_available(), 'Bancontact is offered at checkout.' );
 
@@ -538,9 +538,9 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$card_gateway = new NativeWooPaymentsGateway();
+			$card_gateway = new WooPaymentsGateway();
 			$card_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
-			$ideal_gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'ideal' ) );
+			$ideal_gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'ideal' ) );
 			$ideal_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets, null, $account_service );
 			WC()->payment_gateways()->payment_gateways = array(
 				$card_gateway->id  => $card_gateway,
@@ -583,7 +583,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'enabled' => 'yes' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertTrue( $gateway->is_saved_cards_enabled() );
 				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
@@ -612,7 +612,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 					'saved_cards' => 'yes',
 				),
 				function () use ( $definition ): void {
-					$gateway = new NativeWooPaymentsGateway( $definition );
+					$gateway = new WooPaymentsGateway( $definition );
 
 					$this->assertFalse( $gateway->is_saved_cards_enabled() );
 					$this->assertFalse( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
@@ -664,10 +664,10 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $card_definition );
+			$gateway = new WooPaymentsGateway( $card_definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
-			$payment_method_definition = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'payment_method_definition' );
+			$payment_method_definition = new \ReflectionProperty( WooPaymentsGateway::class, 'payment_method_definition' );
 			$payment_method_definition->setAccessible( true );
 			$availability_matrix = array(
 				'USD/Card'                 => array( 'USD', $card_definition, true ),
@@ -712,7 +712,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'PL', 'p24_payments', true, 'pln' ) );
 
 			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'p24', $gateway->id );
@@ -770,7 +770,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( $account_country, $capability_key, true, $account_default_currency ) );
 
 			$this->assertTrue( $gateway->is_available(), "{$payment_method_id} should be admitted for a {$account_country} merchant accepting {$currency}." );
@@ -821,7 +821,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
+			$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'bancontact_payments', true ) );
 
 			$this->assertSame( $expected, $gateway->is_available() );
@@ -909,7 +909,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'BE', 'bancontact_payments' ) );
 
 			$this->assertFalse( $gateway->is_available() );
@@ -948,7 +948,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertFalse( $gateway->is_available() );
@@ -993,7 +993,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'enabled' => 'yes' ),
 			function () use ( &$account_data, &$provider_ready, $account_service, $provider ): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 				$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
 
 				$this->assertFalse( $gateway->is_available(), 'An explicit restricted card capability must remain unavailable.' );
@@ -1022,7 +1022,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $loaded, ( new NativeWooPaymentsGateway() )->is_subscriptions_plugin_active() );
+		$this->assertSame( $loaded, ( new WooPaymentsGateway() )->is_subscriptions_plugin_active() );
 	}
 
 	/**
@@ -1070,7 +1070,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'enabled' => 'yes' ),
 				function () use ( $account_service, $expected ): void {
-					$gateway = new NativeWooPaymentsGateway();
+					$gateway = new WooPaymentsGateway();
 					$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 					$this->assertSame( $expected, $gateway->is_available() );
@@ -1098,7 +1098,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, null, $this->create_account_service_for_country( 'US' ) );
 
 			$this->assertFalse( $gateway->is_available() );
@@ -1156,7 +1156,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertFalse( $gateway->is_available(), 'The gateway setting must enable payment-method-list placement.' );
@@ -1244,7 +1244,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			foreach ( array( 'card', 'apple_pay', 'google_pay', 'amazon_pay', 'klarna' ) as $payment_method_id ) {
 				$definition = $registry->get( $payment_method_id );
 				$this->assertNotNull( $definition, "{$payment_method_id} should be registered." );
-				$gateway = new NativeWooPaymentsGateway( $definition );
+				$gateway = new WooPaymentsGateway( $definition );
 				$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $account_service );
 				$gateways[ $payment_method_id ] = $gateway;
 			}
@@ -1295,7 +1295,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
 
 			WC()->cart->set_total( '34.99' );
@@ -1357,7 +1357,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_force_ssl_checkout', $ssl_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertFalse( $gateway->is_available() );
@@ -1403,7 +1403,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
 
 		try {
-			$affirm = new NativeWooPaymentsGateway( $affirm_definition );
+			$affirm = new WooPaymentsGateway( $affirm_definition );
 			$affirm->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'affirm_payments' ) );
 			$this->assertFalse( $affirm->is_available() );
 
@@ -1436,7 +1436,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$order->set_shipping_first_name( '' );
 			$order->set_shipping_last_name( '' );
 			$order->save();
-			$afterpay = new NativeWooPaymentsGateway( $afterpay_definition );
+			$afterpay = new WooPaymentsGateway( $afterpay_definition );
 			$afterpay->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'afterpay_clearpay_payments' ) );
 			$this->assertTrue( $afterpay->is_available() );
 		} finally {
@@ -1455,7 +1455,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'test_mode' => 'yes' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
 				$this->assertStringContainsString( 'test-mode badge', $gateway->get_icon() );
@@ -1472,7 +1472,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'test_mode' => 'no' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
 				$this->assertStringNotContainsString( 'test-mode badge', $gateway->get_icon() );
@@ -1503,7 +1503,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'country' => $account_country ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, null, $account_service );
 
 		$icon = $gateway->get_icon();
@@ -1518,7 +1518,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'saved_cards' => 'yes' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $gateway->supports );
 				$this->assertContains( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports );
@@ -1528,7 +1528,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'saved_cards' => 'no' ),
 			function (): void {
-				$gateway = new NativeWooPaymentsGateway();
+				$gateway = new WooPaymentsGateway();
 
 				$this->assertNotContains( PaymentGatewayFeature::TOKENIZATION, $gateway->supports );
 				$this->assertNotContains( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports );
@@ -1543,7 +1543,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->with_gateway_settings(
 			array( 'saved_cards' => 'yes' ),
 			function (): void {
-				$gateway = new class() extends NativeWooPaymentsGateway {
+				$gateway = new class() extends WooPaymentsGateway {
 					/**
 					 * Tell whether subscriptions support is available.
 					 *
@@ -1583,7 +1583,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function (): void {
-					$gateway = new class() extends NativeWooPaymentsGateway {
+					$gateway = new class() extends WooPaymentsGateway {
 						/**
 						 * Tell whether subscriptions support is available.
 						 *
@@ -1610,7 +1610,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscription_support_registers_subscription_handlers(): void {
 		$this->make_builtin_own_payments();
-		$gateway = new class() extends NativeWooPaymentsGateway {
+		$gateway = new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1656,7 +1656,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
 		$this->assertNotNull( $definition );
 
-		$gateway = new class( $definition ) extends NativeWooPaymentsGateway {
+		$gateway = new class( $definition ) extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1685,13 +1685,13 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertNotNull( $bancontact_definition );
 		$this->assertNotNull( $amazon_definition );
 
-		$method = new \ReflectionMethod( NativeWooPaymentsGateway::class, 'is_available_for_subscription_context' );
+		$method = new \ReflectionMethod( WooPaymentsGateway::class, 'is_available_for_subscription_context' );
 		$method->setAccessible( true );
 
-		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), false, false ) );
-		$this->assertFalse( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), true, false ) );
-		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $bancontact_definition ), true, true ) );
-		$this->assertTrue( $method->invoke( new NativeWooPaymentsGateway( $amazon_definition ), true, false ) );
+		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), false, false ) );
+		$this->assertFalse( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), true, false ) );
+		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), true, true ) );
+		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $amazon_definition ), true, false ) );
 	}
 
 	/**
@@ -1728,7 +1728,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( $gateway_id );
 		$subscription->save();
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		if ( ! method_exists( $gateway, 'maybe_force_subscription_to_manual' ) ) {
 			$this->fail( 'The subscription creation policy callback does not exist.' );
 		}
@@ -1778,7 +1778,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$subscription->save();
 
-		( new NativeWooPaymentsGateway() )->maybe_force_subscription_to_manual( $subscription );
+		( new WooPaymentsGateway() )->maybe_force_subscription_to_manual( $subscription );
 
 		$this->assertFalse( $subscription->is_manual() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
@@ -1790,7 +1790,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscription_handler_registration_is_idempotent_across_gateway_instances(): void {
 		$this->make_builtin_own_payments();
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1800,7 +1800,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1833,7 +1833,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscription_support_registers_failed_renewal_authentication_emails(): void {
 		$this->make_builtin_own_payments();
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1869,7 +1869,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscription_email_registration_is_idempotent_across_gateway_instances(): void {
 		$this->make_builtin_own_payments();
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1879,7 +1879,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1896,7 +1896,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$callbacks,
 			static function ( array $callback ): bool {
 				return is_array( $callback['function'] ?? null )
-					&& NativeWooPaymentsGateway::class === ( $callback['function'][0] ?? null )
+					&& WooPaymentsGateway::class === ( $callback['function'][0] ?? null )
 					&& 'add_subscription_emails' === ( $callback['function'][1] ?? null );
 			}
 		);
@@ -1909,7 +1909,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_renewal_authentication_email_updates_retry_rules(): void {
 		$this->make_builtin_own_payments();
-		new class() extends NativeWooPaymentsGateway {
+		new class() extends WooPaymentsGateway {
 			/**
 			 * Tell whether subscriptions support is available.
 			 *
@@ -1969,7 +1969,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal->add_payment_token( $token );
 		$renewal->save();
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$gateway->update_failing_payment_method( wc_get_order( $subscription->get_id() ), wc_get_order( $renewal->get_id() ) );
 
@@ -1995,7 +1995,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$renewal->add_payment_token( $token_a );
 		$renewal->save();
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->update_failing_payment_method( wc_get_order( $subscription->get_id() ), wc_get_order( $renewal->get_id() ) );
 
 		$subscription = wc_get_order( $subscription->get_id() );
@@ -2039,7 +2039,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->with( $recorded['body']['payment_method'], $user_id )
 			->willReturn( $this->create_card_token( $user_id, (string) $recorded['body']['payment_method'] ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, (string) $recorded['body']['customer'] ) );
 
 		$result = $gateway->add_payment_method();
@@ -2055,7 +2055,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * `my_account_setup_intent_challenge_failed`): a My
 	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
 	 * challenge. `add_payment_method()` returns its error before ever calling the token service
-	 * (`NativeWooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
+	 * (`WooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
 	 * payment method to the shopper's account. The notice is the client's exact copy, with no
 	 * trailing period (client 11.1.0 `gw:4446-4451`).
 	 */
@@ -2082,7 +2082,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, (string) $recorded['body']['customer'] ) );
 
 		$result = $gateway->add_payment_method();
@@ -2161,7 +2161,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
 		$this->assertNotNull( $definition );
 
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$result = $gateway->add_payment_method();
@@ -2214,7 +2214,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->with( 'pm_added', $user_id )
 			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
 
 		$result = $gateway->add_payment_method();
@@ -2269,7 +2269,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->expects( $this->never() )
 			->method( 'get_or_create_token_for_user' );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
 
 		$result = $gateway->add_payment_method();
@@ -2326,7 +2326,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$token_service->expects( $this->never() )->method( 'get_or_create_token_for_user' );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, $user_customer ) );
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
@@ -2406,7 +2406,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$token_service->method( 'get_or_create_token_for_user' )->willReturn( null );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$result = $gateway->add_payment_method();
@@ -2445,7 +2445,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->enable_debug_logging();
 		$logger  = RecordingWcLogger::install();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
@@ -2468,7 +2468,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$api_client->method( 'get_setup_intention' )->willThrowException( self::make_provider_error() );
 		$this->enable_debug_logging();
 		$logger  = RecordingWcLogger::install();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$gateway->add_payment_method();
@@ -2539,7 +2539,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->expects( $this->never() )
 			->method( 'get_setup_intention' );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			new RecordingPaymentProcessingService(),
 			new WooPaymentsProvider(),
@@ -2582,7 +2582,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'gettext', $filter, 10, 3 );
 
 		try {
-			new NativeWooPaymentsGateway();
+			new WooPaymentsGateway();
 		} finally {
 			remove_filter( 'gettext', $filter, 10 );
 
@@ -2621,7 +2621,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_gateway_method_title', $method_title_filter );
 
 		try {
-			$gateway = new NativeWooPaymentsGateway();
+			$gateway = new WooPaymentsGateway();
 
 			$this->assertSame( 'Card', $gateway->title );
 			$this->assertSame( 'WooPayments', $gateway->method_title );
@@ -2656,7 +2656,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_fails_order_for_client_payment_method_error(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
@@ -2707,7 +2707,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -2722,7 +2722,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_client_error_keeps_status_on_subscription_change(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$this->ensure_wcs_subscription_detector_double();
@@ -2748,7 +2748,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_client_error_uses_generic_message_fallback(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'woocommerce_payments_payment_method_error';
@@ -2766,7 +2766,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_mock' );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -2804,7 +2804,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// WooPayments 11.1.0 writes this saved-card/customer shape; reusing it is recorded as a succeeded, captured USD 10.99 payment.
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_history_use', '', 'pm_plugin_history', 'cus_plugin_history' );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 
@@ -2878,7 +2878,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// WooPayments 11.1.0 OrderService::get_payment_metadata() preserves this renewal relationship; the renewal is recorded as a succeeded, captured USD 9.99 payment on the same historical customer and Visa 4242 method.
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_subscription_renewal', '', 'pm_plugin_subscription', 'cus_plugin_subscription' );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 		$GLOBALS['wcpay_test_renewal_subscription_ids']                                   = array( $renewal_order->get_id() => array( $subscription->get_id() ) );
@@ -2920,7 +2920,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( $status, $provider_payment_id );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, null );
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -2952,7 +2952,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_skips_paid_intent_witness_without_wc_session(): void {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$original_session          = WC()->session;
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_mock' );
 		$gateway->init( $service, new WooPaymentsProvider() );
@@ -2989,7 +2989,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'pm_native'
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		if ( $is_order_pay ) {
@@ -3069,7 +3069,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			unset( $_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] );
 		}
 
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3122,7 +3122,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, $this->create_fraud_prevention_service( true, $session ) );
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -3149,7 +3149,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_billing_phone( str_repeat( '1', 20 ) );
 		$order->save();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -3195,7 +3195,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			);
 		}
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -3243,7 +3243,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = '0123456789abcdef';
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3286,7 +3286,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = '0123456789abcdef';
 
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3330,7 +3330,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3407,7 +3407,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			);
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3458,7 +3458,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3511,7 +3511,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			new RecordingPaymentProcessingService(),
 			new WooPaymentsProvider(),
@@ -3548,7 +3548,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			new RecordingPaymentProcessingService(),
 			new WooPaymentsProvider(),
@@ -3627,7 +3627,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$return_url = $this->filter_return_url( $order );
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3680,7 +3680,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \Exception( 'Auth credentials missing' );
-		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway                     = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
@@ -3716,7 +3716,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
-		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway                     = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -3745,7 +3745,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'post_lifecycle_effects',
 			new \RuntimeException( 'Auth credentials missing' )
 		);
-		$gateway    = new NativeWooPaymentsGateway();
+		$gateway    = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
@@ -3790,7 +3790,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'post_lifecycle_effects',
 			new $throwable_class( 'Downstream step failed' )
 		);
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
@@ -3831,7 +3831,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'operation_effects',
 			new \RuntimeException( 'Provider effect write failed' )
 		);
-		$gateway    = new NativeWooPaymentsGateway();
+		$gateway    = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
@@ -3858,7 +3858,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \Exception( 'Genuine payment failure' );
-		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway                     = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
@@ -3898,7 +3898,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'post_lifecycle_effects',
 			self::make_provider_error()
 		);
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
@@ -3931,7 +3931,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->willThrowException( new \RuntimeException( 'Session storage is unavailable.' ) );
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -3980,7 +3980,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service                     = new RecordingPaymentProcessingService();
 		$service->checkout_exception = new \RuntimeException( 'Subscription hook failed' );
-		$gateway                     = new NativeWooPaymentsGateway();
+		$gateway                     = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -4029,7 +4029,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4067,7 +4067,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'operation_effects',
 			new \RuntimeException( 'Provider effect write failed' )
 		);
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 
@@ -4103,7 +4103,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$api_client->method( 'get_payment_intention' )->willThrowException( new $throwable_class( 'Undefined index: status' ) );
 		$logger  = RecordingWcLogger::install();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4158,7 +4158,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$stage,
 			new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/example/example.php on line 12' )
 		);
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
@@ -4244,7 +4244,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'post_lifecycle_effects',
 			new \TypeError( 'Argument #1 must be of type array, null given' )
 		);
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, null, null, null, null, null, null, $gateway_lifecycle );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
@@ -4290,7 +4290,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4339,7 +4339,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4395,7 +4395,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = new NativeWooPaymentsGateway();
+		$sut = new WooPaymentsGateway();
 		$sut->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4440,7 +4440,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sut = new NativeWooPaymentsGateway();
+		$sut = new WooPaymentsGateway();
 		$sut->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4489,7 +4489,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4565,7 +4565,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $paid_order->get_id() );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4600,7 +4600,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$cart_hash   = 'same-cart-hash';
 		$session     = $this->create_session();
 		$service     = new RecordingPaymentProcessingService();
-		$gateway     = new NativeWooPaymentsGateway();
+		$gateway     = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4702,7 +4702,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 
-		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
+		$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4744,7 +4744,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->with( 'pi_existing' )
 			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -4777,7 +4777,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -4838,7 +4838,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$confirmation_redirect,
 			'pm_new'
 		);
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -4876,7 +4876,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$provider_redirect,
 			'pm_new'
 		);
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -4908,7 +4908,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -4939,7 +4939,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -4979,7 +4979,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -5021,7 +5021,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = $is_subscription ? array( $order->get_id() ) : array();
@@ -5053,7 +5053,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$request_id                             = $use_mismatched_subscription ? $order->get_id() + 1 : $order->get_id();
@@ -5095,7 +5095,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->save();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -5138,7 +5138,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_status( 'on-hold' );
 		$order->save();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$paid_statuses = static fn( $statuses ) => array_merge( (array) $statuses, array( 'on-hold' ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', $paid_statuses );
@@ -5183,7 +5183,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
 		$_POST['is-woopay-preflight-check']                     = '1';
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -5227,7 +5227,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
 		$_POST['is-woopay-preflight-check'] = '1';
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init(
 			$service,
 			new WooPaymentsProvider(),
@@ -5265,7 +5265,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->update_status( 'failed' );
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST['is-woopay-preflight-check'] = '1';
 
@@ -5291,7 +5291,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_passes_platform_payment_method_state_to_provider_data(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method']             = 'pm_platform';
@@ -5310,7 +5310,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_passes_the_sanitized_woopay_intent_to_provider_data(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		// WooPay's merchant checkout body (PaymentsHandler::get_merchant_checkout_body()) sends the
@@ -5330,7 +5330,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_leaves_the_woopay_intent_empty_without_one(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -5348,7 +5348,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array() );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		// WooPay's merchant checkout body sends is_woopay (PaymentsHandler::get_merchant_checkout_body()).
@@ -5371,7 +5371,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save_meta_data();
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array() );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_woopay';
@@ -5390,7 +5390,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_marks_a_woopay_order_before_the_client_error_check(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
@@ -5412,7 +5412,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_does_not_mark_an_ordinary_order_as_woopay(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -5430,7 +5430,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_passes_express_payment_method_types_to_provider_data(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-confirmation-token']           = 'ctoken_express';
@@ -5454,7 +5454,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$recorded = $this->record_tracks_events();
@@ -5478,7 +5478,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_can_refund_order_requires_charge_id(): void {
 		$order   = $this->create_order();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertFalse( $gateway->can_refund_order( $order ) );
 
@@ -5498,7 +5498,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
@@ -5526,7 +5526,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), $amount, 'Adjustment' );
@@ -5570,7 +5570,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->set_total( $order_total );
 		$order->save();
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider() );
 
 		$this->assertTrue( $gateway->process_refund( $order->get_id(), $amount, 'Restock only' ) );
@@ -5600,7 +5600,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), 12.0, 'Full refund' );
@@ -5616,7 +5616,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_refund_fails_without_charge_id(): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
@@ -5648,7 +5648,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return new \WP_Error( 'expired_or_canceled_card', 'The card was declined.' );
 			}
 		};
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
@@ -5684,7 +5684,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return new \WP_Error( 'insufficient_balance_for_refund', 'Could not refund the payment: insufficient funds.' );
 			}
 		};
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider(), null, null, $this->create_account_service_for_country( 'US' ) );
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
@@ -5721,7 +5721,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return new \WP_Error( 'order_payment_refund_locked', 'A payment operation is already in progress for this order.' );
 			}
 		};
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
@@ -5770,7 +5770,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 're_no_row' );
 			}
 		};
-		$gateway  = new NativeWooPaymentsGateway();
+		$gateway  = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$recorded = $this->record_tracks_events();
 
@@ -5797,7 +5797,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order->save();
 
 		$service = new RecordingPaymentProcessingService();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -5819,7 +5819,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$service                   = new RecordingPaymentProcessingService();
 		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, '', '', '', '', array( PaymentOutcome::DATA_ORDER_PAID_BY_ANOTHER_REQUEST => true ) );
-		$gateway                   = new NativeWooPaymentsGateway();
+		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
@@ -5841,7 +5841,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		wc_get_container()->replace( PaymentProcessingService::class, $service );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
 
@@ -5857,7 +5857,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_split_gateway_payment_fields_use_the_card_gateway_supports(): void {
 		$registry          = new WooPaymentsPaymentMethodRegistry();
-		$card_gateway      = new NativeWooPaymentsGateway( $registry->get( 'card' ) );
+		$card_gateway      = new WooPaymentsGateway( $registry->get( 'card' ) );
 		$received_supports = null;
 		$assets            = $this->create_checkout_assets_double(
 			array(),
@@ -5873,7 +5873,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
 		$card_gateway->supports = array( 'products', 'refunds', 'subscriptions', 'card_only_marker' );
 
-		$klarna_gateway = new NativeWooPaymentsGateway( $registry->get( 'klarna' ) );
+		$klarna_gateway = new WooPaymentsGateway( $registry->get( 'klarna' ) );
 		$klarna_gateway->init( new RecordingPaymentProcessingService(), $provider, $assets );
 		ob_start();
 		$klarna_gateway->form();
@@ -5919,7 +5919,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function () use ( $service, $assets, &$output, &$gateway_supports ): void {
-					$gateway = new NativeWooPaymentsGateway();
+					$gateway = new WooPaymentsGateway();
 					$gateway->init( $service, new WooPaymentsProvider(), $assets );
 					$gateway_supports = $gateway->supports;
 
@@ -5961,7 +5961,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * counterpart to cite.
 	 */
 	public function test_payment_form_prints_assertive_payment_error_region(): void {
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_assets_double() );
 
 		ob_start();
@@ -5982,7 +5982,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $expects_notice    Whether the unavailable notice prints.
 	 */
 	public function test_payment_form_prints_the_unavailable_notice_only_when_the_account_cannot_take_payments( string $scenario, bool $can_take_payments, bool $expects_notice ): void {
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $this->create_checkout_assets_double( array(), $can_take_payments ) );
 
 		ob_start();
@@ -6032,7 +6032,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function () use ( $assets, &$output ): void {
-					$gateway = new NativeWooPaymentsGateway();
+					$gateway = new WooPaymentsGateway();
 					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 					ob_start();
@@ -6074,7 +6074,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function () use ( $service, $assets, &$output ): void {
-					$gateway = new class() extends NativeWooPaymentsGateway {
+					$gateway = new class() extends WooPaymentsGateway {
 						/**
 						 * Simulate optional WooCommerce Subscriptions availability.
 						 *
@@ -6114,7 +6114,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function () use ( $assets, &$output ): void {
-					$gateway = new NativeWooPaymentsGateway();
+					$gateway = new WooPaymentsGateway();
 					$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 					ob_start();
@@ -6165,7 +6165,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => $saved_cards ),
 				function () use ( $assets, $provider, $payment_method_id, &$output ): void {
-					$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
+					$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
 					$gateway->init( new RecordingPaymentProcessingService(), $provider, $assets );
 					$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ), 'The filter makes the gateway claim tokenization.' );
 
@@ -6191,7 +6191,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$gateways = array();
 		foreach ( array( 'card', 'apple_pay', 'klarna' ) as $payment_method_id ) {
-			$gateway          = new NativeWooPaymentsGateway( $registry->get( $payment_method_id ) );
+			$gateway          = new WooPaymentsGateway( $registry->get( $payment_method_id ) );
 			$gateway->enabled = 'yes';
 			$gateways[]       = $gateway;
 		}
@@ -6202,8 +6202,8 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		try {
 			// The Checkout block reads the enabled gateways at the default priority (PaymentUtils::get_enabled_payment_gateways()).
-			$this->assertSame( 1, has_action( 'enqueue_block_editor_assets', array( NativeWooPaymentsGateway::class, 'handle_enqueue_block_editor_assets' ) ) );
-			NativeWooPaymentsGateway::handle_enqueue_block_editor_assets();
+			$this->assertSame( 1, has_action( 'enqueue_block_editor_assets', array( WooPaymentsGateway::class, 'handle_enqueue_block_editor_assets' ) ) );
+			WooPaymentsGateway::handle_enqueue_block_editor_assets();
 		} finally {
 			$wc_gateways->payment_gateways = $previous;
 		}
@@ -6219,7 +6219,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $customer_id );
 
 		$render         = static function (): string {
-			$gateway = new NativeWooPaymentsGateway();
+			$gateway = new WooPaymentsGateway();
 			ob_start();
 			$gateway->saved_payment_methods();
 			return (string) ob_get_clean();
@@ -6258,7 +6258,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = true;
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		ob_start();
 		$gateway->save_payment_method_checkbox();
@@ -6276,7 +6276,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		ob_start();
 		$gateway->save_payment_method_checkbox();
@@ -6309,7 +6309,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 		$assets = $this->createMock( WooPaymentsCheckoutAssets::class );
 		$assets->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $platform );
-		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
+		$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method ) );
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), $assets );
 
 		ob_start();
@@ -6336,7 +6336,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_save_payment_method_checkbox_uses_the_client_label( string $cart ): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = 'subscription' === $cart;
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		ob_start();
 		$gateway->save_payment_method_checkbox();
@@ -6354,7 +6354,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
 		$GLOBALS['wcpay_test_cart_contains_renewal']      = true;
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		try {
 			ob_start();
@@ -6390,7 +6390,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$this->with_gateway_settings(
 				array( 'saved_cards' => 'yes' ),
 				function () use ( &$output ): void {
-					$gateway = new class() extends NativeWooPaymentsGateway {
+					$gateway = new class() extends WooPaymentsGateway {
 						/**
 						 * Simulate optional WooCommerce Subscriptions availability.
 						 *
@@ -6421,7 +6421,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_fields_resolve_dependencies_without_explicit_init(): void {
 		RecordedPublicFraudServices::answer();
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		ob_start();
 		$gateway->payment_fields();
@@ -6462,7 +6462,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
 
 		$result = $gateway->get_recommended_payment_methods( 'GB' );
@@ -6501,7 +6501,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
 
 		$first_result  = $gateway->get_recommended_payment_methods( 'GB' );
@@ -6584,7 +6584,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_links_a_succeeded_payment_to_its_intent(): void {
 		$order   = $this->create_order_with_provider_meta( 'succeeded', 'pi_transaction_url', 'ch_transaction_url' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$url = $gateway->get_transaction_url( $order );
 
@@ -6598,7 +6598,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_links_an_uncaptured_authorization(): void {
 		$order   = $this->create_order_with_provider_meta( 'requires_capture', 'pi_uncaptured' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertStringContainsString( 'id=pi_uncaptured', $gateway->get_transaction_url( $order ) );
 	}
@@ -6608,7 +6608,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_falls_back_to_the_charge_id(): void {
 		$order   = $this->create_order_with_provider_meta( 'succeeded', '', 'ch_only' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertStringContainsString( 'id=ch_only', $gateway->get_transaction_url( $order ) );
 	}
@@ -6622,7 +6622,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_is_empty_for_an_unauthorized_intention( string $intention_status ): void {
 		$order   = $this->create_order_with_provider_meta( $intention_status, 'pi_unauthorized' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
 	}
@@ -6646,7 +6646,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_refuses_a_setup_intent(): void {
 		$order   = $this->create_order_with_provider_meta( 'succeeded', 'seti_saved_card' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
 	}
@@ -6656,7 +6656,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_transaction_url_is_empty_without_provider_identifiers(): void {
 		$order   = $this->create_order_with_provider_meta( 'succeeded', '' );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 
 		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
 	}
@@ -6715,7 +6715,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return new \WP_Error( 'https://pay.example.test/code', "Error: No such customer: 'cus_123'; ask shopper@example.com, see https://pay.example.test/r?key=sk_test_leak123" );
 			}
 		};
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$logger = RecordingWcLogger::install();
 
@@ -6738,7 +6738,7 @@ class NativeWooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
 		$api_client->method( 'get_recommended_payment_methods' )->willThrowException( self::make_provider_error() );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
 		$logger = RecordingWcLogger::install();
 

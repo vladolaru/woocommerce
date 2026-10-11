@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
@@ -90,7 +90,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
-		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$fallback_hooks->setAccessible( true );
 		$fallback_hooks->setValue( null, false );
 		parent::tearDown();
@@ -131,7 +131,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		$registered = WC()->payment_gateways()->payment_gateways();
 		$this->assertArrayHasKey( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $registered, 'A connected or active store must register the gateway, as the client does.' );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $registered[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $registered[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] );
 		$offered = array_keys( WC()->payment_gateways()->get_available_payment_gateways() );
 		$this->assertSame( $available, in_array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $offered, true ) );
 		$this->assertSame( array(), $this->outbound_requests );
@@ -180,7 +180,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->reload_payment_gateways();
 
 		$gateway = WC()->payment_gateways()->payment_gateways()[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ] ?? null;
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway, 'An active store registers the gateway.' );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $gateway, 'An active store registers the gateway.' );
 		$this->assertSame( 'yes', $gateway->enabled, 'The card gateway is enabled, as onboarding leaves it.' );
 		$this->assertSame( $available, $gateway->is_available() );
 		$this->assertSame( $available, array_key_exists( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WC()->payment_gateways()->get_available_payment_gateways() ) );
@@ -518,7 +518,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $builtin_owner, in_array( NativeWooPaymentsGateway::class, $gateway_classes, true ), 'Checkout, order-pay and refunds reach the built-in gateway only through the gateway list.' );
+		$this->assertSame( $builtin_owner, in_array( WooPaymentsGateway::class, $gateway_classes, true ), 'Checkout, order-pay and refunds reach the built-in gateway only through the gateway list.' );
 		$this->assertSame( $builtin_owner, $renewal_hooked, 'Subscription renewals reach the built-in gateway only through this handler.' );
 		$this->assertSame( $builtin_owner ? 2 : 0, count( $authorization_routes ), 'The capture and cancel authorization routes register only while the built-in WooPayments owns payments.' );
 		$this->assertSame( $builtin_owner ? array( 'capture', 'cancel', 'capture', 'cancel', 'refund' ) : array(), $adapter->operations, 'Only a request the built-in WooPayments owns may reach the gateway adapter.' );

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOu
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -5825,7 +5825,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 		$provider   = $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
 		$this->assertNotNull( $definition );
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_afterpay';
 
@@ -5850,7 +5850,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * The gateway runs with the real duplicate-payment guard and the real provider over one recording transport. The guard
 	 * refuses a disputed attached intent with ERROR_DISPUTED_INTENT; the gateway shows the refusal and fails the order only
-	 * for an amount mismatch (NativeWooPaymentsGateway::process_order_payment()). An order whose intent status says
+	 * for an amount mismatch (WooPaymentsGateway::process_order_payment()). An order whose intent status says
 	 * succeeded is not answered as paid: the order is unpaid and the shopper must see why.
 	 *
 	 * @testWith ["the payment was never applied to the order", "requires_action"]
@@ -6214,9 +6214,9 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * @param FakeWooPaymentsHttpClient         $http_client     Recording transport.
 	 * @param OrderPaymentLifecycleService|null $guard_lifecycle The guard's lifecycle service; the container's when null.
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client, ?OrderPaymentLifecycleService $guard_lifecycle = null ): NativeWooPaymentsGateway {
+	private function create_gateway_with_real_duplicate_guard( FakeWooPaymentsHttpClient $http_client, ?OrderPaymentLifecycleService $guard_lifecycle = null ): WooPaymentsGateway {
 		$account_service  = $this->create_account_service( false );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
@@ -6230,7 +6230,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			new WooPaymentsOrderDataService()
 		);
 
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider, null, null, null, null, null, null, null, $guard );
 
 		return $gateway;
@@ -8912,7 +8912,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @dataProvider refusals_before_the_refund_runs_data
 	 *
 	 * Codex review 205 R2 and monitor ruling 2026-10-10 17:25: the gateway returns before PaymentProcessingService
-	 * takes the row (NativeWooPaymentsGateway::process_refund()), so the row must not stay for a later call. Codex review
+	 * takes the row (WooPaymentsGateway::process_refund()), so the row must not stay for a later call. Codex review
 	 * 206 F2: the invalid-amount refusal is pinned on its own.
 	 *
 	 * @param string $refusal Why the gateway refuses.
@@ -8931,7 +8931,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 			$order->set_total( '1.00' );
 			$order->save();
 		}
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_refund_hold_provider( new FakeWooPaymentsHttpClient() ) );
 
 		$result = $gateway->process_refund( $order->get_id(), 2.00, 'requested_by_customer' );
@@ -9387,7 +9387,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	private function run_gateway_refund( WooPaymentsProvider $provider, WC_Order $order, float $amount ): array {
 		$row = $this->create_refund_row( $order, $amount, 'requested_by_customer' );
 		$this->announce_gateway_refund( $row );
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$result = $gateway->process_refund( $order->get_id(), $amount, 'requested_by_customer' );
 		if ( is_wp_error( $result ) ) {
@@ -9407,7 +9407,7 @@ class WooPaymentsProviderGatewayAdapterTest extends WC_Unit_Test_Case {
 	 * @return WC_Order_Refund|WP_Error What wc_create_refund() returned.
 	 */
 	private function create_refund_through_the_gateway( WooPaymentsProvider $provider, WC_Order $order, float $amount ) {
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->use_runtime_refund_capture()->register();
 		$gateways                                  = WC()->payment_gateways()->payment_gateways;

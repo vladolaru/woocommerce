@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -2766,10 +2766,10 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * Create a constructor-free native gateway identity.
 	 *
 	 * @param string $gateway_id Gateway ID.
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway( string $gateway_id ): NativeWooPaymentsGateway {
-		$gateway     = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+	private function create_native_gateway( string $gateway_id ): WooPaymentsGateway {
+		$gateway     = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->getMock();
 		$gateway->id = $gateway_id;

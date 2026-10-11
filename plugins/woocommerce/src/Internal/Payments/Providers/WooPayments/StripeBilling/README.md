@@ -22,10 +22,10 @@ Code outside this folder names only `WooPaymentsStripeBillingModule`, and only i
 | Seam | File | What it does |
 |---|---|---|
 | S1 | `WooPaymentsProvider.php` | registers the module root in the bootstrap matrix |
-| S2 | `NativeWooPaymentsGateway.php` | adjusts the gateway's subscription supports to the toggle |
+| S2 | `WooPaymentsGateway.php` | adjusts the gateway's subscription supports to the toggle |
 | S3 | `Subscriptions/WooPaymentsSubscriptionsController.php` | skips native renewal charges for Stripe-billed subscriptions |
 | S4 | `Webhooks/WooPaymentsEventIngestor.php` | hands `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed` to the module after the mode check; refuses them with the client's reasons (400) when the module is not loaded |
-| S5 | `NativeWooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
+| S5 | `WooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
 | S6 | `WooPaymentsOperationalQueueService.php` | reports whether Stripe Billing is enabled |
 | S7 | `WooPaymentsSettingsService.php`, `WooPaymentsMerchantRestController.php` | the Stripe Billing settings fields and the toggle write |
 | S8 | `Subscriptions/WooPaymentsLegacySubscriptionsGuard.php`, `WooPaymentsCutoverReconciliationJob.php` | cutover rules for stores with Stripe Billing data |

@@ -21,12 +21,12 @@ class WC_Payments {
 	 * @since 11.2.0
 	 * @deprecated 11.2.0 Use the native WooPayments gateway via WC()->payment_gateways().
 	 *
-	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway
+	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
 	public static function get_gateway() {
 		_deprecated_function( 'WC_Payments::get_gateway', '11.2.0', 'the native WooPayments gateway via WC()->payment_gateways()' );
 
-		return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway::class );
+		return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 	}
 
 	/**

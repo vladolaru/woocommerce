@@ -26,7 +26,7 @@ import {
  * the `<method>_handle_redirect` confirmation-hash mapping in
  * `WooPaymentsIntentCodecTest::test_outcome_from_intention_maps_method_handle_redirect_to_confirmation_hash`,
  * and card-testing-protection admission/refusal on split gateways in
- * `NativeWooPaymentsGatewayTest`.
+ * `WooPaymentsGatewayTest`.
  *
  * What `A1` still proves that no lower layer can: the client-side
  * `alipay_handle_redirect` handoff (no server path performs it,

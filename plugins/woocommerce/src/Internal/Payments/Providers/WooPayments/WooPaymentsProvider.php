@@ -70,7 +70,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Request-scoped native payment gateways keyed by payment method ID.
 	 *
-	 * @var array<string,NativeWooPaymentsGateway>|null
+	 * @var array<string,WooPaymentsGateway>|null
 	 */
 	private ?array $payment_gateways = null;
 
@@ -426,7 +426,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Get payment gateway instances registered by WooPayments.
 	 *
-	 * @return array<int,NativeWooPaymentsGateway>
+	 * @return array<int,WooPaymentsGateway>
 	 *
 	 * @since 11.0.0
 	 */
@@ -434,7 +434,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		return array_values(
 			array_filter(
 				$this->get_payment_gateway_map(),
-				static fn( NativeWooPaymentsGateway $gateway ): bool => $gateway->get_payment_method_definition()->should_publish_gateway()
+				static fn( WooPaymentsGateway $gateway ): bool => $gateway->get_payment_method_definition()->should_publish_gateway()
 			)
 		);
 	}
@@ -443,11 +443,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * Get a native WooPayments gateway for a payment method or gateway ID.
 	 *
 	 * @param string $payment_method_or_gateway_id Payment method ID or gateway ID.
-	 * @return NativeWooPaymentsGateway|null
+	 * @return WooPaymentsGateway|null
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_gateway_for_method( string $payment_method_or_gateway_id ): ?NativeWooPaymentsGateway {
+	public function get_gateway_for_method( string $payment_method_or_gateway_id ): ?WooPaymentsGateway {
 		$payment_method_id = $this->normalize_payment_method_id( $payment_method_or_gateway_id );
 		$gateways          = $this->get_payment_gateway_map();
 
@@ -617,7 +617,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Get the request-scoped native gateway map.
 	 *
-	 * @return array<string,NativeWooPaymentsGateway>
+	 * @return array<string,WooPaymentsGateway>
 	 */
 	private function get_payment_gateway_map(): array {
 		if ( null === $this->payment_gateways ) {
@@ -630,7 +630,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	/**
 	 * Build native gateway instances for the payment methods WooPayments registers on this store.
 	 *
-	 * @return array<string,NativeWooPaymentsGateway>
+	 * @return array<string,WooPaymentsGateway>
 	 */
 	private function build_payment_gateway_map(): array {
 		$definitions = $this->payment_method_registry->get_registered( $this->account_service );
@@ -652,8 +652,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 
 		foreach ( $definitions as $definition ) {
 			$gateways[ $definition->get_id() ] = 'card' === $definition->get_id()
-				? wc_get_container()->get( NativeWooPaymentsGateway::class )
-				: new NativeWooPaymentsGateway( $definition );
+				? wc_get_container()->get( WooPaymentsGateway::class )
+				: new WooPaymentsGateway( $definition );
 		}
 
 		return $gateways;

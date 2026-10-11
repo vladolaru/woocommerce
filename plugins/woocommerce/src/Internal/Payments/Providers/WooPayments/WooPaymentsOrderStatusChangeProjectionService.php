@@ -180,7 +180,7 @@ class WooPaymentsOrderStatusChangeProjectionService {
 	private function can_refund_at_provider( WC_Order $order ): bool {
 		$gateway = $this->legacy_proxy->call_function( 'wc_get_payment_gateway_by_order', $order );
 
-		return $gateway instanceof NativeWooPaymentsGateway && $gateway->can_refund_order( $order );
+		return $gateway instanceof WooPaymentsGateway && $gateway->can_refund_order( $order );
 	}
 
 	/**

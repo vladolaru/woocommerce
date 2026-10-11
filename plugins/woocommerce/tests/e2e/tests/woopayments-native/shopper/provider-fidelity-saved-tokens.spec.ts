@@ -31,7 +31,7 @@ import {
  *   `WooPaymentsTokenServiceTest::test_detaches_native_card_payment_methods_when_token_is_deleted`,
  *   which this case's own cleanup below still proves live at the provider.
  * - A Classic or Blocks checkout that saves a card creating exactly one token
- *   is `NativeWooPaymentsGatewayTest`, `WooPaymentsProviderGatewayAdapterTest`
+ *   is `WooPaymentsGatewayTest`, `WooPaymentsProviderGatewayAdapterTest`
  *   and `WooPaymentsOrderEffectApplierTest`.
  *
  * Dropped from the old harness rewrite (harness-self, not business facts):

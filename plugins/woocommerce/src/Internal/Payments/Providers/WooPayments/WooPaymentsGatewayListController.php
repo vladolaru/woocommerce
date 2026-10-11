@@ -94,18 +94,18 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 		$canonical_gateway = null;
 
 		foreach ( $gateways as $gateway ) {
-			if ( $gateway instanceof NativeWooPaymentsGateway && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway->id ) {
+			if ( $gateway instanceof WooPaymentsGateway && WooPaymentsPersistenceVocabulary::GATEWAY_ID === $gateway->id ) {
 				$canonical_gateway = $gateway;
 				break;
 			}
 		}
 
-		if ( ! $canonical_gateway instanceof NativeWooPaymentsGateway ) {
+		if ( ! $canonical_gateway instanceof WooPaymentsGateway ) {
 			return;
 		}
 
 		foreach ( $gateways as $index => $gateway ) {
-			if ( $gateway instanceof NativeWooPaymentsGateway && $gateway !== $canonical_gateway ) {
+			if ( $gateway instanceof WooPaymentsGateway && $gateway !== $canonical_gateway ) {
 				unset( $payment_gateways->payment_gateways[ $index ] );
 			}
 		}

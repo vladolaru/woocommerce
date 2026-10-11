@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -95,7 +95,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		}
 
 		$this->setExpectedDeprecated( 'WC_Payments::get_gateway' );
-		$this->assertSame( wc_get_container()->get( NativeWooPaymentsGateway::class ), \WC_Payments::get_gateway(), 'The facade must expose the same native gateway instance as the dependency-injection container.' );
+		$this->assertSame( wc_get_container()->get( WooPaymentsGateway::class ), \WC_Payments::get_gateway(), 'The facade must expose the same native gateway instance as the dependency-injection container.' );
 	}
 
 	/**
@@ -125,7 +125,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	public function test_native_gateway_does_not_satisfy_legacy_gateway_class_identity(): void {
 		$this->register_legacy_facades();
 
-		$gateway = wc_get_container()->get( NativeWooPaymentsGateway::class );
+		$gateway = wc_get_container()->get( WooPaymentsGateway::class );
 
 		$this->assertFalse( class_exists( 'WC_Payment_Gateway_WCPay', false ), 'The compatibility boundary must not declare the standalone plugin gateway class.' );
 		$this->assertFalse( $gateway instanceof \WC_Payment_Gateway_WCPay, 'The native gateway must not pretend to be the standalone plugin gateway class.' );

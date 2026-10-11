@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Unit_Test_Case;
 
@@ -120,7 +120,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should offer the My Account payment-methods menu entry once native saved cards are enabled.
 	 *
-	 * Unlike the other smokes in this class, this one needs a real, available `NativeWooPaymentsGateway`
+	 * Unlike the other smokes in this class, this one needs a real, available `WooPaymentsGateway`
 	 * instance in `WC_Payment_Gateways`: `wc_get_account_menu_items()` only offers the entry for a
 	 * gateway `WC_Payment_Gateways::get_available_payment_gateways()` reports, and availability in turn
 	 * requires `WooPaymentsProvider::can_process_payments()`. Only that provider dependency is stubbed
@@ -149,7 +149,7 @@ class WooPaymentsSurfaceRenderSmokeTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
 
 		$gateway_initializer = static function ( \WC_Payment_Gateways $wc_payment_gateways ): void {
-			$wc_payment_gateways->payment_gateways = array( new NativeWooPaymentsGateway() );
+			$wc_payment_gateways->payment_gateways = array( new WooPaymentsGateway() );
 		};
 		add_action( 'wc_payment_gateways_initialized', $gateway_initializer, 100 );
 		WC()->payment_gateways()->payment_gateways = array();

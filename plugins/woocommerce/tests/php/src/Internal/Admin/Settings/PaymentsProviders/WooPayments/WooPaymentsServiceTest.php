@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -3067,7 +3067,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter         = new WooPaymentsOnboardingAdapter();
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( $this->mockable_proxy );
-		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new NativeWooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new WooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
 	}
@@ -15313,11 +15313,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
 	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
 	 * @param WooPaymentsProvider          $provider        The native provider.
-	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
+	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
 	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $legacy_runtime, $arbiter );
 
 		$collaborators = array(

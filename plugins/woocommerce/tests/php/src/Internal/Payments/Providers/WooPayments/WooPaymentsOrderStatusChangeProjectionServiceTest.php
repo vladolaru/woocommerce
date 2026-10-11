@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeProjectionService;
 use WC_Install;
@@ -409,10 +409,10 @@ class WooPaymentsOrderStatusChangeProjectionServiceTest extends WC_Unit_Test_Cas
 	/**
 	 * Create a native WooPayments card gateway instance.
 	 *
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway(): NativeWooPaymentsGateway {
-		return new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
+	private function create_native_gateway(): WooPaymentsGateway {
+		return new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
 	}
 
 	/**

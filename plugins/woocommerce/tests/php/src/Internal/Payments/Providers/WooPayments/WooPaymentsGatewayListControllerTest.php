@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewayListController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -52,7 +52,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
-		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$fallback_hooks->setAccessible( true );
 		$fallback_hooks->setValue( null, false );
 
@@ -386,10 +386,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * Create a constructor-free native gateway identity.
 	 *
 	 * @param string $gateway_id Gateway ID.
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway( string $gateway_id ): NativeWooPaymentsGateway {
-		$gateway     = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+	private function create_native_gateway( string $gateway_id ): WooPaymentsGateway {
+		$gateway     = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->getMock();
 		$gateway->id = $gateway_id;

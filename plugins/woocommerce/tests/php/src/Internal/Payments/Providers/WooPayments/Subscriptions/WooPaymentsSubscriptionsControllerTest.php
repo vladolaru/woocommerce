@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -88,7 +88,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
 		$renewal_hooks->setAccessible( true );
 		$renewal_hooks->setValue( null, false );
-		$fallback_hooks = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
+		$fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$fallback_hooks->setAccessible( true );
 		$fallback_hooks->setValue( null, false );
 		parent::tearDown();
@@ -110,7 +110,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$this->assertTrue( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "The $gateway_id renewal handler must be attached." );
 			$this->assertTrue( has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id ), "The $gateway_id failing-method handler must be attached." );
 		}
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
 
 		$this->use_order_mode( 'prod' );
 		$this->expectException( \RuntimeException::class );
@@ -161,13 +161,13 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->register_native_payments_and_run_init();
 		if ( $plugin_owned ) {
 			// Other code can still build the native card gateway, for example the legacy facade; it must not attach either.
-			new NativeWooPaymentsGateway();
+			new WooPaymentsGateway();
 		}
 
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "No native $gateway_id renewal handler may be attached." );
 		}
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
+		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
 	}
 
 	/**
@@ -181,7 +181,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->reload_payment_gateways();
 		list( $subscription, $renewal_order ) = $this->create_subscription_with_renewal_order();
 
-		$this->assertSame( wc_get_container()->get( NativeWooPaymentsGateway::class ), wc_get_payment_gateway_by_order( $subscription ), 'Subscriptions must find the native gateway, or it treats the subscription as manual.' );
+		$this->assertSame( wc_get_container()->get( WooPaymentsGateway::class ), wc_get_payment_gateway_by_order( $subscription ), 'Subscriptions must find the native gateway, or it treats the subscription as manual.' );
 		$this->assertTrue( $this->run_scheduled_subscription_payment( $subscription, $renewal_order ), 'The renewal must be automatic, not a manual renewal order.' );
 		$this->assertSame( array( array( 'scheduled_subscription_payment', 12.5, $renewal_order->get_id(), WooPaymentsPersistenceVocabulary::GATEWAY_ID ) ), $controller->calls, 'The renewal must reach the native handler once.' );
 	}
@@ -191,8 +191,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_gateway_renewal_methods_forward_to_the_controller(): void {
 		$controller = $this->install_spy_controller();
-		$card       = new NativeWooPaymentsGateway();
-		$split      = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' ) );
+		$card       = new WooPaymentsGateway();
+		$split      = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' ) );
 		$order      = new WC_Order();
 		$order->save();
 
@@ -248,7 +248,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'Nothing may attach before Subscriptions has loaded.' );
 		$root->handle_plugins_loaded();
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ) );
 	}
 
 	/**
@@ -266,9 +266,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		$gateway = \WC_Payments::get_gateway();
 
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $gateway );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $gateway );
 		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'No native renewal handler may be attached.' );
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
+		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
 	}
 
 	/**

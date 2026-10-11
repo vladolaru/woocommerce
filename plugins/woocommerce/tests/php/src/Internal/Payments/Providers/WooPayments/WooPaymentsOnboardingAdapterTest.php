@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
@@ -64,9 +64,9 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	/**
 	 * Native gateway test double.
 	 *
-	 * @var NativeWooPaymentsGateway
+	 * @var WooPaymentsGateway
 	 */
-	private NativeWooPaymentsGateway $native_gateway;
+	private WooPaymentsGateway $native_gateway;
 
 	/**
 	 * Account service mock.
@@ -98,7 +98,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 
 		$this->payment_gateway_provider = new PaymentGateway( $this->legacy_proxy );
 		$this->gateway                  = new FakePaymentGateway( 'woocommerce_payments' );
-		$this->native_gateway           = new NativeWooPaymentsGateway();
+		$this->native_gateway           = new WooPaymentsGateway();
 		$this->account_service          = $this->getMockBuilder( \stdClass::class )
 			->addMethods( array( 'is_stripe_account_valid', 'get_account_status_data' ) )
 			->getMock();
@@ -393,7 +393,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $adapter, $runtime, $this->provider, new NativeWooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $runtime, $this->provider, new WooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 		$this->account_service
@@ -442,11 +442,11 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
 	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
 	 * @param WooPaymentsProvider          $provider        The native provider.
-	 * @param NativeWooPaymentsGateway     $native_gateway  The native gateway.
+	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
 	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, NativeWooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $legacy_runtime, $arbiter );
 
 		$collaborators = array(

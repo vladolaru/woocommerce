@@ -134,7 +134,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
 	 * hook's fire site directly (`WooPaymentsRuntimeArbiter`, `NativePaymentsShadowMode`, and the
 	 * `WooPaymentsFailedEventsProvider`/`WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
-	 * `WooPaymentsTokenService`/`NativeWooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
+	 * `WooPaymentsTokenService`/`WooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
 	 * `WooPaymentsExpressCheckoutService`/`WooPaymentsCutoverController` sites the gate's `PROVIDER_HOOKS` names).
 	 *
 	 * `woocommerce_native_payments_shadow_mode_enabled` fires from two sites at the same arity:

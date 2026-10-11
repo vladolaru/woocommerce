@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
@@ -21,7 +21,7 @@ use WC_Unit_Test_Case;
  * `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:402`). Each case takes the gateway the
  * way such an extension does and records the charge the gateway asks for.
  */
-class NativeWooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
+class WooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Records the charge instead of sending it.
@@ -118,7 +118,7 @@ class NativeWooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
 	public function test_renewal_through_a_split_gateway_charges_under_its_own_id(): void {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
 		$this->assertNotNull( $definition );
-		$gateway = new NativeWooPaymentsGateway( $definition );
+		$gateway = new WooPaymentsGateway( $definition );
 		$order   = $this->create_order_paid_with( $gateway->id );
 		$this->add_saved_card( $order );
 
@@ -140,10 +140,10 @@ class NativeWooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
 	 * Get the card gateway the container builds, which WooCommerce registers as `woocommerce_payments` and the legacy
 	 * `WC_Payments::get_gateway()` returns.
 	 *
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function get_card_gateway(): NativeWooPaymentsGateway {
-		return wc_get_container()->get( NativeWooPaymentsGateway::class );
+	private function get_card_gateway(): WooPaymentsGateway {
+		return wc_get_container()->get( WooPaymentsGateway::class );
 	}
 
 	/**

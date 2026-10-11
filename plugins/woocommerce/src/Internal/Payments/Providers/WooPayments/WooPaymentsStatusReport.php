@@ -401,7 +401,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		);
 
 		if ( $wpcom_connected ) {
-			$gateway           = wc_get_container()->get( NativeWooPaymentsGateway::class );
+			$gateway           = wc_get_container()->get( WooPaymentsGateway::class );
 			$account_connected = $gateway->is_connected();
 			$account_id        = $this->get_account_service()->get_account_id();
 			$rows[]            = $this->status_row(
@@ -436,10 +436,10 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Get the client's rows that need a connected account.
 	 *
-	 * @param NativeWooPaymentsGateway $gateway The WooPayments gateway.
+	 * @param WooPaymentsGateway $gateway The WooPayments gateway.
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
 	 */
-	private function get_client_account_status_rows( NativeWooPaymentsGateway $gateway ): array {
+	private function get_client_account_status_rows( WooPaymentsGateway $gateway ): array {
 		$account_service  = $this->get_account_service();
 		$settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
 		$needs_setup      = $gateway->needs_setup();

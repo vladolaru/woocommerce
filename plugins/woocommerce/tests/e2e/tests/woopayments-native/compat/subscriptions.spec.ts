@@ -64,7 +64,7 @@ if ( ! class_exists( 'WC_Subscriptions' ) || ! function_exists( 'wcs_create_subs
 }
 
 $version      = $wcpay_extension_version( 'subscriptions' );
-$gateway      = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway::class );
+$gateway      = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 $required     = array(
 	'products',
 	'subscriptions',

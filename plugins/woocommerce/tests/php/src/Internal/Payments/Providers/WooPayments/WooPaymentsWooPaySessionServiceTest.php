@@ -946,7 +946,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * Runs isolated on purpose. The assertion is about what *this* test class
 	 * defines, but class definitions are process-global and cannot be undone, so
 	 * in a shared process it also sees classes other suites define — for example
-	 * NativeWooPaymentsGatewayTest evals a WC_Subscriptions_Cart double. A fresh
+	 * WooPaymentsGatewayTest evals a WC_Subscriptions_Cart double. A fresh
 	 * process is what makes the assertion mean what its name says.
 	 *
 	 * @runInSeparateProcess

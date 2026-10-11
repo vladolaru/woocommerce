@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayPreflightGuard;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
@@ -287,7 +287,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
 		$_POST['is-woopay-preflight-check'] = '1'; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- This simulates the gateway's exact preflight marker.
 		$service                            = new RecordingPaymentProcessingService();
-		$gateway                            = new NativeWooPaymentsGateway();
+		$gateway                            = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$result = $gateway->process_payment( $order->get_id() );

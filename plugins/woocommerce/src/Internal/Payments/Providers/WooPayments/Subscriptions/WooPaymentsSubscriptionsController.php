@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -138,8 +138,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 		}
 		self::$attached = true;
 
-		if ( false === has_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ) ) ) {
-			add_filter( 'woocommerce_email_classes', array( NativeWooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
+		if ( false === has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ) ) {
+			add_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
 		}
 
 		add_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ), 10, 1 );

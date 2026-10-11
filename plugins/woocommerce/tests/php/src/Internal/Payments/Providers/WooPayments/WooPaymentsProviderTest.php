@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterf
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
@@ -387,7 +387,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$gateways = $provider->get_payment_gateways();
 
 		$gateway_ids = array_map(
-			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+			static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
 			$gateways
 		);
 		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $gateway_ids );
@@ -401,9 +401,9 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$klarna_gateway = $provider->get_gateway_for_method( 'klarna' );
 		$link_gateway   = $provider->get_gateway_for_method( 'link' );
 
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $klarna_gateway );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $link_gateway );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $klarna_gateway );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $link_gateway );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
 		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
 		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
@@ -481,7 +481,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$provider = $this->create_provider_with_capabilities( array( 'sepa_debit_payments' => 'active' ) );
 
 		$gateway_ids = array_map(
-			static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+			static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
 			$provider->get_payment_gateways()
 		);
 
@@ -500,12 +500,12 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'card' ) );
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'card' ) );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
 		$this->assertContains(
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_affirm',
 			array_map(
-				static fn( NativeWooPaymentsGateway $gateway ): string => $gateway->id,
+				static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
 				$provider->get_payment_gateways()
 			)
 		);
@@ -534,7 +534,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 			array( 'amazon_pay_payments' => 'active' ),
 			array( 'ece_confirmation_tokens_disabled' => false )
 		);
-		$this->assertInstanceOf( NativeWooPaymentsGateway::class, $enabled->get_gateway_for_method( 'amazon_pay' ) );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $enabled->get_gateway_for_method( 'amazon_pay' ) );
 	}
 
 	/**

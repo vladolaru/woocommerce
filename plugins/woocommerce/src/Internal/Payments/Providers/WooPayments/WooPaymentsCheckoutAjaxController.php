@@ -384,7 +384,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_return_url( WC_Order $order ): string {
-		return wc_get_container()->get( NativeWooPaymentsGateway::class )->get_return_url( $order );
+		return wc_get_container()->get( WooPaymentsGateway::class )->get_return_url( $order );
 	}
 
 	/**

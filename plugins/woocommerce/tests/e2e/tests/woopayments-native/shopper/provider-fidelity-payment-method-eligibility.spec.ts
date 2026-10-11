@@ -26,10 +26,10 @@ import {
  * state (`client/blocks/assets/js/extensions/payment-methods/woopayments/index.js:1167-1186`),
  * exactly as the client plugin's own filter does
  * (`client/checkout/blocks/index.js:82-91` at WooPayments 11.1.0). Neither
- * `NativeWooPaymentsGateway::is_available()` nor the checkout config gates
+ * `WooPaymentsGateway::is_available()` nor the checkout config gates
  * Bancontact on the merchant account's country; the account's own
  * `bancontact_payments` capability being active is what the split gateway
- * checks. `NativeWooPaymentsGatewayTest::test_gateway_availability_keeps_shopper_country_rules_separate_from_merchant_country_rules`
+ * checks. `WooPaymentsGatewayTest::test_gateway_availability_keeps_shopper_country_rules_separate_from_merchant_country_rules`
  * pins exactly this: a US-country merchant account still admits Bancontact
  * for a Belgian shopper. This account settled a live Bancontact 1099 EUR
  * charge on 2026-09-22 (`evidence/multi-currency-payment-method-eligibility-reconciliation.json`,

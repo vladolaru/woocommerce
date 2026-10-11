@@ -1,6 +1,6 @@
 <?php
 /**
- * NativeWooPaymentsGateway class file.
+ * WooPaymentsGateway class file.
  */
 
 declare( strict_types = 1 );
@@ -36,7 +36,8 @@ use WC_Payment_Gateway_CC;
 use WP_Error;
 
 /**
- * Native WooPayments payment gateway shell.
+ * The WooPayments card gateway and its payment-method instances: fields, availability, payments, refunds and
+ * saved methods.
  *
  * Hook-name parity: a handful of the filters/actions this gateway fires intentionally keep the
  * standalone WooPayments **plugin's** hook names (e.g. the `wcpay_` prefix or the plugin's
@@ -50,7 +51,7 @@ use WP_Error;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class NativeWooPaymentsGateway extends WC_Payment_Gateway_CC {
+class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 	/**
 	 * Untranslated gateway title.

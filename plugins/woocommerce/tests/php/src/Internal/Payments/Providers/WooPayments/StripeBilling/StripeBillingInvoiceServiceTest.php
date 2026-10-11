@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
@@ -82,7 +82,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Card gateway stand-in that records the payment method copied to a subscription.
 	 *
-	 * @var NativeWooPaymentsGateway&MockObject
+	 * @var WooPaymentsGateway&MockObject
 	 */
 	private $gateway;
 
@@ -117,11 +117,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$module = $this->createMock( WooPaymentsStripeBillingModule::class );
 		$module->method( 'is_stripe_billing_enabled' )->willReturnCallback( fn() => $this->stripe_billing_enabled );
 
-		$this->gateway = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+		$this->gateway = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'update_failing_payment_method' ) )
 			->getMock();
-		wc_get_container()->replace( NativeWooPaymentsGateway::class, $this->gateway );
+		wc_get_container()->replace( WooPaymentsGateway::class, $this->gateway );
 
 		$this->sut = new StripeBillingInvoiceService();
 		$this->sut->init( $api, $api_client, $module, $logger );

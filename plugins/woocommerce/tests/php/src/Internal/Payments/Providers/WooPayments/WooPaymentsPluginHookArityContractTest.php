@@ -29,7 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetAccountCapitalLinkRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsGetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
@@ -686,7 +686,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * whether the current request is a WooPay Store API request.
 	 */
 	private function probe_store_api_request(): void {
-		$gateway = new NativeWooPaymentsGateway();
+		$gateway = new WooPaymentsGateway();
 		$this->native_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
 	}
 
@@ -753,8 +753,8 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Group `add_payment_method` (1 hook): the My Account "add payment method" gateway action, with
 	 * test doubles for the API/customer/token services swapped in via the DI container (the
-	 * container-replacement pattern `NativeWooPaymentsGatewayTest` uses), since
-	 * `NativeWooPaymentsGateway` resolves them lazily through `wc_get_container()`.
+	 * container-replacement pattern `WooPaymentsGatewayTest` uses), since
+	 * `WooPaymentsGateway` resolves them lazily through `wc_get_container()`.
 	 */
 	private function probe_add_payment_method(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Saving/restoring $_POST around an in-process probe request, not handling a real HTTP submission.
@@ -794,7 +794,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_all_resolved();
 
 		try {
-			$gateway = new NativeWooPaymentsGateway();
+			$gateway = new WooPaymentsGateway();
 			$gateway->add_payment_method();
 		} finally {
 			$_POST = $previous_post;

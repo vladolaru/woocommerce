@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use WC_Order;
@@ -218,7 +218,7 @@ class StripeBillingInvoiceService {
 
 		$subscription->set_requires_manual_renewal( false );
 		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		wc_get_container()->get( NativeWooPaymentsGateway::class )->update_failing_payment_method( $subscription, $order );
+		wc_get_container()->get( WooPaymentsGateway::class )->update_failing_payment_method( $subscription, $order );
 		$subscription->save();
 	}
 

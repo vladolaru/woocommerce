@@ -40,9 +40,9 @@ class WooPaymentsOnboardingAdapter {
 	/**
 	 * Native WooPayments gateway.
 	 *
-	 * @var NativeWooPaymentsGateway|null
+	 * @var WooPaymentsGateway|null
 	 */
-	private ?NativeWooPaymentsGateway $native_gateway = null;
+	private ?WooPaymentsGateway $native_gateway = null;
 
 	/**
 	 * Native WooPayments account service.
@@ -363,11 +363,11 @@ class WooPaymentsOnboardingAdapter {
 	/**
 	 * Get the native WooPayments gateway.
 	 *
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function get_native_gateway(): NativeWooPaymentsGateway {
+	private function get_native_gateway(): WooPaymentsGateway {
 		if ( null === $this->native_gateway ) {
-			$this->native_gateway = wc_get_container()->get( NativeWooPaymentsGateway::class );
+			$this->native_gateway = wc_get_container()->get( WooPaymentsGateway::class );
 		}
 
 		return $this->native_gateway;

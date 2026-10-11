@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -170,13 +170,13 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			);
 			$this->make_native_active_on_current_site();
 			$primary_token_id = $this->create_card_token( $user_id, 'pm_primary' );
-			$gateway          = new NativeWooPaymentsGateway();
+			$gateway          = new WooPaymentsGateway();
 			$provider         = $this->getMockBuilder( WooPaymentsProvider::class )
 				->disableOriginalConstructor()
 				->onlyMethods( array( 'can_process_payments' ) )
 				->getMock();
 			$provider->method( 'can_process_payments' )->willReturn( true );
-			$provider_property = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'provider' );
+			$provider_property = new \ReflectionProperty( WooPaymentsGateway::class, 'provider' );
 			$provider_property->setAccessible( true );
 			$provider_property->setValue( $gateway, $provider );
 			add_filter( 'wcpay_test_mode', '__return_true' );
@@ -307,13 +307,13 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$runtime_arbiter->invalidate();
 			add_filter( 'wcpay_test_mode', '__return_true' );
 
-			$gateway  = new NativeWooPaymentsGateway();
+			$gateway  = new WooPaymentsGateway();
 			$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 				->disableOriginalConstructor()
 				->onlyMethods( array( 'can_process_payments' ) )
 				->getMock();
 			$provider->method( 'can_process_payments' )->willReturn( true );
-			$provider_property = new \ReflectionProperty( NativeWooPaymentsGateway::class, 'provider' );
+			$provider_property = new \ReflectionProperty( WooPaymentsGateway::class, 'provider' );
 			$provider_property->setAccessible( true );
 			$provider_property->setValue( $gateway, $provider );
 
@@ -398,7 +398,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 
 		try {
 			update_option( 'wcpay_account_data', $this->account_cache( 'primary', 'US' ) );
-			$gateway = new NativeWooPaymentsGateway( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
 			$this->assertSame( 'Cash App Afterpay', $gateway->get_title() );
 			$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
 
@@ -624,10 +624,10 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	/**
 	 * Read provider payment method IDs from the gateway's current token cache.
 	 *
-	 * @param NativeWooPaymentsGateway $gateway Gateway instance.
+	 * @param WooPaymentsGateway $gateway Gateway instance.
 	 * @return string[]
 	 */
-	private function get_payment_method_ids( NativeWooPaymentsGateway $gateway ): array {
+	private function get_payment_method_ids( WooPaymentsGateway $gateway ): array {
 		return array_values(
 			array_map(
 				static fn ( WC_Payment_Token $token ): string => $token->get_token(),

@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -3302,7 +3302,7 @@ class WooPaymentsService {
 	 * The client also drops its business types cache, which native never fills.
 	 */
 	private function clear_native_onboarding_data(): void {
-		$this->proxy->call_function( 'delete_transient', NativeWooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
+		$this->proxy->call_function( 'delete_transient', WooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
 		$this->get_native_account_service()->clear_onboarding_fields_cache();
 	}
 

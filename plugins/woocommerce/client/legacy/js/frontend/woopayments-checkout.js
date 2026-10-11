@@ -1676,7 +1676,7 @@
 			'wcpay-fraud-prevention-token',
 			getFraudPreventionToken()
 		);
-		// Read by NativeWooPaymentsGateway through WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD; a saved
+		// Read by WooPaymentsGateway through WooPaymentsPlatformPaymentMethodContext::CHECKOUT_FIELD; a saved
 		// token was never created on the platform here.
 		ensureHiddenField(
 			form,

@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
@@ -141,7 +141,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
-		$gateway     = $this->getMockBuilder( NativeWooPaymentsGateway::class )
+		$gateway     = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
 			->getMock();
@@ -695,9 +695,9 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
-		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
-		$klarna_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
-		$alipay_gateway          = new NativeWooPaymentsGateway( $payment_method_registry->get( 'alipay' ) );
+		$card_gateway            = new WooPaymentsGateway( $payment_method_registry->get( 'card' ) );
+		$klarna_gateway          = new WooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		$alipay_gateway          = new WooPaymentsGateway( $payment_method_registry->get( 'alipay' ) );
 		$provider                = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
@@ -748,7 +748,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( false );
-		$provider->method( 'get_payment_gateways' )->willReturn( array( new NativeWooPaymentsGateway( $registry->get( 'card' ) ), new NativeWooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
+		$provider->method( 'get_payment_gateways' )->willReturn( array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
 		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
@@ -805,10 +805,10 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	 */
 	public function test_get_payment_method_data_uses_current_gateway_definition(): void {
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
-		$card_gateway            = new NativeWooPaymentsGateway( $payment_method_registry->get( 'card' ) );
+		$card_gateway            = new WooPaymentsGateway( $payment_method_registry->get( 'card' ) );
 		// A card list unlike the Klarna gateway's, so the test shows which list Blocks receives.
 		$card_gateway->supports = array( 'products', 'refunds', 'tokenization', 'add_payment_method', 'subscriptions' );
-		$klarna_gateway         = new NativeWooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
+		$klarna_gateway         = new WooPaymentsGateway( $payment_method_registry->get( 'klarna' ) );
 		$this->assertNotSame( $card_gateway->supports, $klarna_gateway->supports );
 		$asset_api = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()

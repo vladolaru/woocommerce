@@ -5,7 +5,7 @@
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 40845fd09e6); its wpcom-local store transport rewrites public-api.wordpress.com to the local WPCOM",
 		"captured_via": "wp_remote_get( 'https://public-api.wordpress.com/wpcom/v2/wcpay/accounts/fraud_services' ) from WP-CLI on :8889, the same unauthenticated GET WooPaymentsApiClient::fetch_public_fraud_services_config() sends; one request, 2026-10-02 19:22 EEST",
 		"sanitized": "nothing to sanitize: the endpoint is public and the body carries no identifiers; body kept verbatim as the raw string",
-		"used_by": "NativeWooPaymentsGatewayTest payment_fields cases and WooPaymentsPluginHookArityContractTest (wcpay_payment_fields_js_config), through Fixtures/RecordedPublicFraudServices.php"
+		"used_by": "WooPaymentsGatewayTest payment_fields cases and WooPaymentsPluginHookArityContractTest (wcpay_payment_fields_js_config), through Fixtures/RecordedPublicFraudServices.php"
 	},
 	"entries": [
 		{

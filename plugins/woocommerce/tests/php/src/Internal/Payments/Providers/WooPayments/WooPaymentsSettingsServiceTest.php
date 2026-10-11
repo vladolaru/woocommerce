@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\NativeWooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -3343,16 +3343,16 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build the card gateway over a processing-ready provider and an account with an active card capability.
 	 *
-	 * @return NativeWooPaymentsGateway
+	 * @return WooPaymentsGateway
 	 */
-	private function create_card_gateway(): NativeWooPaymentsGateway {
+	private function create_card_gateway(): WooPaymentsGateway {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$gateway = new NativeWooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
+		$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' ) );
 		$gateway->init( new RecordingPaymentProcessingService(), $provider, null, null, $this->create_account_service() );
 
 		return $gateway;
