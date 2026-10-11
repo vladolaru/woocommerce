@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPluginEndpointsContractTest file.
+ * WooPaymentsRestRoutesContractTest file.
  */
 
 declare( strict_types = 1 );
@@ -19,15 +19,15 @@ use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 
 /**
- * Pins the plugin 11.1.0 REST route and AJAX action surface (`plugin-11.1.0-endpoints.json`)
+ * Pins the plugin 11.1.0 REST route and AJAX action surface (`woopayments-endpoints.json`)
  * against what native serves, so a route or action neither served nor recorded as an allowed
  * difference is a build-time failure instead of a silent regression.
  *
  * @since 11.2.0
  */
-class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
+class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 
-	use NativeSourceScanTrait;
+	use SourceScanTrait;
 
 	/**
 	 * Native scan roots for the AJAX action literal harvest.
@@ -103,7 +103,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	private static array $fixture;
 
 	/**
-	 * A shop-manager user, created lazily the first time `native_serves()` needs to probe a
+	 * A shop-manager user, created lazily the first time `builtin_serves()` needs to probe a
 	 * permission callback, and reused for the rest of the test.
 	 *
 	 * @var int|null
@@ -111,10 +111,10 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	private ?int $shop_manager_id = null;
 
 	/**
-	 * Load the plugin-11.1.0-endpoints.json fixture once for the class.
+	 * Load the woopayments-endpoints.json fixture once for the class.
 	 */
 	public static function wpSetUpBeforeClass(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-endpoints.json';
+		$path = __DIR__ . '/Fixtures/woopayments-endpoints.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		self::$fixture = json_decode( (string) file_get_contents( $path ), true );
 	}
@@ -191,11 +191,11 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native serves every plugin 11.1.0 REST route and method, or the difference is recorded.
+	 * @testdox The built-in WooPayments serves every REST route and method of the WooPayments extension, or the difference is recorded.
 	 */
-	public function test_native_serves_every_plugin_rest_route_and_method(): void {
-		$native_routes = $this->server->get_routes();
-		$failures      = array();
+	public function test_builtin_serves_every_woopayments_extension_rest_route_and_method(): void {
+		$builtin_routes = $this->server->get_routes();
+		$failures       = array();
 
 		foreach ( self::$fixture['rest_routes'] as $route ) {
 			foreach ( $route['methods'] as $method ) {
@@ -205,7 +205,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 				}
 
 				$fixture_path = '/' . $route['namespace'] . '/' . ltrim( $route['route'], '/' );
-				if ( ! $this->native_serves( $native_routes, $fixture_path, $route['sample_path'], $method ) ) {
+				if ( ! $this->builtin_serves( $builtin_routes, $fixture_path, $route['sample_path'], $method ) ) {
 					$failures[] = $key . ' (plugin_site: ' . $route['plugin_site'] . ')';
 				}
 			}
@@ -215,17 +215,17 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Every superseded route's native NOX successor is registered.
+	 * @testdox Every superseded route's NOX successor is registered.
 	 */
-	public function test_superseded_routes_have_their_native_successor(): void {
-		$native_routes = $this->server->get_routes();
-		$missing       = array();
+	public function test_superseded_routes_have_their_successor(): void {
+		$builtin_routes = $this->server->get_routes();
+		$missing        = array();
 
 		foreach ( self::ALLOWED_DIFFERENCES as $key => $difference ) {
 			foreach ( $difference['successors'] as $successor ) {
 				list( $namespace, $route ) = explode( ' ', $successor, 2 );
 				$full_path                 = '/' . trim( $namespace, '/' ) . '/' . ltrim( $route, '/' );
-				if ( ! array_key_exists( $full_path, $native_routes ) ) {
+				if ( ! array_key_exists( $full_path, $builtin_routes ) ) {
 					$missing[] = $key . ' -> ' . $full_path;
 				}
 			}
@@ -235,7 +235,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native has a source site naming every plugin 11.1.0 AJAX action.
+	 * @testdox The built-in WooPayments has a source site naming every AJAX action of the WooPayments extension.
 	 *
 	 * AJAX action registration is scattered across several runtime gates (WooPay enablement,
 	 * Subscriptions and Bookings availability) that a disconnected unit test cannot all satisfy
@@ -247,7 +247,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	 * `WooPaymentsSubscriptionAdminPaymentMethodHandlerTest` (1) and
 	 * `MultiCurrencyBookingsCompatibilityControllerTest` (2).
 	 */
-	public function test_native_names_every_plugin_ajax_action(): void {
+	public function test_builtin_names_every_woopayments_extension_ajax_action(): void {
 		$plugin_path = WC()->plugin_path();
 		$roots       = array_map(
 			static function ( string $root ) use ( $plugin_path ): string {
@@ -255,7 +255,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 			},
 			self::AJAX_SCAN_ROOTS
 		);
-		$literals    = array_flip( $this->native_all_php_string_literals( $this->native_collect_files( $roots, array( 'php' ) ) ) );
+		$literals    = array_flip( $this->source_all_php_string_literals( $this->source_collect_files( $roots, array( 'php' ) ) ) );
 		$missing     = array();
 
 		foreach ( self::$fixture['ajax_actions'] as $action ) {
@@ -268,11 +268,11 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No ALLOWED_DIFFERENCES route is stale: native must not already serve it.
+	 * @testdox No ALLOWED_DIFFERENCES route is stale: the built-in WooPayments must not already serve it.
 	 */
 	public function test_allowed_differences_are_not_stale(): void {
-		$native_routes = $this->server->get_routes();
-		$stale         = array();
+		$builtin_routes = $this->server->get_routes();
+		$stale          = array();
 
 		foreach ( self::$fixture['rest_routes'] as $route ) {
 			foreach ( $route['methods'] as $method ) {
@@ -282,7 +282,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 				}
 
 				$fixture_path = '/' . $route['namespace'] . '/' . ltrim( $route['route'], '/' );
-				if ( $this->native_serves( $native_routes, $fixture_path, $route['sample_path'], $method ) ) {
+				if ( $this->builtin_serves( $builtin_routes, $fixture_path, $route['sample_path'], $method ) ) {
 					$stale[] = $key;
 				}
 			}
@@ -303,26 +303,26 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	 * while still accepting an equivalent or widened group regex (bc-surface-diff §2), since the
 	 * skeleton comparison never looks at what is inside the group.
 	 *
-	 * @param array<string,mixed> $native_routes Route table from `WP_REST_Server::get_routes()`.
+	 * @param array<string,mixed> $builtin_routes Route table from `WP_REST_Server::get_routes()`.
 	 * @param string              $fixture_path  The fixture route with its namespace, groups intact.
 	 * @param string              $sample_path   A concrete path matching the fixture route's regex.
 	 * @param string              $method        HTTP method.
 	 */
-	private function native_serves( array $native_routes, string $fixture_path, string $sample_path, string $method ): bool {
+	private function builtin_serves( array $builtin_routes, string $fixture_path, string $sample_path, string $method ): bool {
 		$fixture_skeleton = $this->route_skeleton( $fixture_path );
 
-		foreach ( $native_routes as $native_route => $handlers ) {
-			if ( $this->route_skeleton( $native_route ) !== $fixture_skeleton ) {
+		foreach ( $builtin_routes as $builtin_route => $handlers ) {
+			if ( $this->route_skeleton( $builtin_route ) !== $fixture_skeleton ) {
 				continue;
 			}
 
-			if ( 1 !== preg_match( '@^' . $native_route . '$@i', $sample_path ) ) {
+			if ( 1 !== preg_match( '@^' . $builtin_route . '$@i', $sample_path ) ) {
 				continue;
 			}
 
 			foreach ( $handlers as $handler ) {
 				if ( isset( $handler['methods'][ $method ] ) && $handler['methods'][ $method ] ) {
-					if ( ! $this->native_grants_shop_manager( $handler, $sample_path, $method ) ) {
+					if ( ! $this->builtin_grants_shop_manager( $handler, $sample_path, $method ) ) {
 						continue;
 					}
 
@@ -360,7 +360,7 @@ class WooPaymentsPluginEndpointsContractTest extends WC_REST_Unit_Test_Case {
 	 * @param string              $sample_path Concrete sample path for the matched route.
 	 * @param string              $method      HTTP method.
 	 */
-	private function native_grants_shop_manager( array $handler, string $sample_path, string $method ): bool {
+	private function builtin_grants_shop_manager( array $handler, string $sample_path, string $method ): bool {
 		$callback = $handler['permission_callback'] ?? null;
 		if ( ! is_callable( $callback ) ) {
 			return true;

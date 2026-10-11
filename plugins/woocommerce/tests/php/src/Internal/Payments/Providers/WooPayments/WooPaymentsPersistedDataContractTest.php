@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPluginPersistenceContractTest file.
+ * WooPaymentsPersistedDataContractTest file.
  */
 
 declare( strict_types = 1 );
@@ -16,15 +16,15 @@ use WC_Unit_Test_Case;
 
 /**
  * Pins the plugin 11.1.0 persisted-data and Action Scheduler surface
- * (`plugin-11.1.0-persisted-data.json`) against native, so a key or scheduler hook neither named
+ * (`woopayments-persisted-data.json`) against native, so a key or scheduler hook neither named
  * nor recorded as an allowed difference is a build-time failure instead of a silent data-loss
  * risk on cutover.
  *
  * @since 11.2.0
  */
-class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
+class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 
-	use NativeSourceScanTrait;
+	use SourceScanTrait;
 
 	/**
 	 * Native scan roots for the persisted-data literal harvest.
@@ -88,7 +88,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @var array<string,string>
 	 */
-	private const PLUGIN_READ_ONLY_KEYS = array(
+	private const WOOPAYMENTS_EXTENSION_READ_ONLY_KEYS = array(
 		'wcpay_frt_review_feature_active'      => 'Client 11.1.0 only reads it (class-wc-payments-features.php:262); the platform or support sets it.',
 		'wcpay_session_rate_limiter_disabled_' => 'Client 11.1.0 only reads it (class-session-rate-limiter.php:92); support sets it by hand.',
 		'_intent_status'                       => 'Client 11.1.0 only reads it (class-wc-rest-payments-charges-controller.php:89); older plugin versions wrote it.',
@@ -115,10 +115,10 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	private static array $fixture;
 
 	/**
-	 * Load the plugin-11.1.0-persisted-data.json fixture once for the class.
+	 * Load the woopayments-persisted-data.json fixture once for the class.
 	 */
 	public static function wpSetUpBeforeClass(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-persisted-data.json';
+		$path = __DIR__ . '/Fixtures/woopayments-persisted-data.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		self::$fixture = json_decode( (string) file_get_contents( $path ), true );
 	}
@@ -173,19 +173,19 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native names every plugin 11.1.0 persistence key, or the difference is recorded.
+	 * @testdox The built-in WooPayments names every persistence key of the WooPayments extension, or the difference is recorded.
 	 */
-	public function test_native_names_every_plugin_persistence_key_or_allows_it(): void {
-		$literals = $this->native_literals();
+	public function test_builtin_names_every_woopayments_extension_persistence_key_or_allows_it(): void {
+		$literals = $this->builtin_literals();
 		$failures = array();
 
 		foreach ( self::$fixture['entries'] as $entry ) {
 			$key = $entry['key'];
-			if ( isset( self::ALLOWED_DIFFERENCES[ $key ] ) || isset( self::KNOWN_GAPS[ $key ] ) || isset( self::PLUGIN_READ_ONLY_KEYS[ $key ] ) ) {
+			if ( isset( self::ALLOWED_DIFFERENCES[ $key ] ) || isset( self::KNOWN_GAPS[ $key ] ) || isset( self::WOOPAYMENTS_EXTENSION_READ_ONLY_KEYS[ $key ] ) ) {
 				continue;
 			}
 
-			if ( ! $this->native_has_key( $literals, $key, $entry['match'] ) ) {
+			if ( ! $this->builtin_has_key( $literals, $key, $entry['match'] ) ) {
 				$failures[] = $key . ' (' . $entry['match'] . ', plugin_site: ' . $entry['plugin_site'] . ')';
 			}
 		}
@@ -194,13 +194,13 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native runs a handler on every preserved Action Scheduler hook.
+	 * @testdox The built-in WooPayments runs a handler on every preserved Action Scheduler hook.
 	 *
 	 * This proves the two owning services hook the preserved names when registered directly; that
 	 * the cron request tier of the bootstrap matrix actually resolves and registers them
 	 * (`WooPaymentsProvider::get_classes_by_setup_tier()`) is owned by `PaymentsBootstrapTest`.
 	 */
-	public function test_native_handles_preserved_action_scheduler_hooks(): void {
+	public function test_builtin_handles_preserved_action_scheduler_hooks(): void {
 		wc_get_container()->get( WooPaymentsOperationalQueueService::class )->register();
 		wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class )->register();
 
@@ -215,7 +215,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native schedules the preserved Action Scheduler hooks under the plugin's own group.
+	 * @testdox The built-in WooPayments schedules each preserved Action Scheduler hook under the WooPayments extension's group for it.
 	 *
 	 * The fixture's `group` column is read per scheduling call site at the 11.1.0 tag
 	 * (`extract-persisted-data.php` Pass 6): `wcpay_store_setup_sync` under
@@ -224,30 +224,30 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 * (`class-wc-payments-post-kyc-activation-email-service.php:113`,
 	 * `class-wc-payments-remediate-canceled-auth-fees.php:570,592`).
 	 */
-	public function test_preserved_action_scheduler_hooks_use_the_plugin_group(): void {
-		$native_groups = array(
+	public function test_preserved_action_scheduler_hooks_use_the_woopayments_extension_groups(): void {
+		$builtin_groups               = array(
 			'wcpay_store_setup_sync'                      => WooPaymentsActionSchedulerService::GROUP_ID,
 			'wcpay_post_kyc_activation_email_send'        => WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_GROUP,
 			'wcpay_remediate_canceled_authorization_fees' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 			'wcpay_remediate_canceled_authorization_fees_dry_run' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 		);
-		$plugin_groups = array();
+		$woopayments_extension_groups = array();
 		foreach ( self::$fixture['entries'] as $entry ) {
-			if ( 'action_scheduler_hook' === $entry['store'] && isset( $native_groups[ $entry['key'] ] ) ) {
-				$plugin_groups[ $entry['key'] ] = $entry['group'];
+			if ( 'action_scheduler_hook' === $entry['store'] && isset( $builtin_groups[ $entry['key'] ] ) ) {
+				$woopayments_extension_groups[ $entry['key'] ] = $entry['group'];
 			}
 		}
 
-		ksort( $native_groups );
-		ksort( $plugin_groups );
-		$this->assertSame( $native_groups, $plugin_groups, 'Each preserved Action Scheduler hook must schedule under its plugin 11.1.0 group.' );
+		ksort( $builtin_groups );
+		ksort( $woopayments_extension_groups );
+		$this->assertSame( $builtin_groups, $woopayments_extension_groups, 'Each preserved Action Scheduler hook must schedule under its plugin 11.1.0 group.' );
 	}
 
 	/**
-	 * @testdox No ALLOWED_DIFFERENCES or KNOWN_GAPS key is stale: native must not already name it.
+	 * @testdox No ALLOWED_DIFFERENCES or KNOWN_GAPS key is stale: the built-in WooPayments must not already name it.
 	 */
 	public function test_allowed_differences_are_not_stale(): void {
-		$literals = $this->native_literals();
+		$literals = $this->builtin_literals();
 		$stale    = array();
 
 		foreach ( self::$fixture['entries'] as $entry ) {
@@ -256,7 +256,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 
-			if ( $this->native_has_key( $literals, $key, $entry['match'] ) ) {
+			if ( $this->builtin_has_key( $literals, $key, $entry['match'] ) ) {
 				$stale[] = $key;
 			}
 		}
@@ -273,7 +273,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<int,string>
 	 */
-	private function native_literals(): array {
+	private function builtin_literals(): array {
 		$plugin_path     = WC()->plugin_path();
 		$vocabulary_file = $plugin_path . '/' . self::PERSISTENCE_VOCABULARY_FILE;
 		$roots           = array_map(
@@ -284,8 +284,8 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 		);
 
 		$literals = array();
-		foreach ( $this->native_collect_files( $roots, array( 'php' ) ) as $path ) {
-			$tokens = $this->native_tokenize( $path );
+		foreach ( $this->source_collect_files( $roots, array( 'php' ) ) as $path ) {
+			$tokens = $this->source_tokenize( $path );
 			foreach ( $tokens as $index => $token ) {
 				if ( ! is_array( $token ) || T_CONSTANT_ENCAPSED_STRING !== $token[0] || $this->is_read_call_key( $tokens, $index ) ) {
 					continue;
@@ -295,7 +295,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				$value = $this->native_resolve_literal( $token[1] );
+				$value = $this->source_resolve_literal( $token[1] );
 				if ( null !== $value ) {
 					$literals[] = $value;
 				}
@@ -369,7 +369,7 @@ class WooPaymentsPluginPersistenceContractTest extends WC_Unit_Test_Case {
 	 * @param string            $key        Fixture key.
 	 * @param string            $match_rule `exact` or `prefix`.
 	 */
-	private function native_has_key( array $literals, string $key, string $match_rule ): bool {
+	private function builtin_has_key( array $literals, string $key, string $match_rule ): bool {
 		if ( 'exact' === $match_rule ) {
 			return in_array( $key, $literals, true );
 		}

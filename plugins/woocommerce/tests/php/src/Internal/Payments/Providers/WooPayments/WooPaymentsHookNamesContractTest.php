@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPluginHookNamesContractTest file.
+ * WooPaymentsHookNamesContractTest file.
  */
 
 declare( strict_types = 1 );
@@ -10,20 +10,20 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 hook name surface (`plugin-11.1.0-hooks.json`, shared with
- * `WooPaymentsPluginHookArityContractTest`) against native, so an owned hook neither fired natively
+ * Pins the plugin 11.1.0 hook name surface (`woopayments-hooks.json`, shared with
+ * `WooPaymentsHookArityContractTest`) against native, so an owned hook neither fired natively
  * nor recorded as an allowed difference is a build-time failure instead of a silent regression.
  *
  * Every fixture hook is covered by exactly one of three routes: proven at runtime by the arity
  * test's `probed_hooks()` (70 names), resolved here by a static native fire-site scan, or listed in
- * `ALLOWED_DIFFERENCES` with its recorded authority. `NATIVE_ONLY_HOOKS` (D6) separately pins the 9
+ * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 9
  * native-only filters that carry no plugin fixture entry at all.
  *
  * @since 11.2.0
  */
-class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
+class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 
-	use NativeSourceScanTrait;
+	use SourceScanTrait;
 
 	/**
 	 * Native scan roots for the hook fire-site scan.
@@ -130,7 +130,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	/**
 	 * The native-only filters `test-native-hook-naming-gate.py` pinned (D6), less the five cutover readiness
 	 * filters deleted with their overrides and the ten that only tests read. Not plugin data, so
-	 * not part of `plugin-11.1.0-hooks.json`. The retired gate itself pinned per-hook *site counts*
+	 * not part of `woopayments-hooks.json`. The retired gate itself pinned per-hook *site counts*
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
 	 * hook's fire site directly (`WooPaymentsRuntimeArbiter`, `NativePaymentsShadowMode`, and the
 	 * `WooPaymentsFailedEventsProvider`/`WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
@@ -146,7 +146,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @var array<string,int>
 	 */
-	private const NATIVE_ONLY_HOOKS = array(
+	private const BUILTIN_ONLY_HOOKS = array(
 		'woocommerce_woopayments_builtin_enabled'         => 1,
 		'woocommerce_native_payments_shadow_mode_enabled' => 1,
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
@@ -159,17 +159,17 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Loaded `plugin-11.1.0-hooks.json` fixture, keyed by hook name.
+	 * Loaded `woopayments-hooks.json` fixture, keyed by hook name.
 	 *
 	 * @var array<string,array<string,mixed>>
 	 */
 	private static array $fixture_by_name;
 
 	/**
-	 * Load the shared plugin-11.1.0-hooks.json fixture once for the class.
+	 * Load the shared woopayments-hooks.json fixture once for the class.
 	 */
 	public static function wpSetUpBeforeClass(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-hooks.json';
+		$path = __DIR__ . '/Fixtures/woopayments-hooks.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		$fixture               = json_decode( (string) file_get_contents( $path ), true );
 		self::$fixture_by_name = array();
@@ -182,7 +182,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @testdox The fixture is complete: its declared count matches its entries, and every name is unique and sorted.
 	 */
 	public function test_fixture_is_complete(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-hooks.json';
+		$path = __DIR__ . '/Fixtures/woopayments-hooks.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		$fixture = json_decode( (string) file_get_contents( $path ), true );
 
@@ -197,11 +197,11 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Every owned plugin 11.1.0 hook is fired natively, proven at runtime, or an allowed difference.
+	 * @testdox Every owned WooPayments extension hook is fired by the built-in WooPayments, proven at runtime, or an allowed difference.
 	 */
-	public function test_every_plugin_hook_is_fired_natively_or_allowed(): void {
-		$probed   = WooPaymentsPluginHookArityContractTest::probed_hooks();
-		$sites    = $this->native_hook_fire_sites();
+	public function test_every_woopayments_extension_hook_is_fired_or_allowed(): void {
+		$probed   = WooPaymentsHookArityContractTest::probed_hooks();
+		$sites    = $this->builtin_hook_fire_sites();
 		$failures = array();
 
 		foreach ( self::$fixture_by_name as $name => $entry ) {
@@ -209,7 +209,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 
-			if ( $this->native_all_sites_match_fixture( $sites, $name, (int) $entry['arity'], (string) $entry['kind'] ) ) {
+			if ( $this->builtin_all_sites_match_fixture( $sites, $name, (int) $entry['arity'], (string) $entry['kind'] ) ) {
 				continue;
 			}
 
@@ -227,9 +227,9 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Every statically resolved native site of a runtime-probed hook also keeps the fixture arity.
+	 * @testdox Every statically resolved site of a runtime-probed hook also keeps the fixture arity.
 	 *
-	 * A runtime probe (`WooPaymentsPluginHookArityContractTest`) proves one native call site fires the
+	 * A runtime probe (`WooPaymentsHookArityContractTest`) proves one native call site fires the
 	 * hook with the fixture's arity; it says nothing about a second native site of the same name
 	 * (for example `wcpay_database_cache_ttl` also fires from
 	 * `MultiCurrencyDatabaseCache` and `WooPaymentsAdminMenuBadgeService`, and
@@ -237,8 +237,8 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * This closes that gap statically, without a second runtime probe per secondary site.
 	 */
 	public function test_probed_hook_secondary_sites_keep_the_fixture_arity(): void {
-		$probed      = WooPaymentsPluginHookArityContractTest::probed_hooks();
-		$sites       = $this->native_hook_fire_sites();
+		$probed      = WooPaymentsHookArityContractTest::probed_hooks();
+		$sites       = $this->builtin_hook_fire_sites();
 		$wrong_arity = array();
 
 		foreach ( array_keys( $probed ) as $name ) {
@@ -258,11 +258,11 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No ALLOWED_DIFFERENCES hook is stale: native must not fire it, and the runtime probe set must not have absorbed it.
+	 * @testdox No ALLOWED_DIFFERENCES hook is stale: the built-in WooPayments must not fire it, and the runtime probe set must not have absorbed it.
 	 */
 	public function test_allowed_differences_are_not_stale(): void {
-		$probed = WooPaymentsPluginHookArityContractTest::probed_hooks();
-		$sites  = $this->native_hook_fire_sites();
+		$probed = WooPaymentsHookArityContractTest::probed_hooks();
+		$sites  = $this->builtin_hook_fire_sites();
 		$stale  = array();
 
 		foreach ( self::ALLOWED_DIFFERENCES as $name => $authority ) {
@@ -276,15 +276,15 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The 9 native-only hooks (D6) keep exactly their pinned names and arity, at 10 fire sites total.
+	 * @testdox The 9 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 10 fire sites total.
 	 */
-	public function test_native_only_hooks_keep_their_names_and_arity(): void {
-		$sites       = $this->native_hook_fire_sites();
+	public function test_builtin_only_hooks_keep_their_names_and_arity(): void {
+		$sites       = $this->builtin_hook_fire_sites();
 		$missing     = array();
 		$wrong_arity = array();
 		$total_sites = 0;
 
-		foreach ( self::NATIVE_ONLY_HOOKS as $name => $arity ) {
+		foreach ( self::BUILTIN_ONLY_HOOKS as $name => $arity ) {
 			$found = $sites[ $name ] ?? array();
 			if ( array() === $found ) {
 				$missing[] = $name;
@@ -301,7 +301,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $missing, "Every native-only hook must have at least one fire site:\n" . implode( "\n", $missing ) );
 		$this->assertSame( array(), $wrong_arity, "Every native-only hook fire site must keep its pinned arity:\n" . implode( "\n", $wrong_arity ) );
-		$this->assertSame( 10, $total_sites, 'The 9 native-only hooks must fire from exactly 10 sites total (see the NATIVE_ONLY_HOOKS docblock).' );
+		$this->assertSame( 10, $total_sites, 'The 9 native-only hooks must fire from exactly 10 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
 	}
 
 	/**
@@ -311,7 +311,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @param string                                                            $name  Hook name.
 	 * @param int                                                               $arity Expected arity.
 	 */
-	private function native_has_matching_site( array $sites, string $name, int $arity ): bool {
+	private function builtin_has_matching_site( array $sites, string $name, int $arity ): bool {
 		foreach ( $sites[ $name ] ?? array() as $site ) {
 			if ( $arity === $site['arity'] ) {
 				return true;
@@ -337,7 +337,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @param int                                                               $arity Expected arity.
 	 * @param string                                                            $kind  Expected `filter` or `action`.
 	 */
-	private function native_all_sites_match_fixture( array $sites, string $name, int $arity, string $kind ): bool {
+	private function builtin_all_sites_match_fixture( array $sites, string $name, int $arity, string $kind ): bool {
 		$found = $sites[ $name ] ?? array();
 		if ( array() === $found ) {
 			return false;
@@ -362,7 +362,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array<int,array{arity:int,kind:string,site:string}>>
 	 */
-	private function native_hook_fire_sites(): array {
+	private function builtin_hook_fire_sites(): array {
 		$plugin_path = WC()->plugin_path();
 		$roots       = array_map(
 			static function ( string $root ) use ( $plugin_path ): string {
@@ -370,7 +370,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 			},
 			self::SCAN_ROOTS
 		);
-		$files       = $this->native_collect_files( $roots, array( 'php' ) );
+		$files       = $this->source_collect_files( $roots, array( 'php' ) );
 		foreach ( self::EXTRA_FILES as $extra ) {
 			$files[] = $plugin_path . '/' . $extra;
 		}
@@ -380,7 +380,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 		$sites = array();
 
 		foreach ( $files as $file ) {
-			$tokens   = $this->native_tokenize( $file );
+			$tokens   = $this->source_tokenize( $file );
 			$relative = ltrim( str_replace( $plugin_path, '', $file ), '/' );
 			$count    = count( $tokens );
 
@@ -399,18 +399,18 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				$open_index = $this->native_next_significant_token_index( $tokens, $i + 1 );
+				$open_index = $this->source_next_significant_token_index( $tokens, $i + 1 );
 				if ( null === $open_index || '(' !== $tokens[ $open_index ] ) {
 					continue;
 				}
 
-				$close_index = $this->native_matching_paren_index( $tokens, $open_index );
-				$args        = $this->native_split_top_level_commas( $tokens, $open_index + 1, $close_index - 1 );
+				$close_index = $this->matching_paren_index( $tokens, $open_index );
+				$args        = $this->split_top_level_commas( $tokens, $open_index + 1, $close_index - 1 );
 				$line        = is_array( $token ) ? $token[2] : 0;
 
 				if ( $is_deprecated ) {
-					$name  = isset( $args[0] ) ? $this->native_resolve_name_arg( $args[0], $file ) : null;
-					$arity = isset( $args[1] ) ? $this->native_literal_array_length( $args[1] ) : null;
+					$name  = isset( $args[0] ) ? $this->resolve_name_arg( $args[0], $file ) : null;
+					$arity = isset( $args[1] ) ? $this->literal_array_length( $args[1] ) : null;
 					if ( null === $name || null === $arity ) {
 						continue;
 					}
@@ -428,7 +428,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 						continue;
 					}
 
-					$name = $this->native_resolve_name_arg( $args[0], $file );
+					$name = $this->resolve_name_arg( $args[0], $file );
 					if ( null === $name ) {
 						continue;
 					}
@@ -444,7 +444,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 				// A `HOOK_ARGUMENT_WRAPPERS` method call: only counts as a fire site when this is a
 				// `->method(` call (skip a same-named local function/variable, if any).
-				$previous = $this->native_previous_significant_token( $tokens, $i );
+				$previous = $this->source_previous_significant_token( $tokens, $i );
 				if ( ! is_array( $previous ) || T_OBJECT_OPERATOR !== $previous[0] ) {
 					continue;
 				}
@@ -453,7 +453,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				$name = $this->native_resolve_name_arg( $args[ $wrapper ], $file );
+				$name = $this->resolve_name_arg( $args[ $wrapper ], $file );
 				if ( null === $name ) {
 					continue;
 				}
@@ -475,7 +475,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @param array<int,mixed> $tokens      PHP tokens.
 	 * @param int              $open_index Index of the opening `(`.
 	 */
-	private function native_matching_paren_index( array $tokens, int $open_index ): int {
+	private function matching_paren_index( array $tokens, int $open_index ): int {
 		$depth = 0;
 		for ( $i = $open_index, $count = count( $tokens ); $i < $count; $i++ ) {
 			$char = is_array( $tokens[ $i ] ) ? null : $tokens[ $i ];
@@ -501,7 +501,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @param int              $end    Last token index inside the parens.
 	 * @return array<int,array<int,mixed>>
 	 */
-	private function native_split_top_level_commas( array $tokens, int $start, int $end ): array {
+	private function split_top_level_commas( array $tokens, int $start, int $end ): array {
 		if ( $start > $end ) {
 			return array();
 		}
@@ -537,8 +537,8 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<int,mixed> $arg_tokens Argument token slice.
 	 */
-	private function native_literal_array_length( array $arg_tokens ): ?int {
-		$significant = $this->native_strip_trivia( $arg_tokens );
+	private function literal_array_length( array $arg_tokens ): ?int {
+		$significant = $this->source_strip_trivia( $arg_tokens );
 		$count       = count( $significant );
 		if ( 0 === $count ) {
 			return null;
@@ -554,7 +554,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 			return 0;
 		}
 
-		$elements = $this->native_split_top_level_commas( $inner, 0, count( $inner ) - 1 );
+		$elements = $this->split_top_level_commas( $inner, 0, count( $inner ) - 1 );
 		$last     = end( $elements );
 		if ( array() === $last ) {
 			// A trailing comma adds no element.
@@ -571,11 +571,11 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @param array<int,mixed> $arg_tokens Argument token slice.
 	 * @param string           $file       Absolute file path the argument was found in.
 	 */
-	private function native_resolve_name_arg( array $arg_tokens, string $file ): ?string {
-		$significant = $this->native_strip_trivia( $arg_tokens );
+	private function resolve_name_arg( array $arg_tokens, string $file ): ?string {
+		$significant = $this->source_strip_trivia( $arg_tokens );
 
 		if ( 1 === count( $significant ) && is_array( $significant[0] ) && T_CONSTANT_ENCAPSED_STRING === $significant[0][0] ) {
-			return $this->native_resolve_literal( $significant[0][1] );
+			return $this->source_resolve_literal( $significant[0][1] );
 		}
 
 		if (
@@ -584,7 +584,7 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 			&& is_array( $significant[1] ) && T_DOUBLE_COLON === $significant[1][0]
 			&& is_array( $significant[2] ) && T_STRING === $significant[2][0]
 		) {
-			return $this->native_resolve_constant_reference( $file, $significant[0][1], $significant[2][1] );
+			return $this->source_resolve_constant_reference( $file, $significant[0][1], $significant[2][1] );
 		}
 
 		return null;

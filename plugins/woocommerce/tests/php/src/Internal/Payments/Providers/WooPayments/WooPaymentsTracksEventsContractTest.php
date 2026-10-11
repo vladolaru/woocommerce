@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPluginTracksContractTest file.
+ * WooPaymentsTracksEventsContractTest file.
  */
 
 declare( strict_types = 1 );
@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 Tracks event call-site surface (`plugin-11.1.0-tracks.json`) against
+ * Pins the plugin 11.1.0 Tracks event call-site surface (`woopayments-tracks.json`) against
  * native, so an event neither recorded nor recorded as an allowed difference or a known gap is a
  * build-time failure instead of a silent analytics regression.
  *
@@ -21,9 +21,9 @@ use WC_Unit_Test_Case;
  *
  * @since 11.2.0
  */
-class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
+class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 
-	use NativeSourceScanTrait;
+	use SourceScanTrait;
 
 	/**
 	 * Native PHP scan roots.
@@ -39,7 +39,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	/**
 	 * Native client (JS/TS) scan roots. Two are glob prefixes rather than whole directories
 	 * (the WooPay order-status admin script and the legacy frontend bundle share their parent
-	 * directory with unrelated files), expanded in `native_client_scan_paths()`.
+	 * directory with unrelated files), expanded in `client_scan_paths()`.
 	 *
 	 * @var array<int,string>
 	 */
@@ -165,10 +165,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	private static array $fixture;
 
 	/**
-	 * Load the plugin-11.1.0-tracks.json fixture once for the class.
+	 * Load the woopayments-tracks.json fixture once for the class.
 	 */
 	public static function wpSetUpBeforeClass(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-tracks.json';
+		$path = __DIR__ . '/Fixtures/woopayments-tracks.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		self::$fixture = json_decode( (string) file_get_contents( $path ), true );
 	}
@@ -186,10 +186,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native has a call site recording every plugin 11.1.0 Tracks event, or the difference is recorded.
+	 * @testdox The built-in WooPayments has a call site recording every Tracks event of the WooPayments extension, or the difference is recorded.
 	 */
-	public function test_native_records_every_plugin_tracks_event_or_allows_it(): void {
-		$native   = $this->native_tracks_wire_names();
+	public function test_builtin_records_every_woopayments_extension_tracks_event_or_allows_it(): void {
+		$builtin  = $this->builtin_tracks_wire_names();
 		$failures = array();
 
 		foreach ( self::$fixture['entries'] as $entry ) {
@@ -198,7 +198,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 
-			if ( ! isset( $native[ $wire_name ] ) ) {
+			if ( ! isset( $builtin[ $wire_name ] ) ) {
 				$failures[] = $wire_name . ' (plugin_site: ' . $entry['plugin_site'] . ')';
 			}
 		}
@@ -207,14 +207,14 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox No ALLOWED_DIFFERENCES or KNOWN_GAPS event is stale: native must not already record it.
+	 * @testdox No ALLOWED_DIFFERENCES or KNOWN_GAPS event is stale: the built-in WooPayments must not already record it.
 	 */
 	public function test_allowed_differences_are_not_stale(): void {
-		$native = $this->native_tracks_wire_names();
-		$stale  = array();
+		$builtin = $this->builtin_tracks_wire_names();
+		$stale   = array();
 
 		foreach ( array_merge( array_keys( self::ALLOWED_DIFFERENCES ), array_keys( self::KNOWN_GAPS ) ) as $wire_name ) {
-			if ( isset( $native[ $wire_name ] ) ) {
+			if ( isset( $builtin[ $wire_name ] ) ) {
 				$stale[] = $wire_name;
 			}
 		}
@@ -243,15 +243,15 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 			},
 			self::PHP_SCAN_ROOTS
 		);
-		foreach ( $this->native_php_tracks_wire_names( $this->native_collect_files( $php_roots, array( 'php' ) ), array( 'queue_user_event' => self::PHP_RECORDERS['queue_user_event'] ) ) as $name ) {
+		foreach ( $this->builtin_php_tracks_wire_names( $this->source_collect_files( $php_roots, array( 'php' ) ), array( 'queue_user_event' => self::PHP_RECORDERS['queue_user_event'] ) ) as $name ) {
 			$sent[ $name ] = true;
 		}
-		foreach ( $this->native_client_scan_paths( $plugin_path ) as $file ) {
+		foreach ( $this->client_scan_paths( $plugin_path ) as $file ) {
 			$path = str_replace( '\\', '/', $file );
 			if ( false === strpos( $path, '/client/legacy/js/frontend/' ) && false === strpos( $path, '/client/blocks/' ) ) {
 				continue;
 			}
-			foreach ( $this->native_js_tracks_wire_names( $file ) as $name ) {
+			foreach ( $this->builtin_js_tracks_wire_names( $file ) as $name ) {
 				if ( 0 === strpos( $name, 'wcpay_' ) ) {
 					$sent[ $name ] = true;
 				}
@@ -259,7 +259,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), array_keys( array_diff_key( $sent, $declared ) ), 'Shopper script events the recorder schema does not declare.' );
-		$this->assertSame( array(), array_keys( array_diff_key( $declared, $this->native_tracks_wire_names() ) ), 'Declared shopper events nothing sends.' );
+		$this->assertSame( array(), array_keys( array_diff_key( $declared, $this->builtin_tracks_wire_names() ) ), 'Declared shopper events nothing sends.' );
 	}
 
 	/**
@@ -267,9 +267,9 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * core (the event source scheme the owner approved on 2026-10-07); a direct call to core's Tracks would send an
 	 * event without that source.
 	 *
-	 * @testdox Should record native server-side Tracks events only through WooPaymentsTracks.
+	 * @testdox Should record server-side Tracks events only through WooPaymentsTracks.
 	 */
-	public function test_native_php_records_core_tracks_only_through_the_helper(): void {
+	public function test_php_records_core_tracks_only_through_the_helper(): void {
 		$plugin_path = WC()->plugin_path();
 		$roots       = array_map(
 			static function ( string $root ) use ( $plugin_path ): string {
@@ -279,12 +279,12 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		);
 		$direct      = array();
 
-		foreach ( $this->native_collect_files( $roots, array( 'php' ) ) as $file ) {
+		foreach ( $this->source_collect_files( $roots, array( 'php' ) ) as $file ) {
 			if ( 'WooPaymentsTracks.php' === basename( $file ) ) {
 				continue;
 			}
 
-			$tokens   = $this->native_strip_trivia( $this->native_tokenize( $file ) );
+			$tokens   = $this->source_strip_trivia( $this->source_tokenize( $file ) );
 			$function = '';
 			foreach ( $tokens as $index => $token ) {
 				if ( is_array( $token ) && T_FUNCTION === $token[0] && is_array( $tokens[ $index + 1 ] ?? null ) ) {
@@ -319,7 +319,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,bool> Wire names as keys (presence set).
 	 */
-	private function native_tracks_wire_names(): array {
+	private function builtin_tracks_wire_names(): array {
 		$names       = array();
 		$plugin_path = WC()->plugin_path();
 
@@ -329,12 +329,12 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 			},
 			self::PHP_SCAN_ROOTS
 		);
-		foreach ( $this->native_php_tracks_wire_names( $this->native_collect_files( $php_roots, array( 'php' ) ) ) as $name ) {
+		foreach ( $this->builtin_php_tracks_wire_names( $this->source_collect_files( $php_roots, array( 'php' ) ) ) as $name ) {
 			$names[ $name ] = true;
 		}
 
-		foreach ( $this->native_client_scan_paths( $plugin_path ) as $file ) {
-			foreach ( $this->native_js_tracks_wire_names( $file ) as $name ) {
+		foreach ( $this->client_scan_paths( $plugin_path ) as $file ) {
+			foreach ( $this->builtin_js_tracks_wire_names( $file ) as $name ) {
 				$names[ $name ] = true;
 			}
 		}
@@ -348,20 +348,20 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $plugin_path Absolute plugin directory.
 	 * @return array<int,string> Absolute file paths.
 	 */
-	private function native_client_scan_paths( string $plugin_path ): array {
+	private function client_scan_paths( string $plugin_path ): array {
 		$files      = array();
 		$extensions = array( 'js', 'jsx', 'ts', 'tsx' );
 
 		foreach ( self::CLIENT_SCAN_ROOTS as $root ) {
 			$absolute = $plugin_path . '/' . $root;
 			if ( false === strpos( $absolute, '*' ) ) {
-				$files = array_merge( $files, $this->native_collect_files( array( $absolute ), $extensions ) );
+				$files = array_merge( $files, $this->source_collect_files( array( $absolute ), $extensions ) );
 				continue;
 			}
 
 			foreach ( glob( $absolute ) as $match ) {
 				if ( is_dir( $match ) ) {
-					$files = array_merge( $files, $this->native_collect_files( array( $match ), $extensions ) );
+					$files = array_merge( $files, $this->source_collect_files( array( $match ), $extensions ) );
 				} elseif ( is_file( $match ) ) {
 					$files[] = $match;
 				}
@@ -378,12 +378,12 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param array<string,array{object:bool|string,prefix:string}>|null $recorders Recorders to scan for; all by default.
 	 * @return array<int,string>
 	 */
-	private function native_php_tracks_wire_names( array $files, ?array $recorders = null ): array {
+	private function builtin_php_tracks_wire_names( array $files, ?array $recorders = null ): array {
 		$recorders = $recorders ?? self::PHP_RECORDERS;
 		$names     = array();
 
 		foreach ( $files as $path ) {
-			$tokens = $this->native_tokenize( $path );
+			$tokens = $this->source_tokenize( $path );
 			$count  = count( $tokens );
 
 			for ( $index = 0; $index < $count; $index++ ) {
@@ -429,14 +429,14 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 					continue;
 				}
 
-				list( $args, $close_index ) = $this->native_php_split_call_args( $tokens, $open_index );
+				list( $args, $close_index ) = $this->php_split_call_args( $tokens, $open_index );
 				if ( null === $close_index || empty( $args ) ) {
 					continue;
 				}
 
-				$first_arg = $this->native_strip_trivia( $args[0] );
+				$first_arg = $this->source_strip_trivia( $args[0] );
 				if ( 1 === count( $first_arg ) && is_array( $first_arg[0] ) && T_CONSTANT_ENCAPSED_STRING === $first_arg[0][0] ) {
-					$literal = $this->native_resolve_literal( $first_arg[0][1] );
+					$literal = $this->source_resolve_literal( $first_arg[0][1] );
 					if ( null !== $literal ) {
 						$names[] = $spec['prefix'] . $literal;
 					}
@@ -454,7 +454,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param int              $open_index  Index of the call's opening `(`.
 	 * @return array{0:array<int,array<int,mixed>>,1:?int}
 	 */
-	private function native_php_split_call_args( array $tokens, int $open_index ): array {
+	private function php_split_call_args( array $tokens, int $open_index ): array {
 		$n         = count( $tokens );
 		$depth     = 0;
 		$args      = array();
@@ -500,7 +500,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $file Absolute JS/TS file path.
 	 * @return array<int,string>
 	 */
-	private function native_js_tracks_wire_names( string $file ): array {
+	private function builtin_js_tracks_wire_names( string $file ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local production source for a scanning assertion.
 		$code = (string) file_get_contents( $file );
 
@@ -526,12 +526,12 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		$names = array();
 
 		foreach ( $recorders as $function_name => $spec ) {
-			foreach ( $this->native_js_find_calls( $code, $function_name ) as $args ) {
+			foreach ( $this->js_find_calls( $code, $function_name ) as $args ) {
 				if ( ! isset( $args[ $spec['arg'] ] ) ) {
 					continue;
 				}
 
-				foreach ( $this->native_js_resolve_argument( $args[ $spec['arg'] ], $code ) as $resolved ) {
+				foreach ( $this->js_resolve_argument( $args[ $spec['arg'] ], $code ) as $resolved ) {
 					$names[] = $spec['prefix'] . $resolved;
 				}
 			}
@@ -550,7 +550,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 *                              other object is not this recorder).
 	 * @return array<int,array<int,string>> One argument-list per call site.
 	 */
-	private function native_js_find_calls( string $code, string $function_name ): array {
+	private function js_find_calls( string $code, string $function_name ): array {
 		$calls = array();
 		if ( ! preg_match_all( '/(?<![.\w$])' . preg_quote( $function_name, '/' ) . '\s*\(/', $code, $matches, PREG_OFFSET_CAPTURE ) ) {
 			return $calls;
@@ -558,7 +558,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 
 		foreach ( $matches[0] as $match ) {
 			$open_pos = $match[1] + strlen( $match[0] ) - 1;
-			$args     = $this->native_js_call_arguments( $code, $open_pos );
+			$args     = $this->js_call_arguments( $code, $open_pos );
 			if ( null !== $args ) {
 				$calls[] = $args;
 			}
@@ -577,7 +577,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param int    $open_pos Index of the opening `(`.
 	 * @return array<int,string>|null Trimmed top-level argument strings, or null if `)` is never reached.
 	 */
-	private function native_js_call_arguments( string $code, int $open_pos ): ?array {
+	private function js_call_arguments( string $code, int $open_pos ): ?array {
 		$len     = strlen( $code );
 		$depth   = 1;
 		$args    = array();
@@ -603,7 +603,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 			if ( "'" === $ch || '"' === $ch || '`' === $ch ) {
-				$end      = $this->native_js_skip_string( $code, $i );
+				$end      = $this->js_skip_string( $code, $i );
 				$current .= substr( $code, $i, $end - $i + 1 );
 				$i        = $end;
 				continue;
@@ -636,7 +636,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $code  Full file source.
 	 * @param int    $start Index of the opening quote.
 	 */
-	private function native_js_skip_string( string $code, int $start ): int {
+	private function js_skip_string( string $code, int $start ): int {
 		$quote = $code[ $start ];
 		$len   = strlen( $code );
 		$i     = $start + 1;
@@ -658,10 +658,10 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $code     Full file source, for cross-referencing a same-file const or map.
 	 * @return array<int,string>
 	 */
-	private function native_js_resolve_argument( string $argument, string $code ): array {
+	private function js_resolve_argument( string $argument, string $code ): array {
 		// A plain string, or a template literal with no interpolation.
 		if ( preg_match( '/^([\'"`])((?:\\\\.|(?!\1)[\s\S])*)\1$/', $argument, $m ) && false === strpos( $m[2], '${' ) ) {
-			return array( $this->native_js_unescape( $m[2] ) );
+			return array( $this->js_unescape( $m[2] ) );
 		}
 
 		// A template literal over a single interpolated identifier: `${ident}suffix`.
@@ -671,13 +671,13 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 				function ( string $branch ) use ( $suffix ) {
 					return $branch . $suffix;
 				},
-				$this->native_js_ternary_branches_for_identifier( $code, $m[1] )
+				$this->js_ternary_branches_for_identifier( $code, $m[1] )
 			);
 		}
 
 		// A ternary of two literals, whatever the condition expression is.
 		if ( preg_match( '/^([\s\S]+?)\?\s*([\'"])((?:\\\\.|(?!\2)[\s\S])*?)\2\s*:\s*([\'"])((?:\\\\.|(?!\4)[\s\S])*?)\4$/', $argument, $m ) ) {
-			return array( $this->native_js_unescape( $m[3] ), $this->native_js_unescape( $m[5] ) );
+			return array( $this->js_unescape( $m[3] ), $this->js_unescape( $m[5] ) );
 		}
 
 		// `methodConfig.loadEvent` / `.clickEvent`: harvest only the property this call reads, so a
@@ -686,12 +686,12 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		// `wcpay_applepay_button_click` / `wcpay_gpay_button_click`, are only ever read via
 		// `.clickEvent`).
 		if ( preg_match( '/\.(loadEvent|clickEvent)$/', $argument, $m ) ) {
-			return $this->native_js_harvest_property_literals( $code, array( $m[1] ) );
+			return $this->js_harvest_property_literals( $code, array( $m[1] ) );
 		}
 
 		// A bare identifier resolved through a same-file `*_EVENTS` map.
 		if ( preg_match( '/^[A-Za-z_$][\w$]*$/', $argument ) ) {
-			return $this->native_js_harvest_events_map( $code );
+			return $this->js_harvest_events_map( $code );
 		}
 
 		return array();
@@ -705,13 +705,13 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $identifier Identifier name.
 	 * @return array<int,string>
 	 */
-	private function native_js_ternary_branches_for_identifier( string $code, string $identifier ): array {
+	private function js_ternary_branches_for_identifier( string $code, string $identifier ): array {
 		$pattern = '/\b' . preg_quote( $identifier, '/' ) . '\s*=\s*[\s\S]+?\?\s*([\'"])((?:\\\\.|(?!\1)[\s\S])*?)\1\s*:\s*([\'"])((?:\\\\.|(?!\3)[\s\S])*?)\3\s*;/';
 		if ( ! preg_match( $pattern, $code, $m ) ) {
 			return array();
 		}
 
-		return array( $this->native_js_unescape( $m[2] ), $this->native_js_unescape( $m[4] ) );
+		return array( $this->js_unescape( $m[2] ), $this->js_unescape( $m[4] ) );
 	}
 
 	/**
@@ -722,13 +722,13 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $properties Property names.
 	 * @return array<int,string>
 	 */
-	private function native_js_harvest_property_literals( string $code, array $properties ): array {
+	private function js_harvest_property_literals( string $code, array $properties ): array {
 		$values  = array();
 		$pattern = '/\b(?:' . implode( '|', array_map( fn( $p ) => preg_quote( $p, '/' ), $properties ) ) . ')\s*:\s*([\'"])((?:\\\\.|(?!\1).)*)\1/';
 
 		if ( preg_match_all( $pattern, $code, $matches ) ) {
 			foreach ( $matches[2] as $value ) {
-				$values[] = $this->native_js_unescape( $value );
+				$values[] = $this->js_unescape( $value );
 			}
 		}
 
@@ -742,7 +742,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 * @param string $code Full file source.
 	 * @return array<int,string>
 	 */
-	private function native_js_harvest_events_map( string $code ): array {
+	private function js_harvest_events_map( string $code ): array {
 		if ( ! preg_match( '/const\s+[A-Za-z_$][\w$]*_EVENTS\s*(?::[^=]+)?=\s*\{([\s\S]*?)\n\s*\};/', $code, $m ) ) {
 			return array();
 		}
@@ -750,7 +750,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 		$values = array();
 		if ( preg_match_all( '/:\s*([\'"])((?:\\\\.|(?!\1).)*)\1/', $m[1], $matches ) ) {
 			foreach ( $matches[2] as $value ) {
-				$values[] = $this->native_js_unescape( $value );
+				$values[] = $this->js_unescape( $value );
 			}
 		}
 
@@ -762,7 +762,7 @@ class WooPaymentsPluginTracksContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $value Raw string body (without its surrounding quotes).
 	 */
-	private function native_js_unescape( string $value ): string {
+	private function js_unescape( string $value ): string {
 		return str_replace( array( "\\'", '\\"', '\\`', '\\\\' ), array( "'", '"', '`', '\\' ), $value );
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * NativeSourceScanTrait file.
+ * SourceScanTrait file.
  */
 
 declare( strict_types = 1 );
@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 /**
- * Shared token_get_all()-based scanning primitives for the `WooPaymentsPlugin*ContractTest`
- * classes that pin plugin-11.1.0 fixtures against the native source tree.
+ * Shared token_get_all()-based scanning primitives for the `WooPayments*ContractTest`
+ * classes that pin the `woopayments-*.json` fixtures against the native source tree.
  *
  * Each consuming test keeps its own matching rule (which call shapes count as a hit); this trait
  * only owns what every one of them needs: which files to scan, how to walk their tokens, literal
@@ -18,7 +18,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
  *
  * @since 11.2.0
  */
-trait NativeSourceScanTrait {
+trait SourceScanTrait {
 
 	/**
 	 * Collect native files with the given extensions under the given absolute directory roots
@@ -28,7 +28,7 @@ trait NativeSourceScanTrait {
 	 * @param array<int,string> $extensions Lowercase file extensions, without the dot.
 	 * @return array<int,string> Absolute file paths, sorted.
 	 */
-	private function native_collect_files( array $roots, array $extensions ): array {
+	private function source_collect_files( array $roots, array $extensions ): array {
 		$files = array();
 
 		foreach ( $roots as $root ) {
@@ -47,7 +47,7 @@ trait NativeSourceScanTrait {
 				}
 
 				$path = $file->getPathname();
-				if ( $this->native_is_excluded_path( $path ) ) {
+				if ( $this->source_is_excluded_path( $path ) ) {
 					continue;
 				}
 
@@ -64,7 +64,7 @@ trait NativeSourceScanTrait {
 	 *
 	 * @param string $path Absolute file path.
 	 */
-	private function native_is_excluded_path( string $path ): bool {
+	private function source_is_excluded_path( string $path ): bool {
 		$normalized = str_replace( '\\', '/', $path );
 
 		if ( false !== strpos( $normalized, '/tests/' ) || false !== strpos( $normalized, '/test/' ) || false !== strpos( $normalized, '/__tests__/' ) ) {
@@ -80,7 +80,7 @@ trait NativeSourceScanTrait {
 	 * @param string $file Absolute file path.
 	 * @return array<int,mixed> PHP tokens.
 	 */
-	private function native_tokenize( string $file ): array {
+	private function source_tokenize( string $file ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local production source for a scanning assertion.
 		return token_get_all( (string) file_get_contents( $file ) );
 	}
@@ -95,7 +95,7 @@ trait NativeSourceScanTrait {
 	 * @param string $token_text Raw token text, including its quotes.
 	 * @return string|null
 	 */
-	private function native_resolve_literal( string $token_text ): ?string {
+	private function source_resolve_literal( string $token_text ): ?string {
 		$quote = $token_text[0] ?? '';
 		if ( ( "'" !== $quote && '"' !== $quote ) || substr( $token_text, -1 ) !== $quote ) {
 			return null;
@@ -122,7 +122,7 @@ trait NativeSourceScanTrait {
 	 * @param array<int,mixed> $tokens Token slice.
 	 * @return array<int,mixed>
 	 */
-	private function native_strip_trivia( array $tokens ): array {
+	private function source_strip_trivia( array $tokens ): array {
 		return array_values(
 			array_filter(
 				$tokens,
@@ -139,13 +139,13 @@ trait NativeSourceScanTrait {
 	 * @param array<int,string> $php_files Absolute PHP file paths.
 	 * @return array<int,string> Resolved literal values (not de-duplicated).
 	 */
-	private function native_all_php_string_literals( array $php_files ): array {
+	private function source_all_php_string_literals( array $php_files ): array {
 		$literals = array();
 
 		foreach ( $php_files as $path ) {
-			foreach ( $this->native_tokenize( $path ) as $token ) {
+			foreach ( $this->source_tokenize( $path ) as $token ) {
 				if ( is_array( $token ) && T_CONSTANT_ENCAPSED_STRING === $token[0] ) {
-					$value = $this->native_resolve_literal( $token[1] );
+					$value = $this->source_resolve_literal( $token[1] );
 					if ( null !== $value ) {
 						$literals[] = $value;
 					}
@@ -162,7 +162,7 @@ trait NativeSourceScanTrait {
 	 * @param array<int,mixed> $tokens PHP tokens.
 	 * @param int              $from   Index to start looking from (inclusive).
 	 */
-	private function native_next_significant_token_index( array $tokens, int $from ): ?int {
+	private function source_next_significant_token_index( array $tokens, int $from ): ?int {
 		for ( $i = $from, $count = count( $tokens ); $i < $count; $i++ ) {
 			$token = $tokens[ $i ];
 			if ( is_array( $token ) && in_array( $token[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
@@ -182,7 +182,7 @@ trait NativeSourceScanTrait {
 	 * @param int              $from   Index to start looking from (exclusive).
 	 * @return mixed|null
 	 */
-	private function native_previous_significant_token( array $tokens, int $from ) {
+	private function source_previous_significant_token( array $tokens, int $from ) {
 		for ( $i = $from - 1; $i >= 0; $i-- ) {
 			$token = $tokens[ $i ];
 			if ( is_array( $token ) && in_array( $token[0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
@@ -204,7 +204,7 @@ trait NativeSourceScanTrait {
 	 * @param int              $from   Index to start reading from.
 	 * @return string
 	 */
-	private function native_read_qualified_name( array $tokens, int $from ): string {
+	private function source_read_qualified_name( array $tokens, int $from ): string {
 		$name = '';
 
 		for ( $i = $from, $count = count( $tokens ); $i < $count; $i++ ) {
@@ -238,8 +238,8 @@ trait NativeSourceScanTrait {
 	 * @param string $file Absolute file path.
 	 * @return string|null
 	 */
-	private function native_file_own_class( string $file ): ?string {
-		$tokens    = $this->native_tokenize( $file );
+	private function source_file_own_class( string $file ): ?string {
+		$tokens    = $this->source_tokenize( $file );
 		$namespace = '';
 		$class     = null;
 
@@ -250,18 +250,18 @@ trait NativeSourceScanTrait {
 			}
 
 			if ( T_NAMESPACE === $token[0] ) {
-				$namespace = $this->native_read_qualified_name( $tokens, $i + 1 );
+				$namespace = $this->source_read_qualified_name( $tokens, $i + 1 );
 				continue;
 			}
 
 			if ( in_array( $token[0], array( T_CLASS, T_INTERFACE, T_TRAIT ), true ) ) {
-				$previous = $this->native_previous_significant_token( $tokens, $i );
+				$previous = $this->source_previous_significant_token( $tokens, $i );
 				if ( is_array( $previous ) && T_DOUBLE_COLON === $previous[0] ) {
 					// `Foo::class`, not a declaration.
 					continue;
 				}
 
-				$name_index = $this->native_next_significant_token_index( $tokens, $i + 1 );
+				$name_index = $this->source_next_significant_token_index( $tokens, $i + 1 );
 				$name_token = null !== $name_index ? $tokens[ $name_index ] : null;
 				if ( is_array( $name_token ) && T_STRING === $name_token[0] ) {
 					$class = $name_token[1];
@@ -285,8 +285,8 @@ trait NativeSourceScanTrait {
 	 * @param string $file Absolute file path.
 	 * @return array<string,string>
 	 */
-	private function native_file_use_imports( string $file ): array {
-		$tokens  = $this->native_tokenize( $file );
+	private function source_file_use_imports( string $file ): array {
+		$tokens  = $this->source_tokenize( $file );
 		$imports = array();
 
 		for ( $i = 0, $count = count( $tokens ); $i < $count; $i++ ) {
@@ -295,14 +295,14 @@ trait NativeSourceScanTrait {
 				continue;
 			}
 
-			$next_index = $this->native_next_significant_token_index( $tokens, $i + 1 );
+			$next_index = $this->source_next_significant_token_index( $tokens, $i + 1 );
 			$next       = null !== $next_index ? $tokens[ $next_index ] : null;
 			if ( is_array( $next ) && in_array( $next[0], array( T_FUNCTION, T_CONST ), true ) ) {
 				continue;
 			}
 
 			$name_start = $i + 1;
-			$fqcn       = $this->native_read_qualified_name( $tokens, $name_start );
+			$fqcn       = $this->source_read_qualified_name( $tokens, $name_start );
 			if ( '' === $fqcn || false !== strpos( $fqcn, '{' ) ) {
 				continue;
 			}
@@ -322,11 +322,11 @@ trait NativeSourceScanTrait {
 				break;
 			}
 
-			$after_index = $this->native_next_significant_token_index( $tokens, $cursor + 1 );
+			$after_index = $this->source_next_significant_token_index( $tokens, $cursor + 1 );
 			$after       = null !== $after_index ? $tokens[ $after_index ] : null;
 			$alias       = null;
 			if ( is_array( $after ) && T_AS === $after[0] ) {
-				$alias_index = $this->native_next_significant_token_index( $tokens, $cursor + 2 );
+				$alias_index = $this->source_next_significant_token_index( $tokens, $cursor + 2 );
 				$alias_token = null !== $alias_index ? $tokens[ $alias_index ] : null;
 				if ( is_array( $alias_token ) && T_STRING === $alias_token[0] ) {
 					$alias = $alias_token[1];
@@ -353,15 +353,15 @@ trait NativeSourceScanTrait {
 	 * @param string $const_name The constant name after `::`.
 	 * @return string|null
 	 */
-	private function native_resolve_constant_reference( string $file, string $class_ref, string $const_name ): ?string {
+	private function source_resolve_constant_reference( string $file, string $class_ref, string $const_name ): ?string {
 		if ( in_array( $class_ref, array( 'self', 'static', 'parent' ), true ) ) {
-			$fqcn = $this->native_file_own_class( $file );
+			$fqcn = $this->source_file_own_class( $file );
 		} else {
-			$imports = $this->native_file_use_imports( $file );
+			$imports = $this->source_file_use_imports( $file );
 			$fqcn    = $imports[ $class_ref ] ?? null;
 
 			if ( null === $fqcn ) {
-				$own_class = $this->native_file_own_class( $file );
+				$own_class = $this->source_file_own_class( $file );
 				$namespace = null !== $own_class && false !== strrpos( $own_class, '\\' )
 					? substr( $own_class, 0, strrpos( $own_class, '\\' ) )
 					: '';

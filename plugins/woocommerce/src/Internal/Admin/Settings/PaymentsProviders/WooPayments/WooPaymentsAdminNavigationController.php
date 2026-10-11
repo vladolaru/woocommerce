@@ -134,7 +134,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Authorized divergence (inbox.md N-125): native paths follow trunk's `/woopayments/onboarding` convention
 	 * (launch-your-store/hub/main-content/xstate.tsx:122, launch-your-store/data/setup-payments-context.tsx:115 on trunk).
 	 * Client deep links keep working through this map; platform-issued email links go through Compat/LegacyAdminLinkHandler.
-	 * The test pins every client route from Fixtures/plugin-11.1.0-admin-routes.json.
+	 * The test pins every client route from Fixtures/woopayments-admin-routes.json.
 	 */
 	private const LEGACY_ROUTE_REDIRECTS = array(
 		'/payments/connect'                    => self::PATH_ONBOARDING,

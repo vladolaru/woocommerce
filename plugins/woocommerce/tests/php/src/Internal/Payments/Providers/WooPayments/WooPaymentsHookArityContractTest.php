@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsPluginHookArityContractTest file.
+ * WooPaymentsHookArityContractTest file.
  */
 
 declare( strict_types = 1 );
@@ -72,12 +72,12 @@ use WC_Unit_Test_Case;
  * Every one of the 38 groups below reaches its hook(s) through a real native call, ported from the
  * retired harness's own native branch for that group (`hook-shape-parity.php`). None of them fires the hook itself, so
  * `STATIC_ONLY` is empty: every hook in the manifest is proven at runtime here, and the name test
- * (`WooPaymentsPluginHookNamesContractTest`) reads `probed_hooks()` to skip re-proving them
+ * (`WooPaymentsHookNamesContractTest`) reads `probed_hooks()` to skip re-proving them
  * statically.
  *
  * @since 11.2.0
  */
-class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
+class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Hooks the retired manifest requires that no native product path could reach within the
@@ -126,7 +126,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @var array<string,class-string>
 	 */
-	private const PLUGIN_REQUEST_TYPES = array(
+	private const WOOPAYMENTS_EXTENSION_REQUEST_TYPES = array(
 		'WCPay\Core\Server\Request\Get_Request'           => WooPaymentsApiRequest::class, // class-get-request.php.
 		'WCPay\Core\Server\Request\Get_PM_Promotions'     => WooPaymentsGetPmPromotionsRequest::class, // class-get-pm-promotions.php.
 		'WCPay\Core\Server\Request\Activate_PM_Promotion' => WooPaymentsActivatePmPromotionRequest::class, // class-activate-pm-promotion.php.
@@ -140,17 +140,17 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Loaded `plugin-11.1.0-hooks.json` fixture, keyed by hook name.
+	 * Loaded `woopayments-hooks.json` fixture, keyed by hook name.
 	 *
 	 * @var array<string,array<string,mixed>>
 	 */
 	private static array $fixture_by_name;
 
 	/**
-	 * Load the plugin-11.1.0-hooks.json fixture once for the class.
+	 * Load the woopayments-hooks.json fixture once for the class.
 	 */
 	public static function wpSetUpBeforeClass(): void {
-		$path = __DIR__ . '/Fixtures/plugin-11.1.0-hooks.json';
+		$path = __DIR__ . '/Fixtures/woopayments-hooks.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a committed test fixture, not user input.
 		$fixture               = json_decode( (string) file_get_contents( $path ), true );
 		self::$fixture_by_name = array();
@@ -249,7 +249,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	/**
 	 * The 70 manifest hooks this class proves at runtime, mapped to the private probe method that
 	 * reaches each one through native's own product path. Read by the name test
-	 * (`WooPaymentsPluginHookNamesContractTest`) so it does not re-prove them statically.
+	 * (`WooPaymentsHookNamesContractTest`) so it does not re-prove them statically.
 	 *
 	 * @return array<string,string>
 	 */
@@ -357,12 +357,12 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider hook_probe_provider
-	 * @testdox Native fires $hook on its product path with the plugin 11.1.0 arity and declared types.
+	 * @testdox The built-in WooPayments fires $hook on its product path with the WooPayments extension's arity and declared types.
 	 *
 	 * @param string $hook         Hook name.
 	 * @param string $probe_method Private probe method name.
 	 */
-	public function test_native_fires_plugin_hook_with_plugin_arity( string $hook, string $probe_method ): void {
+	public function test_builtin_fires_woopayments_extension_hook_with_its_arity( string $hook, string $probe_method ): void {
 		if ( isset( self::TRIGGERS_DEPRECATION_NOTICE[ $hook ] ) ) {
 			$this->setExpectedDeprecated( $hook );
 		}
@@ -453,7 +453,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 				return;
 			}
 
-			$candidate = self::PLUGIN_REQUEST_TYPES[ $candidate ] ?? $candidate;
+			$candidate = self::WOOPAYMENTS_EXTENSION_REQUEST_TYPES[ $candidate ] ?? $candidate;
 
 			if ( class_exists( $candidate ) && $value instanceof $candidate ) {
 				return;
@@ -475,7 +475,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * @param array<int,mixed> $args   Positional arguments.
 	 * @return mixed
 	 */
-	private function native_invoke( object $target, string $method, array $args = array() ) {
+	private function builtin_invoke( object $target, string $method, array $args = array() ) {
 		$reflection = new ReflectionMethod( $target, $method );
 		$reflection->setAccessible( true );
 
@@ -678,7 +678,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		// exactly the regression this probe exists to catch.
 		$this->assertNotNull( $definition, 'The native payment method registry must have the iDEAL definition to probe order_success_logos.' );
 
-		$this->native_invoke( $page, 'render_definition_title', array( $definition, $order, false ) );
+		$this->builtin_invoke( $page, 'render_definition_title', array( $definition, $order, false ) );
 	}
 
 	/**
@@ -687,7 +687,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_store_api_request(): void {
 		$gateway = new WooPaymentsGateway();
-		$this->native_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
+		$this->builtin_invoke( $gateway, 'get_fraud_prevention_error_message', array( true ) );
 	}
 
 	/**
@@ -710,8 +710,8 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		// test has none of).
 		$probe = function () {
 			$service = wc_get_container()->get( WooPaymentsExpressCheckoutService::class );
-			$this->native_invoke( $service, 'is_product_supported' );
-			$this->native_invoke( $service, 'get_product_data' );
+			$this->builtin_invoke( $service, 'is_product_supported' );
+			$this->builtin_invoke( $service, 'get_product_data' );
 		};
 
 		try {
@@ -747,7 +747,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 			'errored'            => false,
 			'consecutive_errors' => 0,
 		);
-		$this->native_invoke( $service, 'get_database_cache_ttl', array( 'wcpay_account_data', $cache_contents ) );
+		$this->builtin_invoke( $service, 'get_database_cache_ttl', array( 'wcpay_account_data', $cache_contents ) );
 	}
 
 	/**
@@ -810,7 +810,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		$order      = new WC_Order();
 		$controller = wc_get_container()->get( WooPaymentsMobileRestController::class );
 
-		$this->native_invoke(
+		$this->builtin_invoke(
 			$controller,
 			'mark_terminal_payment_completed',
 			array(
@@ -956,7 +956,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 		$controller = new WooPaymentsSubscriptionsController();
 		$outcome    = new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION );
 
-		$this->native_invoke( $controller, 'maybe_handle_subscription_customer_action_required', array( $order, $outcome ) );
+		$this->builtin_invoke( $controller, 'maybe_handle_subscription_customer_action_required', array( $order, $outcome ) );
 	}
 
 	/**
@@ -965,7 +965,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array{builder:MultiCurrencyStateBuilder,geolocation:MultiCurrencyGeolocationService,localization:MultiCurrencyLocalizationService,state:MultiCurrencyState}
 	 */
-	private function build_native_mc_fixture(): array {
+	private function build_multi_currency_fixture(): array {
 		$localization  = wc_get_container()->get( MultiCurrencyLocalizationService::class );
 		$default_code  = strtoupper( (string) get_woocommerce_currency() );
 		$selected_code = 'EUR' === $default_code ? 'USD' : 'EUR';
@@ -1007,7 +1007,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * override hooks.
 	 */
 	private function probe_mc_notice(): void {
-		$fixture     = $this->build_native_mc_fixture();
+		$fixture     = $this->build_multi_currency_fixture();
 		$controller  = new MultiCurrencySelectedCurrencyController();
 		$persistence = new MultiCurrencySelectedCurrencyPersistenceService( $fixture['builder'] );
 		$controller->set_persistence_service( $persistence );
@@ -1019,7 +1019,7 @@ class WooPaymentsPluginHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `mc_frontend` (1 hook): the storefront public-config charm-pricing projection.
 	 */
 	private function probe_mc_frontend(): void {
-		$fixture = $this->build_native_mc_fixture();
+		$fixture = $this->build_multi_currency_fixture();
 		$service = new MultiCurrencyFrontendProjectionService( $fixture['builder'], $fixture['localization'], $fixture['geolocation'] );
 		$service->get_public_config();
 	}

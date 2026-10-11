@@ -1168,7 +1168,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should redirect every client 11.1.0 WC Admin route to a native route.
 	 *
-	 * Source: Fixtures/plugin-11.1.0-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).
+	 * Source: Fixtures/woopayments-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).
 	 *
 	 * @dataProvider provider_client_admin_routes
 	 *
@@ -1196,7 +1196,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:string,1:string}>
 	 */
 	public function provider_client_admin_routes(): array {
-		$path = dirname( __DIR__, 4 ) . '/Payments/Providers/WooPayments/Fixtures/plugin-11.1.0-admin-routes.json';
+		$path = dirname( __DIR__, 4 ) . '/Payments/Providers/WooPayments/Fixtures/woopayments-admin-routes.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
 		$fixture = json_decode( (string) file_get_contents( $path ), true );
 
