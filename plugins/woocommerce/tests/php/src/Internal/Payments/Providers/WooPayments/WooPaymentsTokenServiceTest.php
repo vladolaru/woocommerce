@@ -563,7 +563,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
 		$this->assertCount( 1, $errors );
-		$this->assertSame( 'Failed to update native WooPayments saved payment method.', $logger->lines[ $errors[0] ][1] );
+		$this->assertSame( 'Failed to update WooPayments saved payment method.', $logger->lines[ $errors[0] ][1] );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $errors[0] ]['http_status'], $logger->contexts[ $errors[0] ]['error_code'] ) );
 		$this->assertSame(
 			array( 'wcpay_update_saved_payment_method', $order->get_id(), 'pm_123' ),
@@ -1468,7 +1468,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
 		do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
 
-		$context = $this->get_logged_context( $logger, 'Error setting native WooPayments default payment method.' );
+		$context = $this->get_logged_context( $logger, 'Error setting WooPayments default payment method.' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

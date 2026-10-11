@@ -574,7 +574,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		if ( update_user_option( $user_id, $target_option, $customer_id ) ) {
 			delete_user_option( $user_id, self::DEPRECATED_CUSTOMER_ID_OPTION );
 		} else {
-			wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to store the migrated WooPayments customer ID for user ' . $user_id . '; the legacy customer option was kept.' );
+			wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to store the migrated WooPayments customer ID for user ' . $user_id . '; the unmigrated customer option was kept.' );
 		}
 	}
 

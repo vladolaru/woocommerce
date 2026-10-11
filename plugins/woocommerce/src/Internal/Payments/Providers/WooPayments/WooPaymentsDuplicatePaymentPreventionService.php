@@ -303,7 +303,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 			// Client 11.1.0 duplicate-payment-prevention-service:100-101 logs this through its gated Logger, with the
 			// platform's message; native logs its status and code instead.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Failed to fetch attached native WooPayments payment intent.',
+				'Failed to fetch attached WooPayments payment intent.',
 				$exception,
 				array(
 					'order_id'  => $order->get_id(),

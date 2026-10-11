@@ -194,7 +194,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		if ( ! $this->fetched_intent_matches_request( $intent, $intent_id ) ) {
 			$this->log_error(
-				sprintf( 'Native WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ),
+				sprintf( 'WooPayments redirect fetched an unexpected intent for requested intent %s.', $intent_id ),
 				array(
 					'order_id'  => $order->get_id(),
 					'intent_id' => $intent_id,
@@ -512,7 +512,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		}
 
 		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always(
-			'Error fetching the intent for native WooPayments redirect return.',
+			'Error fetching the intent for WooPayments redirect return.',
 			$exception,
 			array(
 				'order_id'  => $order->get_id(),
@@ -619,7 +619,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function log_intent_mismatch( string $intent_id, WC_Order $order ): void {
 		$this->log_error(
 			sprintf(
-				'Native WooPayments redirect intent %1$s did not match order %2$d.',
+				'WooPayments redirect intent %1$s did not match order %2$d.',
 				$intent_id,
 				$order->get_id()
 			),

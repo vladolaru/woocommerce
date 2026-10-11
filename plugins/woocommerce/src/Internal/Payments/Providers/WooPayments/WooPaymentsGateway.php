@@ -1854,7 +1854,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'card' );
 
 		if ( null === $definition ) {
-			throw new \RuntimeException( 'The native WooPayments card payment method definition is missing.' );
+			throw new \RuntimeException( 'The WooPayments card payment method definition is missing.' );
 		}
 
 		return $definition;

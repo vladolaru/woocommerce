@@ -164,7 +164,7 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 					$events = $this->api_client->get_timeline( $intent_id );
 				} catch ( Throwable $exception ) {
 					wc_get_logger()->error(
-						'Failed to read native WooPayments intent timeline.',
+						'Failed to read WooPayments intent timeline.',
 						array_merge(
 							array(
 								'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,

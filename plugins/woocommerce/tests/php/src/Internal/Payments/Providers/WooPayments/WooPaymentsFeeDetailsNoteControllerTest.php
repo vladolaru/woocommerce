@@ -390,7 +390,7 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 
 		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] ) );
 		$this->assertCount( 1, $errors, 'A single error should be logged when the timeline read fails.' );
-		$this->assertSame( 'Failed to read native WooPayments intent timeline.', $logger->lines[ $errors[0] ][1] );
+		$this->assertSame( 'Failed to read WooPayments intent timeline.', $logger->lines[ $errors[0] ][1] );
 		$context = $logger->contexts[ $errors[0] ];
 		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assertSame( $order->get_id(), $context['order_id'] );

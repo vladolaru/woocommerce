@@ -517,7 +517,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->api_client->send_store_setup( $this->get_store_setup_details() );
 		} catch ( Throwable $exception ) {
 			$this->log_exception(
-				'Failed to sync native WooPayments store setup state.',
+				'Failed to sync WooPayments store setup state.',
 				$exception,
 				array( 'action' => self::STORE_SETUP_SYNC_ACTION )
 			);
@@ -543,7 +543,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->api_client->update_compatibility_data( WooPaymentsCompatibilityData::get() );
 		} catch ( Throwable $exception ) {
 			$this->log_exception(
-				'Failed to sync native WooPayments compatibility data.',
+				'Failed to sync WooPayments compatibility data.',
 				$exception,
 				array( 'action' => self::UPDATE_COMPATIBILITY_DATA_ACTION )
 			);
@@ -572,7 +572,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->add_instant_deposit_note();
 			$this->schedule_instant_deposit_note_reminder();
 		} catch ( Throwable $exception ) {
-			$this->log_exception( 'Failed to refresh native WooPayments Instant Deposit eligibility note.', $exception );
+			$this->log_exception( 'Failed to refresh WooPayments Instant Deposit eligibility note.', $exception );
 		}
 	}
 
@@ -586,7 +586,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			$this->delete_instant_deposit_note();
 		} catch ( Throwable $exception ) {
 			$this->log_exception(
-				'Failed to delete native WooPayments Instant Deposit eligibility note.',
+				'Failed to delete WooPayments Instant Deposit eligibility note.',
 				$exception,
 				array( 'action' => self::INSTANT_DEPOSIT_REMINDER_ACTION )
 			);

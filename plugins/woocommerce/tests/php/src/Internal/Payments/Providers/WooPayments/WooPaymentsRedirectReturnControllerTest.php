@@ -948,7 +948,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( wc_get_checkout_url(), $location );
 		$this->assert_single_error_notice( "We're not able to process this payment. Please try again later." );
 		$this->assertCount( 1, $logger->error_calls );
-		$this->assertSame( 'Error fetching the intent for native WooPayments redirect return.', $logger->error_calls[0]['message'] );
+		$this->assertSame( 'Error fetching the intent for WooPayments redirect return.', $logger->error_calls[0]['message'] );
 		$this->assertSame( \RuntimeException::class, $logger->error_calls[0]['context']['exception'] ?? null );
 		$this->assertSame( array( $order->get_id(), 'pi_runtime_error', WooPaymentsLogger::SOURCE ), array( $logger->error_calls[0]['context']['order_id'] ?? null, $logger->error_calls[0]['context']['intent_id'] ?? null, $logger->error_calls[0]['context']['source'] ?? null ) );
 		$this->assertStringNotContainsString( 'client_secret', (string) wp_json_encode( $logger ) );
@@ -1713,7 +1713,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( array(), $reloaded->get_payment_tokens() );
 		$this->assertSame(
-			array( sprintf( 'Native WooPayments redirect intent seti_foreign did not match order %d.', $order->get_id() ) ),
+			array( sprintf( 'WooPayments redirect intent seti_foreign did not match order %d.', $order->get_id() ) ),
 			array_column( $logger->error_calls, 'message' )
 		);
 	}
@@ -1805,7 +1805,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order_customer, $reloaded->get_meta( '_stripe_customer_id', true ) );
 		$this->assertSame( array(), $reloaded->get_payment_tokens() );
 		$this->assertSame(
-			array( sprintf( 'Native WooPayments redirect intent seti_bound did not match order %d.', $order->get_id() ) ),
+			array( sprintf( 'WooPayments redirect intent seti_bound did not match order %d.', $order->get_id() ) ),
 			array_column( $logger->error_calls, 'message' )
 		);
 	}

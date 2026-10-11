@@ -199,7 +199,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->error_response( $exception->getMessage(), $exception->getCode() );
 		} catch ( Throwable $exception ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-				'Error completing native WooPayments authenticated payment: ' . $exception->getMessage(),
+				'Error completing WooPayments authenticated payment: ' . $exception->getMessage(),
 				$exception,
 				array(
 					'order_id'  => $order->get_id(),
@@ -289,7 +289,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				in_array( $exception->get_http_code(), array( 0, 402 ), true ) ? 400 : $exception->get_http_code()
 			);
 		} catch ( Throwable $exception ) {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error creating native WooPayments setup intent: ' . $exception->getMessage(), $exception );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error creating WooPayments setup intent: ' . $exception->getMessage(), $exception );
 
 			return $this->json_error_response( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ), 400 );
 		}

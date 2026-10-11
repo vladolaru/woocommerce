@@ -454,7 +454,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages go to the migration log, not to output.
 		$wcpay_subscription_id = $this->get_subscription_service()->get_wcpay_subscription_id( $subscription );
 		if ( ! $wcpay_subscription_id ) {
-			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Subscription is not a WCPay Subscription.', $subscription->get_id() ) );
+			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Subscription is not billed through Stripe Billing.', $subscription->get_id() ) );
 		}
 
 		try {

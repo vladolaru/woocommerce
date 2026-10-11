@@ -223,7 +223,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 					);
 				} catch ( Throwable $exception ) {
 					wc_get_logger()->error(
-						'Failed to update native WooPayments saved payment method.',
+						'Failed to update WooPayments saved payment method.',
 						array_merge(
 							array(
 								'action'         => self::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
@@ -321,7 +321,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			try {
 				$this->customer_service->set_default_payment_method_for_customer( $customer_id, (string) $token->get_token() );
 			} catch ( Throwable $exception ) {
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting native WooPayments default payment method.', $exception );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Error setting WooPayments default payment method.', $exception );
 			}
 		}
 
