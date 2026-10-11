@@ -898,7 +898,7 @@
     "modules/ppcp-settings/resources/js/data/styling/selectors.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/styling/selectors.js",
     "modules/ppcp-settings/resources/js/data/sync/payment-methods-sync.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/sync/payment-methods-sync.js",
     "modules/ppcp-settings/resources/js/data/sync/setting-based-payment-methods-sync.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/sync/setting-based-payment-methods-sync.js",
-    "modules/ppcp-settings/resources/js/data/sync/todo-state-sync.js": null,
+    "modules/ppcp-settings/resources/js/data/sync/todo-state-sync.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/sync/todo-state-sync.js",
     "modules/ppcp-settings/resources/js/data/todos/action-types.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/todos/action-types.js",
     "modules/ppcp-settings/resources/js/data/todos/actions.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/todos/actions.js",
     "modules/ppcp-settings/resources/js/data/todos/constants.js": "plugins/woocommerce/client/admin/client/paypal-wallet/app/data/todos/constants.js",

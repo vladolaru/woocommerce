@@ -159,6 +159,18 @@ class TodosDefinition {
 				),
 				'priority'    => 14,
 			),
+			'enable_pwc'                           => array(
+				'title'       => __( 'Enable Pay with Crypto', 'woocommerce' ),
+				'description' => __( 'Enable customers to pay with cryptocurrency, and receive payments in USD in your PayPal balance.', 'woocommerce' ),
+				'isEligible'  => $eligibility_checks['enable_pwc'],
+				'action'      => array(
+					'type'      => 'tab',
+					'tab'       => 'payment_methods',
+					'section'   => 'ppcp-pwc',
+					'highlight' => 'ppcp-pwc',
+				),
+				'priority'    => 15,
+			),
 		);
 
 		$todo_items['check_settings_after_migration'] = array(

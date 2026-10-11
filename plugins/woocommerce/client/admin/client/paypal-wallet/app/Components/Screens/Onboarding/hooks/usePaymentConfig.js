@@ -6,6 +6,7 @@ import {
 	PayWithPayPal,
 	PayLater,
 	Venmo,
+	Crypto,
 	PayInThree,
 } from '../Components/PaymentOptions';
 
@@ -30,6 +31,7 @@ const COUNTRY_CONFIGS = {
 			{ name: 'PayWithPayPal', Component: PayWithPayPal },
 			{ name: 'PayLater', Component: PayLater },
 			{ name: 'Venmo', Component: Venmo },
+			{ name: 'Crypto', Component: Crypto },
 		],
 	},
 	GB: {

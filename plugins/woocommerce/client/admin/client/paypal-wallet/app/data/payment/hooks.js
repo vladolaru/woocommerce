@@ -67,13 +67,16 @@ export const usePaymentMethods = () => {
 	const [ venmo ] = usePersistent( 'venmo' );
 	const [ payLater ] = usePersistent( 'pay-later' );
 
-	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
+	// Alternative payment methods.
+	const [ pwc ] = usePersistent( 'ppcp-pwc' );
 
-	// PayPal checkout is the only group, so `all` and `paypal` are the same list. Callers read `all` for lookups and
-	// `paypal` for the checkout card.
+	const payPalCheckout = removeEmpty( [ paypal, venmo, payLater ] );
+	const alternative = removeEmpty( [ pwc ] );
+
 	return {
-		all: payPalCheckout,
+		all: [ ...payPalCheckout, ...alternative ],
 		paypal: payPalCheckout,
+		apm: alternative,
 	};
 };
 

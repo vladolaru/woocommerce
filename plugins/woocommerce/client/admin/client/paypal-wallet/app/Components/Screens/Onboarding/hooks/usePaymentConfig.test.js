@@ -6,7 +6,7 @@ jest.mock( '../../../../data/index', () => ( {
 } ) );
 
 const EXPECTED_PAYMENT_METHODS = [
-	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo' ] ],
+	[ 'US', [ 'PayWithPayPal', 'PayLater', 'Venmo', 'Crypto' ] ],
 	[ 'GB', [ 'PayWithPayPal', 'PayInThree' ] ],
 	[ 'AU', [ 'PayWithPayPal', 'PayLater' ] ],
 	[ 'MX', [ 'PayWithPayPal', 'PayLater' ] ],

@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\TodosModel;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\PaymentRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\FeaturesEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\PaymentMethodsEligibilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service\TodosEligibilityService;
@@ -23,6 +24,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Walle
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use Mockery\MockInterface;
 use RuntimeException;
+use WP_REST_Response;
 
 /**
  * The settings and gateway wiring must resolve when the extension's optional modules are not loaded: no
@@ -74,16 +76,20 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	/**
 	 * The features eligibility service the Settings module builds without the optional modules.
 	 *
+	 * @param array<string, mixed> $extra_services Services to add, such as the Pay with Crypto eligibility check.
 	 * @return FeaturesEligibilityService
 	 */
-	private function features_eligibility_service(): FeaturesEligibilityService {
+	private function features_eligibility_service( array $extra_services = array() ): FeaturesEligibilityService {
 		$messages_apply = $this->mock( MessagesApply::class );
 		$messages_apply->shouldReceive( 'for_country' )->andReturn( true );
 		$container = $this->wallet_only_container(
-			array(
-				'button.helper.messages-apply'  => $messages_apply,
-				'save-payment-methods.eligible' => true,
-				'api.merchant.country'          => 'US',
+			array_merge(
+				array(
+					'button.helper.messages-apply'  => $messages_apply,
+					'save-payment-methods.eligible' => true,
+					'api.merchant.country'          => 'US',
+				),
+				$extra_services
 			)
 		);
 
@@ -101,6 +107,20 @@ class OptionalModulesServicesTest extends WalletTestCase {
 
 		$this->assertTrue( $checks[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ]() );
 		$this->assertTrue( $checks[ FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING ]() );
+		$this->assertFalse( $checks[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ](), 'Without the Pay with Crypto module the card is not eligible' );
+	}
+
+	/**
+	 * @testdox Should make the Pay with Crypto card eligible from the Pay with Crypto module's eligibility check.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $eligible What the module's eligibility check answers.
+	 */
+	public function test_features_eligibility_reads_the_pwc_check( bool $eligible ): void {
+		$checks = $this->features_eligibility_service( array( 'ppcp-local-apms.pwc.eligibility.check' => $eligible ) )->get_eligibility_checks();
+
+		$this->assertSame( $eligible, $checks[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]() );
 	}
 
 	/**
@@ -109,7 +129,8 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	public function test_payment_methods_eligibility_resolves_without_optional_modules(): void {
 		$container = $this->wallet_only_container(
 			array(
-				'api.merchant.country' => 'US',
+				'api.merchant.country'                   => 'US',
+				'settings.service.merchant_capabilities' => array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => true ),
 			)
 		);
 
@@ -117,6 +138,70 @@ class OptionalModulesServicesTest extends WalletTestCase {
 
 		$this->assertInstanceOf( PaymentMethodsEligibilityService::class, $service );
 		$this->assertTrue( $service->get_eligibility_checks()['venmo']() );
+		$this->assertFalse( $service->get_eligibility_checks()['ppcp-pwc'](), 'Without the Pay with Crypto module the APMs are not eligible' );
+	}
+
+	/**
+	 * @testdox Should offer Pay with Crypto from the merchant capability and the module's APM eligibility check.
+	 * @testWith [true, true, true]
+	 *           [false, true, false]
+	 *           [true, false, false]
+	 *
+	 * @param bool $capability The merchant's Pay with Crypto capability.
+	 * @param bool $apm        What the module's APM eligibility check answers.
+	 * @param bool $expected   Whether Pay with Crypto is offered.
+	 */
+	public function test_payment_methods_eligibility_reads_the_pwc_capability_and_apm_check( bool $capability, bool $apm, bool $expected ): void {
+		$container = $this->wallet_only_container(
+			array(
+				'api.merchant.country'                   => 'US',
+				'settings.service.merchant_capabilities' => array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => $capability ),
+				'ppcp-local-apms.eligibility.check'      => $apm,
+			)
+		);
+
+		$service = $this->module_services( 'Settings' )['settings.service.payment_methods_eligibilities']( $container );
+
+		$this->assertSame( $expected, $service->get_eligibility_checks()['ppcp-pwc']() );
+	}
+
+	/**
+	 * @testdox Should read the Pay with Crypto gateway state from the payment settings endpoint.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $enabled Whether the gateway is enabled in the payment settings.
+	 */
+	public function test_gateways_status_reads_the_pwc_gateway( bool $enabled ): void {
+		$endpoint = $this->mock( PaymentRestEndpoint::class );
+		$endpoint->shouldReceive( 'get_details' )->andReturn(
+			new WP_REST_Response(
+				array(
+					'success' => true,
+					'data'    => array( 'ppcp-pwc' => array( 'enabled' => $enabled ) ),
+				)
+			)
+		);
+
+		$status = $this->module_services( 'Settings' )['settings.service.gateways_status']( $this->wallet_only_container( array( 'settings.rest.payment' => $endpoint ) ) );
+
+		$this->assertSame( array( 'pwc' => $enabled ), $status );
+	}
+
+	/**
+	 * @testdox Should read the Pay with Crypto capability into the merchant capabilities.
+	 */
+	public function test_merchant_capabilities_carry_the_pwc_capability(): void {
+		remove_all_filters( 'woocommerce_paypal_payments_rest_common_merchant_features' );
+		add_filter(
+			'woocommerce_paypal_payments_rest_common_merchant_features',
+			static fn(): array => array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => array( 'enabled' => true ) )
+		);
+
+		$capabilities = $this->module_services( 'Settings' )['settings.service.merchant_capabilities']( $this->wallet_only_container( array() ) );
+
+		$this->assertTrue( $capabilities[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] );
+		$this->assertFalse( $capabilities[ FeaturesDefinition::FEATURE_INSTALLMENTS ] );
 	}
 
 	/**
@@ -169,7 +254,9 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	 * in the real services file changes the result. The defaults are the first scenario of `data_todo_wirings()`.
 	 *
 	 * @param array<string, mixed> $overrides Inputs to replace: `country`, `any_pay_later`, `pay_later`,
-	 *                                        `buttons` and `installments`.
+	 *                                        `buttons`, `installments`, `pwc` (the capability), `pwc_gateway`
+	 *                                        (the gateway's enabled state) and `pwc_check` (the module's
+	 *                                        eligibility check, or null when the module is absent).
 	 * @return array<string, mixed>
 	 */
 	private function todo_inputs( array $overrides = array() ): array {
@@ -188,6 +275,9 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'product_enabled'        => true,
 				),
 				'installments'  => false,
+				'pwc'           => true,
+				'pwc_gateway'   => false,
+				'pwc_check'     => true,
 			),
 			$overrides
 		);
@@ -204,20 +294,25 @@ class OptionalModulesServicesTest extends WalletTestCase {
 		$general = $this->mock( GeneralSettings::class );
 		$general->shouldReceive( 'get_merchant_country' )->andReturn( $inputs['country'] );
 
-		$container = $this->wallet_only_container(
-			array(
-				'settings.service.pay_later_status'      => array(
-					'statuses'                    => $inputs['pay_later'],
-					'is_enabled_for_any_location' => $inputs['any_pay_later'],
-				),
-				'settings.service.button_locations'      => $inputs['buttons'],
-				'settings.service.merchant_capabilities' => array(
-					FeaturesDefinition::FEATURE_INSTALLMENTS => $inputs['installments'],
-				),
-				'settings.data.general'                  => $general,
-				'button.helper.messages-apply'           => $this->mock( MessagesApply::class ),
-			)
+		$services = array(
+			'settings.service.pay_later_status'      => array(
+				'statuses'                    => $inputs['pay_later'],
+				'is_enabled_for_any_location' => $inputs['any_pay_later'],
+			),
+			'settings.service.button_locations'      => $inputs['buttons'],
+			'settings.service.gateways_status'       => array( 'pwc' => $inputs['pwc_gateway'] ),
+			'settings.service.merchant_capabilities' => array(
+				FeaturesDefinition::FEATURE_INSTALLMENTS => $inputs['installments'],
+				FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => $inputs['pwc'],
+			),
+			'settings.data.general'                  => $general,
+			'button.helper.messages-apply'           => $this->mock( MessagesApply::class ),
 		);
+		if ( null !== $inputs['pwc_check'] ) {
+			$services['ppcp-local-apms.pwc.eligibility.check'] = $inputs['pwc_check'];
+		}
+
+		$container = $this->wallet_only_container( $services );
 
 		$service = $this->module_services( 'Settings' )['settings.service.todos_eligibilities']( $container );
 		$this->assertInstanceOf( TodosEligibilityService::class, $service );
@@ -226,13 +321,14 @@ class OptionalModulesServicesTest extends WalletTestCase {
 	}
 
 	/**
-	 * Three scenarios, so that each of the nine positions is seen both true and false and no shifted argument can pass.
+	 * Five scenarios, so that each of the ten positions is seen both true and false and no shifted argument can pass. The
+	 * last three switch off one input of the Pay with Crypto to-do each.
 	 *
 	 * @return array<string, array{array<string, mixed>, array<string, bool>}>
 	 */
 	public function data_todo_wirings(): array {
 		return array(
-			'Mexico, partly enabled'                 => array(
+			'Mexico, partly enabled'                     => array(
 				array(),
 				array(
 					'enable_pay_later_messaging'           => false,
@@ -244,9 +340,10 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'add_paypal_buttons_product'           => false,
 					'enable_installments'                  => true,
 					'apply_for_working_capital'            => false,
+					'enable_pwc'                           => true,
 				),
 			),
-			'United States, the opposite locations'  => array(
+			'United States, the opposite locations'      => array(
 				$this->todo_inputs(
 					array(
 						'country'      => 'US',
@@ -261,6 +358,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 							'product_enabled'        => false,
 						),
 						'installments' => true,
+						'pwc_gateway'  => true,
 					)
 				),
 				array(
@@ -273,10 +371,16 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'add_paypal_buttons_product'           => true,
 					'enable_installments'                  => false,
 					'apply_for_working_capital'            => true,
+					'enable_pwc'                           => false,
 				),
 			),
-			'Pay Later messaging on at one location' => array(
-				$this->todo_inputs( array( 'any_pay_later' => true ) ),
+			'Pay Later messaging on at one location'     => array(
+				$this->todo_inputs(
+					array(
+						'any_pay_later' => true,
+						'pwc'           => false,
+					)
+				),
 				array(
 					'enable_pay_later_messaging'           => true,
 					'add_pay_later_messaging_product_page' => false,
@@ -287,6 +391,37 @@ class OptionalModulesServicesTest extends WalletTestCase {
 					'add_paypal_buttons_product'           => false,
 					'enable_installments'                  => true,
 					'apply_for_working_capital'            => false,
+					'enable_pwc'                           => false,
+				),
+			),
+			'Pay with Crypto not eligible for the store' => array(
+				$this->todo_inputs( array( 'pwc_check' => false ) ),
+				array(
+					'enable_pay_later_messaging'           => false,
+					'add_pay_later_messaging_product_page' => false,
+					'add_pay_later_messaging_cart'         => true,
+					'add_pay_later_messaging_checkout'     => false,
+					'add_paypal_buttons_cart'              => false,
+					'add_paypal_buttons_block_checkout'    => true,
+					'add_paypal_buttons_product'           => false,
+					'enable_installments'                  => true,
+					'apply_for_working_capital'            => false,
+					'enable_pwc'                           => false,
+				),
+			),
+			'Without the Pay with Crypto module'         => array(
+				$this->todo_inputs( array( 'pwc_check' => null ) ),
+				array(
+					'enable_pay_later_messaging'           => false,
+					'add_pay_later_messaging_product_page' => false,
+					'add_pay_later_messaging_cart'         => true,
+					'add_pay_later_messaging_checkout'     => false,
+					'add_paypal_buttons_cart'              => false,
+					'add_paypal_buttons_block_checkout'    => true,
+					'add_paypal_buttons_product'           => false,
+					'enable_installments'                  => true,
+					'apply_for_working_capital'            => false,
+					'enable_pwc'                           => false,
 				),
 			),
 		);
@@ -340,6 +475,7 @@ class OptionalModulesServicesTest extends WalletTestCase {
 				'add_paypal_buttons_product',
 				'enable_installments',
 				'apply_for_working_capital',
+				'enable_pwc',
 				'check_settings_after_migration',
 			),
 			$todo_ids

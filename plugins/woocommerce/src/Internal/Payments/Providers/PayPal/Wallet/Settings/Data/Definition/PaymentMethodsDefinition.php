@@ -222,19 +222,30 @@ class PaymentMethodsDefinition {
 	}
 
 	/**
-	 * Define local payment methods. The wallet offers none; the hook stays fired for third parties.
+	 * Define the alternative payment methods: Pay with Crypto only. The hook stays fired for third parties.
 	 *
 	 * @return array
 	 */
 	public function group_apms(): array {
+		$defaults = self::get_apm_defaults();
+
+		$group = array(
+			array(
+				'id'          => PWCGateway::ID,
+				'title'       => $defaults[ PWCGateway::ID ]['title'],
+				'description' => $defaults[ PWCGateway::ID ]['method_description'],
+				'icon'        => 'payment-method-pwc',
+			),
+		);
+
 		/**
 		 * Filters the payment methods of the alternative payment methods group.
 		 *
 		 * @since 11.3.0
 		 *
-		 * @param array $group The payment method definitions of the group; empty by default.
+		 * @param array $group The payment method definitions of the group; the Pay with Crypto method by default.
 		 */
-		return apply_filters( 'woocommerce_paypal_payments_gateway_group_apm', array() );
+		return apply_filters( 'woocommerce_paypal_payments_gateway_group_apm', $group );
 	}
 
 	/**

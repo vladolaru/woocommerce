@@ -1,7 +1,7 @@
 import { __ } from '@wordpress/i18n';
 import { useCallback } from '@wordpress/element';
 
-import { PaymentHooks } from '../../../../data';
+import { CommonHooks, PaymentHooks } from '../../../../data';
 import { useActiveModal } from '../../../../data/common/hooks';
 import Modal from '../Components/Payment/Modal';
 import PaymentMethodCard from '../Components/Payment/PaymentMethodCard';
@@ -46,6 +46,10 @@ const TabPaymentMethods = () => {
 		[ changePaymentSettings, setActiveModal, setPersistent ]
 	);
 
+	const merchant = CommonHooks.useMerchant();
+
+	const showApms = methods.apm.length > 0 && merchant.isBusinessSeller;
+
 	return (
 		<div className="ppcp-r-payment-methods">
 			<PaymentMethodCard
@@ -60,6 +64,21 @@ const TabPaymentMethods = () => {
 				onTriggerModal={ setActiveModal }
 				methodsMap={ methodsMap }
 			/>
+
+			{ showApms && (
+				<PaymentMethodCard
+					id="ppcp-alternative-payments-card"
+					title={ __( 'Alternative Payment Methods', 'woocommerce' ) }
+					description={ __(
+						'With alternative payment methods, customers across the globe can pay with their bank accounts and other local payment methods.',
+						'woocommerce'
+					) }
+					icon="icon-checkout-alternative-methods.svg"
+					methods={ methods.apm }
+					onTriggerModal={ setActiveModal }
+					methodsMap={ methodsMap }
+				/>
+			) }
 
 			{ activeModal && (
 				<Modal

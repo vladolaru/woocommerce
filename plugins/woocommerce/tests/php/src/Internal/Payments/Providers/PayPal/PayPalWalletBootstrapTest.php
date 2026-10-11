@@ -364,7 +364,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		}
 		$this->assertFalse( has_filter( 'woocommerce.feature-flags.woocommerce_paypal_payments.vault_component_enabled' ), 'Wallet flags are not forced' );
 		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_cards' ), 'The card group is empty by definition, with no filter attached' );
-		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_apm' ), 'The APM group is empty by definition, with no filter attached' );
+		$this->assertFalse( has_filter( 'woocommerce_paypal_payments_gateway_group_apm' ), 'No filter is attached to the APM group at boot; its Pay with Crypto entry comes from the definition' );
 		// The settings module filters this hook itself, so the shell must have attached nothing: the only owner is that module.
 		$owners = array();
 		foreach ( $GLOBALS['wp_filter']['woocommerce_paypal_payments_payment_methods']->callbacks ?? array() as $callbacks ) {
@@ -377,7 +377,7 @@ class PayPalWalletBootstrapTest extends WC_Unit_Test_Case {
 		$methods = $container->get( 'settings.data.definition.methods' );
 		$this->assertSame( array( 'ppcp-gateway', 'venmo', 'pay-later' ), array_column( $methods->group_paypal_methods(), 'id' ), 'The PayPal group lists the wallet methods and no card button' );
 		$this->assertSame( array(), $methods->group_card_methods(), 'The cards group must be empty' );
-		$this->assertSame( array(), $methods->group_apms(), 'The APM group must be empty' );
+		$this->assertSame( array( 'ppcp-pwc' ), array_column( $methods->group_apms(), 'id' ), 'The APM group lists Pay with Crypto only' );
 
 		// What is offered: card and wallet gateways are connection-gated by the extension's logic and the test store is not connected, so only the main PayPal gateway is observable.
 		$offered_ids = array_map(

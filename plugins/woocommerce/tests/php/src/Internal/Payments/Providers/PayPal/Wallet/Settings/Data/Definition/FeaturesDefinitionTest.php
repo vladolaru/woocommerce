@@ -26,7 +26,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	/**
 	 * Build the definition over the given eligibility answers and merchant capabilities.
 	 *
-	 * @param array $eligible     Eligibility per feature key: save, pay_later, installments. Missing ones are false.
+	 * @param array $eligible     Eligibility per feature key: save, pay_later, installments, pwc. Missing ones are false.
 	 * @param array $capabilities Merchant capabilities per feature key. Missing ones are false.
 	 * @return FeaturesDefinition
 	 */
@@ -36,6 +36,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 				'save'         => false,
 				'pay_later'    => false,
 				'installments' => false,
+				'pwc'          => false,
 			),
 			$eligible
 		);
@@ -43,7 +44,8 @@ class FeaturesDefinitionTest extends WalletTestCase {
 		$eligibilities = new FeaturesEligibilityService(
 			$eligible['save'],
 			$eligible['pay_later'],
-			$eligible['installments']
+			$eligible['installments'],
+			$eligible['pwc']
 		);
 
 		$settings = $this->mock( GeneralSettings::class );
@@ -54,6 +56,7 @@ class FeaturesDefinitionTest extends WalletTestCase {
 				FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => false,
 				FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => false,
 				FeaturesDefinition::FEATURE_INSTALLMENTS => false,
+				FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => false,
 			),
 			$capabilities
 		);
@@ -143,17 +146,66 @@ class FeaturesDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should define no Pay with Crypto card, even when every eligibility check passes.
+	 * @testdox Should offer the Pay with Crypto card, first, only when its eligibility check passes.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $eligible Whether the Pay with Crypto eligibility check passes.
 	 */
-	public function test_there_is_no_pay_with_crypto_card(): void {
-		$features = $this->create_definition(
+	public function test_the_pay_with_crypto_card_follows_its_check( bool $eligible ): void {
+		$features = $this->create_definition( array( 'pwc' => $eligible ) )->eligible_features();
+
+		$this->assertSame( $eligible, array_key_exists( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO, $features ) );
+		$this->assertSame( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO, array_key_first( $this->create_definition()->all_available_features() ), 'The card leads the list' );
+	}
+
+	/**
+	 * @testdox Should report the Pay with Crypto card as enabled from the merchant's Pay with Crypto capability.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $capability The merchant's Pay with Crypto capability.
+	 */
+	public function test_the_pay_with_crypto_card_reports_its_capability( bool $capability ): void {
+		$features = $this->create_definition( array(), array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => $capability ) )->all_available_features();
+
+		$this->assertSame( $capability, $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ]['enabled'] );
+	}
+
+	/**
+	 * @testdox Should give the Pay with Crypto card a Configure button when enabled, the two Sign up URLs when disabled, and Learn more.
+	 */
+	public function test_the_pay_with_crypto_card_buttons(): void {
+		$card = $this->create_definition( array( 'pwc' => true ) )->all_available_features()[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ];
+
+		$this->assertSame( 'Pay with Crypto', $card['title'] );
+		$this->assertSame( 'Enable customers to pay with cryptocurrency, and receive payments in USD in your PayPal balance.', $card['description'] );
+		$this->assertCount( 3, $card['buttons'] );
+
+		list( $configure, $sign_up, $learn_more ) = $card['buttons'];
+
+		$this->assertSame( 'Configure', $configure['text'] );
+		$this->assertSame( 'enabled', $configure['showWhen'] );
+		$this->assertSame(
 			array(
-				'save'         => true,
-				'pay_later'    => true,
-				'installments' => true,
-			)
+				'type'    => 'tab',
+				'tab'     => 'payment_methods',
+				'section' => 'ppcp-pwc',
+			),
+			$configure['action']
 		);
 
-		$this->assertArrayNotHasKey( 'pwc', $features->all_available_features() );
+		$this->assertSame( 'Sign up', $sign_up['text'] );
+		$this->assertSame( 'disabled', $sign_up['showWhen'] );
+		$this->assertSame(
+			array(
+				'sandbox' => 'https://www.sandbox.paypal.com/bizsignup/add-product?product=CRYPTO_PYMTS',
+				'live'    => 'https://www.paypal.com/bizsignup/add-product?product=CRYPTO_PYMTS',
+			),
+			$sign_up['urls']
+		);
+
+		$this->assertSame( 'Learn more', $learn_more['text'] );
+		$this->assertSame( 'https://www.paypal.com/us/digital-wallet/manage-money/crypto', $learn_more['url'] );
 	}
 }

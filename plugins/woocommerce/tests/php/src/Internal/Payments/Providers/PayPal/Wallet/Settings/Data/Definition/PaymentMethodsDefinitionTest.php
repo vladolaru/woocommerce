@@ -15,12 +15,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Da
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 
 /**
- * The list of payment methods the settings UI shows: PayPal, Venmo and Pay Later, plus whatever third parties add through
- * the three group filters. The APM group is `apply_filters( ..._group_apm, array() )`:
- * the cases pin that the hook is fired, that its additions are honoured and that the group is empty
- * without a listener (the wallet defines no local payment method and no Pay upon Invoice fields).
+ * The list of payment methods the settings UI shows: PayPal, Venmo and Pay Later, Pay with Crypto as the only alternative
+ * payment method, plus whatever third parties add through the three group filters. The cases pin that the hooks are
+ * fired, that their additions are honoured and that the APM group holds Pay with Crypto before its filter runs (the
+ * wallet defines no other local payment method and no Pay upon Invoice fields).
  *
- * The shell empties the APM group in a booted wallet; the cases that read the real group remove that listener first and
+ * The cases start with no listener on the group filters, so the Pay with Crypto module's flag filter does not run;
  * the test case restores the hooks after every test.
  *
  * @group paypal-wallet
@@ -55,7 +55,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * Hide the APM group the way a booted wallet does, so a case sees PayPal, Venmo and Pay Later only.
+	 * Empty the APM group, so a case sees PayPal, Venmo and Pay Later only.
 	 */
 	private function hide_the_apm_group(): void {
 		add_filter( 'woocommerce_paypal_payments_gateway_group_apm', '__return_empty_array', 99 );
@@ -86,7 +86,7 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should define exactly PayPal, Venmo and Pay Later, disabled until switched on, when the card and APM groups are empty.
+	 * @testdox Should define exactly PayPal, Venmo and Pay Later, disabled until switched on, when the card and APM groups are emptied.
 	 */
 	public function test_definitions_are_the_three_paypal_methods(): void {
 		$this->hide_the_apm_group();
@@ -143,12 +143,59 @@ class PaymentMethodsDefinitionTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should leave the APM group empty when nothing is hooked to it, and define no local payment method.
+	 * @testdox Should list Pay with Crypto as the only APM, with its icon, title and description, when nothing is hooked to the group.
 	 */
-	public function test_apm_group_is_empty_without_a_listener(): void {
-		remove_all_filters( 'woocommerce_paypal_payments_gateway_group_apm' );
+	public function test_apm_group_lists_pay_with_crypto(): void {
+		$group = $this->sut->group_apms();
 
-		$this->assertSame( array(), $this->sut->group_apms() );
-		$this->assertSame( array( 'ppcp-gateway', 'venmo', 'pay-later' ), array_keys( $this->sut->get_definitions() ) );
+		$this->assertSame( array( 'ppcp-pwc' ), $this->ids( $group ) );
+		$this->assertSame( 'payment-method-pwc', $group[0]['icon'] );
+		$this->assertSame( 'Pay with Crypto', $group[0]['title'] );
+		$this->assertSame(
+			'A PayPal-powered checkout option letting customers pay with cryptocurrency. You receive funds in USD, settled directly to your PayPal balance — no crypto exposure, no chargeback risk.',
+			$group[0]['description'],
+			'The admin description is the gateway\'s method description'
+		);
+	}
+
+	/**
+	 * @testdox Should hand the Pay with Crypto method to the woocommerce_paypal_payments_gateway_group_apm filter.
+	 */
+	public function test_apm_group_filter_receives_pay_with_crypto(): void {
+		$calls = $this->spy_filter( 'woocommerce_paypal_payments_gateway_group_apm' );
+
+		$this->sut->group_apms();
+
+		$this->assertCount( 1, $calls );
+		$this->assertSame( array( 'ppcp-pwc' ), $this->ids( $calls[0][0] ) );
+	}
+
+	/**
+	 * @testdox Should define Pay with Crypto after the PayPal methods when the card group is empty.
+	 */
+	public function test_definitions_carry_pay_with_crypto(): void {
+		$definitions = $this->sut->get_definitions();
+
+		$this->assertSame( array( 'ppcp-gateway', 'venmo', 'pay-later', 'ppcp-pwc' ), array_keys( $definitions ) );
+		$this->assertSame( 'Pay with Crypto', $definitions['ppcp-pwc']['itemTitle'] );
+		$this->assertSame( 'payment-method-pwc', $definitions['ppcp-pwc']['icon'] );
+		$this->assertArrayHasKey( 'checkoutPageTitle', $definitions['ppcp-pwc']['fields'], 'Pay with Crypto keeps the base fields' );
+	}
+
+	/**
+	 * @testdox Should give Pay with Crypto its admin and checkout titles and descriptions as the APM defaults.
+	 */
+	public function test_apm_defaults_hold_pay_with_crypto(): void {
+		$this->assertSame(
+			array(
+				'ppcp-pwc' => array(
+					'method_title'       => 'Pay with Crypto',
+					'method_description' => 'A PayPal-powered checkout option letting customers pay with cryptocurrency. You receive funds in USD, settled directly to your PayPal balance — no crypto exposure, no chargeback risk.',
+					'title'              => 'Pay with Crypto',
+					'description'        => 'Pay with top wallets and coins.',
+				),
+			),
+			PaymentMethodsDefinition::get_apm_defaults()
+		);
 	}
 }

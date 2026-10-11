@@ -23,6 +23,8 @@ const defaultPersistent = Object.freeze( {
 	'ppcp-gateway': {},
 	venmo: {},
 	'pay-later': {},
+	// Alternative payment methods.
+	'ppcp-pwc': {},
 
 	// Custom payment method properties.
 	paypalShowLogo: false,

@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\PayWithCrypto\PWCGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
 
 /**
@@ -21,8 +22,9 @@ class PaymentMethodsDependenciesDefinition {
 	 */
 	public function get_payment_method_dependencies(): array {
 		$dependencies = array(
-			'venmo'     => array( PayPalGateway::ID ),
-			'pay-later' => array( PayPalGateway::ID ),
+			PWCGateway::ID => array( PayPalGateway::ID ),
+			'venmo'        => array( PayPalGateway::ID ),
+			'pay-later'    => array( PayPalGateway::ID ),
 		);
 
 		/**

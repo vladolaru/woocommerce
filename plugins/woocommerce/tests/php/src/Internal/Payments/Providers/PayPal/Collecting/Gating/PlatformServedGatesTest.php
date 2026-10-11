@@ -115,12 +115,13 @@ class PlatformServedGatesTest extends WalletTestCase {
 		$settings = $this->mock( GeneralSettings::class );
 		$settings->shouldReceive( 'get_woo_settings' )->andReturn( array( 'country' => 'US' ) );
 		$definition = new FeaturesDefinition(
-			new FeaturesEligibilityService( true, true, true ),
+			new FeaturesEligibilityService( true, true, true, true ),
 			$settings,
 			array(
 				FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO => false,
 				FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING => false,
 				FeaturesDefinition::FEATURE_INSTALLMENTS => false,
+				FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO => false,
 			),
 			$this->mock( LoggerInterface::class )->shouldIgnoreMissing()
 		);
@@ -136,7 +137,7 @@ class PlatformServedGatesTest extends WalletTestCase {
 	 */
 	private function served_todos_list(): array {
 		$definition = new TodosDefinition(
-			new TodosEligibilityService( true, true, true, true, true, true, true, true, true ),
+			new TodosEligibilityService( true, true, true, true, true, true, true, true, true, true ),
 			$this->mock( GeneralSettings::class ),
 			$this->mock( TodosModel::class )
 		);
@@ -173,7 +174,7 @@ class PlatformServedGatesTest extends WalletTestCase {
 		$features = $this->served_features_list();
 
 		$this->assertSame(
-			array( FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO, FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING, FeaturesDefinition::FEATURE_INSTALLMENTS ),
+			array( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO, FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO, FeaturesDefinition::FEATURE_PAY_LATER_MESSAGING, FeaturesDefinition::FEATURE_INSTALLMENTS ),
 			array_keys( $features )
 		);
 	}
