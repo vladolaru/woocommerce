@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Immutable request-scoped plan for WooPayments order effects.
+ * Carries one operation's order changes from the platform answer to the applier.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderEffectPlan {
 
@@ -174,7 +174,7 @@ class WooPaymentsOrderEffectPlan {
 	/**
 	 * Build the effect plan of a $0 order confirmed without an intent (client 11.1.0 gw:1673-1771).
 	 *
-	 * @param array<string,string> $setup_meta Metadata the client writes before confirming.
+	 * @param array<string,string> $setup_meta Metadata written before the intent is confirmed.
 	 * @param int                  $token_id   Saved token the shopper used, or 0 for a payment method that is not saved.
 	 * @return self
 	 */
@@ -193,7 +193,7 @@ class WooPaymentsOrderEffectPlan {
 	}
 
 	/**
-	 * Get a copy of this plan whose effects write no transaction fee or net meta, for paths where the client writes none.
+	 * Get a copy of this plan whose effects write no transaction fee or net meta.
 	 *
 	 * @return self
 	 */

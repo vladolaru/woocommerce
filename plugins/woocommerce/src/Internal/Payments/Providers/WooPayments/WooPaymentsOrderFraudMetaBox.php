@@ -12,10 +12,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
 /**
- * Native WooPayments Fraud & Risk order meta box.
+ * The WooPayments Fraud & Risk meta box on the order screen.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 
@@ -466,10 +466,10 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the status icon: the client's green check for passed outcomes and its shield for held or blocked ones.
+	 * Get the status icon: client 11.1.0's green check for passed outcomes and its shield for held or blocked ones.
 	 *
 	 * Client 11.1.0 draws them from its own SVGs (`assets/images/icons/check-green.svg`, `shield-stroke-*.svg`);
-	 * native uses the matching WordPress admin dashicons.
+	 * this uses the matching WordPress admin dashicons.
 	 *
 	 * @param string $icon_class Status icon class.
 	 * @return string
@@ -537,7 +537,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native transaction details URL.
+	 * Get the transaction details URL.
 	 *
 	 * @param string               $primary_id  Usually the Payment Intent ID, but can be an order ID.
 	 * @param string               $fallback_id Usually the Charge ID.
@@ -580,7 +580,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get native Fraud & Risk meta box styles.
+	 * Get the Fraud & Risk meta box styles.
 	 *
 	 * @return string
 	 */

@@ -11,10 +11,10 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 
 /**
- * Maps explicit WooPayments provider data to neutral payment outcomes.
+ * Maps a platform payment or setup intent to the payment outcome WooCommerce applies.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsIntentCodec {
 
@@ -26,9 +26,9 @@ class WooPaymentsIntentCodec {
 	public const SHOPPER_ERROR_MESSAGE_KEY = 'shopper_error_message';
 
 	/**
-	 * Normalize a native intent response to a neutral payment outcome.
+	 * Map a platform intent response to a payment outcome.
 	 *
-	 * @param array<string,mixed>             $intention Native intent response.
+	 * @param array<string,mixed>             $intention Platform intent response.
 	 * @param WooPaymentsIntentMappingContext $context   Explicit mapping context.
 	 * @return PaymentOutcome
 	 */
@@ -160,8 +160,8 @@ class WooPaymentsIntentCodec {
 	 *
 	 * Stripe's `requires_action` refund (https://docs.stripe.com/api/refunds/object, https://docs.stripe.com/refunds#requires-action)
 	 * waits for the customer's bank details and has moved no money yet, like `pending`. Client 11.1.0 records any refund its
-	 * request returns and marks it pending only for `pending` (class-wc-payment-gateway-wcpay.php:3003-3009); native marks
-	 * both pending (monitor ruling 2026-10-10 13:35).
+	 * request returns and marks it pending only for `pending` (class-wc-payment-gateway-wcpay.php:3003-3009); this code marks
+	 * both pending, since neither has moved money.
 	 *
 	 * @since 11.2.0
 	 *
@@ -173,12 +173,12 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Normalize a native refund response before local enrichment.
+	 * Map a platform refund response to a payment outcome, before local enrichment.
 	 *
 	 * A refund that failed or was canceled maps to a failed outcome, so the order never shows a refund that moved no money;
-	 * the client records it (decided improvement).
+	 * client 11.1.0 records it (class-wc-payment-gateway-wcpay.php:3003-3009).
 	 *
-	 * @param array<string,mixed> $result Native refund result.
+	 * @param array<string,mixed> $result Platform refund result.
 	 * @return PaymentOutcome
 	 */
 	public static function outcome_from_refund_result( array $result ): PaymentOutcome {
@@ -244,7 +244,7 @@ class WooPaymentsIntentCodec {
 	 * Build a failed outcome from an explicit transport exception.
 	 *
 	 * @param string                  $operation           Operation name.
-	 * @param WooPaymentsApiException $exception           Native transport exception.
+	 * @param WooPaymentsApiException $exception           Platform transport exception.
 	 * @param string                  $provider_payment_id Provider payment ID.
 	 * @return PaymentOutcome
 	 */
@@ -268,7 +268,8 @@ class WooPaymentsIntentCodec {
 				PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
 				self::SHOPPER_ERROR_MESSAGE_KEY    => self::shopper_message_for_exception( $error_code, $exception ),
 				'operation'                        => $operation,
-				// The admin capture and cancel routes answer with the platform's status and minimum amount, as the client does.
+				// The admin capture and cancel routes answer with the platform's status and minimum amount, as client 11.1.0's do
+				// (admin/class-wc-rest-payments-orders-controller.php:242-244).
 				'http_code'                        => $exception->get_http_code(),
 				'extra_details'                    => self::amount_too_small_details( $error_code, $exception ),
 			)
@@ -276,7 +277,7 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Get the minimum amount an amount_too_small platform error carries, as the client's Amount_Too_Small_Exception exposes it.
+	 * Get the minimum amount an amount_too_small platform error carries, as client 11.1.0's Amount_Too_Small_Exception exposes it (class-amount-too-small-exception.php:15).
 	 *
 	 * @param string                  $error_code Platform error code.
 	 * @param WooPaymentsApiException $exception  Platform error.
@@ -297,7 +298,7 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Resolve the shopper-facing message for a failed transport exception.
 	 *
-	 * Mirrors the plugin's get_filtered_error_message ordering: amount_too_small
+	 * As client 11.1.0's get_filtered_error_message() orders them (class-wc-payments-utils.php:769): amount_too_small
 	 * renders (and caches) the platform's per-currency floor, amount_too_large
 	 * passes the transport's redacted capture message through, everything else
 	 * goes through the safe card-error mapping.
@@ -405,7 +406,7 @@ class WooPaymentsIntentCodec {
 	}
 
 	/**
-	 * Build the legacy-compatible frontend confirmation hash from explicit values.
+	 * Build the `#wcpay-confirm-` hash the checkout scripts read to confirm the intent.
 	 *
 	 * @param int    $order_id           Order ID.
 	 * @param string $client_secret      Intent client secret.

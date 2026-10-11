@@ -10,43 +10,28 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 
 /**
- * The WooPayments client version the native runtime declares to the platform.
+ * The WooPayments version this store reports to the platform.
  *
- * The platform gates behavior on the client version every request reports: payment-method
- * availability (`minimum_client_version`), account-status mapping, response shapes, and the
- * client version recorded against the account for fraud signals and support tooling. The
- * standalone plugin reports its live release number; the native runtime instead declares the
- * plugin version whose platform behavior it was verified against, so the platform serves the
- * exact response contract the native port implements.
- *
- * The user agent carries two parts. `WooCommerce Payments/<VERSION>` is the pinned platform-behavior
- * version: the platform's parser reads only this version, and every gate compares against it. The
- * suffix `-native-woocommerce/<WooCommerce version>` is the real runtime identity: the parser ignores
- * any `-` suffix after the version, so it tells native stores and their WooCommerce release apart
- * without changing what the platform serves. Client 11.1.0 sends its plugin version alone.
- *
- * Bump policy: this constant must NOT track WooCommerce releases automatically. Before
- * bumping, review every platform-side gate between the current value and the target version
- * (`is_client_version_at_least()` call sites and `minimum_client_version` entries) and port
- * the behavior each gate unlocks. Bumping without that review makes the platform serve
- * responses the native runtime does not understand; never bumping makes new payment methods
- * and response improvements silently unavailable to native stores. Each bump is a deliberate,
- * reviewed change with its own tracking issue.
+ * The platform decides payment-method availability, account-status mapping and response shapes from the version each
+ * request reports, and calls it the client version. Change it only after implementing here every platform behaviour
+ * that differs between the two versions. The user agent appends `-native-woocommerce/<WooCommerce version>`, which
+ * the platform's version parser ignores, so support can tell WooCommerce's built-in WooPayments apart from the
+ * WooPayments extension.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsClientVersion {
 
 	/**
-	 * The WooPayments plugin version whose platform behavior the native runtime implements.
+	 * The WooPayments version whose platform responses this code implements.
 	 *
 	 * @var string
 	 */
 	public const VERSION = '11.1.0';
 
 	/**
-	 * Build the client identity string reported to the platform.
+	 * Build the identity string reported to the platform.
 	 *
 	 * Used as the transport `User-Agent` header and inside mandate customer-acceptance records.
 	 * The suffix must start with `-` right after the version, or the platform's parser rejects

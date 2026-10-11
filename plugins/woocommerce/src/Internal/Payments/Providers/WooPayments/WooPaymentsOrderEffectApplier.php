@@ -19,10 +19,10 @@ use WC_Payment_Token;
 use WC_Payment_Tokens;
 
 /**
- * Applies WooPayments-specific order, token, and note effects after provider transport completes.
+ * Writes a plan's meta, notes and token changes to the order.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderEffectApplier {
 
@@ -150,7 +150,7 @@ class WooPaymentsOrderEffectApplier {
 					}
 					$this->apply_setup_intent_payment_method_display_details( $context->get_order(), $payment_method_details );
 
-					// The client's process_payment() also ends in update_order_status_from_intent(), so the success note is written here too.
+					// Client 11.1.0's process_payment() also ends in update_order_status_from_intent() (gw:2204), so the success note is written here too.
 					return $this->merge_effect_data_into_outcome(
 						$outcome,
 						$this->compose_setup_intent_note_data( $context->get_order(), $outcome, (string) $provider_result['id'] ),
@@ -264,7 +264,7 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Compose the client's success, started, failed or cancelled note for a SetupIntent outcome.
+	 * Compose the success, started, failed or cancelled note for a SetupIntent outcome, as client 11.1.0 writes it.
 	 *
 	 * Client 11.1.0: mark_payment_completed() for a succeeded SetupIntent (os:404-406, 1565-1600), mark_payment_started() (os:418-427, 2202-2218) on the order-status callback, the redirect
 	 * return's mark_payment_failed() with "UPE payment failed: ..." (gw:2376-2382, 2428-2446; os:2106-2130), and
@@ -473,8 +473,8 @@ class WooPaymentsOrderEffectApplier {
 		$provider_status = (string) ( $result['status'] ?? '' );
 		if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() && '' !== $provider_status && 'canceled' !== $provider_status ) {
 			// The cancel failed but the intent was re-read: record the status the
-			// provider still reports and the failure note, as the plugin's
-			// cancel_authorization() does, so the admin actions reflect reality.
+			// provider still reports and the failure note, as client 11.1.0's
+			// cancel_authorization() does (class-wc-payment-gateway-wcpay.php:4069), so the admin actions reflect reality.
 			$message         = isset( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
 				? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 				: (string) ( $result['message'] ?? '' );
@@ -593,7 +593,8 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Clear stale card identity and use the established generic card title.
+	 * Set the order's payment method title to the generic card title for the account country, else the billing country,
+	 * and copy it to the order's subscriptions.
 	 *
 	 * @param WC_Order $order           Order being updated.
 	 * @param string   $account_country Connected account country override.
@@ -697,7 +698,7 @@ class WooPaymentsOrderEffectApplier {
 	 * Resolve a localized title only when applying the real display effect.
 	 *
 	 * @param WC_Order                                                                                                                                                     $order           Order being updated.
-	 * @param array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string} $effects         Pure display projection.
+	 * @param array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string} $effects         Payment method display values computed for the order, not yet written.
 	 * @param string                                                                                                                                                       $account_country Connected account country override.
 	 * @return string
 	 */
@@ -725,9 +726,9 @@ class WooPaymentsOrderEffectApplier {
 			 * @param string $suffix Express-checkout payment-method title suffix.
 			 */
 			$suffix = apply_filters( 'wcpay_payment_request_payment_method_title_suffix', 'WooPayments' );
-			// An empty return removes the suffix, as on the client (class-wc-payment-gateway-wcpay.php:2735-2740), so
-			// '__return_false' drops it. Departures: '0' and an empty array remove it too, where the client appends a
-			// bare "0" or "Array"; any other non-scalar keeps the default, where the client prints " (Array)" for an
+			// An empty return removes the suffix, as in client 11.1.0 (class-wc-payment-gateway-wcpay.php:2735-2740), so
+			// '__return_false' drops it. Unlike client 11.1.0, '0' and an empty array remove it too, where it appends a
+			// bare "0" or "Array"; any other non-scalar keeps the default, where it prints " (Array)" for an
 			// array, uses a stringable object's string, and throws on an object that has none.
 			if ( empty( $suffix ) ) {
 				$suffix = '';

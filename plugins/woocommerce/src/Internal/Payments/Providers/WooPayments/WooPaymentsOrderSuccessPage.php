@@ -20,10 +20,11 @@ use WC_Email_Customer_On_Hold_Order;
 use WC_Order;
 
 /**
- * Native WooPayments order-success page callbacks.
+ * Adjusts the order-received page for WooPayments orders: failed-order text, payment method titles, Multibanco
+ * instructions and the page-view record.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
@@ -86,7 +87,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * Payment methods that complete through a provider redirect, whose still-pending
 	 * orders get a live intent re-check on the thank-you page.
 	 *
-	 * Mirrors the plugin's Payment_Method::REDIRECT_PAYMENT_METHODS.
+	 * Client 11.1.0's Payment_Method::REDIRECT_PAYMENT_METHODS (`includes/constants/class-payment-method.php:65`).
 	 *
 	 * @var string[]
 	 */
@@ -219,7 +220,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Skip order-received email verification only for the session that paid the native intent.
+	 * Skip order-received email verification only for the session that paid the order's WooPayments intent.
 	 *
 	 * @param mixed $required Whether email verification is required.
 	 * @param mixed $order Order being displayed.
@@ -250,7 +251,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	/**
 	 * Replace the order-received text with a failure message when the order's payment failed.
 	 *
-	 * Mirrors the plugin's replace_order_received_text_for_failed_orders(): a failed order
+	 * As client 11.1.0's replace_order_received_text_for_failed_orders() (class-wc-payments-order-success-page.php:415): a failed order
 	 * gets the failure copy outright; a still-unpaid redirect-method order gets a live
 	 * intent re-check, because its failure may reach the store after the shopper does.
 	 *
@@ -301,7 +302,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Give the redirect return a moment to land before reading the intent, as the plugin does.
+	 * Give the redirect return a moment to land before reading the intent, as client 11.1.0 does (class-wc-payments-order-success-page.php:450).
 	 *
 	 * Overridable so tests need not pay the wait.
 	 */

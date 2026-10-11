@@ -12,8 +12,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
 /**
- * Loads the native WooPayments order status-change confirmation on the order-edit screen, and prints
- * the client's order-screen payment rows (WooPay line and transaction fee under the totals).
+ * Loads the WooPayments order status-change confirmation on the order-edit screen, and prints
+ * client 11.1.0's order-screen payment rows (WooPay line and transaction fee under the totals).
  *
  * The script it enqueues intercepts the order-edit status dropdown so that moving a WooPayments order
  * to Refunded raises a confirmation modal that refunds at the provider, instead of core silently
@@ -23,7 +23,7 @@ use WC_Order;
  * decides when to load the asset and hands the projected config to the browser.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 
@@ -146,7 +146,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Render the "Paid with WooPay" line under the order totals of a WooPay order.
 	 *
-	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::show_woopay_payment_method_name_admin()`.
+	 * As client 11.1.0's `WC_Payments_Admin::show_woopay_payment_method_name_admin()` (admin/class-wc-payments-admin.php:1304).
 	 *
 	 * @internal
 	 *
@@ -176,7 +176,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Render the WooPayments transaction fee row under the order totals.
 	 *
-	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::display_wcpay_transaction_fee()`: hidden while the
+	 * As client 11.1.0's `WC_Payments_Admin::display_wcpay_transaction_fee()` (admin/class-wc-payments-admin.php:1329): hidden while the
 	 * payment awaits capture and when no fee is stored.
 	 *
 	 * @internal
@@ -219,7 +219,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Render the mount point for order notices after the order's payment info.
 	 *
-	 * Mirrors plugin 11.1.0 `WC_Payments_Admin::render_order_edit_payment_details_container()`, where the
+	 * As client 11.1.0's `WC_Payments_Admin::render_order_edit_payment_details_container()` (admin/class-wc-payments-admin.php:278), where the
 	 * browser renders the order's test-mode notice (client `order/index.js:131-141`).
 	 *
 	 * @internal

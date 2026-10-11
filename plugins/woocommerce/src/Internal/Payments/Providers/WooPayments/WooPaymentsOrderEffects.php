@@ -10,17 +10,17 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 
 /**
- * Deterministically projects WooPayments provider and order facts to local effect data.
+ * Computes the order meta values a platform intent implies, without writing them.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderEffects {
 
 	/**
 	 * Compose payment-method identity and metadata without rendering a title.
 	 *
-	 * @param array<string,mixed> $result                Native PaymentIntent response.
+	 * @param array<string,mixed> $result                Platform PaymentIntent response.
 	 * @param string              $express_checkout_type Existing express-checkout identity.
 	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
 	 */
@@ -191,14 +191,14 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Compose lifecycle metadata for a native PaymentIntent.
+	 * Compose lifecycle metadata for a platform PaymentIntent.
 	 *
-	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
+	 * @param array<string,mixed>  $intent              Platform PaymentIntent response.
 	 * @param string               $order_currency      Order currency.
 	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order was held for fraud review before completing.
-	 * @param bool                 $include_fee_meta    Whether to add the fee meta the client attaches from the charge.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta client 11.1.0 attaches from the charge (class-wc-payments-order-service.php:1741).
 	 * @return array<string,string>
 	 */
 	public static function payment_intent_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
@@ -208,7 +208,7 @@ class WooPaymentsOrderEffects {
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 		$intent_currency        = isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency;
 		$meta                   = array(
-			// Plugin 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
+			// Client 11.1.0 stores the intent model's currency, which its constructor uppercases (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361,1414).
 			'_wcpay_intent_currency'        => strtoupper( $intent_currency ),
 			'_wcpay_mode'                   => $order_mode,
 			'_wcpay_payment_transaction_id' => $balance_transaction_id,
@@ -239,10 +239,10 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get legacy-compatible order metadata for a completed charge.
+	 * Get the order metadata for a completed charge.
 	 *
-	 * @param array<string,mixed>  $intent                         Native PaymentIntent response.
-	 * @param array<string,mixed>  $charge                         Native Charge response.
+	 * @param array<string,mixed>  $intent                         Platform PaymentIntent response.
+	 * @param array<string,mixed>  $charge                         Platform Charge response.
 	 * @param array<string,string> $settlement_meta                Precomputed settlement metadata.
 	 * @param bool                 $include_payment_transaction_id Whether to include the balance transaction ID.
 	 * @param bool                 $was_held_for_review            Whether the order was held for fraud review before completing.
@@ -261,8 +261,8 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get charge metadata valid before capture.
 	 *
-	 * @param array<string,mixed>  $intent               Native PaymentIntent response.
-	 * @param array<string,mixed>  $charge               Native Charge response.
+	 * @param array<string,mixed>  $intent               Platform PaymentIntent response.
+	 * @param array<string,mixed>  $charge               Platform Charge response.
 	 * @param array<string,string> $settlement_meta      Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review  Whether the order was held for fraud review before completing.
 	 * @param bool                 $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
@@ -280,7 +280,7 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get payment-method backfill metadata from a completed charge.
 	 *
-	 * @param array<string,mixed> $charge                          Native Charge response.
+	 * @param array<string,mixed> $charge                          Platform Charge response.
 	 * @param bool                $has_placeholder_payment_details Whether existing details are empty.
 	 * @param string              $existing_transaction_id        Existing balance transaction ID.
 	 * @return array<string,string>
@@ -308,12 +308,12 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get legacy-compatible order metadata for a started PaymentIntent.
+	 * Get the order metadata for a started PaymentIntent.
 	 *
-	 * Plugin 11.1.0 stores the payment intent's own currency, uppercased by its intent model, before the payment succeeds (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
+	 * Client 11.1.0 stores the payment intent's own currency, uppercased by its intent model, before the payment succeeds (class-wc-payments-api-payment-intention.php:93, class-wc-payments-order-service.php:1361).
 	 * The order currency is only a fallback.
 	 *
-	 * @param array<string,mixed> $intent         Native PaymentIntent response.
+	 * @param array<string,mixed> $intent         Platform PaymentIntent response.
 	 * @param string              $order_currency Order currency, used when the intent carries none.
 	 * @return array<string,string>
 	 */
@@ -329,12 +329,12 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get lifecycle metadata from a completed capture response.
 	 *
-	 * @param array<string,mixed>  $intent              Native PaymentIntent response.
+	 * @param array<string,mixed>  $intent              Platform PaymentIntent response.
 	 * @param string               $order_currency      Order currency.
 	 * @param string               $order_mode          `_wcpay_mode` value, one of WooPaymentsOrderMode.
 	 * @param array<string,string> $settlement_meta     Precomputed settlement metadata.
 	 * @param bool                 $was_held_for_review Whether the order's stored fraud outcome is review.
-	 * @param bool                 $include_fee_meta    Whether to add the fee meta the client attaches from the charge.
+	 * @param bool                 $include_fee_meta    Whether to add the fee meta client 11.1.0 attaches from the charge (class-wc-payments-order-service.php:1741).
 	 * @return array<string,string>
 	 */
 	public static function completed_capture_meta( array $intent, string $order_currency, string $order_mode, array $settlement_meta = array(), bool $was_held_for_review = false, bool $include_fee_meta = true ): array {
@@ -344,7 +344,7 @@ class WooPaymentsOrderEffects {
 		}
 
 		$meta      = array(
-			// Plugin 11.1.0 capture keeps the uppercase value its authorization stored (class-wc-payments-api-payment-intention.php:93); only the webhook writes Stripe's lowercase.
+			// Client 11.1.0 capture keeps the uppercase value its authorization stored (class-wc-payments-api-payment-intention.php:93); only the webhook writes Stripe's lowercase.
 			'_wcpay_intent_currency' => strtoupper( isset( $intent['currency'] ) ? (string) $intent['currency'] : $order_currency ),
 			'_wcpay_mode'            => $order_mode,
 		);
@@ -359,7 +359,7 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get legacy-compatible order metadata for a failed capture response.
+	 * Get the order metadata for a failed capture response.
 	 *
 	 * @return array<string,string>
 	 */
@@ -374,8 +374,8 @@ class WooPaymentsOrderEffects {
 	 * review_allowed, not allow — the meta box then records that a human
 	 * approved the payment rather than the risk filters alone.
 	 *
-	 * @param array<string,mixed> $intent               Native PaymentIntent response.
-	 * @param array<string,mixed> $charge               Native Charge response.
+	 * @param array<string,mixed> $intent               Platform PaymentIntent response.
+	 * @param array<string,mixed> $charge               Platform Charge response.
 	 * @param bool                $was_held_for_review  Whether the order was held for fraud review before completing.
 	 * @param bool                $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
 	 * @return array<string,string>
@@ -386,8 +386,8 @@ class WooPaymentsOrderEffects {
 		$is_card       = self::is_card_charge( $charge );
 
 		if ( in_array( $fraud_outcome, array( 'allow', 'block', 'review' ), true ) ) {
-			// A review outcome on a pre-capture intent is the plugin's
-			// mark_order_held_for_review_for_fraud stamp: the meta box must show the
+			// A review outcome on a pre-capture intent is client 11.1.0's
+			// mark_order_held_for_review_for_fraud() stamp (class-wc-payments-order-service.php:1717): the meta box must show the
 			// held-for-review panel until the merchant decides. On completion the
 			// outcome value no longer drives the box; the held-for-review history does.
 			if ( 'review' === $fraud_outcome && $entering_review_hold ) {
@@ -420,7 +420,7 @@ class WooPaymentsOrderEffects {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
 	 * @return array<mixed> Fired fraud ruleset results, when present and valid.
 	 */
 	public static function get_fraud_ruleset_results( array $intent ): array {
@@ -439,7 +439,7 @@ class WooPaymentsOrderEffects {
 	 * Get the fee meta client 11.1.0 `attach_transaction_fee_to_order()` writes from a charge: nothing until the charge is
 	 * captured; the envelope's fee and net when it has one; otherwise the application fee alone, in the charge currency.
 	 *
-	 * @param array<string,mixed> $charge Native Charge response.
+	 * @param array<string,mixed> $charge Platform Charge response.
 	 * @return array<string,string>
 	 */
 	public static function attached_fee_meta( array $charge ): array {
@@ -491,7 +491,7 @@ class WooPaymentsOrderEffects {
 	/**
 	 * Get the fee and net meta from a charge's fee envelope.
 	 *
-	 * @param array<string,mixed> $charge Native Charge response.
+	 * @param array<string,mixed> $charge Platform Charge response.
 	 * @return array<string,string>|null Null when the charge has no envelope with a fee total.
 	 */
 	private static function envelope_fee_meta( array $charge ): ?array {
@@ -520,9 +520,9 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Get legacy-compatible Multibanco voucher order metadata.
+	 * Get the Multibanco voucher order metadata.
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
 	 * @return array<string,string>
 	 */
 	public static function multibanco_voucher_meta( array $intent ): array {
@@ -584,9 +584,9 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Tell whether a native charge used a card payment method.
+	 * Tell whether a charge used a card payment method.
 	 *
-	 * @param array<string,mixed> $charge Native Charge response.
+	 * @param array<string,mixed> $charge Platform Charge response.
 	 * @return bool
 	 */
 	private static function is_card_charge( array $charge ): bool {
@@ -596,9 +596,9 @@ class WooPaymentsOrderEffects {
 	}
 
 	/**
-	 * Tell whether a native intent used a card payment method.
+	 * Tell whether an intent used a card payment method.
 	 *
-	 * @param array<string,mixed> $intent Native PaymentIntent response.
+	 * @param array<string,mixed> $intent Platform PaymentIntent response.
 	 * @return bool
 	 */
 	private static function is_card_intent( array $intent ): bool {

@@ -21,4 +21,4 @@ A reference erodes the provider abstraction. Route new provider needs through th
 2. Port the behavior each gate unlocks into the native runtime.
 3. Bump the constant and its pinned-value test in one reviewed change.
 
-Never bumping silently costs native stores new payment methods and response improvements; bumping without the review serves responses the native runtime does not understand. Read the full bump-policy docblock on `WooPaymentsClientVersion` before touching the constant.
+Never bumping silently costs native stores new payment methods and response improvements; bumping without the review serves responses the native runtime does not understand. The steps above are the policy; the class docblock states only what the constant means.

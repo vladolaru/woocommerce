@@ -14,19 +14,13 @@ use WC_Order;
 /**
  * Decides whether changing a WooPayments order's status from the edit screen asks for confirmation, and builds the amounts the confirmation shows.
  *
- * Moving a WooPayments order to Refunded from the order-edit status dropdown must open a confirmation
- * modal that refunds at the provider, rather than letting core's `wc_order_fully_refunded()` record a
- * local-only refund that never returns money to the customer. This service is the single place that
- * answers "should that confirmation be offered for this order, and with which numbers".
- *
- * It is a pure projection: it reads the order and returns data. It registers no hooks, enqueues no
- * assets, and reads no request state.
- *
- * It also tells the browser whether the payment is an open authorization, so that Completed and
- * Cancelled can confirm the capture or cancel they trigger (client 11.1.0 `class-wc-payments-admin.php:880`).
+ * Moving an order to Refunded must refund at the platform rather than let core's `wc_order_fully_refunded()`
+ * record a local-only refund. It reads the order and returns data: no hooks, assets or request state. It also
+ * says whether the payment is an open authorization, so Completed and Cancelled can confirm the capture or
+ * cancel they trigger (client 11.1.0 `class-wc-payments-admin.php:880`).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOrderStatusChangeConfirmation {
 
@@ -38,7 +32,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	private const ORDER_STATUS_PREFIX = 'wc-';
 
 	/**
-	 * The legacy proxy, used for mockable calls to global functions.
+	 * The LegacyProxy instance, used for mockable calls to global functions.
 	 *
 	 * @var LegacyProxy
 	 */
@@ -56,7 +50,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy               $legacy_proxy    The legacy proxy.
+	 * @param LegacyProxy               $legacy_proxy    The LegacyProxy instance.
 	 * @param WooPaymentsAccountService $account_service WooPayments account state.
 	 */
 	final public function init( LegacyProxy $legacy_proxy, WooPaymentsAccountService $account_service ): void {
@@ -67,7 +61,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	/**
 	 * Tell whether the status-change confirmation should be offered for an order.
 	 *
-	 * True only for orders paid through the native WooPayments gateway, including the per-payment-method
+	 * True only for orders paid through the WooPayments gateway, including the per-payment-method
 	 * gateways whose IDs carry the `woocommerce_payments_` prefix.
 	 *
 	 * @param WC_Order $order Order being edited.
@@ -124,7 +118,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 			'has_open_authorization'    => 'requires_capture' === $order->get_meta( '_intention_status', true ),
 			'test_mode'                 => WooPaymentsOrderMode::TEST === $order->get_meta( '_wcpay_mode', true ),
 			'disable_manual_refunds'    => 'failed' !== $order->get_meta( '_wcpay_refund_status', true ),
-			// Plugin 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount.
+			// Client 11.1.0 localizes `shouldUseExplicitPrice` for the disputed order notice's amount (admin/class-wc-payments-admin.php:1040).
 			'should_use_explicit_price' => MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price(),
 		);
 	}
@@ -132,7 +126,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	/**
 	 * Get the provider charge ID when the order belongs to the active account mode.
 	 *
-	 * Orders created before WooPayments persisted `_wcpay_mode` are treated as compatible, matching the legacy client. Otherwise the stored value must equal the current order mode, as plugin 11.1.0 computes `orderTestModeMatch` (class-wc-payments-admin.php:855-866); malformed metadata and explicit cross-mode orders fail closed so the browser never reads or displays a charge from the wrong account mode.
+	 * Orders created before WooPayments persisted `_wcpay_mode` are treated as compatible, as in client 11.1.0. Otherwise the stored value must equal the current order mode, as client 11.1.0 computes `orderTestModeMatch` (class-wc-payments-admin.php:855-866); malformed metadata and explicit cross-mode orders fail closed so the browser never reads or displays a charge from the wrong account mode.
 	 *
 	 * @param WC_Order $order Order being edited.
 	 * @return string Provider charge ID, or an empty string when it must not be read.
@@ -171,7 +165,7 @@ class WooPaymentsOrderStatusChangeConfirmation {
 	 * Tell whether the order's gateway can refund it at the provider.
 	 *
 	 * Delegates to the gateway resolved for the order, which is how core itself decides whether to offer
-	 * an automatic refund. The native gateway answers this only when it supports refunds and the order
+	 * an automatic refund. The WooPayments gateway answers this only when it supports refunds and the order
 	 * carries a provider charge, so an order without one never gets a modal promising a real refund.
 	 *
 	 * @param WC_Order $order Order being edited.
