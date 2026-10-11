@@ -416,8 +416,8 @@ class WooPaymentsRefundEventHandler {
 		$status           = $is_cancelled ? esc_html__( 'cancelled', 'woocommerce' ) : esc_html__( 'unsuccessful', 'woocommerce' );
 		$suffix           = $is_cancelled ? '.' : ': ' . $this->get_refund_failure_message( $failure_reason );
 
-		// As client 11.1.0 writes it (class-wc-payments-order-service.php:1979-1993): the text is escaped around its tags, and
-		// each value is escaped where it is built, so the amount keeps the <bdi> wc_price() puts in it.
+		// As client 11.1.0 writes it (class-wc-payments-order-service.php:1979-1993): the text is escaped around its tags, each
+		// value native supplies is escaped at its source, and the amount is wc_price() output stored as the extension stores it.
 		return sprintf(
 			WooPaymentsHtmlUtils::escape_interpolated_html(
 				/* translators: %1$s: refund amount, %2$s: refund status, %3$s: WooPayments, %4$s: provider refund ID, %5$s: failure message or period. */
