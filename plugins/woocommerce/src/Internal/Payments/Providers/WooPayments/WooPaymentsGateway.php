@@ -875,7 +875,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$setup_intent_id = $this->sanitize_post_string( 'wcpay-setup-intent' );
 
 			if ( '' === $setup_intent_id ) {
-				return $this->add_payment_method_error( __( 'A WooPayments payment method was not provided', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'A WooPayments payment method was not provided.', 'woocommerce' ) );
 			}
 
 			$user_id = get_current_user_id();
@@ -892,29 +892,29 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			// intent; the client refuses before reading it (client 11.1.0 gw:4434-4439).
 			$user_customer = (string) $this->get_customer_service()->get_customer_id_by_user_id( $user_id );
 			if ( '' === $user_customer ) {
-				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}
 
 			$setup_intent = $this->get_api_client()->get_setup_intention( $setup_intent_id );
 			$status       = isset( $setup_intent['status'] ) ? (string) $setup_intent['status'] : '';
 			if ( 'succeeded' !== $status ) {
-				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
 
 			// Save only an intent made for this user's customer, so a posted SetupIntent id of another shopper cannot
 			// attach their payment method here. The client checks only that the user has a customer (gw:4434-4454).
 			if ( ! hash_equals( $user_customer, $this->get_setup_intent_customer_id( $setup_intent ) ) ) {
-				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later', 'woocommerce' ) );
+				return $this->add_payment_method_error( __( 'Failed to add the provided payment method. Please try again later.', 'woocommerce' ) );
 			}
 
 			$payment_method_id = $this->get_setup_intent_payment_method_id( $setup_intent );
 			if ( '' === $payment_method_id ) {
-				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}
 
 			$token = $this->get_token_service()->get_or_create_token_for_user( $payment_method_id, $user_id );
 			if ( ! $token instanceof WC_Payment_Token ) {
-				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
+				return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 			}
 
 			return array(
@@ -943,7 +943,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		} catch ( Throwable $exception ) {
 			$this->get_logger()->log_throwable( 'Error when adding payment method: ' . $exception->getMessage(), $exception, array(), 'info' );
 
-			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later", 'woocommerce' ) );
+			return $this->add_payment_method_error( __( "We're not able to add this payment method. Please try again later.", 'woocommerce' ) );
 		}
 	}
 

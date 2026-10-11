@@ -2067,8 +2067,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
 	 * challenge. `add_payment_method()` returns its error before ever calling the token service
 	 * (`WooPaymentsGateway.php:645-647`), so a hosted challenge failure must never attach a
-	 * payment method to the shopper's account. The notice is the client's exact copy, with no
-	 * trailing period (client 11.1.0 `gw:4446-4451`).
+	 * payment method to the shopper's account. The notice is the client's sentence (client 11.1.0 `gw:4446-4451`), ended
+	 * with a period.
 	 */
 	public function test_add_payment_method_refuses_non_succeeded_setup_intent_without_saving_token(): void {
 		wc_clear_notices();
@@ -2101,7 +2101,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'error' ), $result );
 		$this->assertCount( 1, wc_get_notices( 'error' ) );
 		$this->assertSame(
-			'Failed to add the provided payment method. Please try again later',
+			'Failed to add the provided payment method. Please try again later.',
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);
 	}
@@ -2237,8 +2237,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject setup intents whose customer belongs to another user and not create a token.
 	 *
-	 * The customer check is the gateway's own; its notice reuses the client's non-succeeded copy verbatim,
-	 * with no trailing period (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4448`).
+	 * The customer check is the gateway's own; its notice reuses the client's non-succeeded sentence
+	 * (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4448`), ended with a period.
 	 */
 	public function test_add_payment_method_rejects_setup_intent_owned_by_another_customer(): void {
 		wc_clear_notices();
@@ -2288,7 +2288,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'error' ), $result );
 		$this->assertCount( 1, wc_get_notices( 'error' ) );
 		$this->assertSame(
-			'Failed to add the provided payment method. Please try again later',
+			'Failed to add the provided payment method. Please try again later.',
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);
 	}
@@ -2351,8 +2351,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function setup_intent_without_customer_provider(): array {
 		return array(
-			'user without a WooPayments customer' => array( null, 'cus_victim', false, "We're not able to add this payment method. Please try again later" ),
-			'intent without a customer'           => array( 'cus_me', null, true, 'Failed to add the provided payment method. Please try again later' ),
+			'user without a WooPayments customer' => array( null, 'cus_victim', false, "We're not able to add this payment method. Please try again later." ),
+			'intent without a customer'           => array( 'cus_me', null, true, 'Failed to add the provided payment method. Please try again later.' ),
 		);
 	}
 
@@ -2374,18 +2374,17 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a setup intent it cannot save with the client's copy: $_dataName.
+	 * @testdox Should refuse a setup intent it cannot save with the retry notice: $_dataName.
 	 *
-	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4437` "We're not able to add this payment
-	 * method. Please try again later", with no trailing period. The gateway uses that copy for a succeeded
-	 * intent without a payment method, a token that cannot be created, and an unexpected non-API exception
-	 * (where the client shows the exception's own text).
+	 * The notice is client 11.1.0's sentence (`class-wc-payment-gateway-wcpay.php:4437`), ended with a period. The
+	 * gateway shows it for a succeeded intent without a payment method, a token that cannot be created, and an
+	 * unexpected non-API exception (where the client shows the exception's own text).
 	 *
 	 * @dataProvider unsaveable_setup_intent_provider
 	 *
 	 * @param string $failure Which step fails: `no_payment_method`, `no_token` or `exception`.
 	 */
-	public function test_add_payment_method_refuses_unsaveable_setup_intent_with_client_copy( string $failure ): void {
+	public function test_add_payment_method_refuses_unsaveable_setup_intent_with_the_retry_notice( string $failure ): void {
 		wc_clear_notices();
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -2425,7 +2424,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'result' => 'error' ), $result );
 		$this->assertCount( 1, wc_get_notices( 'error' ) );
 		$this->assertSame(
-			"We're not able to add this payment method. Please try again later",
+			"We're not able to add this payment method. Please try again later.",
 			wc_get_notices( 'error' )[0]['notice'] ?? ''
 		);
 	}
@@ -2512,7 +2511,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Steps of add_payment_method() that fail with the client's "not able" copy.
+	 * Steps of add_payment_method() that fail with the "not able" retry notice.
 	 *
 	 * @return array<string,array{0:string}>
 	 */
@@ -2522,6 +2521,114 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'token cannot be created'                   => array( 'no_token' ),
 			'setup intent lookup throws'                => array( 'exception' ),
 		);
+	}
+
+	/**
+	 * @testdox The My Account add-payment-method form ends the refusal notice with a period: $_dataName.
+	 *
+	 * The form posts through WC_Form_Handler::add_payment_method_action(), which calls the gateway's add_payment_method().
+	 * Client 11.1.0 shows these three sentences without a final period (class-wc-payment-gateway-wcpay.php:4423, :4437,
+	 * :4448); WooCommerce ends them with one, as its checkout setup-intent path already does for the same sentence.
+	 *
+	 * @dataProvider add_payment_method_refusal_provider
+	 *
+	 * @param string $refusal  Which check refuses the request.
+	 * @param string $expected Expected shopper notice.
+	 */
+	public function test_add_payment_method_form_ends_each_refusal_notice_with_a_period( string $refusal, string $expected ): void {
+		wc_clear_notices();
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		wp_set_current_user( $user_id );
+		if ( 'no_setup_intent' !== $refusal ) {
+			$_POST['wcpay-setup-intent'] = 'seti_form';
+		}
+
+		$api_client    = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_setup_intention' ) )
+			->getMock();
+		$intent_lookup = $api_client->method( 'get_setup_intention' );
+		if ( 'lookup_throws' === $refusal ) {
+			$intent_lookup->willThrowException( new \RuntimeException( 'Unexpected failure.' ) );
+		} else {
+			$intent_lookup->willReturn(
+				array_filter(
+					array(
+						'id'             => 'seti_form',
+						'status'         => 'not_succeeded' === $refusal ? 'requires_payment_method' : 'succeeded',
+						'customer'       => 'other_customer' === $refusal ? 'cus_other' : 'cus_me',
+						'payment_method' => 'no_payment_method' === $refusal ? null : 'pm_form',
+					)
+				)
+			);
+		}
+
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->method( 'get_or_create_token_for_user' )->willReturn( null );
+
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'no_customer' === $refusal ? null : 'cus_me' ) );
+
+		$this->submit_add_payment_method_form( $gateway );
+
+		$this->assertSame( array( $expected ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * One row per check in add_payment_method() that refuses with one of the three sentences.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function add_payment_method_refusal_provider(): array {
+		$retry  = "We're not able to add this payment method. Please try again later.";
+		$failed = 'Failed to add the provided payment method. Please try again later.';
+
+		return array(
+			'no setup intent posted'                    => array( 'no_setup_intent', 'A WooPayments payment method was not provided.' ),
+			'user without a WooPayments customer'       => array( 'no_customer', $retry ),
+			'setup intent not succeeded'                => array( 'not_succeeded', $failed ),
+			'setup intent of another customer'          => array( 'other_customer', $failed ),
+			'succeeded intent without a payment method' => array( 'no_payment_method', $retry ),
+			'token cannot be created'                   => array( 'no_token', $retry ),
+			'setup intent lookup throws'                => array( 'lookup_throws', $retry ),
+		);
+	}
+
+	/**
+	 * Submit the My Account add-payment-method form for the WooPayments gateway, as WooCommerce handles it.
+	 *
+	 * @param WooPaymentsGateway $gateway Gateway the form handler finds for its ID.
+	 */
+	private function submit_add_payment_method_form( WooPaymentsGateway $gateway ): void {
+		$offer_gateway = static function ( $gateways ) use ( $gateway ) {
+			$gateways[ $gateway->id ] = $gateway;
+
+			return $gateways;
+		};
+
+		// The rate limiter is keyed per user and would refuse a second submission.
+		\WC_Rate_Limiter::set_rate_limit( 'add_payment_method_' . get_current_user_id(), -1 );
+		$nonce                                   = wp_create_nonce( 'woocommerce-add-payment-method' );
+		$_POST['woocommerce_add_payment_method'] = '1';
+		$_POST['payment_method']                 = $gateway->id;
+		$_POST['_wpnonce']                       = $nonce;
+		$_REQUEST['_wpnonce']                    = $nonce;
+		add_filter( 'woocommerce_available_payment_gateways', $offer_gateway );
+		$buffer_level = ob_get_level();
+
+		try {
+			\WC_Form_Handler::add_payment_method_action();
+		} finally {
+			// add_payment_method_action() leaves its output buffer open when no redirect follows.
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+			remove_filter( 'woocommerce_available_payment_gateways', $offer_gateway );
+			unset( $_POST['woocommerce_add_payment_method'], $_POST['payment_method'], $_POST['_wpnonce'], $_REQUEST['_wpnonce'] );
+		}
 	}
 
 	/**
