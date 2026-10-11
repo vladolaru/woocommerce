@@ -12,7 +12,8 @@ const TabPayLaterMessaging = () => {
 		setCustom_placement,
 	} = PayLaterMessagingHooks.usePayLaterMessaging();
 	const { isReady } = PayLaterMessagingHooks.useStore();
-	const { clientId: merchantClientId } = CommonHooks.useMerchant();
+	const { clientId: merchantClientId, id: merchantId } =
+		CommonHooks.useMerchant();
 	const PcpPayLaterConfigurator =
 		window.ppcpSettings?.PcpPayLaterConfigurator;
 
@@ -43,6 +44,9 @@ const TabPayLaterMessaging = () => {
 			window.merchantConfigurators.Messaging( {
 				config,
 				merchantClientId,
+				// A store the platform serves has no client ID of its own; PayPal's
+				// configurator takes its merchant (payer) ID instead (seam 9, K11).
+				merchantIdentifier: merchantClientId || merchantId,
 				partnerClientId: PcpPayLaterConfigurator.partnerClientId,
 				partnerName: 'WooCommerce',
 				bnCode: PcpPayLaterConfigurator.bnCode,
@@ -68,7 +72,13 @@ const TabPayLaterMessaging = () => {
 				},
 			} );
 		}
-	}, [ isReady, PcpPayLaterConfigurator, config, merchantClientId ] );
+	}, [
+		isReady,
+		PcpPayLaterConfigurator,
+		config,
+		merchantClientId,
+		merchantId,
+	] );
 
 	return (
 		<div

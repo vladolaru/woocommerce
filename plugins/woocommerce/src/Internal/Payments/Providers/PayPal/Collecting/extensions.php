@@ -88,13 +88,19 @@ return array(
 	'sdk-v6.buttons-available'                         => static function ( bool $previous, ContainerInterface $c ): bool {
 		return $previous && ! $c->get( 'collecting.connection-state' )->is_served_by_platform();
 	},
-	// The Pay Later task points at messaging the platform-served store cannot configure yet.
+	// The Pay Later task points at messaging a collecting store cannot configure yet: there is no merchant until setup
+	// completes. A platform-connected store keeps it (K11).
 	'wcgateway.settings.wc-tasks.task-config-services' => static function ( array $previous, ContainerInterface $c ): array {
-		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+		if ( ConnectionState::COLLECTING !== $c->get( 'collecting.connection-state' )->resolve() ) {
 			return $previous;
 		}
 
 		return array_values( array_diff( $previous, array( 'wcgateway.settings.wc-tasks.pay-later-task-config' ) ) );
+	},
+	// A collecting store has no PayPal merchant yet, so PayPal's configurator has nothing to load: the settings app
+	// hides its Pay Later Messaging tab until setup completes (K11).
+	'paylater-configurator.is-available'               => static function ( bool $previous, ContainerInterface $c ): bool {
+		return $previous && ConnectionState::COLLECTING !== $c->get( 'collecting.connection-state' )->resolve();
 	},
 	// Saved PayPal and Venmo reads as off for every checkout reader, and the merchant email is the payee's, so the wallet's
 	// gateway disabler keeps the gateway available, unless the transport is not configured; built from the same settings

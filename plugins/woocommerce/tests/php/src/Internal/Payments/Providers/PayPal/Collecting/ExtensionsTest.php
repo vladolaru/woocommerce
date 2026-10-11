@@ -174,7 +174,7 @@ class ExtensionsTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should drop the Pay Later task while the platform serves the store.
+	 * @testdox Should drop the Pay Later task while the store only collects.
 	 */
 	public function test_collecting_store_drops_the_pay_later_task(): void {
 		$this->set_collecting();
@@ -183,6 +183,40 @@ class ExtensionsTest extends WalletTestCase {
 
 		$this->assertNotContains( self::PAY_LATER_TASK_CONFIG, $container->get( 'wcgateway.settings.wc-tasks.task-config-services' ) );
 		$this->assertContains( 'wcgateway.settings.wc-tasks.working-capital-config', $container->get( 'wcgateway.settings.wc-tasks.task-config-services' ), 'Only the Pay Later task is dropped' );
+	}
+
+	/**
+	 * @testdox Should hide the Pay Later configurator and its task while the store only collects (K11).
+	 */
+	public function test_collecting_store_hides_the_pay_later_configurator(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$this->set_collecting();
+
+		$container = $this->boot_container();
+
+		$this->assertFalse( $container->get( 'paylater-configurator.is-available' ), 'No merchant yet, so no configurator tab' );
+		$this->assertSame( array(), $container->get( self::PAY_LATER_TASK_CONFIG ), 'The task links to the hidden tab' );
+		$this->assertNotContains( self::PAY_LATER_TASK_CONFIG, $container->get( 'wcgateway.settings.wc-tasks.task-config-services' ) );
+	}
+
+	/**
+	 * @testdox Should keep the Pay Later configurator and its Home task once the platform connects the merchant (K11).
+	 */
+	public function test_platform_connected_store_keeps_the_pay_later_configurator(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		$this->set_wallet_option(
+			Options::PLATFORM,
+			array(
+				'merchant_id' => 'M2',
+				'environment' => 'sandbox',
+			)
+		);
+
+		$container = $this->boot_container();
+
+		$this->assertTrue( $container->get( 'paylater-configurator.is-available' ) );
+		$this->assertContains( self::PAY_LATER_TASK_CONFIG, $container->get( 'wcgateway.settings.wc-tasks.task-config-services' ), 'The Home task links to a tab that now works' );
+		$this->assertSame( 'pay-later-messaging-task', $container->get( self::PAY_LATER_TASK_CONFIG )[0]['id'] ?? null );
 	}
 
 	/**

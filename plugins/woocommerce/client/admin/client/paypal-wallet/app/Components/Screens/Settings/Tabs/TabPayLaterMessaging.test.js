@@ -165,6 +165,38 @@ describe( 'TabPayLaterMessaging', () => {
 		] );
 	} );
 
+	test( 'identifies the merchant by its client ID when it has one', () => {
+		mockPayLaterMessaging( hydratedConfig );
+		PayLaterMessagingHooks.useStore.mockReturnValue( { isReady: true } );
+		CommonHooks.useMerchant.mockReturnValue( {
+			clientId: 'merchant-client-id',
+			id: 'MERCHANTID123',
+		} );
+
+		render( <TabPayLaterMessaging /> );
+
+		const args =
+			window.merchantConfigurators.Messaging.mock.calls[ 0 ][ 0 ];
+		expect( args.merchantClientId ).toBe( 'merchant-client-id' );
+		expect( args.merchantIdentifier ).toBe( 'merchant-client-id' );
+	} );
+
+	test( 'identifies a platform-served merchant, which has no client ID, by its merchant ID', () => {
+		mockPayLaterMessaging( hydratedConfig );
+		PayLaterMessagingHooks.useStore.mockReturnValue( { isReady: true } );
+		CommonHooks.useMerchant.mockReturnValue( {
+			clientId: '',
+			id: 'MERCHANTID123',
+		} );
+
+		render( <TabPayLaterMessaging /> );
+
+		const args =
+			window.merchantConfigurators.Messaging.mock.calls[ 0 ][ 0 ];
+		expect( args.merchantClientId ).toBe( '' );
+		expect( args.merchantIdentifier ).toBe( 'MERCHANTID123' );
+	} );
+
 	describe( 'onSave', () => {
 		test( 'skips shop and home setters when the saved config omits them (v6 shape)', () => {
 			const hooks = mockPayLaterMessaging( hydratedConfig );

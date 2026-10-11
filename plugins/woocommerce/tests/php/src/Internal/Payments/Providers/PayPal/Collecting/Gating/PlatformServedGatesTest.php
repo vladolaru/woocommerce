@@ -188,17 +188,33 @@ class PlatformServedGatesTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should list no Working Capital or Installments to-do, which send the payee to a PayPal account, and keep the in-app items while the platform serves the store.
+	 * @testdox Should list no Working Capital or Installments to-do, which send the payee to a PayPal account, and no to-do that opens the hidden Pay Later Messaging tab while the store collects (K11).
 	 */
-	public function test_todos_list_drops_the_paypal_account_items_while_served(): void {
+	public function test_todos_list_drops_the_paypal_account_and_pay_later_items_while_collecting(): void {
 		$this->set_collecting();
 
 		$todos = $this->served_todos_list();
 
 		$this->assertArrayNotHasKey( 'apply_for_working_capital', $todos );
 		$this->assertArrayNotHasKey( 'enable_installments', $todos );
+		foreach ( $todos as $id => $todo ) {
+			$this->assertNotSame( 'pay_later_messaging', $todo['action']['tab'] ?? null, "{$id} opens the hidden tab" );
+		}
+		$this->assertArrayNotHasKey( 'enable_pay_later_messaging', $todos );
+		$this->assertArrayHasKey( 'add_paypal_buttons_cart', $todos, 'The other in-app items stay' );
+	}
+
+	/**
+	 * @testdox Should keep the Pay Later to-dos once the platform connects the merchant, whose configurator tab shows (K11).
+	 */
+	public function test_todos_list_keeps_the_pay_later_items_when_platform_connected(): void {
+		$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+
+		$todos = $this->served_todos_list();
+
+		$this->assertArrayNotHasKey( 'apply_for_working_capital', $todos );
 		$this->assertArrayHasKey( 'enable_pay_later_messaging', $todos );
-		$this->assertArrayHasKey( 'add_paypal_buttons_cart', $todos );
+		$this->assertArrayHasKey( 'add_pay_later_messaging_product_page', $todos );
 	}
 
 	/**

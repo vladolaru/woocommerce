@@ -72,6 +72,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'webhook.is-registered',
 				'sdk-v6.buttons-available',
 				'wcgateway.settings.wc-tasks.task-config-services',
+				'paylater-configurator.is-available',
 				'settings.settings-provider',
 				'settings.rest.settings',
 				'settings.rest.onboarding',
