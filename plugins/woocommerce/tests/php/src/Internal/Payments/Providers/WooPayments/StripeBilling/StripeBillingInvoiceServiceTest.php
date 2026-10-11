@@ -288,7 +288,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$invoice      = $this->get_event_object( 'invoice_upcoming' );
 		$subscription = $this->create_subscription_with_line_item( 1, '24.90' );
 
-		$this->sut->validate_invoice( $invoice['lines']['data'], $invoice['discounts'], $subscription );
+		$this->sut->update_wcpay_subscription_to_match( $invoice['lines']['data'], $invoice['discounts'], $subscription );
 
 		$this->assertSame( 0, $this->http_client->request_count );
 	}
@@ -303,7 +303,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$invoice      = $this->get_event_object( 'invoice_upcoming' );
 		$subscription = $this->create_subscription_with_line_item( 2, '59.80' );
 
-		$this->sut->validate_invoice( $invoice['lines']['data'], $invoice['discounts'], $subscription );
+		$this->sut->update_wcpay_subscription_to_match( $invoice['lines']['data'], $invoice['discounts'], $subscription );
 
 		$this->assertSame(
 			array(
@@ -347,7 +347,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_subscription_with_line_item( 1, '24.90', array( '_wcpay_subscription_discount_ids' => $saved_discount_ids ) );
 		$this->add_fixed_coupon( $subscription, 'rec63-save5', '5.00' );
 
-		$this->sut->validate_invoice( $invoice['lines']['data'], $invoice_discount_ids, $subscription );
+		$this->sut->update_wcpay_subscription_to_match( $invoice['lines']['data'], $invoice_discount_ids, $subscription );
 
 		if ( ! $expect_repair ) {
 			$this->assertSame( 0, $this->http_client->request_count );
@@ -387,7 +387,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_subscription_with_line_item( 2, '59.80' );
 
 		try {
-			$this->sut->validate_invoice( $invoice['lines']['data'], $invoice['discounts'], $subscription );
+			$this->sut->update_wcpay_subscription_to_match( $invoice['lines']['data'], $invoice['discounts'], $subscription );
 			$this->fail( 'An invoice without the subscription item must fail.' );
 		} catch ( StripeBillingException $exception ) {
 			$this->assertSame( StripeBillingException::INVOICE_ITEMS_MISMATCH, $exception->get_error_code() );
@@ -408,7 +408,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 
 		try {
-			$this->sut->validate_invoice( $invoice['lines']['data'], $invoice['discounts'], $subscription );
+			$this->sut->update_wcpay_subscription_to_match( $invoice['lines']['data'], $invoice['discounts'], $subscription );
 			$this->fail( 'A subscription item without a product must be refused.' );
 		} catch ( StripeBillingException $exception ) {
 			$this->assertSame( StripeBillingException::SUBSCRIPTION_PRODUCT_MISSING, $exception->get_error_code() );

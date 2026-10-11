@@ -223,7 +223,7 @@ class StripeBillingInvoiceService {
 	}
 
 	/**
-	 * Update the Stripe subscription so its items and discounts match the WooCommerce subscription.
+	 * Update the Stripe subscription's items, then its discounts, to match the WooCommerce subscription, saving any new discount IDs on the WooCommerce subscription.
 	 *
 	 * @param array<int,array<string,mixed>> $wcpay_item_data     Invoice lines.
 	 * @param array<int,mixed>               $wcpay_discount_data Invoice discount IDs.
@@ -231,7 +231,7 @@ class StripeBillingInvoiceService {
 	 * @throws StripeBillingException When the invoice lacks an item of the subscription.
 	 * @throws WooPaymentsApiException When an update fails.
 	 */
-	public function validate_invoice( array $wcpay_item_data, array $wcpay_discount_data, WC_Order $subscription ): void {
+	public function update_wcpay_subscription_to_match( array $wcpay_item_data, array $wcpay_discount_data, WC_Order $subscription ): void {
 		foreach ( $this->get_repair_data_for_wcpay_items( $wcpay_item_data, $subscription ) as $id => $data ) {
 			$this->api->update_subscription_item( (string) $id, $data );
 		}

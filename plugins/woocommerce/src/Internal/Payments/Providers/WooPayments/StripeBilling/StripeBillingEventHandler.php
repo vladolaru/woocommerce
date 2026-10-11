@@ -204,7 +204,7 @@ class StripeBillingEventHandler {
 		);
 
 		$this->subscription_service->update_dates_to_match_wcpay_subscription( $wcpay_subscription, $subscription );
-		$this->invoice_service->validate_invoice( $wcpay_lines, is_array( $wcpay_discounts ) ? $wcpay_discounts : array(), $subscription );
+		$this->invoice_service->update_wcpay_subscription_to_match( $wcpay_lines, is_array( $wcpay_discounts ) ? $wcpay_discounts : array(), $subscription );
 	}
 
 	/**
