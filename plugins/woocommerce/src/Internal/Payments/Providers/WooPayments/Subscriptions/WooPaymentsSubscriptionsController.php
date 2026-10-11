@@ -37,13 +37,13 @@ defined( 'ABSPATH' ) || exit;
  * Charges WooCommerce Subscriptions renewals, updates a failing renewal's payment method and forces manual renewal where
  * WooPayments cannot renew, for the WooPayments gateways.
  *
- * The client attaches these hooks whenever WooPayments loads, whether or not its gateway is enabled (client 11.1.0
+ * Client 11.1.0 attaches these hooks whenever WooPayments loads, whether or not its gateway is enabled (client 11.1.0
  * `includes/class-wc-payments.php:630-649`, `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:274-298`),
  * so a connected store with the gateway disabled still renews. Collaborators are resolved when a renewal runs, so
  * attaching the hooks builds nothing else.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 
@@ -94,7 +94,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Attach the renewal hooks on `plugins_loaded` priority 11 when native owns payments.
+	 * Attach the renewal hooks on `plugins_loaded` priority 11 when the built-in WooPayments owns payments.
 	 *
 	 * That is when the client detects Subscriptions and attaches (client 11.1.0 `woocommerce-payments.php:214`), after
 	 * Subscriptions has loaded and before WooCommerce builds its emails.
@@ -128,7 +128,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	/**
 	 * Attach the renewal hooks once per request, pointing them at the given controller.
 	 *
-	 * Called on `plugins_loaded` on native-owned requests, or by the card gateway when it is built first.
+	 * Called on `plugins_loaded` when the built-in WooPayments owns payments, or by the card gateway when it is built first.
 	 *
 	 * @param self $controller Controller that handles renewals, failing-method updates and forced manual renewal.
 	 * @return bool Whether this call attached the hooks.
@@ -156,7 +156,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			add_filter( 'wcs_renewal_order_items', array( self::class, 'check_renewal_mode' ), 10, 3 );
 		}
 
-		// Subscriptions before its data copier filtered only the meta query; the client switches the same way for its own
+		// Subscriptions before its data copier filtered only the meta query; client 11.1.0 switches the same way for its own
 		// renewal meta (client 11.1.0 `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:315-320`).
 		if ( wc_get_container()->get( LegacyProxy::class )->call_function( 'class_exists', 'WC_Subscriptions_Data_Copier' ) ) {
 			add_filter( 'wc_subscriptions_object_data', array( self::class, 'exclude_charge_idempotency_key' ), 10, 1 );
@@ -174,7 +174,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 *
 	 * The key belongs to one order's charge. Subscriptions copies a parent order's meta to its subscription, and the
 	 * subscription's meta to every renewal, so a key kept after an ambiguous parent charge would be sent again by a
-	 * renewal with another body, which the provider refuses within 24 hours (review 37 F1). The record of that ambiguous
+	 * renewal with another body, which the provider refuses within 24 hours. The record of that ambiguous
 	 * failure belongs to the same charge, so it stays behind with the key. So does the record of an ambiguous refund: on a
 	 * copy it would name another order and be deleted, but it never needs to travel.
 	 *
@@ -259,7 +259,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 * @param string $gateway_id    ID of the gateway the charge goes through.
 	 * @return void
 	 * @throws Throwable When a requires-action hook callback throws, or the token repair or applying the payment raises
-	 *                   a PHP Error, so the scheduled action fails as on the client.
+	 *                   a PHP Error, so the scheduled action fails, as client 11.1.0's does.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order, string $gateway_id = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): void {
 		unset( $amount );
@@ -278,10 +278,11 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			$token = $this->maybe_repair_renewal_order_payment_token( $renewal_order );
 		}
 
-		// Deliberate divergence: on a network forcing network-wide saved cards, the
-		// extension proceeds with a null token and lets the platform resolve the
-		// network card. Native has no network-card machinery, so a tokenless renewal
-		// fails honestly here instead of sending a charge with no payment method.
+		// On a network that forces network-wide saved cards, client 11.1.0 sends a renewal
+		// with no token and the platform picks the network card
+		// (trait-wc-payment-gateway-wcpay-subscriptions.php:413-419). This code has no
+		// network-card support, so a renewal with no token fails here instead of sending a
+		// charge with no payment method.
 		if ( ! $token instanceof WC_Payment_Token ) {
 			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
 			// Client 11.1.0 trait:415.
@@ -329,8 +330,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 				array( 'order_id' => $renewal_order->get_id() )
 			);
 
-			// Client trait:426 catches only API_Exception, so a PHP Error fails the scheduled action and leaves the renewal
-			// pending (monitor ruling 2026-10-04 on renewal apply errors). A requires-action outcome still runs its hooks below.
+			// Client 11.1.0 trait:426 catches only API_Exception, so a PHP Error fails the scheduled action and leaves the
+			// renewal pending. A requires-action outcome still runs its hooks below.
 			if ( ! $failure instanceof Exception && PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION !== $outcome->get_status() ) {
 				throw $failure;
 			}
@@ -362,12 +363,9 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 
 		try {
 			/**
-			 * Fires when a native WooPayments payment requires customer authentication.
+			 * Fires when a subscription renewal payment requires customer authentication.
 			 *
-			 * This intentionally keeps the standalone WooPayments plugin's action name
-			 * (`woocommerce_woocommerce_payments_*`) rather than the native `woocommerce_woopayments_*`
-			 * prefix, for parity: extensions hooked to the plugin's action keep working on the
-			 * native runtime. Do not rename it: a new name would stop those callbacks from running.
+			 * Keeps this name because extensions listen to it.
 			 *
 			 * @param WC_Order $renewal_order     The renewal order that requires authentication.
 			 * @param string   $intent_id         The provider payment intent ID.
@@ -388,8 +386,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 				$renewal_order->get_currency()
 			);
 		} catch ( Throwable $exception ) {
-			// Client gw:1921 does not catch, so the scheduled action fails and the renewal stays pending
-			// (monitor ruling 2026-10-04 (2)); the line is written whatever the logging setting. A callback can let a
+			// Client gw:1921 does not catch, so the scheduled action fails and the renewal stays pending; the line is
+			// written whatever the logging setting. A callback can let a
 			// platform error out, so the line carries its class and the platform's codes, not its message.
 			$this->get_logger()->log_throwable_always(
 				'Failed to run WooPayments subscription renewal authentication hooks.',
@@ -538,7 +536,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 * A renewal can arrive without a token — the subscription's token row was deleted,
 	 * or a migration dropped the link. Failing the renewal outright loses revenue the
 	 * merchant can still collect: the original order's payment method ID identifies a
-	 * charge-able saved method. Ports the WooPayments extension's repair.
+	 * charge-able saved method. Client 11.1.0 repairs the token the same way (trait-wc-payment-gateway-wcpay-subscriptions.php:496).
 	 *
 	 * @param WC_Order $renewal_order Renewal order missing its token.
 	 * @return WC_Payment_Token|null The restored token, or null when repair is impossible.
@@ -594,8 +592,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 				array( 'order_id' => $renewal_order->get_id() )
 			);
 
-			// Client trait:538 catches only Exception, so a PHP Error fails the scheduled action and leaves the
-			// renewal pending (monitor ruling 2026-10-04 (3)).
+			// Client 11.1.0 trait:538 catches only Exception, so a PHP Error fails the scheduled action and leaves the
+			// renewal pending.
 			if ( ! $exception instanceof Exception ) {
 				throw $exception;
 			}

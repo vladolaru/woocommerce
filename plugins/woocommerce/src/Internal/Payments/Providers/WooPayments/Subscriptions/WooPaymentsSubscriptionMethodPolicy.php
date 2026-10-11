@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Defines which native WooPayments methods support automatic subscription renewals.
+ * Answers the WooPayments subscription questions: which payment methods renew automatically, whether WooCommerce
+ * Subscriptions is loaded, and whether the cart holds a subscription.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsSubscriptionMethodPolicy {
 

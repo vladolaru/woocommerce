@@ -39,17 +39,11 @@ use WP_Error;
  * The WooPayments card gateway and its payment-method instances: fields, availability, payments, refunds and
  * saved methods.
  *
- * Hook-name parity: a handful of the filters/actions this gateway fires intentionally keep the
- * standalone WooPayments **plugin's** hook names (e.g. the `wcpay_` prefix or the plugin's
- * double-prefixed `woocommerce_woocommerce_payments_*` action names) instead of the
- * `woocommerce_woopayments_*` prefix of native-only WooPayments hooks. This is deliberate, not
- * an oversight: extensions in the ecosystem hook those plugin-named hooks, and reusing the exact
- * names preserves their behavior once a site switches from the plugin to the native runtime.
- * Do NOT "normalize" these names to the native prefix — renaming them silently breaks extension
- * compatibility. Each such hook says so in its docblock at the call site.
+ * Some hooks this gateway fires keep the `wcpay_` and `woocommerce_payments_` names extensions already listen to; each
+ * says so at its call site, and renaming one would stop those callbacks from running.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
@@ -60,8 +54,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 	/**
 	 * Sentinel the checkout scripts submit in place of a payment method when
-	 * client-side payment method creation failed. Matches the WooPayments
-	 * client plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+	 * client-side payment method creation failed. It is client 11.1.0's
+	 * Payment_Information::PAYMENT_METHOD_ERROR (class-payment-information.php:29).
 	 */
 	private const PAYMENT_METHOD_ERROR_SENTINEL = 'woocommerce_payments_payment_method_error';
 
@@ -71,21 +65,20 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private const METHOD_DESCRIPTION = 'Accept payments with WooPayments.';
 
 	/**
-	 * Native payment method capability for saved/reusable payment credentials.
+	 * Payment method capability for saved/reusable payment credentials.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_TOKENIZATION = 'tokenization';
 
 	/**
-	 * Native payment method capability for express checkout methods.
+	 * Payment method capability for express checkout methods.
 	 */
 	private const PAYMENT_METHOD_CAPABILITY_EXPRESS_CHECKOUT = 'express_checkout';
 
 	/**
 	 * Provider intention statuses that mean a payment exists to link to.
 	 *
-	 * Mirrors the WooPayments client plugin's `Intent_Status::AUTHORIZED_STATUSES`,
-	 * so an order links to its transaction under exactly the same conditions in both
-	 * runtimes.
+	 * Client 11.1.0's `Intent_Status::AUTHORIZED_STATUSES` (class-intent-status.php:35-39),
+	 * so an order links to its transaction under the same conditions.
 	 */
 	private const AUTHORIZED_INTENTION_STATUSES = array(
 		'succeeded',
@@ -139,14 +132,14 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private WooPaymentsWooPaySessionService $woopay_session_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native WooPayments account service.
+	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
 	 */
@@ -296,7 +289,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Turn the express checkout gateways off for the block editor, before the Checkout block lists the enabled gateways.
 	 *
 	 * The Blocks express methods register under other names than their gateway IDs, so the Checkout block would warn that
-	 * enabled gateways are incompatible. Port of client 11.1.0 `disable_express_checkout_in_block_editor()`
+	 * enabled gateways are incompatible. Client 11.1.0 does the same in `disable_express_checkout_in_block_editor()`
 	 * (class-wc-payments.php:1543-1560), at the same priority 1; the hook fires only in the block editor.
 	 *
 	 * @internal
@@ -313,7 +306,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Use the new login cookie for the rest of a checkout request that created the customer's account.
 	 *
 	 * Nonces created later in the request, such as the 3DS confirmation nonce, then match the session the shopper's
-	 * next request sends. Port of client 11.1.0 `set_cookie_on_current_request()` (class-wc-payment-gateway-wcpay.php:762-766).
+	 * next request sends. Client 11.1.0 does the same in `set_cookie_on_current_request()` (class-wc-payment-gateway-wcpay.php:762-766).
 	 *
 	 * @internal
 	 *
@@ -339,7 +332,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Localize the classic checkout config when no WooPayments fields rendered and native owns payments.
+	 * Localize the classic checkout config when no WooPayments fields rendered and the built-in WooPayments owns payments.
 	 *
 	 * The ownership check runs here, not when the gateway is built, so building a gateway never settles it early.
 	 *
@@ -522,7 +515,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the native WooPayments payment method ID.
+	 * Get the WooPayments payment method ID.
 	 *
 	 * @return string
 	 */
@@ -597,7 +590,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Tell whether the payment method accepts a currency, like client 11.1.0 UPE_Payment_Method::is_currency_valid()
 	 * (class-upe-payment-method.php:311-326).
 	 *
-	 * The reference client rejects a non-domestic presentment currency outright for domestic-only methods. The limits table
+	 * Client 11.1.0 rejects a non-domestic presentment currency outright for domestic-only methods. The limits table
 	 * blocks the same pairs today, but only as long as every currency row stays keyed to its domestic country - this check
 	 * does not drift with that data.
 	 *
@@ -632,18 +625,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the admin transaction-details URL for an order, called by WooCommerce core.
 	 *
-	 * WooCommerce renders the order's transaction ID on the admin order page, and links
-	 * it when the gateway answers this with a URL. Native writes `_transaction_id` on
-	 * every paid order, so without this the ID renders as plain text and the merchant
-	 * loses the click-through to payment details they had before switching — a
-	 * user-visible parity regression rather than a missing nicety.
-	 *
-	 * Deliberately matched to the WooPayments client plugin's `get_transaction_url()`:
-	 * the same authorized-status gate, the same preference for the intent ID with the
-	 * charge ID as fallback, the same refusal to link a SetupIntent (which has no
-	 * transaction to show). The URL is composed through the shared admin helper the
-	 * order notes already use, so a note's link and the order page's link resolve to
-	 * the same place.
+	 * WooCommerce renders the order's transaction ID on the admin order page, and links it when the gateway answers this
+	 * with a URL. Every paid WooPayments order has a transaction ID, so without this the merchant cannot click through to
+	 * the payment's details. As in client 11.1.0's `get_transaction_url()` (class-wc-payment-gateway-wcpay.php:833-843),
+	 * only an authorized intent status links, the intent ID is preferred with the charge ID as fallback, and a SetupIntent,
+	 * which has no transaction to show, is never linked. The URL comes from the admin helper the order notes use, so both
+	 * links resolve to the same place.
 	 *
 	 * @since 11.0.0
 	 *
@@ -747,7 +734,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Render the native WooPayments payment form.
+	 * Render the WooPayments payment form.
 	 *
 	 * @return void
 	 */
@@ -772,9 +759,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$payment_method_type = $this->payment_method_definition->get_id();
 
-		// The client's classes (`wcpay-upe-form`, `wc-payment-form`, `wcpay-upe-element`) stay beside native's: core's
+		// Client 11.1.0's classes (`wcpay-upe-form`, `wc-payment-form`, `wcpay-upe-element`) stay beside this form's own: core's
 		// tokenization-form.js hides `.wc-payment-form` while a saved method is selected, and the woocommerce.com theme
-		// styles `.payment_box .wc-payment-form .wcpay-upe-element`. The wrapper is the client's own fieldset, inline
+		// styles `.payment_box .wc-payment-form .wcpay-upe-element`. The wrapper is client 11.1.0's own fieldset, inline
 		// padding included (client includes/class-wc-payments-checkout.php), so themes and the appearance probe for
 		// `.payment_box fieldset` see the same markup.
 		echo '<div id="wcpay-core-checkout-form" class="wcpay-core-checkout-form wcpay-upe-form" data-payment-method-type="' . esc_attr( $payment_method_type ) . '" data-wcpay-config="' . esc_attr( $json_config ) . '">';
@@ -841,7 +828,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				<label for="wc-%1$s-new-payment-method" style="display:inline;">%2$s</label>
 			</p>',
 			esc_attr( $this->id ),
-			// Client gw:1160; its wc_payments_save_to_account_text filter is not fired natively (decided, bc-surface-diff.md:93).
+			// Client gw:1160 passes this label through the wc_payments_save_to_account_text filter; this one does not.
 			esc_html__( 'Save payment information to my account for future purchases.', 'woocommerce' ),
 			$force_checked ? ' checked="checked"' : ''
 		);
@@ -922,10 +909,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				/**
 				 * Filters the redirect URL after adding a WooPayments payment method.
 				 *
-				 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
-				 * (not the native `woocommerce_woopayments_*` prefix) for parity: extensions that hooked
-				 * the plugin's filter keep working once a site switches to the native runtime.
-				 * Do not rename it — see the class doc block for the hook-name parity rationale.
+				 * Keeps this name because extensions listen to it.
 				 *
 				 * @since 11.0.0
 				 * @param string $url Redirect URL.
@@ -933,7 +917,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				'redirect' => apply_filters( 'wcpay_get_add_payment_method_redirect_url', wc_get_endpoint_url( 'payment-methods' ) ),
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			// Client 11.1.0 gw:4471 logs this at info level, with the platform's message; native logs its status and code instead.
+			// Client 11.1.0 gw:4471 logs this at info level, with the platform's message; this line logs its status and code instead.
 			$this->get_logger()->log_throwable( 'Error when adding payment method.', $exception, array(), 'info' );
 
 			// Client 11.1.0 gw:4467-4468 filters API errors through get_filtered_error_message().
@@ -951,14 +935,15 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Charge a renewal order's saved payment method with the customer absent.
 	 *
 	 * The supported way for an extension to charge an order's saved WooPayments token off-session, with or without
-	 * WooCommerce Subscriptions; the WooPayments extension's gateway has the same method. The charge runs under this
-	 * gateway's ID. WooCommerce Subscriptions renewals reach the same charge through the subscriptions controller.
+	 * WooCommerce Subscriptions; client 11.1.0's gateway has the same method (trait-wc-payment-gateway-wcpay-subscriptions.php:402).
+	 * The charge runs under this gateway's ID. WooCommerce Subscriptions renewals reach the same charge through the
+	 * subscriptions controller.
 	 *
 	 * @param float    $amount        Renewal amount.
 	 * @param WC_Order $renewal_order Renewal order.
 	 * @return void
 	 * @throws Throwable When a requires-action hook callback throws, or the token repair or applying the payment raises
-	 *                   a PHP Error, so the scheduled action fails as on the client.
+	 *                   a PHP Error, so the scheduled action fails, as client 11.1.0's does.
 	 */
 	public function scheduled_subscription_payment( $amount, $renewal_order ): void {
 		$this->get_subscriptions_controller()->scheduled_subscription_payment( $amount, $renewal_order, $this->id );
@@ -1004,7 +989,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * Each gateway reads its own setting, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:987-989). Only the card
 	 * gateway has the saved_cards form field and its "yes" default (:387-410, merged at :545); a split gateway reads its own
-	 * stored value, so it is on only where its row stores "yes", as rows first written before the extension's 10.1.0 do.
+	 * stored value, so it is on only where its row stores "yes", as rows first written before client 10.1.0 do.
 	 *
 	 * @return bool
 	 */
@@ -1176,10 +1161,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the account's customer-supported currencies allow the store currency.
 	 *
-	 * Mirrors the reference client's is_available_for_current_currency():
-	 * an empty supported list never disables the gateway, and the comparison
-	 * deliberately reads the store presentment currency, not the order-pay
-	 * checkout currency override.
+	 * As in client 11.1.0's is_available_for_current_currency() (class-wc-payment-gateway-wcpay.php:1058-1069), an empty
+	 * supported list never disables the gateway, and the comparison reads the store presentment currency, not the
+	 * order-pay checkout currency override.
 	 *
 	 * @return bool
 	 */
@@ -1431,8 +1415,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Run the checkout payment for a loaded order.
 	 *
-	 * The plugin throws its refusals inside process_payment()'s try (client 11.1.0 `gw:1206-1233`);
-	 * native returns them, so each refusal goes through refuse_checkout().
+	 * Client 11.1.0 throws its refusals inside process_payment()'s try (`gw:1206-1233`); here each refusal is
+	 * returned through refuse_checkout().
 	 *
 	 * @param WC_Order $order Order being paid.
 	 * @return array<string,string>
@@ -1440,7 +1424,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function process_order_payment( WC_Order $order ): array {
 		$order_id = $order->get_id();
 
-		// The plugin refuses these first, before any other check (Invalid_Phone_Number_Exception).
+		// Client 11.1.0 refuses these first, before any other check (Invalid_Phone_Number_Exception, `gw:1206`).
 		if ( 20 < strlen( $order->get_billing_phone() ) ) {
 			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number' );
 		}
@@ -1479,8 +1463,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		$existing_intent_result = $this->get_duplicate_payment_prevention_service()->check_payment_intent_attached_to_order_succeeded( $order, $this );
 		if ( is_wp_error( $existing_intent_result ) ) {
-			// The plugin fails the order with the mismatch as the note (client 11.1.0 `gw:1324-1325`). A guard lookup that
-			// failed on a PHP Error leaves the order pending, as the client's fatal does (monitor ruling 2026-10-04 (1)). A
+			// Client 11.1.0 fails the order with the mismatch as the note (`gw:1324-1325`). A guard lookup that failed on a
+			// PHP Error leaves the order pending, as client 11.1.0's fatal does. A
 			// disputed attached payment leaves the order as it is; the guard has written its note. Its refusal reaches the
 			// shopper even when the order's intent status says succeeded: no payment succeeded in this request.
 			$is_amount_mismatch = 'duplicate_payment_amount_mismatch' === $existing_intent_result->get_error_code();
@@ -1511,9 +1495,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $already_paid_result;
 		}
 
-		// Recorded before the payment runs, whatever its outcome, as the plugin's
-		// Payment_Information::from_payment_request() does. The plugin passes true,
-		// which the meta tables store as '1'.
+		// Recorded before the payment runs, whatever its outcome, as client 11.1.0's
+		// Payment_Information::from_payment_request() does (class-payment-information.php:284-285);
+		// it passes true, which the meta tables store as '1'.
 		if ( ! empty( $_POST['is_woopay'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$order->add_meta_data( 'is_woopay', '1', true );
 			$order->save_meta_data();
@@ -1585,7 +1569,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Store evidence that the current session completed a native PaymentIntent.
+	 * Store evidence that the current session completed a WooPayments PaymentIntent.
 	 *
 	 * @param PaymentOutcome $outcome Provider checkout outcome.
 	 * @return void
@@ -1671,7 +1655,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 	/**
 	 * Forget the refund row WooCommerce kept for this refund call when the gateway refuses before the refund runs, so no
-	 * later call takes it (Codex review 205 R2).
+	 * later call takes it.
 	 *
 	 * @param WC_Order   $order  Order being refunded.
 	 * @param float|null $amount Refund amount.
@@ -1699,17 +1683,18 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$intent_currency = (string) $order->get_meta( '_wcpay_intent_currency', true );
 		$currency        = '' !== $intent_currency ? $intent_currency : (string) $order->get_currency();
 
-		// Plugin 11.1.0 sends the failure note as the reason, or the error message when it adds no generic note.
+		// Client 11.1.0 sends the failure note as the reason, or the error message when it adds no generic note
+		// (class-wc-payment-gateway-wcpay.php:2981-2999).
 		$tracks_reason = $error->get_error_message();
 		if ( 'insufficient_balance_for_refund' === $error->get_error_code() ) {
 			// The dedicated note carries the funding guidance; the generic failure
-			// line (and its log) is deliberately skipped, matching the extension.
+			// line and its log are skipped, as in client 11.1.0 (`gw:2984-2986`).
 			$note = $note_service->format_insufficient_balance_refund_note( $order, $amount, $currency, $this->get_account_country() );
 		} else {
 			$note          = $note_service->format_refund_failure_note( $order, $amount, $currency, $error->get_error_message() );
 			$tracks_reason = $note;
 
-			// Client 11.1.0 logs the note (gw:2994), which carries the platform's message; native logs the listed code instead.
+			// Client 11.1.0 logs the note (gw:2994), which carries the platform's message; this line logs the listed code instead.
 			wc_get_logger()->error(
 				'A WooPayments refund failed to complete.',
 				array(
@@ -1870,9 +1855,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return self::METHOD_TITLE;
 		}
 
-		// Deliberately country-less: this is the construction-time placeholder, and
+		// Country-less on purpose: this is the construction-time placeholder, and
 		// resolving the account country can fire an account API request when the
-		// cache is stale - the reference client keeps that out of construction too
+		// cache is stale - client 11.1.0 keeps that out of construction too
 		// (its country branding happens on init / at title-render time).
 		// get_method_title() swaps in the country-branded form on first read.
 		return sprintf( 'WooPayments (%s)', $this->payment_method_definition->get_title() );
@@ -1954,6 +1939,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		return in_array( $capability, $this->payment_method_definition->get_capabilities(), true );
 	}
 
+	// Payment-method gateways other than card are built without the container, so their collaborators are resolved on first use.
+
 	/**
 	 * Get the payment processing service.
 	 *
@@ -2007,7 +1994,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the native WooPayments API client.
+	 * Get the WooPayments API client.
 	 *
 	 * @return WooPaymentsApiClient
 	 */
@@ -2020,7 +2007,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the native WooPayments account service.
+	 * Get the WooPayments account service.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
@@ -2042,7 +2029,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the native WooPayments token service.
+	 * Get the WooPayments token service.
 	 *
 	 * @return WooPaymentsTokenService
 	 */
@@ -2073,7 +2060,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Get the native WooPayments customer service.
+	 * Get the WooPayments customer service.
 	 *
 	 * @return WooPaymentsCustomerService
 	 */
@@ -2146,11 +2133,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function get_fraud_prevention_error_message( bool $is_checkout ): string {
 		if ( $is_checkout ) {
 			/**
-			 * Identifies WooPay Store API requests handled by the standalone WooPayments integration.
+			 * Filters whether the request is a WooPay Store API request, which skips the card-testing token check; the WooPay
+			 * session sets it.
 			 *
-			 * This intentionally uses the standalone WooPayments plugin's `wcpay_` hook name
-			 * (not the native `woocommerce_woopayments_*` prefix) for parity: WooPay Store API flows
-			 * already provide their own fraud-prevention checks in the extension runtime.
+			 * Keeps this name because extensions listen to it.
 			 *
 			 * @since 11.0.0
 			 * @param bool $is_woopay_store_api_request Whether the request is a WooPay Store API request.
@@ -2278,7 +2264,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Complete WC Subscriptions bookkeeping after a successful customer payment-method change.
 	 *
 	 * @param WC_Order             $order                  Subscription order.
-	 * @param array<string,string> $result                 Native checkout result.
+	 * @param array<string,string> $result                 Checkout result.
 	 * @param PaymentOutcome       $outcome                Provider payment outcome.
 	 * @param bool                 $is_subscription_change Whether this is a validated new-method change.
 	 * @return void
@@ -2312,10 +2298,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Note the saved payment method a customer switched their subscription to, and announce the change, as the plugin does.
+	 * Note the saved payment method a customer switched their subscription to, and announce the change, as client 11.1.0
+	 * does (`gw:1757`).
 	 *
 	 * @param WC_Order             $order                  Subscription order.
-	 * @param array<string,string> $result                 Native checkout result.
+	 * @param array<string,string> $result                 Checkout result.
 	 * @param PaymentOutcome       $outcome                Provider payment outcome.
 	 * @param bool                 $is_saved_method_change Whether this is a validated change to a saved payment method.
 	 * @return void
@@ -2335,8 +2322,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		/**
 		 * Fires after a customer changed the payment method of a subscription to a saved one.
 		 *
-		 * This intentionally keeps the standalone WooPayments plugin's action name for parity.
-		 * Do not rename it; see the class doc block for the rationale.
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * @since 11.2.0
 		 *
@@ -2459,7 +2445,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Tell whether the native result redirects into the WooPayments confirmation bridge.
+	 * Tell whether a checkout result redirects to the WooPayments payment confirmation.
 	 *
 	 * @param array<string,string> $result Checkout result.
 	 * @return bool
@@ -2475,7 +2461,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param PaymentOperationContext $context Payment context.
 	 * @param WC_Order                $order   Order being paid.
-	 * @param array<string,string>    $result  Native checkout result.
+	 * @param array<string,string>    $result  Checkout result.
 	 * @return array<string,string>
 	 */
 	private function maybe_add_order_pay_save_intent_to_confirmation_redirect( PaymentOperationContext $context, WC_Order $order, array $result ): array {
@@ -2576,8 +2562,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Tell whether this gateway owns automatic subscription renewal handling.
 	 *
 	 * Link credentials remain attached to the base card gateway, and Amazon Pay renewals use a
-	 * preserved compatibility gateway ID handled by the same base gateway instance. While the plugin owns
-	 * payments, its gateway renews: attaching the native handler too would charge each renewal twice.
+	 * kept compatibility gateway ID handled by the same base gateway instance. While the WooPayments extension
+	 * owns payments, its gateway renews; attaching this handler too would charge each renewal twice.
 	 *
 	 * @return bool
 	 */
@@ -2637,7 +2623,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * @param WC_Order $order   Order being paid.
 	 * @param string   $message Error message of the failure.
-	 * @param string   $failure The exception class, or the refusal code where native returns instead of throwing.
+	 * @param string   $failure The exception class, or the refusal code of a refusal returned rather than thrown.
 	 * @return array<string,string>
 	 */
 	private function keep_succeeded_intent_order( WC_Order $order, string $message, string $failure ): array {
@@ -2666,9 +2652,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Settle checkout without failing an order whose payment is authorized, after a PHP Error applying the outcome.
 	 *
-	 * The client fatals there (`gw:1272` catches only Exception) and leaves the order as it was. Native leaves it too (monitor
-	 * ruling 2026-10-04 (4)). When the order already shows the authorization, checkout answers as it does for an authorized
-	 * payment, so a retry cannot authorize the card again on a new order; otherwise it shows the generic notice (ruling F2).
+	 * Client 11.1.0 fatals there (`gw:1272` catches only Exception) and leaves the order as it was, and so does this method.
+	 * When the order already shows the authorization, checkout answers as it does for an authorized payment, so a retry
+	 * cannot authorize the card again on a new order; otherwise it shows the generic notice.
 	 *
 	 * @param WC_Order                     $order     Order being paid.
 	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the PHP Error that stopped it.
@@ -2682,7 +2668,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			'intent_id'                => $outcome->get_provider_payment_id(),
 			'reconciliation_persisted' => $exception->was_reconciliation_context_persisted(),
 		);
-		// Logged before the order is read again, so a failing read cannot lose the original error (review 35 F3).
+		// Logged before the order is read again, so a failing read cannot lose the original error.
 		$this->get_logger()->log_throwable_always(
 			sprintf(
 				'Applying the authorized payment to order #%1$d raised %2$s: %3$s.',
@@ -2795,7 +2781,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$order->add_order_note( $note_candidates[0] );
 		}
 
-		// The plugin's catch only ever sees an Exception; a PHP error's message is not shopper copy.
+		// Client 11.1.0's catch only ever sees an Exception (`gw:1272`); a PHP error's message is not shopper copy.
 		$message = $failure instanceof Exception ? wp_strip_all_tags( $failure->getMessage() ) : WooPaymentsErrorMessages::get_generic_message();
 		wc_add_notice( $message, 'error', array( 'icon' => 'error' ) );
 
@@ -2878,8 +2864,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * validation, some client-side declines), the checkout scripts submit the
 	 * WooPayments error sentinel with the error details instead of a payment
 	 * method, so the attempt is recorded as a failed order instead of leaving
-	 * no trace. Mirrors the client plugin's PAYMENT_METHOD_ERROR handling
-	 * (Payment_Information:290-297).
+	 * no trace. Client 11.1.0 handles its PAYMENT_METHOD_ERROR sentinel the same way
+	 * (class-payment-information.php:290-297).
 	 *
 	 * @param WC_Order $order                  Order being paid.
 	 * @param bool     $is_subscription_change Whether this is a validated subscription payment-method change.
@@ -2895,7 +2881,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$message = __( "We're not able to process this payment. Please try again later.", 'woocommerce' );
 		}
 
-		// The plugin reaches its catch with payment information built, so the merchant gets the payment-failed note
+		// Client 11.1.0 reaches its catch with payment information built, so the merchant gets the payment-failed note
 		// (client 11.1.0 `gw:1354-1401`). On a subscription payment-method change $order is the subscription itself:
 		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`).
 		return $this->refuse_checkout(
@@ -2908,12 +2894,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Refuse checkout before any charge, following the plugin's process_payment() catch.
+	 * Refuse checkout before any charge, as client 11.1.0's process_payment() catch does.
 	 *
 	 * Client 11.1.0 `gw:1272-1439`: an order whose intent already succeeded is kept (`gw:1283-1304`); otherwise the
 	 * refusal is logged (`gw:1274`), the order fails (`gw:1323-1328`), gets the refusal's note and the shopper the notice (`gw:1425`).
 	 * Unlike the catch, it does not fire `woocommerce_payments_order_failed` (`gw:1317`) or `wcpay_update_payment_result_on_error`
-	 * (`gw:1434`); both are recorded in the silent-hooks ledger (BC surface diff §1(a)).
+	 * (`gw:1434`).
 	 *
 	 * @param WC_Order $order       Order being paid.
 	 * @param string   $message     Shopper-facing refusal message.
@@ -3007,8 +2993,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			/**
 			 * Fires when the customer opts to save their account with WooPay.
 			 *
-			 * This intentionally keeps the standalone WooPayments plugin's action name for parity.
-			 * Do not rename it; see the class doc block for the rationale.
+			 * Keeps this name because extensions listen to it.
 			 *
 			 * @since 11.0.0
 			 */
@@ -3054,7 +3039,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Read the intent WooPay already confirmed for this order from its merchant checkout request.
 	 *
-	 * Uses the plugin's WooPay_Utilities::sanitize_intent_id() rule: keep word characters only.
+	 * Keeps word characters only, as client 11.1.0's WooPay_Utilities::sanitize_intent_id() does (class-woopay-utilities.php:156-158).
 	 *
 	 * @return string
 	 */

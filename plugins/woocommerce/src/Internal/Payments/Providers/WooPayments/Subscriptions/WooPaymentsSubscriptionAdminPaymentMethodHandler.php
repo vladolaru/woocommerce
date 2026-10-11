@@ -17,10 +17,12 @@ use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
 
 /**
- * Handles WooCommerce Subscriptions admin payment-method metadata for native WooPayments.
+ * Connects WooPayments subscriptions to the WooCommerce Subscriptions payment-method screens: the saved-token payment
+ * meta and its admin selector, payment-method notes and display, customer changes, and the actions hidden on manual
+ * subscriptions.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 
@@ -53,7 +55,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Register native WooPayments subscription admin hooks.
+	 * Register WooPayments subscription admin hooks.
 	 *
 	 * @return void
 	 */
@@ -75,7 +77,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Add native WooPayments payment metadata to the WCS admin payment-method form.
+	 * Add WooPayments payment metadata to the WCS admin payment-method form.
 	 *
 	 * @internal
 	 *
@@ -107,7 +109,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Validate WCS admin payment metadata for native WooPayments.
+	 * Validate WCS admin payment metadata for WooPayments.
 	 *
 	 * @internal
 	 *
@@ -166,7 +168,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Append native WooPayments payment metadata when WCS copies subscription meta to an order.
+	 * Append WooPayments payment metadata when WCS copies subscription meta to an order.
 	 *
 	 * @internal
 	 *
@@ -190,7 +192,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Render the saved token display name for native WooPayments subscriptions.
+	 * Render the saved token display name for WooPayments subscriptions.
 	 *
 	 * @internal
 	 *
@@ -209,7 +211,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Hide change-payment actions for preserved manual subscriptions with non-reusable WooPayments methods.
+	 * Hide change-payment actions for a manual subscription that keeps its original non-reusable WooPayments method.
 	 *
 	 * @internal
 	 *
@@ -230,7 +232,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Hide the auto-renew toggle for preserved manual subscriptions with non-reusable WooPayments methods.
+	 * Hide the auto-renew toggle for a manual subscription that keeps its original non-reusable WooPayments method.
 	 *
 	 * @internal
 	 *
@@ -257,7 +259,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Enqueue the native WooPayments subscription-edit selector script.
+	 * Enqueue the WooPayments subscription-edit selector script.
 	 *
 	 * @internal
 	 *
@@ -284,7 +286,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Update a subscription with a new native WooPayments token.
+	 * Update a subscription with a new WooPayments token.
 	 *
 	 * @internal
 	 *
@@ -310,7 +312,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Tell WCS customer payment-method changes whether native WooPayments can use the submitted method.
+	 * Tell WCS customer payment-method changes whether WooPayments can use the submitted method.
 	 *
 	 * @internal
 	 *
@@ -337,7 +339,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Get the old payment-method note title for native WooPayments subscriptions.
+	 * Get the old payment-method note title for WooPayments subscriptions.
 	 *
 	 * @internal
 	 *
@@ -362,7 +364,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Get the new payment-method note title for native WooPayments subscriptions.
+	 * Get the new payment-method note title for WooPayments subscriptions.
 	 *
 	 * @internal
 	 *
@@ -424,7 +426,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	 * Render a token selector for WCS admin payment metadata.
 	 *
 	 * WooCommerce Subscriptions passes null as the value when the subscription has no stored token
-	 * (`class-wcs-change-payment-method-admin.php:72`), so the value is coerced as the client does (trait:924).
+	 * (`class-wcs-change-payment-method-admin.php:72`), so the value is coerced, as client 11.1.0 does (trait:924).
 	 *
 	 * @internal
 	 *
@@ -501,7 +503,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Build the WCS payment metadata for native WooPayments.
+	 * Build the WCS payment metadata for WooPayments.
 	 *
 	 * @param WC_Order $subscription Subscription object.
 	 * @return array<string,array<string,array<string,string>>>
@@ -520,7 +522,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Get the active native WooPayments payment token from a subscription/order.
+	 * Get the active WooPayments payment token from a subscription/order.
 	 *
 	 * @param WC_Order $order Order object.
 	 * @return WC_Payment_Token|null
@@ -550,7 +552,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Tell whether a token is a native WooPayments token owned by the subscription customer.
+	 * Tell whether a token is a WooPayments token owned by the subscription customer.
 	 *
 	 * @param mixed    $token        Token object.
 	 * @param WC_Order $subscription Subscription object.
@@ -563,7 +565,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Tell whether native WooPayments should handle a subscription object.
+	 * Tell whether WooPayments should handle a subscription object.
 	 *
 	 * @param mixed $subscription Subscription object.
 	 * @return bool
@@ -573,7 +575,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Tell whether a subscription is manual because it preserves an original non-reusable WooPayments method.
+	 * Tell whether a subscription is manual because it keeps its original non-reusable WooPayments method.
 	 *
 	 * @param mixed $subscription Subscription object.
 	 * @return bool
@@ -658,7 +660,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	/**
 	 * Get the note title of a method entered as new on the change page, as client 11.1.0 builds it from the payment method.
 	 *
-	 * The client fetches the payment method from the platform; native reads the same details from the token it just attached.
+	 * Client 11.1.0 fetches the payment method from the platform; this reads the same details from the token it just attached.
 	 *
 	 * @param mixed  $token    Token attached for the new method.
 	 * @param string $fallback Gateway title.
@@ -682,7 +684,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Apply a native WooPayments token to a subscription/order and keep provider metadata coherent.
+	 * Apply a WooPayments token to a subscription/order and keep provider metadata coherent.
 	 *
 	 * @param WC_Order         $subscription Subscription object.
 	 * @param WC_Payment_Token $token        Token object.
@@ -721,7 +723,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 	}
 
 	/**
-	 * Get formatted native WooPayments tokens for the admin selector.
+	 * Get formatted WooPayments tokens for the admin selector.
 	 *
 	 * @param int    $user_id    User ID.
 	 * @param string $gateway_id Reusable WooPayments gateway ID.
