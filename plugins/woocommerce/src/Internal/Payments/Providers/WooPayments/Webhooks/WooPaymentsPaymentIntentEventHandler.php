@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -814,7 +815,7 @@ class WooPaymentsPaymentIntentEventHandler {
 			return;
 		}
 
-		if ( ! $this->is_recurring_order( $order ) ) {
+		if ( ! WooPaymentsSubscriptionMethodPolicy::is_recurring_order( $order ) ) {
 			return;
 		}
 
@@ -871,22 +872,5 @@ class WooPaymentsPaymentIntentEventHandler {
 			);
 			$order->add_order_note( __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' ) );
 		}
-	}
-
-	/**
-	 * Tell whether an order belongs to a recurring payment.
-	 *
-	 * `wcs_order_contains_subscription()` leaves out renewal orders, so renewals are
-	 * checked too, as client 11.1.0's is_payment_recurring() does (trait-wc-payments-subscriptions-utilities.php:53-66).
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	private function is_recurring_order( WC_Order $order ): bool {
-		if ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order->get_id() ) ) {
-			return true;
-		}
-
-		return function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order->get_id() );
 	}
 }

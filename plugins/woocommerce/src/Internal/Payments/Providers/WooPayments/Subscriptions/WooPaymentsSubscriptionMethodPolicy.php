@@ -9,10 +9,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscri
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use WC_Order;
 
 /**
  * Answers the WooPayments subscription questions: which payment methods renew automatically, whether WooCommerce
- * Subscriptions is loaded, and whether the cart holds a subscription.
+ * Subscriptions is loaded, and whether the cart or an order holds a subscription.
  *
  * @since 11.0.0
  * @internal
@@ -39,6 +40,25 @@ final class WooPaymentsSubscriptionMethodPolicy {
 
 		return $contains_subscription
 			|| ( function_exists( 'wcs_cart_contains_renewal' ) && (bool) wcs_cart_contains_renewal() );
+	}
+
+	/**
+	 * Tell whether an order pays for a subscription or a subscription renewal, so its payment method must be saved.
+	 *
+	 * `wcs_order_contains_subscription()` leaves out renewal orders, so renewals are checked too, as client 11.1.0's
+	 * is_payment_recurring() does (trait-wc-payments-subscriptions-utilities.php:53-66).
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return bool
+	 *
+	 * @since 11.2.0
+	 */
+	public static function is_recurring_order( WC_Order $order ): bool {
+		if ( function_exists( 'wcs_order_contains_subscription' ) && wcs_order_contains_subscription( $order->get_id() ) ) {
+			return true;
+		}
+
+		return function_exists( 'wcs_order_contains_renewal' ) && (bool) wcs_order_contains_renewal( $order->get_id() );
 	}
 
 	/**

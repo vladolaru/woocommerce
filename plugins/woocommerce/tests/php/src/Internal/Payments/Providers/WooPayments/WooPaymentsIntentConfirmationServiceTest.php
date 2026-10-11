@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -136,8 +135,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
 			$token_service,
 			$account_service,
-			$effect_applier,
-			wc_get_container()->get( WooPaymentsIntentRequestBuilder::class )
+			$effect_applier
 		);
 
 		return $service;

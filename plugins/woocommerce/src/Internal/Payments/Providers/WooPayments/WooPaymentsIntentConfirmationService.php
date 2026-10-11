@@ -60,13 +60,6 @@ class WooPaymentsIntentConfirmationService {
 	private WooPaymentsOrderEffectApplier $order_effect_applier;
 
 	/**
-	 * Intent request builder, which owns the recurring payment rule.
-	 *
-	 * @var WooPaymentsIntentRequestBuilder
-	 */
-	private WooPaymentsIntentRequestBuilder $request_builder;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -76,22 +69,19 @@ class WooPaymentsIntentConfirmationService {
 	 * @param WooPaymentsTokenService             $token_service               WooPayments token service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
 	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
-	 * @param WooPaymentsIntentRequestBuilder     $request_builder             Intent request builder.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		WooPaymentsFeeDetailsNoteController $fee_details_note_controller,
 		WooPaymentsTokenService $token_service,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsOrderEffectApplier $order_effect_applier,
-		WooPaymentsIntentRequestBuilder $request_builder
+		WooPaymentsOrderEffectApplier $order_effect_applier
 	): void {
 		$this->api_client                  = $api_client;
 		$this->fee_details_note_controller = $fee_details_note_controller;
 		$this->token_service               = $token_service;
 		$this->account_service             = $account_service;
 		$this->order_effect_applier        = $order_effect_applier;
-		$this->request_builder             = $request_builder;
 	}
 
 	/**
@@ -419,7 +409,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>} Token result and any blocking error response.
 	 */
 	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, bool $save_payment_method ): array {
-		$is_recurring = $this->request_builder->is_recurring_payment( $order );
+		$is_recurring = WooPaymentsSubscriptionMethodPolicy::is_recurring_order( $order );
 		if ( ! $is_recurring && ! $save_payment_method ) {
 			return array(
 				'error'                  => null,

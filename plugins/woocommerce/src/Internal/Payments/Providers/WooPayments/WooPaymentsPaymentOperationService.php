@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WC_Order;
 
 /**
@@ -1415,7 +1416,7 @@ class WooPaymentsPaymentOperationService {
 		$provider_data = $context->get_provider_data();
 
 		return ! empty( $provider_data[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT ] )
-			|| $this->request_builder->is_recurring_payment( $context->get_order() );
+			|| WooPaymentsSubscriptionMethodPolicy::is_recurring_order( $context->get_order() );
 	}
 
 	/**

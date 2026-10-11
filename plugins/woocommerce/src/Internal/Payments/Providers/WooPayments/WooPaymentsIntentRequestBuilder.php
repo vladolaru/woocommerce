@@ -539,25 +539,6 @@ class WooPaymentsIntentRequestBuilder {
 	}
 
 	/**
-	 * Tell whether this payment must persist a token for a recurring order.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return bool
-	 */
-	public function is_recurring_payment( WC_Order $order ): bool {
-		$is_recurring = false;
-		if ( function_exists( 'wcs_order_contains_subscription' ) ) {
-			$is_recurring = (bool) wcs_order_contains_subscription( $order->get_id() );
-		}
-
-		if ( ! $is_recurring && function_exists( 'wcs_order_contains_renewal' ) ) {
-			$is_recurring = (bool) wcs_order_contains_renewal( $order->get_id() );
-		}
-
-		return $is_recurring;
-	}
-
-	/**
 	 * Get the Stripe payment method types a request declares.
 	 *
 	 * @param PaymentOperationContext $context  Payment context.
