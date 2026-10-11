@@ -403,7 +403,7 @@ class WooPaymentsEventIngestor {
 			return false;
 		}
 
-		if ( $this->is_native_live_mode() === (bool) $event['livemode'] ) {
+		if ( $this->is_live_mode() === (bool) $event['livemode'] ) {
 			return false;
 		}
 
@@ -420,14 +420,14 @@ class WooPaymentsEventIngestor {
 	}
 
 	/**
-	 * Tell whether native WooPayments is in live mode.
+	 * Tell whether WooPayments is in live mode.
 	 *
 	 * The same mode every other native reader uses (WooPaymentsAccountService::is_test_mode_enabled(): test-mode
 	 * onboarding, dev mode and the wcpay_test_mode filter included), as the client checks WC_Payments::mode()->is_live().
 	 *
 	 * @return bool
 	 */
-	private function is_native_live_mode(): bool {
+	private function is_live_mode(): bool {
 		return ! $this->account_service->is_test_mode_enabled();
 	}
 

@@ -63,7 +63,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * client-side payment method creation failed. Matches the WooPayments
 	 * client plugin's Payment_Information::PAYMENT_METHOD_ERROR.
 	 */
-	private const CLIENT_PAYMENT_METHOD_ERROR_SENTINEL = 'woocommerce_payments_payment_method_error';
+	private const PAYMENT_METHOD_ERROR_SENTINEL = 'woocommerce_payments_payment_method_error';
 
 	/**
 	 * Untranslated gateway description.
@@ -1536,9 +1536,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			);
 		}
 
-		$client_error_result = $this->maybe_fail_for_client_payment_method_error( $order, $is_subscription_change );
-		if ( is_array( $client_error_result ) ) {
-			return $client_error_result;
+		$payment_method_error_result = $this->maybe_fail_for_payment_method_creation_error( $order, $is_subscription_change );
+		if ( is_array( $payment_method_error_result ) ) {
+			return $payment_method_error_result;
 		}
 
 		$context                        = PaymentOperationContext::for_checkout(
@@ -2872,7 +2872,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Fail the order when the client reported a payment method creation error.
+	 * Fail the order when the checkout scripts report that the browser could not create the payment method.
 	 *
 	 * When Stripe rejects createPaymentMethod in the browser (element
 	 * validation, some client-side declines), the checkout scripts submit the
@@ -2885,8 +2885,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param bool     $is_subscription_change Whether this is a validated subscription payment-method change.
 	 * @return array<string,string>|null Failure result, or null when no client error was reported.
 	 */
-	private function maybe_fail_for_client_payment_method_error( WC_Order $order, bool $is_subscription_change = false ): ?array {
-		if ( self::CLIENT_PAYMENT_METHOD_ERROR_SENTINEL !== $this->get_request_payment_method_id() ) {
+	private function maybe_fail_for_payment_method_creation_error( WC_Order $order, bool $is_subscription_change = false ): ?array {
+		if ( self::PAYMENT_METHOD_ERROR_SENTINEL !== $this->get_request_payment_method_id() ) {
 			return null;
 		}
 
