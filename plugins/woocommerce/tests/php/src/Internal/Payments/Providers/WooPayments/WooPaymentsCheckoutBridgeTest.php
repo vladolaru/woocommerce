@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -35,15 +34,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	 * Card gateway support features passed to the config builders where the test does not exercise them.
 	 */
 	private const CARD_SUPPORTS = array( 'products' );
-
-	/**
-	 * @testdox Should expose checkout bootstrap through the standard hook registration contract.
-	 */
-	public function test_implements_register_hooks_interface(): void {
-		$sut = new WooPaymentsCheckoutBridge();
-
-		$this->assertInstanceOf( RegisterHooksInterface::class, $sut );
-	}
 
 	/**
 	 * @testdox Should bootstrap payment-list wallets when no ordinary WooPayments fields render.
@@ -110,417 +100,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( wp_script_is( 'wc-woopayments-checkout', 'enqueued' ) );
 		$this->assertStringNotContainsString( 'wcpay_core_checkout_config', (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' ) );
-	}
-
-	/**
-	 * @testdox Should track classic and Blocks checkout page views once with the exact WooPayments contract.
-	 */
-	public function test_tracks_classic_and_blocks_checkout_page_views_once(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$recorded_events = array();
-		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'queue_user_event' ) )
-			->getMock();
-		$tracker->method( 'is_shopper_tracking_enabled' )->willReturn( true );
-		$tracker->method( 'queue_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties ) use ( &$recorded_events ): void {
-				$recorded_events[] = array( $event_name, $properties );
-			}
-		);
-
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init(
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( true ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$tracker
-		);
-
-		try {
-			$sut->register();
-			$sut->register();
-			$this->assertSame( 10, has_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) ) );
-			$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) ) );
-			$sut->record_classic_checkout_page_view();
-			$sut->record_blocks_checkout_page_view();
-		} finally {
-			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
-			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		}
-
-		$this->assertSame(
-			array(
-				array(
-					'checkout_page_view',
-					array(
-						'theme_type'     => 'short_code',
-						'woopay_enabled' => true,
-					),
-				),
-				array(
-					'checkout_page_view',
-					array(
-						'theme_type'     => 'blocks',
-						'woopay_enabled' => true,
-					),
-				),
-			),
-			$recorded_events
-		);
-	}
-
-	/**
-	 * @testdox Should track the client 11.1.0 shopper funnel on the cart, product and pay-for-order hooks and on WooPay sign-up.
-	 */
-	public function test_tracks_shopper_funnel_events_on_their_hooks(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$recorded_events = array();
-		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'queue_user_event', 'record_user_event', 'track_proceed_to_checkout_clicks' ) )
-			->getMock();
-		$tracker->method( 'queue_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties = array() ) use ( &$recorded_events ): void {
-				$recorded_events[] = array( 'queued', $event_name, $properties );
-			}
-		);
-		$tracker->method( 'track_proceed_to_checkout_clicks' )->willReturnCallback(
-			static function ( callable $is_direct_checkout_enabled ) use ( &$recorded_events ): void {
-				$recorded_events[] = array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => $is_direct_checkout_enabled() ) );
-			}
-		);
-		$tracker->method( 'record_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
-				$recorded_events[] = array( 'recorded', $event_name, $properties );
-				return true;
-			}
-		);
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( true, true ), $this->create_frontend_styles_service_for_bridge(), $tracker );
-
-		try {
-			$sut->register();
-			foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
-				$this->assertSame( 10, has_action( $hook, array( $sut, 'record_shopper_funnel_event' ) ) );
-				$sut->record_shopper_funnel_event(); // Outside the hook: no event.
-				do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-			}
-		} finally {
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		}
-
-		$this->assertSame(
-			array(
-				array( 'queued', 'cart_page_view', array( 'theme_type' => 'short_code' ) ),
-				array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => true ) ),
-				array( 'queued', 'cart_page_view', array( 'theme_type' => 'blocks' ) ),
-				array( 'armed', 'proceed_to_checkout_button_click', array( 'woopay_direct_checkout' => true ) ),
-				array( 'queued', 'product_page_view', array( 'theme_type' => 'short_code' ) ),
-				array( 'queued', 'pay_for_order_page_view', array() ),
-				array( 'recorded', 'woopay_registered', array( 'source' => 'checkout' ) ),
-			),
-			$recorded_events
-		);
-	}
-
-	/**
-	 * @testdox Should queue guest page views for the footer script instead of recording them during render, like client 11.1.0.
-	 */
-	public function test_page_views_render_without_recording_and_queue_for_the_footer_script(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		wp_set_current_user( 0 );
-		$recorder_calls = 0;
-		$http_calls     = 0;
-		$count_recorder = static function ( $properties ) use ( &$recorder_calls ) {
-			++$recorder_calls;
-			return $properties;
-		};
-		$count_http     = static function ( $preempt ) use ( &$http_calls ) {
-			++$http_calls;
-			return $preempt;
-		};
-		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
-		add_filter( 'pre_http_request', $count_http );
-
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$tracker = new WooPaymentsFrontendTrackingController();
-		$tracker->init(
-			$arbiter,
-			$this->create_account_service_for_bridge(
-				true,
-				array(
-					'country'                    => 'US',
-					'platform_checkout_eligible' => true,
-				),
-				array(
-					'enabled'           => 'yes',
-					'platform_checkout' => 'yes',
-				)
-			)
-		);
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init( $this->create_account_service_for_bridge( true ), $this->create_woopay_session_service_for_bridge( false ), $this->create_frontend_styles_service_for_bridge(), $tracker );
-
-		try {
-			$sut->register();
-			foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form' ) as $hook ) {
-				do_action( $hook ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-			}
-			$sut->record_classic_checkout_page_view();
-			$sut->record_blocks_checkout_page_view();
-
-			// No recorder, identity (tk_ai cookie) or pixel during render; headers_sent() is true under the CLI, so the cookie itself is not observable.
-			$this->assertSame( 0, $recorder_calls );
-			$this->assertSame( 0, $http_calls );
-			$this->assertSame( 10, has_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) ) );
-			$tracker->enqueue_frontend_events_script();
-			$this->assertTrue( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
-			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
-		} finally {
-			remove_filter( 'wcpay_tracks_event_properties', $count_recorder );
-			remove_filter( 'pre_http_request', $count_http );
-			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
-			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
-			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		}
-
-		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
-		$params      = json_decode( $matches[1], true );
-		$record_data = array(
-			'record_event_data' => array(
-				'is_admin_event'      => false,
-				'track_on_all_stores' => true,
-			),
-		);
-		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $params['tracksUrl'] );
-		$this->assertSame( 1, wp_verify_nonce( $params['nonce'], 'platform_tracks_nonce' ) );
-		$this->assertSame(
-			array(
-				array(
-					'event'      => 'cart_page_view',
-					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
-				),
-				array(
-					'event'      => 'cart_page_view',
-					'properties' => array( 'theme_type' => 'blocks' ) + $record_data,
-				),
-				array(
-					'event'      => 'product_page_view',
-					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
-				),
-				array(
-					'event'      => 'pay_for_order_page_view',
-					'properties' => $record_data,
-				),
-				array(
-					'event'      => 'checkout_page_view',
-					'properties' => array(
-						'theme_type'     => 'short_code',
-						'woopay_enabled' => false,
-					) + $record_data,
-				),
-				array(
-					'event'      => 'checkout_page_view',
-					'properties' => array(
-						'theme_type'     => 'blocks',
-						'woopay_enabled' => false,
-					) + $record_data,
-				),
-			),
-			$params['events']
-		);
-	}
-
-	/**
-	 * @testdox Should arm the Blocks cart Proceed to checkout click in the footer script without building the WooPay config, like client 11.1.0 cart/index.js.
-	 * @dataProvider direct_checkout_provider
-	 *
-	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
-	 */
-	public function test_blocks_cart_arms_proceed_to_checkout_tracking_without_woopay_config( bool $direct_checkout_enabled ): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		wp_set_current_user( 0 );
-
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$tracker = new WooPaymentsFrontendTrackingController();
-		$tracker->init(
-			$arbiter,
-			$this->create_account_service_for_bridge(
-				true,
-				array(
-					'country'                    => 'US',
-					'platform_checkout_eligible' => true,
-				),
-				array(
-					'enabled'           => 'yes',
-					'platform_checkout' => 'yes',
-				)
-			)
-		);
-		$woopay = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config' ) )
-			->getMock();
-		$woopay->expects( $this->once() )->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
-		$woopay->expects( $this->never() )->method( 'get_woopay_frontend_config' );
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init( $this->create_account_service_for_bridge( true ), $woopay, $this->create_frontend_styles_service_for_bridge(), $tracker );
-
-		try {
-			$sut->register();
-			do_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-			$tracker->enqueue_frontend_events_script();
-			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
-		} finally {
-			remove_action( 'wp_footer', array( $tracker, 'enqueue_frontend_events_script' ) );
-			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
-			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		}
-
-		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
-		$params = json_decode( $matches[1], true );
-		$this->assertSame( array( 'woopayDirectCheckout' => $direct_checkout_enabled ), $params['proceedToCheckout'] );
-	}
-
-	/**
-	 * Provide WooPay direct checkout states.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function direct_checkout_provider(): array {
-		return array(
-			'direct checkout off' => array( false ),
-			'direct checkout on'  => array( true ),
-		);
-	}
-
-	/**
-	 * @testdox Should track classic and Store API order placement before payment with exact oracle guards.
-	 */
-	public function test_tracks_classic_and_store_api_order_placement_before_payment(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$recorded_events = array();
-		$tracker         = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
-			->getMock();
-		$tracker->method( 'is_shopper_tracking_enabled' )->willReturn( true );
-		$tracker->method( 'record_user_event' )->willReturnCallback(
-			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
-				$recorded_events[] = array( $event_name, $properties );
-				return true;
-			}
-		);
-
-		$sut = new WooPaymentsCheckoutBridge();
-		$sut->init(
-			$this->create_account_service_for_bridge( true ),
-			$this->create_woopay_session_service_for_bridge( false ),
-			$this->create_frontend_styles_service_for_bridge(),
-			$tracker
-		);
-
-		$classic_order = wc_create_order();
-		$classic_order->set_payment_method( 'woocommerce_payments' );
-		$classic_order->set_payment_method_title( 'Card' );
-		$classic_order->save();
-		$store_api_order = wc_create_order();
-		$store_api_order->set_payment_method( 'woocommerce_payments_klarna' );
-		$store_api_order->set_payment_method_title( 'Klarna' );
-		$store_api_order->save();
-		$other_order = wc_create_order();
-		$other_order->set_payment_method( 'cod' );
-		$other_order->set_payment_method_title( 'Cash on delivery' );
-		$other_order->save();
-
-		try {
-			$sut->register();
-			$sut->register();
-			$this->assertSame( 10, has_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
-			$this->assertSame( 10, has_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
-			$get_accepted_args = static function ( string $hook_name ) use ( $sut ): int {
-				global $wp_filter;
-				foreach ( $wp_filter[ $hook_name ]->callbacks[10] ?? array() as $callback ) {
-					if ( array( $sut, 'record_checkout_order_placed' ) === $callback['function'] ) {
-						return (int) $callback['accepted_args'];
-					}
-				}
-
-				return 0;
-			};
-			$this->assertSame( 2, $get_accepted_args( 'woocommerce_checkout_order_processed' ) );
-			$this->assertSame( 2, $get_accepted_args( 'woocommerce_store_api_checkout_order_processed' ) );
-			$this->assertSame( 'pending', $classic_order->get_status() );
-
-			/**
-			 * Fires after a classic checkout order is created and before payment processing.
-			 *
-			 * @since 2.1.0
-			 *
-			 * @param int $order_id Order ID.
-			 */
-			do_action( 'woocommerce_checkout_order_processed', $classic_order->get_id() );
-			$classic_order->update_status( 'failed' );
-
-			/**
-			 * Fires after a Store API checkout order is created and before payment processing.
-			 *
-			 * @since 7.2.0
-			 *
-			 * @param \WC_Order $order Checkout order.
-			 */
-			do_action( 'woocommerce_store_api_checkout_order_processed', $store_api_order );
-			$sut->record_checkout_order_placed( $other_order->get_id() );
-
-			$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
-			$sut->record_checkout_order_placed( $classic_order->get_id() );
-			$_SERVER['HTTP_USER_AGENT'] = 'woopay';
-			$sut->record_checkout_order_placed( $classic_order->get_id() );
-		} finally {
-			unset( $_SERVER['HTTP_USER_AGENT'] );
-			remove_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) );
-			remove_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) );
-			remove_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) );
-			remove_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		}
-
-		$this->assertSame(
-			array(
-				array(
-					'checkout_order_placed',
-					array(
-						'payment_title'     => 'Card',
-						'record_event_data' => array( 'track_on_all_stores' => true ),
-					),
-				),
-				array(
-					'checkout_order_placed',
-					array(
-						'payment_title'     => 'Klarna',
-						'record_event_data' => array( 'track_on_all_stores' => true ),
-					),
-				),
-				array(
-					'checkout_order_placed',
-					array(
-						'payment_title'     => 'Card',
-						'record_event_data' => array( 'track_on_all_stores' => true ),
-					),
-				),
-			),
-			$recorded_events
-		);
 	}
 
 	/**
@@ -675,6 +254,8 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->reset_frontend_surface_state();
+		// A test of another class can leave the checkout script registered with its localized config.
+		$this->reset_checkout_assets();
 		// A post or query left by an earlier test would give the express checkout handler a product or cart context.
 		unset( $GLOBALS['post'] );
 		$GLOBALS['wp_query']     = new \WP_Query(); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
@@ -708,6 +289,17 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
 		remove_all_filters( 'pre_http_request' );
 		delete_transient( 'woocommerce_woopayments_public_fraud_services' );
+		$this->reset_checkout_assets();
+		wp_set_current_user( 0 );
+		$this->reset_classic_checkout_fallback_hooks_flag();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		parent::tearDown();
+	}
+
+	/**
+	 * Dequeue and deregister the checkout scripts and styles, with their localized config.
+	 */
+	private function reset_checkout_assets(): void {
 		wp_dequeue_script( 'wc-woopayments-checkout' );
 		wp_deregister_script( 'wc-woopayments-checkout' );
 		wp_dequeue_script( 'wc-woopayments-appearance' );
@@ -719,10 +311,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wcpay-fraud-prevention-token' );
 		wp_dequeue_script( 'woocommerce-tokenization-form' );
 		wp_deregister_script( 'woocommerce-tokenization-form' );
-		wp_set_current_user( 0 );
-		$this->reset_classic_checkout_fallback_hooks_flag();
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		parent::tearDown();
 	}
 
 	/**
@@ -1981,8 +1569,6 @@ class WooPaymentsCheckoutBridgeTest extends WC_Unit_Test_Case {
 				WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 1 );
 				WC()->cart->calculate_totals();
 			}
-			$bridge->register();
-
 			foreach ( array( 'card', 'klarna', 'affirm' ) as $payment_method_id ) {
 				$gateways[] = $render( self::CARD_SUPPORTS, $payment_method_id )['gatewayId'] ?? '';
 			}
