@@ -10103,6 +10103,67 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout with a saved card keeps the valid customer on the order and its subscription when a response filter returns a non-string customer.
+	 *
+	 * A `wcpay_api_request_response` callback can return any value for `customer`; the outcome falls back to the customer the
+	 * request was sent for instead of casting `true` to '1', which the order meta and the subscription sync would then store.
+	 * The response is the recorded REC-SUB succeeded intent (`Fixtures/platform-intention-subscription.json`, pair
+	 * `renewal_off_session`).
+	 */
+	public function test_saved_card_checkout_keeps_the_valid_customer_when_a_filter_returns_a_non_string_customer(): void {
+		$user_id     = $this->factory()->user->create();
+		$order       = $this->create_woopayments_order( '10.99' );
+		$saved_token = $this->create_card_token( $user_id, 'pm_1UJhOFBzWlxcwgpPvcySvyc5' );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_UsIeTbmGHPc9jY' );
+		$order->save();
+		$subscription = $this->create_woopayments_order( '10.99' );
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+
+		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'renewal_off_session' );
+		$http_client           = new FakeWooPaymentsHttpClient();
+		$http_client->response = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => $recorded['content_type'] ),
+			'body'     => wp_json_encode( $recorded['body'] ),
+		);
+		add_filter(
+			'wcpay_api_request_response',
+			static function ( $response ) {
+				$body             = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+				$body['customer'] = true;
+				$response['body'] = wp_json_encode( $body );
+
+				return $response;
+			}
+		);
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
+		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
+
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'',
+				array(
+					'payment_token'       => (string) $saved_token->get_id(),
+					'save_payment_method' => false,
+				)
+			),
+			$provider
+		);
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cus_UsIeTbmGHPc9jY', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
 	 * Build a real WooPayments provider whose only isolated seam is the raw HTTP transport.
 	 *
 	 * The production provider, adapter, API client and order-effect applier all

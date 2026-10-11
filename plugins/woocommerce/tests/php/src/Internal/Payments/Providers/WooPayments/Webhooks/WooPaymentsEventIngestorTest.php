@@ -5972,6 +5972,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a charge.refund.updated event.
 	 *
+	 * The envelope and the refund fields read are the ones client 11.1.0 reads (includes/class-wc-payments-webhook-processing-service.php:184-185, 300-309).
+	 * A test that overrides the status with 'cancelled' sends a deliberately malformed status.
+	 *
 	 * @param array<string,mixed> $overrides Refund object overrides.
 	 * @return array<string,mixed>
 	 */

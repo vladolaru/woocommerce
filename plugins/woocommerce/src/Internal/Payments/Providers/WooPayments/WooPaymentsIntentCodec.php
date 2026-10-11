@@ -500,13 +500,16 @@ class WooPaymentsIntentCodec {
 	/**
 	 * Get a customer ID from an intent.
 	 *
+	 * Only a non-empty string or an expanded customer's ID counts: the response passes through the
+	 * `wcpay_api_request_response` filter, and a callback's `true` must not become customer '1'.
+	 *
 	 * @param array<string,mixed> $intention Provider intent response.
 	 * @param string              $fallback  Fallback customer ID.
 	 * @return string
 	 */
 	public static function result_customer_id( array $intention, string $fallback ): string {
-		if ( isset( $intention['customer'] ) && is_scalar( $intention['customer'] ) ) {
-			return (string) $intention['customer'];
+		if ( isset( $intention['customer'] ) && is_string( $intention['customer'] ) && '' !== $intention['customer'] ) {
+			return $intention['customer'];
 		}
 
 		if ( isset( $intention['customer']['id'] ) && is_scalar( $intention['customer']['id'] ) ) {

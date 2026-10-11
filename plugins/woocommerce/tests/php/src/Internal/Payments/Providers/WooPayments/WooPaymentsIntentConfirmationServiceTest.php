@@ -102,7 +102,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Saving the payment method keeps the order's saved customer on the related subscription when the intent's customer is not a string.
+	 * @testdox Saving the payment method keeps the order's saved customer on the order and the related subscription when the intent's customer is not a string.
 	 *
 	 * A `wcpay_api_request_response` callback can hand back any value for `customer`; a coerced `true` must not replace the
 	 * order's valid customer ID on the subscriptions the saved token is synced to.
@@ -122,6 +122,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
 
 		$this->assertSame( 'cus_saved', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cus_saved', wc_get_order( $order->get_id() )->get_meta( '_stripe_customer_id', true ) );
 	}
 
 	/** @return array<string,array{bool,int}> */
