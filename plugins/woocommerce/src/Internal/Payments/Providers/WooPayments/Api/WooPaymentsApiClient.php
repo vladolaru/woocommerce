@@ -19,10 +19,11 @@ use WP_Error;
 use WP_REST_Request;
 
 /**
- * Minimal native WooPayments API client for provider-owned WooPayments operations.
+ * Sends WooPayments requests to the platform: payment and setup intents, refunds, captures, customers, disputes,
+ * account data and reports, with the WooPayments extension's request filters.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsApiClient {
 
@@ -49,7 +50,7 @@ class WooPaymentsApiClient {
 	/**
 	 * Params a wcpay_api_request_params callback cannot change on the POSTs that move money, by API path ({id}: one segment).
 	 *
-	 * Each list is the IMMUTABLE_PARAMS of the WooPayments 11.1.0 request class that sends the same POST, which its
+	 * Each list is the IMMUTABLE_PARAMS of the client 11.1.0 request class that sends the same POST, which its
 	 * Request::apply_filters() kept from callbacks (includes/core/server/class-request.php:528-569), plus every value the
 	 * store's own protections read back, named beside each list. A dot names a key inside metadata. Every other param stays
 	 * open to callbacks.
@@ -88,7 +89,7 @@ class WooPaymentsApiClient {
 	private const ROUTE_PM_PROMOTION_ID_PATTERN = '/^[A-Za-z0-9_-]+$/';
 
 	/**
-	 * Public WordPress.com API base preserved for compatibility filters.
+	 * Public WordPress.com API base, the URL the response filters receive.
 	 */
 	private const WPCOM_ENDPOINT_BASE = 'https://public-api.wordpress.com/wpcom/v2';
 
@@ -283,7 +284,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsHttpClient     $http_client     Native WPCOM transport.
+	 * @param WooPaymentsHttpClient     $http_client     WordPress.com transport.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param WooPaymentsTransportLog   $transport_log   Transport log.
 	 */
@@ -352,7 +353,7 @@ class WooPaymentsApiClient {
 	 * @param string              $intent_id          Intent ID.
 	 * @param int                 $amount_to_capture  Minor-unit capture amount.
 	 * @param array<string,mixed> $metadata           Intent metadata.
-	 * @param array<string,mixed> $level3             Level 3 data; sent even when empty, matching the plugin's capture request shape.
+	 * @param array<string,mixed> $level3             Level 3 data; sent even when empty, as client 11.1.0's capture request does (core/server/request/class-capture-intention.php:25).
 	 * @return array<string,mixed>
 	 */
 	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
@@ -728,7 +729,7 @@ class WooPaymentsApiClient {
 	/**
 	 * Retrieve visible WooPayments payment method promotions for the current store context.
 	 *
-	 * Returns the promotions with the platform's `cache-for` header, which sets how long they may be cached, as the client
+	 * Returns the promotions with the platform's `cache-for` header, which sets how long they may be cached, as client 11.1.0
 	 * reads it from the raw response (client 11.1.0 `includes/class-wc-payments-pm-promotions-service.php:224-254`).
 	 *
 	 * @param array<string,mixed> $store_context Store context parameters.
@@ -1189,7 +1190,7 @@ class WooPaymentsApiClient {
 	 * Retrieve WooPayments uncaptured authorizations.
 	 *
 	 * @param array<string,mixed> $query               Query params.
-	 * @param bool                $apply_compat_filter Whether to apply the preserved legacy request hook.
+	 * @param bool                $apply_compat_filter Whether to fire the WooPayments extension's request filter for this request.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
@@ -1770,7 +1771,7 @@ class WooPaymentsApiClient {
 	/**
 	 * Create a one-time Stripe dashboard login link.
 	 *
-	 * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0): user-token auth, the test-mode-onboarding flag and its `wpcay_get_account_login_data` filter.
+	 * As client 11.1.0's `Get_Account_Login_Data` request (core/server/request/class-get-account-login-data.php:17-29): user-token auth, the test-mode-onboarding flag and its `wpcay_get_account_login_data` filter.
 	 *
 	 * @param string $redirect_url URL to return to from the dashboard.
 	 * @return array<string,mixed>
@@ -2063,7 +2064,7 @@ class WooPaymentsApiClient {
 	/**
 	 * Update the account's WooPay (platform checkout) data.
 	 *
-	 * Mirrors the plugin's update_woopay(): blog-token auth and the test-mode-onboarding flag, since the platform resolves the WooPay account per onboarding mode.
+	 * As client 11.1.0's update_woopay() (wc-payment-api/class-wc-payments-api-client.php:1103): blog-token auth and the test-mode-onboarding flag, since the platform resolves the WooPay account per onboarding mode.
 	 *
 	 * @param array<string,mixed> $data WooPay account data (e.g. webhook_secret).
 	 * @return array<string,mixed>
@@ -2142,7 +2143,7 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Upload a file through the native files endpoint.
+	 * Upload a file through the platform's files endpoint.
 	 *
 	 * @param WP_REST_Request $request Request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -2221,9 +2222,9 @@ class WooPaymentsApiClient {
 	/**
 	 * Add the store ID and compatibility data to an onboarding payload, then apply the public payload filter.
 	 *
-	 * The client adds both through its own callbacks on the same filter, at priority 10 (client 11.1.0
+	 * Client 11.1.0 adds both through its own callbacks on the same filter, at priority 10 (client 11.1.0
 	 * `includes/class-wc-payments-onboarding-service.php:120`, `:1491-1496`; `includes/class-compatibility-service.php:46`,
-	 * `:75-77`). Native adds them before any callback runs, so callbacks at every priority see them and can change them.
+	 * `:75-77`). This adds them before any callback runs, so callbacks at every priority see them and can change them.
 	 *
 	 * @param array<string,mixed> $request_args Onboarding request payload.
 	 * @return array<string,mixed>
@@ -2423,7 +2424,9 @@ class WooPaymentsApiClient {
 		}
 
 		/**
-		 * Filters the WooPayments native request parameters before transport dispatch.
+		 * Filters the WooPayments request parameters before transport dispatch.
+		 *
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * On the POSTs that move money, the store sets the money and identity params back after this filter (charge amount,
 		 * currency, payment method, customer, order id and key; refund charge, amount and attempt; capture amount; setup
@@ -2454,12 +2457,14 @@ class WooPaymentsApiClient {
 			$headers['Idempotency-Key'] = '' !== $caller_idempotency_key ? $caller_idempotency_key : wp_generate_uuid4();
 		}
 
-		// Redaction cleans every string value, so it runs only when the gated transport log is written.
+		// Redaction cleans every string value, so it runs only when the transport log is written.
 		$log_transport   = $this->transport_log->is_enabled();
 		$redacted_params = $log_transport ? $this->transport_log->redact( $params ) : array();
 
 		/**
-		 * Filters the WooPayments native request headers before transport dispatch.
+		 * Filters the WooPayments request headers before transport dispatch.
+		 *
+		 * Keeps this name because extensions listen to it.
 		 *
 		 * The Idempotency-Key the store set is restored after this filter, and a warning is logged when a callback changed it.
 		 *
@@ -2519,7 +2524,9 @@ class WooPaymentsApiClient {
 			);
 
 			/**
-			 * Filters the WooPayments native response after transport dispatch.
+			 * Filters the WooPayments response after transport dispatch.
+			 *
+			 * Keeps this name because extensions listen to it.
 			 *
 			 * @since 11.0.0
 			 *
@@ -2618,7 +2625,7 @@ class WooPaymentsApiClient {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WooPaymentsPaginatedListRequest $request Request compatibility object.
+	 * @param WooPaymentsPaginatedListRequest $request Request object the extension's request filters receive.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
 	 */
@@ -2641,7 +2648,7 @@ class WooPaymentsApiClient {
 	 * @param array<int|string,mixed> $params Request params.
 	 * @param string                  $api    API path.
 	 * @param string                  $method HTTP method.
-	 * @param string                  $hook   Legacy WooPayments request filter hook.
+	 * @param string                  $hook   The WooPayments extension's request filter name.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
@@ -2654,8 +2661,8 @@ class WooPaymentsApiClient {
 	/**
 	 * Send a concrete request after applying a WooPayments compat request-object filter.
 	 *
-	 * @param WooPaymentsPaginatedListRequest $request Native request compatibility object.
-	 * @param string                          $hook    Legacy WooPayments request filter hook.
+	 * @param WooPaymentsPaginatedListRequest $request Request object the extension's request filters receive.
+	 * @param string                          $hook    The WooPayments extension's request filter name.
 	 * @param bool                            $include_test_mode_in_query Whether to add test mode to the API path query.
 	 * @param bool                            $honor_raw_response Whether to honor the request object's raw-response flag.
 	 * @return array<string,mixed>
@@ -2710,7 +2717,7 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Get the compatibility URL exposed to WooPayments API response filters.
+	 * Get the URL the WooPayments API response filters receive.
 	 *
 	 * @param string $api            WooPayments API path.
 	 * @param bool   $is_site_scoped Whether the request is site-scoped.
@@ -2729,10 +2736,12 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Rotate the card-testing prevention token when the platform signals a
-	 * fraud-flagged decline, so a card tester cannot replay the same session
-	 * token across attempts. Mirrors the plugin's maybe_act_on_fraud_prevention:
-	 * only the fraudulent decline and the platform's card-testing code rotate.
+	 * Rotate the card-testing prevention token after a fraud-flagged decline.
+	 *
+	 * A fraud-flagged decline (`fraudulent`) or the platform's card-testing code rotates the shopper's card-testing token
+	 * here, where every platform error is mapped, so the next attempt from that session sends a fresh token whichever
+	 * request failed. Client 11.1.0 rotates on the same two codes in maybe_act_on_fraud_prevention()
+	 * (wc-payment-api/class-wc-payments-api-client.php:2950).
 	 *
 	 * @param string $error_code Platform error or decline code.
 	 */
@@ -2768,8 +2777,9 @@ class WooPaymentsApiClient {
 		$wrap_message      = true;
 
 		if ( isset( $response_body['code'] ) && 'amount_too_small' === $response_body['code'] ) {
-			// The plugin resolves the top-level amount_too_small shape before the error envelope
-			// and throws the platform message unwrapped; the minimum rides in the data payload.
+			// Client 11.1.0 resolves the top-level amount_too_small shape before the error envelope
+			// and throws the platform message unwrapped (wc-payment-api/class-wc-payments-api-client.php:2845); the minimum
+			// rides in the data payload.
 			$error_code    = 'amount_too_small';
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
 			$wrap_message  = false;
@@ -2795,7 +2805,8 @@ class WooPaymentsApiClient {
 			}
 
 			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
-				// The plugin redacts the raw API message so the merchant is not prompted to
+				// Client 11.1.0 replaces the raw API message (wc-payment-api/class-wc-payments-api-client.php:2859-2864)
+				// so the merchant is not prompted to
 				// contact support when over-capturing an authorized amount.
 				$error_message = __( 'The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.', 'woocommerce' );
 			}

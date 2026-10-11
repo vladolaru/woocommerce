@@ -11,7 +11,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Payment
  * A WooPayments payment method: capability, countries, currencies, limits, and whether new accounts are offered it.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native WooPayments settings runtime.
+ * @internal
  */
 final class WooPaymentsPaymentMethodDefinition {
 

@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Writes redacted platform requests and responses to the WooPayments log when debug logging is on.
  *
- * Logging is on in dev mode or with the gateway's `enable_logging` setting, the one gate every WooPayments log line
+ * Logging is on in dev mode or with the gateway's `enable_logging` setting, the one check every WooPayments log line
  * uses (WooPaymentsLogger::can_log()). Lines are written through WooPaymentsLogger, so they carry its request context
  * and source, and a line that fails to write is dropped. Redaction runs only when a line is written; info() takes a
  * context its caller already passed through redact(). warning() is the one line written whatever the setting.
@@ -28,9 +28,8 @@ class WooPaymentsTransportLog {
 	/**
 	 * Common keys in API requests/responses that must be redacted before logging.
 	 *
-	 * Ported from the plugin's API_KEYS_TO_REDACT; the list is the logging
-	 * redaction contract and must not be re-derived. Native-only additions are
-	 * commented inline — redacting MORE than the plugin is always acceptable.
+	 * Client 11.1.0's API_KEYS_TO_REDACT (wc-payment-api/class-wc-payments-api-client.php:94) is the base of this list,
+	 * the logging redaction contract; keys added here are commented inline, and redacting more is always acceptable.
 	 */
 	private const API_KEYS_TO_REDACT = array(
 		'client_secret',
@@ -55,9 +54,9 @@ class WooPaymentsTransportLog {
 		'merchant_refund_reason',
 		// Address autocomplete JWT is a credential; keep it out of logs.
 		'token',
-		// WooPay webhook signing secret is a credential; a logged copy would let a log reader forge order-status deliveries. Native-only hardening: the plugin's list does not carry it.
+		// WooPay webhook signing secret is a credential; a logged copy would let a log reader forge order-status deliveries. Client 11.1.0's list does not carry it.
 		'webhook_secret',
-		// Native-only: session and checkout keys and credentials the plugin's list leaves out (monitor ruling 2026-10-05).
+		// Session and checkout keys and credentials client 11.1.0's list leaves out.
 		'platform_checkout_key',
 		'session',
 		'session_id',
@@ -70,7 +69,7 @@ class WooPaymentsTransportLog {
 		'secret',
 		'authorization',
 		'cookie',
-		// Native-only: the received-webhook line logs whole platform objects (Codex review 75). Tax IDs and free-text
+		// The received-webhook line logs whole platform objects. Tax IDs and free-text
 		// descriptions can carry personal data; the *_email and *_phone endings below cover receipt_email and customer_phone.
 		'customer_tax_ids',
 		'description',
@@ -87,13 +86,13 @@ class WooPaymentsTransportLog {
 	);
 
 	/**
-	 * Metadata keys the transport log keeps (native-only): order and customer references and payment kind flags.
+	 * Metadata keys the transport log keeps: order and customer references and payment kind flags.
 	 */
 	private const METADATA_KEYS_TO_KEEP = array( 'order_id', 'order_number', 'customer_id', 'subscription_id', 'payment_type', 'gateway_type', 'ipp_channel', 'paid_on_woopay' );
 
 	/**
-	 * Key endings redacted like API_KEYS_TO_REDACT (native-only): any `*_secret` or `*_key` (monitor ruling 2026-10-05),
-	 * and any `*_email` or `*_phone`, such as a PaymentIntent's receipt_email or an invoice's customer_phone (Codex review 75).
+	 * Key endings redacted like API_KEYS_TO_REDACT: any `*_secret` or `*_key`, and any `*_email` or `*_phone`, such as a
+	 * PaymentIntent's receipt_email or an invoice's customer_phone.
 	 */
 	private const API_KEY_SUFFIXES_TO_REDACT = array( '_secret', '_key', '_email', '_phone' );
 
@@ -113,7 +112,7 @@ class WooPaymentsTransportLog {
 	private const REDACT_MAX_STRING_BYTES = 2048;
 
 	/**
-	 * WooPayments logger, whose gate and source the transport log uses.
+	 * WooPayments logger, whose logging check and source the transport log uses.
 	 *
 	 * @var WooPaymentsLogger
 	 */
@@ -158,7 +157,7 @@ class WooPaymentsTransportLog {
 	 *
 	 * The received-event line of the webhook path uses it: client 11.1.0 writes 'WEBHOOK RECEIVED: <type> <id>' with the
 	 * redacted body for every event it receives (class-wc-payments-webhook-processing-service.php:155-160), through its
-	 * gated logger. A failure to write the line never reaches the caller.
+	 * logger, which writes only when logging is on. A failure to write the line never reaches the caller.
 	 *
 	 * @since 11.2.0
 	 *
@@ -178,7 +177,8 @@ class WooPaymentsTransportLog {
 	}
 
 	/**
-	 * Log the platform error line, "<message> (<code>)" as the client writes it, when transport logging is enabled.
+	 * Log the platform error line, "<message> (<code>)" as client 11.1.0 writes it (wc-payment-api/class-wc-payments-api-client.php:2912),
+	 * when transport logging is enabled.
 	 *
 	 * The message and the code are redacted each on its own, so a message replaced whole keeps its code.
 	 *
@@ -228,7 +228,7 @@ class WooPaymentsTransportLog {
 	}
 
 	/**
-	 * Redact what the gated transport log writes: a request's params, a response body, or the platform error's message or code.
+	 * Redact what the transport log writes: a request's params, a response body, or the platform error's message or code.
 	 *
 	 * Called only when that log is written: redaction looks at every string value, so a store with logging off does none of
 	 * this work.
@@ -245,9 +245,9 @@ class WooPaymentsTransportLog {
 	/**
 	 * Redact sensitive keys from a payload before logging.
 	 *
-	 * Ported from the plugin's redact_array: matching keys are replaced with
+	 * As client 11.1.0's redact_array() (class-wc-payments-utils.php:477): matching keys are replaced with
 	 * '(redacted)' at any depth, objects log as their class name, and deep
-	 * recursion is cut off. Native also matches keys whatever their case and
+	 * recursion is cut off. This also matches keys whatever their case and
 	 * by ending (API_KEY_SUFFIXES_TO_REDACT), and cleans every string value
 	 * with redact_string().
 	 *
@@ -294,7 +294,7 @@ class WooPaymentsTransportLog {
 	 *
 	 * Only the references support needs to find an order, and the payment kind flags, are kept (METADATA_KEYS_TO_KEEP,
 	 * none of them a key redacted elsewhere), and only when the value is a short token; every other value, or a kept key
-	 * with free text, is replaced whole (native-only, Codex reviews 76 and 77).
+	 * with free text, is replaced whole.
 	 *
 	 * @param array<int|string,mixed> $metadata Metadata.
 	 * @return array<int|string,mixed>

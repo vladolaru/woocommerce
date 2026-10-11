@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 use RuntimeException;
 
 /**
- * Exception thrown by the native WooPayments provider transport.
+ * A platform or transport failure of a WooPayments request, with its error code, HTTP status and whether the
+ * outcome is ambiguous.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsApiException extends RuntimeException {
 

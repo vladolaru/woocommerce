@@ -13,12 +13,13 @@ use WC_Payment_Token;
  * WooPayments Link payment token.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsLinkToken extends WC_Payment_Token {
 
 	/**
-	 * Token type preserved from the WooPayments extension.
+	 * Token type; client 11.1.0 stores the same value (class-wc-payment-token-wcpay-link.php:26), so tokens saved before
+	 * the switch keep loading.
 	 *
 	 * @var string
 	 */
@@ -119,7 +120,7 @@ class WooPaymentsLinkToken extends WC_Payment_Token {
 	}
 
 	/**
-	 * Redact an email address to the extension-compatible display format.
+	 * Redact an email address the way client 11.1.0 displays it (class-wc-payment-token-wcpay-link.php:114).
 	 *
 	 * @param string $email Email address.
 	 * @return string

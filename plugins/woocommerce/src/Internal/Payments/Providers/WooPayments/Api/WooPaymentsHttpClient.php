@@ -12,10 +12,10 @@ use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use WP_Error;
 
 /**
- * Site-scoped Jetpack-signed WPCOM transport for WooPayments native requests.
+ * Sends one Jetpack-signed WooPayments request to WordPress.com and returns the raw response.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsHttpClient {
 

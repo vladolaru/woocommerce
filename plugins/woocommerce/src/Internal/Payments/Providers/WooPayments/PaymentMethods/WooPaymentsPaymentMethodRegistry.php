@@ -11,10 +11,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeaturePolicy;
 
 /**
- * Registry for native WooPayments payment method definitions.
+ * The WooPayments payment method definitions, filtered by account capability, country and currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native WooPayments settings runtime.
+ * @internal
  */
 class WooPaymentsPaymentMethodRegistry {
 
