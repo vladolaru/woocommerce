@@ -359,6 +359,8 @@ class WooPaymentsIntentRequestBuilder {
 		/**
 		 * Filters the WooPayments metadata created from an order.
 		 *
+		 * The order_id and order_key keys are set back from the order after this filter.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param array<string,mixed>   $metadata     Metadata being sent to WooPayments.
@@ -368,7 +370,7 @@ class WooPaymentsIntentRequestBuilder {
 		$metadata = apply_filters( 'wcpay_metadata_from_order', $metadata, $order, $payment_type );
 
 		// The kept charge key's lookup and the webhook order resolver find the order by these two keys, so a callback cannot change them.
-		return array_merge(
+		return array_replace(
 			is_array( $metadata ) ? $metadata : array(),
 			array(
 				'order_id'  => $order->get_id(),

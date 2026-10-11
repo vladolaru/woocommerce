@@ -93,6 +93,27 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A numeric metadata key a wcpay_metadata_from_order callback adds keeps its key beside the order id and key.
+	 *
+	 * Client 11.1.0 returns the filter result whole (src/Internal/Service/OrderService.php:133), so the key reaches the platform as the callback set it.
+	 */
+	public function test_metadata_filter_keeps_a_numeric_key_beside_the_order_anchors(): void {
+		$order           = wc_create_order();
+		$metadata_filter = static function ( array $metadata ): array {
+			$metadata['123'] = 'ref';
+			return $metadata;
+		};
+		add_filter( 'wcpay_metadata_from_order', $metadata_filter );
+
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
+
+		$this->assertSame( 'ref', $metadata[123] ?? null, 'The callback\'s numeric key must keep its key.' );
+		$this->assertArrayNotHasKey( 0, $metadata, 'The numeric key must not be renumbered.' );
+		$this->assertSame( $order->get_id(), $metadata['order_id'] ?? null );
+		$this->assertSame( $order->get_order_key(), $metadata['order_key'] ?? null );
+	}
+
+	/**
 	 * Matches WCPay\Internal\Service\OrderService::get_payment_metadata() in WooPayments 11.1.0.
 	 *
 	 * @testdox Intent metadata preserves WooPayments 11.1 customer-name delimiter spaces for incomplete billing names.
