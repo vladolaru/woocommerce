@@ -429,7 +429,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @param array<int,string>   $callback_values Values the callback set, which the warning must not show.
 	 */
 	public function test_a_request_params_callback_cannot_change_a_locked_key( callable $send, callable $callback, string $path, array $changed_keys, ?string $caller_key, array $mutable, array $callback_values ): void {
-		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_test' ) );
+		list( $sut, $http_client ) = $this->make_sut( false );
 		$send( $sut );
 		$logger = RecordingWcLogger::install();
 		add_filter( 'wcpay_api_request_params', $callback, 10, 3 );
@@ -625,6 +625,83 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				),
 				array( 'idem_callback' ),
 			),
+			// Kills a restore that sets a nested key without first rebuilding a scalar parent as an array (it throws).
+			'scalar metadata'   => array(
+				static function ( WooPaymentsApiClient $sut ) use ( $order_metadata ): void {
+					$sut->create_and_confirm_payment_intention(
+						array(
+							'amount'               => 1000,
+							'currency'             => 'usd',
+							'customer'             => 'cus_built',
+							'payment_method'       => 'pm_built',
+							'payment_method_types' => array( 'card' ),
+							'metadata'             => $order_metadata,
+						),
+						'idem_charge'
+					);
+				},
+				static function ( array $params ): array {
+					$params['metadata']    = 'replaced';
+					$params['description'] = 'Callback description';
+					return $params;
+				},
+				'intentions',
+				array( 'metadata.order_id', 'metadata.order_key' ),
+				'idem_charge',
+				array(
+					'key'   => 'description',
+					'value' => 'Callback description',
+				),
+				array( 'replaced' ),
+			),
+			// Kills a loose comparison, which would take '1000' for the built 1000 and send the string.
+			'type-only amount'  => array(
+				static function ( WooPaymentsApiClient $sut ) use ( $order_metadata ): void {
+					$sut->create_and_confirm_payment_intention(
+						array(
+							'amount'               => 1000,
+							'currency'             => 'usd',
+							'customer'             => 'cus_built',
+							'payment_method'       => 'pm_built',
+							'payment_method_types' => array( 'card' ),
+							'metadata'             => $order_metadata,
+						),
+						'idem_charge'
+					);
+				},
+				static function ( array $params ): array {
+					$params['amount']      = '1000';
+					$params['description'] = 'Callback description';
+					return $params;
+				},
+				'intentions',
+				array( 'amount' ),
+				'idem_charge',
+				array(
+					'key'   => 'description',
+					'value' => 'Callback description',
+				),
+				array(),
+			),
+			// Kills a restore that skips a built null, which would let a full refund go out for the callback's amount.
+			'full refund'       => array(
+				static function ( WooPaymentsApiClient $sut ): void {
+					$sut->refund_charge( 'ch_built', null, 'requested_by_customer', 'merchant_dashboard', 'idem_refund' );
+				},
+				static function ( array $params ): array {
+					$params['amount'] = 500;
+					$params['reason'] = 'duplicate';
+					return $params;
+				},
+				'refunds',
+				array( 'amount' ),
+				'idem_refund',
+				array(
+					'key'   => 'reason',
+					'value' => 'duplicate',
+				),
+				array( '500' ),
+			),
 		);
 	}
 
@@ -637,7 +714,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @param bool     $replace_header  Whether the callback replaces the header, besides adding a lowercase copy.
 	 */
 	public function test_a_request_headers_callback_cannot_change_the_idempotency_key( callable $send, string $path, bool $replace_header ): void {
-		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'obj_test' ) );
+		list( $sut, $http_client ) = $this->make_sut( false );
 		$logger                    = RecordingWcLogger::install();
 		$built_key                 = null;
 		$callback                  = static function ( array $headers ) use ( &$built_key, $replace_header ): array {
@@ -700,7 +777,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * includes/class-megurio-subscriptions-for-woocommerce.php:159, callback :2061-2070.
 	 */
 	public function test_a_payment_method_types_callback_still_reaches_the_charge_body(): void {
-		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => 'pi_test' ) );
+		list( $sut, $http_client ) = $this->make_sut( false );
 		$logger                    = RecordingWcLogger::install();
 		$callback                  = static function ( $params ) {
 			$params['payment_method_types'] = array( 'card' );
@@ -724,6 +801,71 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$body = json_decode( (string) $http_client->last_body, true );
 		$this->assertSame( array( 'card' ), $body['payment_method_types'] ?? null );
 		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ), 'A mutable key changes nothing the lock holds.' );
+	}
+
+	/**
+	 * @testdox A log handler that throws on the lock warning does not stop the request: it goes out once, with the values the store built.
+	 *
+	 * Kills a transport log that writes the always-on warning outside its try/catch.
+	 */
+	public function test_a_throwing_warning_handler_does_not_stop_a_locked_request(): void {
+		$logger = new class() extends RecordingWcLogger {
+			/**
+			 * Throw on a warning, record every other line.
+			 *
+			 * @param string              $level   Level.
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 * @throws \RuntimeException On a warning.
+			 */
+			public function log( $level, $message, $context = array() ) {
+				if ( 'warning' === $level ) {
+					throw new \RuntimeException( 'Log handler failed.' );
+				}
+
+				parent::log( $level, $message, $context );
+			}
+		};
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ) {
+				return $logger;
+			}
+		);
+		list( $sut, $http_client ) = $this->make_sut( false );
+		$callback                  = static function ( array $params ): array {
+			$params['amount'] = 999;
+			return $params;
+		};
+		add_filter( 'wcpay_api_request_params', $callback, 10, 3 );
+
+		$sut->refund_charge( 'ch_built', 250, 'requested_by_customer', 'merchant_dashboard', 'idem_refund' );
+
+		$this->assertCount( 1, $http_client->requests, 'The refund must still be sent.' );
+		$body = json_decode( (string) $http_client->last_body, true );
+		$this->assertSame( 250, $body['amount'] ?? null, 'The amount the store built must be sent.' );
+	}
+
+	/**
+	 * @testdox A wcpay_api_request_params callback still changes a lookup GET on a locked path, with no warning.
+	 *
+	 * The ruling leaves the lookup GETs open, as on the client. Kills a lock that drops its POST method check.
+	 */
+	public function test_a_lookup_get_on_a_locked_path_keeps_a_callbacks_params(): void {
+		list( $sut, $http_client ) = $this->make_sut( false );
+		$logger                    = RecordingWcLogger::install();
+		$callback                  = static function ( array $params ): array {
+			$params['charge'] = 'ch_callback';
+			return $params;
+		};
+		add_filter( 'wcpay_api_request_params', $callback, 10, 3 );
+
+		$sut->list_charge_refunds( 'ch_built' );
+
+		$this->assertSame( 'GET', $http_client->last_method );
+		$this->assertStringStartsWith( '/sites/123/wcpay/refunds?', $http_client->last_path );
+		$this->assertStringContainsString( 'charge=ch_callback', $http_client->last_path );
+		$this->assertSame( array(), array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ), 'A lookup GET is not locked.' );
 	}
 
 	/**
