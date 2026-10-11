@@ -763,7 +763,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$order->set_currency( 'USD' );
 		$order->save();
 		$sut    = new WooPaymentsOrderNoteService();
-		$method = new \ReflectionMethod( $sut, 'format_plugin_amount_candidates' );
+		$method = new \ReflectionMethod( $sut, 'format_amount_candidates' );
 		$method->setAccessible( true );
 		$candidates = $method->invoke( $sut, $order, 4.00, 'USD' );
 		$calls      = array();

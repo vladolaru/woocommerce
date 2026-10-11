@@ -406,31 +406,31 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 */
 	public function remediate_order( WC_Order $order, bool $dry_run = false ): bool {
 		try {
-			$fee                 = $order->get_meta( '_wcpay_transaction_fee', true );
-			$net                 = $order->get_meta( '_wcpay_net', true );
-			$wcpay_refunds       = $this->get_wcpay_refunds( $order->get_refunds() );
-			$wcpay_refund_count  = count( $wcpay_refunds );
-			$wcpay_refund_total  = 0.0;
-			$wcpay_refund_ids    = array();
-			$would_change_status = OrderStatus::REFUNDED === $order->get_status();
-			$changes             = array();
+			$fee                      = $order->get_meta( '_wcpay_transaction_fee', true );
+			$net                      = $order->get_meta( '_wcpay_net', true );
+			$woopayments_refunds      = $this->get_woopayments_refunds( $order->get_refunds() );
+			$woopayments_refund_count = count( $woopayments_refunds );
+			$woopayments_refund_total = 0.0;
+			$woopayments_refund_ids   = array();
+			$would_change_status      = OrderStatus::REFUNDED === $order->get_status();
+			$changes                  = array();
 
-			foreach ( $wcpay_refunds as $refund ) {
-				$wcpay_refund_total += abs( (float) $refund->get_amount() );
-				$wcpay_refund_ids[]  = $refund->get_id();
+			foreach ( $woopayments_refunds as $refund ) {
+				$woopayments_refund_total += abs( (float) $refund->get_amount() );
+				$woopayments_refund_ids[]  = $refund->get_id();
 			}
 
 			if ( $would_change_status ) {
 				$changes[] = 'Changed order status from "Refunded" to "Cancelled"';
 			}
 
-			if ( $wcpay_refund_count > 0 ) {
+			if ( $woopayments_refund_count > 0 ) {
 				$changes[] = sprintf(
 					'Deleted %d WooPayments refund object%s (IDs: %s) totaling %s',
-					$wcpay_refund_count,
-					$wcpay_refund_count > 1 ? 's' : '',
-					implode( ', ', $wcpay_refund_ids ),
-					WooPaymentsCurrencyUtils::format_price_in_currency( (float) $wcpay_refund_total, $order->get_currency() )
+					$woopayments_refund_count,
+					$woopayments_refund_count > 1 ? 's' : '',
+					implode( ', ', $woopayments_refund_ids ),
+					WooPaymentsCurrencyUtils::format_price_in_currency( (float) $woopayments_refund_total, $order->get_currency() )
 				);
 			}
 
@@ -458,7 +458,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			}
 
 			$parent_order_id = $order->get_id();
-			foreach ( $wcpay_refunds as $refund ) {
+			foreach ( $woopayments_refunds as $refund ) {
 				$refund_id = $refund->get_id();
 				if ( true !== $refund->delete( true ) ) {
 					return false;
@@ -794,7 +794,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @param WC_Order_Refund[] $refunds Refund objects.
 	 * @return WC_Order_Refund[] WooPayments-created refunds.
 	 */
-	private function get_wcpay_refunds( array $refunds ): array {
+	private function get_woopayments_refunds( array $refunds ): array {
 		return array_values(
 			array_filter(
 				$refunds,

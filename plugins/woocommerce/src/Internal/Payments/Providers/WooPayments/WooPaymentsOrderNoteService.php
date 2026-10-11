@@ -1467,7 +1467,7 @@ class WooPaymentsOrderNoteService {
 	public function format_created_refund_note_candidates( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending ): array {
 		$notes = array( $this->format_created_refund_note( $order, $amount, $currency, $refund_id, $reason, $is_pending ) );
 
-		foreach ( $this->format_plugin_amount_candidates( $order, $amount, $currency ) as $formatted_amount ) {
+		foreach ( $this->format_amount_candidates( $order, $amount, $currency ) as $formatted_amount ) {
 			$notes[] = $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce-payments', $formatted_amount );
 		}
 
@@ -1484,7 +1484,7 @@ class WooPaymentsOrderNoteService {
 	private function format_amount_note_candidates( WC_Order $order, callable $formatter ): array {
 		$notes = array( $formatter( 'woocommerce', $this->format_order_amount( $order ) ) );
 
-		foreach ( $this->format_plugin_amount_candidates( $order, (float) $order->get_total(), $order->get_currency() ) as $formatted_amount ) {
+		foreach ( $this->format_amount_candidates( $order, (float) $order->get_total(), $order->get_currency() ) as $formatted_amount ) {
 			$notes[] = $formatter( 'woocommerce-payments', $formatted_amount );
 		}
 
@@ -1671,7 +1671,7 @@ class WooPaymentsOrderNoteService {
 	 * @param string   $currency Amount currency.
 	 * @return string[] Plugin-compatible formatted order amounts.
 	 */
-	private function format_plugin_amount_candidates( WC_Order $order, float $amount, string $currency ): array {
+	private function format_amount_candidates( WC_Order $order, float $amount, string $currency ): array {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
 		$formatted_price = wc_price( $amount, array( 'currency' => $currency ) );
 		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
