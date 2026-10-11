@@ -48,13 +48,6 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 
 	/**
-	 * Whether the renewal hooks were attached in this request.
-	 *
-	 * @var bool
-	 */
-	private static bool $attached = false;
-
-	/**
 	 * Runtime ownership arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -122,32 +115,13 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			return;
 		}
 
-		self::attach( $this );
-	}
+		add_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
 
-	/**
-	 * Attach the renewal hooks once per request, pointing them at the given controller.
-	 *
-	 * Called on `plugins_loaded` when the built-in WooPayments owns payments, or by the card gateway when it is built first.
-	 *
-	 * @param self $controller Controller that handles renewals, failing-method updates and forced manual renewal.
-	 * @return bool Whether this call attached the hooks.
-	 */
-	public static function attach( self $controller ): bool {
-		if ( self::$attached ) {
-			return false;
-		}
-		self::$attached = true;
-
-		if ( false === has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ) ) {
-			add_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
-		}
-
-		add_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ), 10, 1 );
+		add_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ), 10, 1 );
 
 		foreach ( WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
-			add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $controller, 'scheduled_subscription_payment' ), 10, 2 );
-			add_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $controller, 'update_failing_payment_method' ), 10, 2 );
+			add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
+			add_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $this, 'update_failing_payment_method' ), 10, 2 );
 		}
 
 		wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
@@ -165,8 +139,6 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 				add_filter( "wcs_{$copy_type}_meta_query", array( self::class, 'exclude_charge_idempotency_key_from_meta_query' ), 10, 1 );
 			}
 		}
-
-		return true;
 	}
 
 	/**

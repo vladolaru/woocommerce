@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -77,7 +76,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Undo what one booted request leaves for the rest of the process: the gateway list rebuilt with the WooPayments gateways, the
-	 * container's replacements and resolved classes, the REST routes and the two static one-time hook flags.
+	 * container's replacements and resolved classes, the REST routes and the static one-time hook flag.
 	 */
 	public function tearDown(): void {
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
@@ -87,9 +86,6 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
 
-		$renewal_hooks = new \ReflectionProperty( WooPaymentsSubscriptionsController::class, 'attached' );
-		$renewal_hooks->setAccessible( true );
-		$renewal_hooks->setValue( null, false );
 		$fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$fallback_hooks->setAccessible( true );
 		$fallback_hooks->setValue( null, false );

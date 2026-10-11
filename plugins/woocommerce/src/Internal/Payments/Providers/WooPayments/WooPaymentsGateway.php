@@ -2539,38 +2539,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		$this->supports = array_values( array_unique( $this->supports ) );
-		$this->register_subscription_handlers();
-	}
-
-	/**
-	 * Attach the subscriptions controller's hooks when this gateway owns renewals.
-	 *
-	 * The controller also attaches them on `plugins_loaded` on connected and active stores; whichever runs first attaches
-	 * them, once per request.
-	 *
-	 * @return void
-	 */
-	private function register_subscription_handlers(): void {
-		if ( ! $this->owns_subscription_renewal_hooks() ) {
-			return;
-		}
-
-		WooPaymentsSubscriptionsController::attach( $this->get_subscriptions_controller() );
-	}
-
-	/**
-	 * Tell whether this gateway owns automatic subscription renewal handling.
-	 *
-	 * Link credentials remain attached to the base card gateway, and Amazon Pay renewals use a
-	 * kept compatibility gateway ID handled by the same base gateway instance. While the WooPayments extension
-	 * owns payments, its gateway renews; attaching this handler too would charge each renewal twice.
-	 *
-	 * @return bool
-	 */
-	private function owns_subscription_renewal_hooks(): bool {
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id
-			&& $this->is_subscriptions_enabled()
-			&& wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner();
 	}
 
 	/**
