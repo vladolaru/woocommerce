@@ -1139,7 +1139,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			 *
 			 * @var int
 			 */
-			public int $resolve_token_and_payment_method_details_for_user_calls = 0;
+			public int $get_or_create_token_and_details_for_user_calls = 0;
 
 			/**
 			 * @param string $payment_method_id Provider payment method ID.
@@ -1147,10 +1147,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
 			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
 			 */
-			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
-				++$this->resolve_token_and_payment_method_details_for_user_calls;
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				++$this->get_or_create_token_and_details_for_user_calls;
 
-				return parent::resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id, $include_existing_token_details );
+				return parent::get_or_create_token_and_details_for_user( $payment_method_id, $user_id, $include_existing_token_details );
 			}
 		};
 		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
@@ -1171,7 +1171,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_card_identity', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertCount( 1, $tokens );
-		$this->assertSame( 1, $token_service->resolve_token_and_payment_method_details_for_user_calls );
+		$this->assertSame( 1, $token_service->get_or_create_token_and_details_for_user_calls );
 		$this->assertSame( 1, $details_service->get_payment_method_details_calls );
 	}
 

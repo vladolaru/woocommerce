@@ -262,7 +262,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut     = $this->create_service( array( 'pm_explicit_result' => $details ) );
 
-		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_explicit_result', $user_id );
+		$result = $sut->get_or_create_token_and_details_for_user( 'pm_explicit_result', $user_id );
 
 		$this->assertSame( array( 'token', 'payment_method_details' ), array_keys( $result ) );
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $result['token'] );
@@ -289,7 +289,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_requested', $user_id );
+		$result = $sut->get_or_create_token_and_details_for_user( 'pm_requested', $user_id );
 
 		$this->assertNull( $result['token'] );
 		$this->assertSame( array(), $result['payment_method_details'] );
@@ -316,7 +316,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $sut->resolve_token_and_payment_method_details_for_user( 'pm_requested', $user_id );
+		$result = $sut->get_or_create_token_and_details_for_user( 'pm_requested', $user_id );
 
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $result['token'] );
 		$this->assertSame( 'pm_requested', $result['token']->get_token() );
@@ -349,7 +349,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
 			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
 			 */
-			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $resolved_user_id, bool $include_existing_token_details = false ): array {
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $resolved_user_id, bool $include_existing_token_details = false ): array {
 				unset( $include_existing_token_details );
 				unset( $payment_method_id, $resolved_user_id );
 				++$this->resolution_calls;

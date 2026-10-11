@@ -167,7 +167,7 @@ class WooPaymentsIntentConfirmationService {
 				if ( empty( $payment_method_details ) ) {
 					$payment_method_details = $this->order_effect_applier->get_same_method_payment_method_details( $order, WooPaymentsIntentCodec::result_payment_method_id( $intent ), $previous_payment_method_id );
 					if ( empty( $payment_method_details ) ) {
-						$payment_method_details = $this->token_service->resolve_token_and_payment_method_details_for_user(
+						$payment_method_details = $this->token_service->get_or_create_token_and_details_for_user(
 							WooPaymentsIntentCodec::result_payment_method_id( $intent ),
 							$this->get_token_user_id( $order ),
 							true
@@ -440,7 +440,7 @@ class WooPaymentsIntentConfirmationService {
 
 		try {
 			if ( 0.0 >= (float) $order->get_total() && 0 === strpos( (string) ( $intent['id'] ?? '' ), 'seti_' ) ) {
-				$token_result           = $this->token_service->resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id );
+				$token_result           = $this->token_service->get_or_create_token_and_details_for_user( $payment_method_id, $user_id );
 				$token                  = $token_result['token'];
 				$payment_method_details = $token_result['payment_method_details'];
 			} else {

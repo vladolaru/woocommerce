@@ -610,11 +610,11 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @throws Throwable A PHP Error raised while fetching the payment method's details.
 	 */
 	public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?WC_Payment_Token {
-		return $this->resolve_token_and_payment_method_details_for_user( $payment_method_id, $user_id )['token'];
+		return $this->get_or_create_token_and_details_for_user( $payment_method_id, $user_id )['token'];
 	}
 
 	/**
-	 * Resolve a saved token and the authoritative payment-method details used to create it.
+	 * Get the user's saved token and the payment method's details, creating the token when the user has none.
 	 *
 	 * @since 11.2.0
 	 *
@@ -624,7 +624,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
 	 * @throws Throwable A PHP Error raised while fetching the details to create a token.
 	 */
-	public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+	public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
 		if ( 0 >= $user_id || '' === trim( $payment_method_id ) ) {
 			return array(
 				'token'                  => null,

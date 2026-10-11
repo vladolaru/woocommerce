@@ -5529,7 +5529,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
 			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
 			 */
-			public function resolve_token_and_payment_method_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
 				unset( $payment_method_id, $user_id, $include_existing_token_details );
 
 				throw new \RuntimeException( 'Token save failed.' );

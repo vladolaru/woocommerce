@@ -141,7 +141,7 @@ class WooPaymentsOrderEffectApplier {
 					if ( empty( $payment_method_details ) && '' !== $outcome->get_payment_method_id() ) {
 						$payment_method_details = $this->get_same_method_payment_method_details( $context->get_order(), $outcome->get_payment_method_id(), $previous_payment_method_id );
 						if ( empty( $payment_method_details ) ) {
-							$payment_method_details = $this->token_service->resolve_token_and_payment_method_details_for_user(
+							$payment_method_details = $this->token_service->get_or_create_token_and_details_for_user(
 								$outcome->get_payment_method_id(),
 								$context->get_order()->get_user_id(),
 								true
@@ -946,7 +946,7 @@ class WooPaymentsOrderEffectApplier {
 			}
 
 			if ( 0 === strpos( $outcome->get_provider_payment_id(), 'seti_' ) ) {
-				$token_result           = $this->token_service->resolve_token_and_payment_method_details_for_user( $payment_method_id, $order->get_user_id() );
+				$token_result           = $this->token_service->get_or_create_token_and_details_for_user( $payment_method_id, $order->get_user_id() );
 				$token                  = $token_result['token'];
 				$payment_method_details = $token_result['payment_method_details'];
 			} else {
