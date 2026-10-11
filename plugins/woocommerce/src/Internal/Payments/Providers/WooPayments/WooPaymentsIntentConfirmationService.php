@@ -439,7 +439,10 @@ class WooPaymentsIntentConfirmationService {
 			}
 			if ( $token instanceof \WC_Payment_Token ) {
 				$this->token_service->attach_token_to_order( $order, $token );
-				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, WooPaymentsIntentCodec::result_customer_id( $intent, '' ) );
+				// A response filter can return any value; a top-level customer that is not a string must not replace the
+				// order's saved customer on the subscriptions.
+				$customer_id = is_scalar( $intent['customer'] ?? null ) && ! is_string( $intent['customer'] ) ? '' : WooPaymentsIntentCodec::result_customer_id( $intent, '' );
+				$this->token_service->sync_related_subscriptions_payment_token( $order, $token, $payment_method_id, $customer_id );
 
 				return array(
 					'error'                  => null,

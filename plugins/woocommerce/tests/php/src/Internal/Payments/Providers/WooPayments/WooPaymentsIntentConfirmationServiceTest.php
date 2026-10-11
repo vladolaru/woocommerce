@@ -101,6 +101,29 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_payment_complete_reduce_order_stock', '__return_false' ), 'Stock reduction is back on after the confirm.' );
 	}
 
+	/**
+	 * @testdox Saving the payment method keeps the order's saved customer on the related subscription when the intent's customer is not a string.
+	 *
+	 * A `wcpay_api_request_response` callback can hand back any value for `customer`; a coerced `true` must not replace the
+	 * order's valid customer ID on the subscriptions the saved token is synced to.
+	 */
+	public function test_saving_the_payment_method_ignores_a_non_string_intent_customer(): void {
+		$order = $this->create_woopayments_order( '10.99' );
+		$order->set_customer_id( self::factory()->user->create() );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_saved' );
+		$order->save();
+		$subscription = $this->create_woopayments_order( '10.99' );
+
+		$intent             = $this->load_recorded_manual_3ds_entry( 'classic_checkout_challenge_completed' )['body'];
+		$intent['customer'] = true;
+		$token_service      = $this->create_token_service_with_saved_token_and_subscription( $subscription );
+		$sut                = $this->create_intent_confirmation_service( wc_get_container()->get( WooPaymentsApiClient::class ), $token_service, $this->create_account_service( false ) );
+
+		$sut->confirm_fetched_intent_for_order( $order, $intent, true );
+
+		$this->assertSame( 'cus_saved', wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ) );
+	}
+
 	/** @return array<string,array{bool,int}> */
 	public static function stock_reduction_cases(): array {
 		return array(
@@ -147,7 +170,19 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsTokenService
 	 */
 	private function create_token_service(): WooPaymentsTokenService {
-		$details_service = new class() extends WooPaymentsPaymentMethodDetailsService {
+		$sut = new WooPaymentsTokenService();
+		$sut->init( $this->create_empty_details_service(), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+
+		return $sut;
+	}
+
+	/**
+	 * Create a payment method details service whose lookup finds nothing.
+	 *
+	 * @return WooPaymentsPaymentMethodDetailsService
+	 */
+	private function create_empty_details_service(): WooPaymentsPaymentMethodDetailsService {
+		return new class() extends WooPaymentsPaymentMethodDetailsService {
 			/**
 			 * Constructor.
 			 */
@@ -163,11 +198,54 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 				return array();
 			}
 		};
+	}
 
-		$sut = new WooPaymentsTokenService();
-		$sut->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+	/**
+	 * Create a token service that saves the intent's payment method as a card token and syncs it to one related subscription.
+	 *
+	 * @param WC_Order $subscription Subscription stand-in the order renews.
+	 * @return WooPaymentsTokenService
+	 */
+	private function create_token_service_with_saved_token_and_subscription( WC_Order $subscription ): WooPaymentsTokenService {
+		$token_service               = new class() extends WooPaymentsTokenService {
+			/** @var WC_Order|null */
+			public ?WC_Order $subscription = null;
 
-		return $sut;
+			/**
+			 * Save the payment method as a card token for the user.
+			 *
+			 * @param string $payment_method_id Provider payment method ID.
+			 * @param int    $user_id           User ID.
+			 * @return \WC_Payment_Token
+			 */
+			public function get_or_create_token_for_user( string $payment_method_id, int $user_id ): ?\WC_Payment_Token {
+				$token = new \WC_Payment_Token_CC();
+				$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+				$token->set_user_id( $user_id );
+				$token->set_token( $payment_method_id );
+				$token->set_card_type( 'visa' );
+				$token->set_last4( '4242' );
+				$token->set_expiry_month( '12' );
+				$token->set_expiry_year( '2030' );
+				$token->save();
+
+				return $token;
+			}
+
+			/**
+			 * Return the one related subscription.
+			 *
+			 * @param WC_Order $order Order.
+			 * @return WC_Order[]
+			 */
+			public function get_related_subscriptions_for_order( WC_Order $order ): array {
+				return null === $this->subscription ? array() : array( $this->subscription );
+			}
+		};
+		$token_service->subscription = $subscription;
+		$token_service->init( $this->create_empty_details_service(), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+
+		return $token_service;
 	}
 
 	/**
