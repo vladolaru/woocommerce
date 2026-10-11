@@ -2964,7 +2964,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * 3DS-required card add attempt through the same `create_setup_intent_for_request()` path REC-2
 	 * recorded its declines from. The controller only ever re-serializes `id`/`status`/`client_secret`
 	 * from whatever `create_and_confirm_setup_intention()` returns
-	 * (`WooPaymentsCheckoutAjaxController.php:376-381`), so the expected envelope here is derived
+	 * (`WooPaymentsCheckoutAjaxController.php:271-278`), so the expected envelope here is derived
 	 * from that mapping applied to the recorded body, not from watching native run: the fixture's
 	 * own `native_observation` block is marked NOT an expectation source for exactly this reason.
 	 *

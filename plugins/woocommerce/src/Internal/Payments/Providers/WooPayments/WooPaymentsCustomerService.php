@@ -468,7 +468,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a user's or guest's customer ID, moving a deprecated user option to the current mode's option when that one is empty.
+	 * Get a user's or guest's customer ID, first trying the legacy migration when the current mode's user option is missing.
 	 *
 	 * Not a pure read: when the mode-aware option is missing, it migrates the deprecated
 	 * `_wcpay_customer_id` user option to the live or test option and deletes the deprecated one.

@@ -250,6 +250,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resolves_new_token_with_authoritative_payment_method_details(): void {
 		$user_id = $this->factory()->user->create();
+		// A card PaymentMethod reduced to what the token reads (Stripe API reference, PaymentMethod object; client includes/class-wc-payments-token-service.php:110-121).
 		$details = array(
 			'id'   => 'pm_explicit_result',
 			'type' => 'card',
@@ -276,6 +277,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$user_id = $this->factory()->user->create();
 		$sut     = $this->create_service(
 			array(
+				// A card PaymentMethod reduced to what the token reads (Stripe API reference, PaymentMethod object; client includes/class-wc-payments-token-service.php:110-121); the returned ID deliberately differs from the requested one.
 				'pm_requested' => array(
 					'id'   => 'pm_returned',
 					'type' => 'card',
@@ -303,6 +305,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$user_id = $this->factory()->user->create();
 		$sut     = $this->create_service(
 			array(
+				// A card PaymentMethod reduced to what the token reads (Stripe API reference, PaymentMethod object; client includes/class-wc-payments-token-service.php:110-121); the ID is deliberately empty.
 				'pm_requested' => array(
 					'id'   => '',
 					'type' => 'card',
