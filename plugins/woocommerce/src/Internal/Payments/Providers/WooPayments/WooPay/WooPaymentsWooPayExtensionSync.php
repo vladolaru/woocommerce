@@ -86,16 +86,25 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * WooPayments Action Scheduler service.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $action_scheduler;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client WooPayments API client.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter          Runtime owner arbiter.
+	 * @param WooPaymentsApiClient              $api_client       WooPayments API client.
+	 * @param WooPaymentsActionSchedulerService $action_scheduler WooPayments Action Scheduler service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
-		$this->arbiter    = $arbiter;
-		$this->api_client = $api_client;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler ): void {
+		$this->arbiter          = $arbiter;
+		$this->api_client       = $api_client;
+		$this->action_scheduler = $action_scheduler;
 	}
 
 	/**
@@ -127,15 +136,7 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 * Schedule recurring WooPay compatibility validation.
 	 */
 	public function schedule(): void {
-		if ( ! function_exists( 'as_next_scheduled_action' ) || ! function_exists( 'as_schedule_recurring_action' ) ) {
-			return;
-		}
-
-		if ( false !== as_next_scheduled_action( self::VALIDATE_COMPATIBILITY_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID ) ) {
-			return;
-		}
-
-		as_schedule_recurring_action( time(), DAY_IN_SECONDS, self::VALIDATE_COMPATIBILITY_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
+		$this->action_scheduler->schedule_recurring_job( self::VALIDATE_COMPATIBILITY_ACTION, time(), DAY_IN_SECONDS );
 	}
 
 	/**
