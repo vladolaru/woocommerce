@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Keeps a Stripe product for each subscription product, and for each one-time item type such as shipping or a sign-up fee.
  *
  * Meta keys, options and hashes are client 11.1.0's (`includes/subscriptions/class-wc-payments-product-service.php`),
- * so a store can go back to the plugin.
+ * so the WooPayments extension reads the same data if the store switches back to it.
  *
  * @since 11.2.0
  * @internal
@@ -418,7 +418,8 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Archive the live and test Stripe products of a product, and archive and forget its legacy prices.
+	 * Archive the live and test Stripe products of a product, and archive and forget the Stripe prices client
+	 * versions before 3.3.0 saved on it.
 	 *
 	 * @param WC_Product $product Product.
 	 */
@@ -461,7 +462,8 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Archive a product's legacy Stripe prices in both modes and delete their meta and the price hash.
+	 * Archive the Stripe prices client versions before 3.3.0 saved on a product, in both modes, and delete their meta and the
+	 * price hash.
 	 *
 	 * @param WC_Product $product Product.
 	 */
@@ -590,10 +592,11 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Log a failure when WooPayments logging is on, at info level as the client does.
+	 * Log a failure when WooPayments logging is on, at info level, as client 11.1.0 does
+	 * (class-wc-payments-product-service.php:400).
 	 *
-	 * The client appends the exception's message, which the platform writes (an email, a URL, any text); native logs
-	 * the exception's class, code, trace and the platform's status and code instead.
+	 * Client 11.1.0 appends the exception's message, which the platform writes (an email, a URL, any text); this logs the
+	 * exception's class, code, trace and the platform's status and code instead.
 	 *
 	 * @param string          $message   Message.
 	 * @param \Throwable|null $exception Caught exception, when there is one.

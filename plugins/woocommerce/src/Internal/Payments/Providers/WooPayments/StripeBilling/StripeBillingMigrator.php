@@ -24,8 +24,9 @@ defined( 'ABSPATH' ) || exit;
  * Moves Stripe-billed subscriptions to on-site renewals with a saved token: cancels the Stripe subscription, keeps the
  * subscription renewing in WooCommerce and renames its Stripe Billing meta with a `_migrated` prefix.
  *
- * Port of client 11.1.0 `includes/subscriptions/class-wc-payments-subscriptions-migrator.php`, with its Action Scheduler
- * hooks, options and meta keys, so a migration started by the plugin finishes on native and the other way round.
+ * Client 11.1.0 does the same in `includes/subscriptions/class-wc-payments-subscriptions-migrator.php`, with the same
+ * Action Scheduler hooks, options and meta keys, so a migration the WooPayments extension started finishes here, and
+ * the other way round.
  * WooCommerce Subscriptions' background repairer schedules and pages the work. The module builds the one instance with `new`
  * only when that class exists; it is never resolved from the container, which would call `init()`, the repairer's hook
  * registration, on every resolve.
@@ -211,7 +212,8 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		}
 
 		if ( is_array( $error ) && ! empty( $error['type'] ) && in_array( $error['type'], array( E_ERROR, E_PARSE, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR ), true ) ) {
-			// The client logs the fatal's message; native leaves it out, since an uncaught exception's message can be the platform's text.
+			// Client 11.1.0 logs the fatal's message (class-wc-payments-subscriptions-migrator.php:504); this line leaves it out,
+			// since an uncaught exception's message can be the platform's text.
 			$this->migration_log->log( sprintf( '---- ERROR: Unexpected shutdown while migrating subscription #%1$d: PHP error type %2$d in %3$s on line %4$s.', $migration_args['migrate_subscription'], (int) $error['type'], $error['file'] ?? 'no file found', $error['line'] ?? '0' ) );
 		}
 
@@ -465,7 +467,8 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		}
 
 		if ( empty( $wcpay_subscription['id'] ) || empty( $wcpay_subscription['status'] ) ) {
-			// The client logs the whole fetched subscription; native leaves the platform's body out of the log.
+			// Client 11.1.0 logs the whole fetched subscription (class-wc-payments-subscriptions-migrator.php:226); this line
+			// leaves the platform's body out of the log.
 			throw new RuntimeException( sprintf( '---- ERROR: Cannot migrate subscription #%1$d (%2$s). Invalid data fetched from Stripe: the subscription has no ID or status.', $subscription->get_id(), $wcpay_subscription_id ) );
 		}
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -603,7 +606,8 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 
 	/**
 	 * Describe a failure for the migration log without its message: a platform error by its HTTP status and listed
-	 * code, anything else by its class. The client logs the message, which the platform writes.
+	 * code, anything else by its class. Client 11.1.0 logs the message, which the platform writes
+	 * (class-wc-payments-subscriptions-migrator.php:222, :256).
 	 *
 	 * @param \Throwable $failure Failure.
 	 * @return string

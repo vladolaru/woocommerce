@@ -20,9 +20,10 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Root of the Stripe Billing module: decides whether it loads, and is the only class the rest of the provider names.
  *
- * Stripe Billing bills WooCommerce Subscriptions renewals at Stripe. As in client 11.1.0, the module loads whenever
- * WooCommerce Subscriptions is active, because subscriptions already billed at Stripe must keep being served after
- * the toggle is turned off; the toggle only decides whether new subscriptions go to Stripe Billing.
+ * Stripe Billing bills WooCommerce Subscriptions renewals at Stripe. As in client 11.1.0 (class-wc-payments.php:847-848),
+ * the module loads whenever WooCommerce Subscriptions is active, because subscriptions already billed at Stripe must
+ * keep being served after the toggle is turned off; the toggle only decides whether new subscriptions go to Stripe
+ * Billing.
  *
  * @since 11.2.0
  * @internal
@@ -72,7 +73,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Decide on `plugins_loaded` priority 11 when native owns payments, after WooCommerce Subscriptions has loaded.
+	 * Decide on `plugins_loaded` priority 11 when the built-in WooPayments owns payments, after WooCommerce
+	 * Subscriptions has loaded.
 	 */
 	public function register(): void {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -101,7 +103,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 
 		$this->loaded = true;
 
-		// The settings page shows the Stripe Billing section on a staging copy too, as the plugin does.
+		// The settings page shows the Stripe Billing section on a staging copy too: client 11.1.0's admin settings check no
+		// staging copy (admin/class-wc-payments-admin.php:1058).
 		add_filter( 'woocommerce_admin_shared_settings', array( $this, 'add_admin_settings' ), 20 );
 
 		// A staging copy must never change anything at Stripe for the live store.
@@ -122,7 +125,7 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell the settings page whether the store may use Stripe Billing, as the plugin's admin settings do.
+	 * Tell the settings page whether the store may use Stripe Billing.
 	 *
 	 * Stripe Billing is available to US stores only (client 11.1.0 `class-wc-payments-features.php:290-297`, `class-wc-payments-admin.php:1057-1058`).
 	 *
@@ -146,7 +149,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the route that starts the migration off Stripe Billing, as the plugin's settings controller does.
+	 * Register the route that starts the migration off Stripe Billing, as client 11.1.0's settings controller does
+	 * (admin/class-wc-rest-payments-settings-controller.php:354).
 	 *
 	 * @internal
 	 */
@@ -167,7 +171,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the module loaded in this request (native owns payments and WooCommerce Subscriptions is active).
+	 * Tell whether the module loaded in this request (the built-in WooPayments owns payments and
+	 * WooCommerce Subscriptions is active).
 	 *
 	 * @return bool
 	 */
@@ -204,7 +209,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Stripe Billing fields of the WooPayments settings, as the plugin's settings controller reports them.
+	 * Get the Stripe Billing fields of the WooPayments settings, as client 11.1.0's settings controller reports them
+	 * (admin/class-wc-rest-payments-settings-controller.php:557, :598-600).
 	 *
 	 * The toggle is reported as stored, whether or not WooCommerce Subscriptions is active.
 	 *
@@ -298,7 +304,8 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 		$this->attach( 'woocommerce_admin_order_data_after_billing_address', StripeBillingSubscriptionService::class, 'show_wcpay_subscription_id' );
 		$this->attach( 'admin_notices', StripeBillingPluginsScreenNotice::class, 'maybe_show_notice' );
 		$this->attach( 'woocommerce_subscription_payment_method_updated_from_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, StripeBillingSubscriptionService::class, 'maybe_cancel_subscription', 10, 2 );
-		// The client sets this context before the filter runs, so it goes first here.
+		// Client 11.1.0 sets this context before the filter runs (src/Internal/Service/OrderService.php:121, :133), so it
+		// goes first here.
 		$this->attach( 'wcpay_metadata_from_order', StripeBillingSubscriptionService::class, 'set_stripe_billing_payment_context', 0, 2 );
 	}
 

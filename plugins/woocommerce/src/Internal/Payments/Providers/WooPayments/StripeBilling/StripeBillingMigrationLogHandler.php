@@ -18,8 +18,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Writes the log of the migration off Stripe Billing, and keeps it through WooCommerce's log cleanup.
  *
- * Port of client 11.1.0 `includes/subscriptions/class-wc-payments-subscription-migration-log-handler.php`, with its log source,
- * so the plugin and native write and keep the same log.
+ * Client 11.1.0 does the same in `includes/subscriptions/class-wc-payments-subscription-migration-log-handler.php`, with the
+ * same log source, so the WooPayments extension and this code write and keep one log.
  *
  * @since 11.2.0
  * @internal

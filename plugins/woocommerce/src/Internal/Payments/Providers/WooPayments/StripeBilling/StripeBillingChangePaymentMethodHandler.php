@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
  * Sends customers of a Stripe-billed subscription whose renewal failed to update their payment method, instead of paying the failed order.
  *
  * Stripe retries the pending invoice once the subscription has a new payment method, so paying the failed order
- * directly is not the flow. Port of client 11.1.0
+ * directly is not the flow. Client 11.1.0 does the same in
  * `includes/subscriptions/class-wc-payments-subscription-change-payment-method-handler.php`.
  *
  * @since 11.2.0

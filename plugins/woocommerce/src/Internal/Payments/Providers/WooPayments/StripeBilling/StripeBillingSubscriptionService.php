@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
  * Links WooCommerce Subscriptions subscriptions to their Stripe subscriptions and keeps them in step.
  *
  * Meta keys and payload shapes are client 11.1.0's (`includes/subscriptions/class-wc-payments-subscription-service.php`),
- * so a store can go back to the plugin.
+ * so the WooPayments extension reads the same data if the store switches back to it.
  *
  * @since 11.2.0
  * @internal
@@ -460,7 +460,8 @@ class StripeBillingSubscriptionService {
 				$this->invoice_service->set_subscription_invoice_id( $subscription, (string) $response['latest_invoice'] );
 			}
 		} catch ( \Exception $exception ) {
-			// The client appends the exception's message (the platform's text); native logs its class, status and code.
+			// Client 11.1.0 appends the exception's message, the platform's text (class-wc-payments-subscription-service.php:459);
+			// this line logs its class, status and code.
 			$this->logger->log_throwable( 'There was a problem creating the WooPayments subscription.', $exception, array( 'subscription_id' => $subscription->get_id() ), 'info' );
 
 			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Checkout error notice text with its own markup, escaped where the notice is printed.
@@ -558,7 +559,8 @@ class StripeBillingSubscriptionService {
 		try {
 			$this->api->cancel_subscription( $wcpay_subscription_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			// The client writes a gated info line only (:525-529); a cancellation that did not reach Stripe keeps billing.
+			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-subscription-service.php:525-529); a
+			// cancellation that did not reach Stripe keeps billing, so this line is always written and the merchant gets a note.
 			$this->logger->log_throwable_always( 'There was a problem canceling the subscription on WooPayments server.', $exception, array( 'subscription_id' => $subscription->get_id() ) );
 			$subscription->add_order_note( __( 'WooPayments could not cancel this subscription at Stripe, so Stripe may keep billing it. Check the subscription in your WooPayments dashboard.', 'woocommerce' ) );
 		}
@@ -725,7 +727,8 @@ class StripeBillingSubscriptionService {
 
 		// Charging the invoice also sends invoice.paid, whose webhook records the payment under the order payment lock.
 		// Completing the order here takes the same lock and reads the order again, so the two cannot both complete it;
-		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock (:677-690).
+		// when the webhook holds the lock, it completes the order. Client 11.1.0 completes inline with no lock
+		// (class-wc-payments-subscription-service.php:677-690).
 		$vocabulary         = new WooPaymentsPersistenceVocabulary();
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
 		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $wcpay_invoice_id, 'payment method change payment' );
@@ -1043,6 +1046,8 @@ class StripeBillingSubscriptionService {
 		/**
 		 * Filters the data a Stripe Billing subscription is created with.
 		 *
+		 * Keeps this name because extensions listen to it.
+		 *
 		 * @since 11.2.0
 		 *
 		 * @param array $data Subscription data: customer, items, and when they apply trial_end, add_invoice_items, discounts, backdate_start_date and billing_cycle_anchor.
@@ -1168,7 +1173,8 @@ class StripeBillingSubscriptionService {
 			return '';
 		}
 
-		// The user's customer, as the client's get_customer_id_for_order() reads it (customer service :431-446).
+		// The user's customer, as client 11.1.0's get_customer_id_for_order() reads it
+		// (class-wc-payments-customer-service.php:431-446).
 		return $this->customer_service->get_or_create_customer_id_for_user( (int) $subscription->get_user_id() );
 	}
 
@@ -1243,7 +1249,8 @@ class StripeBillingSubscriptionService {
 	 * Update the Stripe subscription of a subscription, logging a platform failure instead of passing it on.
 	 *
 	 * The failure line is written whatever the logging setting, and the note, when given, tells the merchant Stripe is out
-	 * of step; the client writes a gated info line only (class-wc-payments-subscription-service.php:1014-1018).
+	 * of step; client 11.1.0 logs it at info level only when WooPayments logging is on
+	 * (class-wc-payments-subscription-service.php:1014-1018).
 	 *
 	 * @param WC_Order            $subscription Subscription.
 	 * @param array<string,mixed> $data         Subscription data.

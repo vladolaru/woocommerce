@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
  * Keeps WooCommerce orders and subscriptions in step with their Stripe Billing invoices.
  *
  * Meta keys and platform calls are client 11.1.0's (`includes/subscriptions/class-wc-payments-invoice-service.php`),
- * so a store can go back to the plugin.
+ * so the WooPayments extension reads the same data if the store switches back to it.
  *
  * @since 11.2.0
  * @internal
@@ -271,7 +271,11 @@ class StripeBillingInvoiceService {
 	}
 
 	/**
-	 * Tell the platform whether an invoice was paid under Stripe Billing or a legacy WooPayments subscription.
+	 * Tell the platform, on an invoice's payment intent, whether Stripe Billing is on for the store.
+	 *
+	 * `legacy_wcpay_subscription` is the subscription context sent with the invoice's payment intent while Stripe Billing is
+	 * off for the store; the platform copies it into the intent's metadata, and client 11.1.0 sends the same value
+	 * (class-wc-payments-invoice-service.php:315).
 	 *
 	 * @param string $invoice_id Invoice ID.
 	 * @return array<string,mixed> The invoice.
@@ -430,7 +434,9 @@ class StripeBillingInvoiceService {
 	}
 
 	/**
-	 * Get the subscription service when it is used, as client 11.1.0 does: the subscription service uses this service.
+	 * Get the subscription service.
+	 *
+	 * Resolved on use: the subscription service injects this service, so injecting it back would make a construction cycle.
 	 *
 	 * @return StripeBillingSubscriptionService
 	 */

@@ -260,7 +260,8 @@ class StripeBillingApi {
 	}
 
 	/**
-	 * Map a platform failure to the module's exception when the module handles it (client 11.1.0 `request()` `:2845-2895`).
+	 * Map a platform failure to the module's exception when the module handles it (client 11.1.0
+	 * `request()`, wc-payment-api/class-wc-payments-api-client.php:2845-2895).
 	 *
 	 * @param WooPaymentsApiException $exception Platform failure.
 	 * @return \RuntimeException
@@ -283,7 +284,8 @@ class StripeBillingApi {
 		$offset  = strpos( $message, self::CANNOT_COMBINE_CURRENCIES_MESSAGE );
 		if ( 'invalid_request_error' === $exception->get_error_code() && false !== $offset ) {
 			$platform_message = substr( $message, $offset );
-			// The currency closes the message: "... in usd." (client 11.1.0 `request()`).
+			// The currency closes the message: "... in usd." (client 11.1.0 `request()`,
+			// wc-payment-api/class-wc-payments-api-client.php:2878-2884).
 			$currency = strtoupper( substr( substr( $platform_message, -4 ), 0, 3 ) );
 			if ( array_key_exists( $currency, get_woocommerce_currencies() ) ) {
 				return new StripeBillingException( $platform_message, StripeBillingException::CANNOT_COMBINE_CURRENCIES, array( 'currency' => $currency ), $exception );
@@ -294,7 +296,8 @@ class StripeBillingApi {
 	}
 
 	/**
-	 * Refuse an empty ID, as the client does for products and prices.
+	 * Refuse an empty ID, as client 11.1.0's update_product() and update_price() do
+	 * (wc-payment-api/class-wc-payments-api-client.php:1463, :1495).
 	 *
 	 * @param string $id         Stripe ID.
 	 * @param string $message    Failure message.
@@ -309,7 +312,8 @@ class StripeBillingApi {
 	}
 
 	/**
-	 * Validate a Stripe ID used in a path, as the client does.
+	 * Validate a Stripe ID used in a path, as client 11.1.0 does for each route parameter
+	 * (wc-payment-api/class-wc-payments-api-client.php:1471, :1679).
 	 *
 	 * @param string $id Stripe ID.
 	 * @return string The ID.

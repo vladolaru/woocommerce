@@ -15,8 +15,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Tells WooCommerce Subscriptions the smallest recurring amount Stripe Billing can charge in a currency.
  *
- * Port of client 11.1.0 `includes/subscriptions/class-wc-payments-subscription-minimum-amount-handler.php`, with its
- * transient, so a store can go back to the plugin.
+ * Client 11.1.0 does the same in `includes/subscriptions/class-wc-payments-subscription-minimum-amount-handler.php`; the
+ * amount is cached under its transient key, so the WooPayments extension and this code share it.
  *
  * @since 11.2.0
  * @internal
@@ -49,7 +49,8 @@ class StripeBillingMinimumAmountHandler {
 	/**
 	 * Get the minimum recurring amount for a currency from the platform, cached for a day; 0 when the platform refuses.
 	 *
-	 * The value WooCommerce Subscriptions passes in is ignored, as in the client.
+	 * The value WooCommerce Subscriptions passes in is ignored, as client 11.1.0 ignores it
+	 * (class-wc-payments-subscription-minimum-amount-handler.php:67-68).
 	 *
 	 * @internal
 	 *

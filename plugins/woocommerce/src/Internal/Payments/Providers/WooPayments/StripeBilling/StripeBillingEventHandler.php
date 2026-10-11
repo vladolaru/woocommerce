@@ -36,7 +36,8 @@ defined( 'ABSPATH' ) || exit;
 class StripeBillingEventHandler {
 
 	/**
-	 * Failed renewal attempts after which the subscription is cancelled (client 11.1.0 `MAX_RETRIES`).
+	 * Failed renewal attempts after which the subscription is cancelled (client 11.1.0 `MAX_RETRIES`,
+	 * class-wc-payments-subscriptions-event-handler.php:24).
 	 */
 	private const MAX_RETRIES = 4;
 
@@ -116,9 +117,9 @@ class StripeBillingEventHandler {
 	 * Handle one invoice event.
 	 *
 	 * An event with missing data, or about a subscription this store does not have, is refused with an
-	 * `InvalidArgumentException`, which the webhook answers with 400 and does not retry. As on the client, the webhook route
-	 * or the failed-event job that catches the refusal logs it. Other failures, such as a platform call that fails, are
-	 * passed on so the event is retried.
+	 * `InvalidArgumentException`, which the webhook answers with 400 and does not retry. The webhook route or the
+	 * failed-event job that catches the refusal logs it. Other failures, such as a platform call that fails, are passed on
+	 * so the event is retried.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws InvalidArgumentException When the event has missing data or names no subscription of this store.
@@ -307,8 +308,9 @@ class StripeBillingEventHandler {
 		}
 
 		if ( null !== $intent && ! $was_succeeded ) {
-			// The client attaches the fetched intent here: the transaction id even on an order a retry already paid, where
-			// payment_complete() ignores it, and the currency upper case, where the webhook writes it lower case.
+			// Client 11.1.0 attaches the fetched intent here (class-wc-payments-invoice-service.php:289-301): the transaction id
+			// even on an order a retry already paid, where payment_complete() ignores it, and the currency upper case, where the
+			// webhook writes it lower case.
 			$order->set_transaction_id( $intent_id );
 			$order->update_meta_data( '_wcpay_intent_currency', strtoupper( isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? $intent['currency'] : $order->get_currency() ) );
 			$order->save();
@@ -353,7 +355,8 @@ class StripeBillingEventHandler {
 			try {
 				$charge = $this->api_client->get_charge( $event_object['charge'] );
 			} catch ( WooPaymentsApiException $exception ) {
-				// The client appends the platform's message; native logs its status and code.
+				// Client 11.1.0 appends the platform's message (class-wc-payments-subscriptions-event-handler.php:242); this line
+				// logs its status and code instead.
 				$this->logger->log_throwable( sprintf( 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: %s.', $event_object['charge'] ), $exception );
 			}
 		}
@@ -448,10 +451,11 @@ class StripeBillingEventHandler {
 	/**
 	 * Fail an invoice's renewal order and move the subscription to the given status, as WooCommerce Subscriptions does.
 	 *
-	 * The client calls `payment_failed()` (event handler :298-304), which WooCommerce Subscriptions deprecated in 7.9.0
-	 * because it fails the subscription's last order, whichever invoice it belongs to. The invoice's own order is passed
-	 * to `payment_failed_for_related_order()` instead. Before 7.9.0, `payment_failed()` runs only when the last order is
-	 * the invoice's; otherwise the invoice's order is failed and noted here, and the subscription is left as it is.
+	 * Client 11.1.0 calls `payment_failed()` (class-wc-payments-subscriptions-event-handler.php:298-304), which WooCommerce
+	 * Subscriptions deprecated in 7.9.0 because it fails the subscription's last order, whichever invoice it belongs to.
+	 * The invoice's own order is passed to `payment_failed_for_related_order()` instead. Before 7.9.0, `payment_failed()`
+	 * runs only when the last order is the invoice's; otherwise the invoice's order is failed and noted here, and the
+	 * subscription is left as it is.
 	 *
 	 * @param WC_Order $subscription Subscription.
 	 * @param WC_Order $order        The invoice's renewal order.
@@ -589,7 +593,10 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Mark a renewal order paid when its payment intent cannot be read, as the client does, keeping the IDs a refund needs.
+	 * Mark a renewal order paid when its payment intent cannot be read, and note that the payment info is missing.
+	 *
+	 * Client 11.1.0 does the same (class-wc-payments-subscriptions-event-handler.php:174,
+	 * class-wc-payments-invoice-service.php:295-297) but stores no ID; this keeps the intent and charge IDs a refund needs.
 	 *
 	 * @param WC_Order            $order        Renewal order.
 	 * @param string              $intent_id    Payment intent ID, or an empty string when the invoice has none.
@@ -610,7 +617,8 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Get a value from event data, as client 11.1.0's `get_event_property()` reads it: a missing or null value is refused.
+	 * Get a value from event data, as client 11.1.0's `get_event_property()` reads it
+	 * (class-wc-payments-subscriptions-event-handler.php:323-337): a missing or null value is refused.
 	 *
 	 * @param array<string,mixed> $data Event data.
 	 * @param string[]            $keys Keys leading to the value.
@@ -662,6 +670,8 @@ class StripeBillingEventHandler {
 
 	/**
 	 * Log that an invoice event was skipped because this site is a staging copy.
+	 *
+	 * Logs both site URLs, so support can see why renewals paused on a site WooCommerce Subscriptions treats as a staging copy.
 	 *
 	 * @param string $event_type            Event type.
 	 * @param string $wcpay_subscription_id Stripe subscription ID.

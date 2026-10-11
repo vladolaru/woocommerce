@@ -13,8 +13,8 @@ defined( 'ABSPATH' ) || exit;
  * Warns on the Plugins screen that Stripe-billed subscriptions keep renewing after WooCommerce Subscriptions is deactivated.
  *
  * Client 11.1.0 stops the deactivation with a confirmation modal (`includes/subscriptions/class-wc-payments-subscriptions-plugin-notice-manager.php`,
- * `templates/html-subscriptions-plugin-notice.php`). Matching that modal needs the plugin's own stylesheet, so native shows the
- * same copy as a warning notice on the same screen instead (spec section 6, monitor 2026-10-02 Q-13).
+ * `templates/html-subscriptions-plugin-notice.php`). The modal runs on client 11.1.0's own script and stylesheet
+ * (`includes/subscriptions/assets/`), so this shows the modal's warning text as a notice on the same screen instead.
  *
  * @since 11.2.0
  * @internal

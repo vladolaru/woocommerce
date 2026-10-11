@@ -40,7 +40,8 @@ class StripeBillingException extends RuntimeException {
 	public const INVOICE_ITEMS_MISMATCH = 'invoice_items_mismatch';
 
 	/**
-	 * A subscription item's product no longer exists, so it has no Stripe product to bill (the client fatals here).
+	 * A subscription item's product no longer exists, so it has no Stripe product to bill (client 11.1.0 fatals
+	 * here, class-wc-payments-subscription-service.php:877).
 	 */
 	public const SUBSCRIPTION_PRODUCT_MISSING = 'subscription_product_missing';
 
