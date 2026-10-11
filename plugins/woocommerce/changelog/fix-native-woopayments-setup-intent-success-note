@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add the WooPayments payment note to orders and subscriptions when a $0 setup of a payment method succeeds, as the WooPayments plugin does.

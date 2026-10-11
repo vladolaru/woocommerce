@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Payment method settings links such as the Klarna one in new-method emails now always open the WooPayments settings page.

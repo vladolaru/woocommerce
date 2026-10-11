@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show "Error loading account details." on the WooPayments Overview when the platform sends no account details, instead of hiding the card.

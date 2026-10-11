@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-onboarding-selected-persistence-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "df9215dc4b9e13b935d613e52a5fd215444ad2e4",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:139::Multi-currency on-boarding › Currency selection and management › selected currencies are enabled after onboarding"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/multi-currency.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 59bb65ba06b2545a762e35c7f4bf3172290ad35e1ad818a182352fcc3c1bcda9 against ledger SHA 74b1df4a248206c1dd25853e8a2416020cd57b612fb4cae782bf51ba4ae6725c with no findings. Exactly line 139 changes only fields 37-40 to deferred/blocked-environment/blocked-environment:PILOT-NATIVE-READINESS/evidence while the pending accepted disposition, absent shared-scenario target, pending target contract, and unresolved owner remain. The evidence binds deterministic GBP/EUR/CAD/AUD selection, pre-dispatch intent, one zero-retry update, unambiguous success, an authoritative baseline-union set with every selected code once, one reloaded UI row each, and set-not-order comparison. Complete raw snapshot/restoration, pre-write journal, catalog/cache ownership, locks/quarantine, drift, accessibility, and adjacent isolation are covered. Core management plus authenticated REST remains an honest provisional adapter without a production defect claim, while shopper, rates, geolocation, checkout/order, recommendation, and provider outcomes remain excluded."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native multi-currency surface can run; the provisional shared target is absent; and the exact target contract, settings owner, deterministic four-currency catalog fixture, single-write driver, complete restoration mechanism, and row-safe topology remain pending. Core's management modal and authenticated update endpoint are a plausible honest thin adapter for the selected-set-to-enabled-configuration outcome, so no production defect or product-authority conflict is established.",
+		"affected_scope": "Only the exact persistence boundary: select deterministic GBP, EUR, CAD, and AUD together, dispatch exactly one approved settings update, join one unambiguous successful response to a fresh authoritative enabled-code set containing the baseline plus all four codes exactly once, and require exactly one merchant-visible enabled-currency row for each selected code after reload. Compare sets rather than order. Shopper availability, exchange rates, geolocation, checkout or order currency, recommendation policy, and provider amounts remain separate.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, invent the pending target/owner/topology, guarantee the exact catalog, or perform an unjournaled persistent mutation. Component and REST tests cannot substitute for one browser submission joined to exact authoritative raw state, unique merchant rows, occurrence count, and complete byte restoration. No provider writer or listener can unlock this local currency-settings contract.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve the shared-scenario target, settings owner, adapter, and row-safe topology; provide the deterministic GBP/EUR/CAD/AUD catalog under ordered account, store, currency-settings, and catalog/cache ownership with a complete byte-exact snapshot and pre-write restoration journal; implement one zero-retry submission with intent recorded before dispatch, authoritative set and unique UI joins, and exact restoration through the approved local provisioner; then obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, currency setting, catalog fixture, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous submission, extra request, set or identity mismatch, raw drift beyond the approved mutation, catalog drift, lost ownership, or incomplete restoration must preserve evidence and quarantine the exact store, currency settings, catalog/cache fixture, and journal; no financial or provider resource belongs to this contract."
+	}
+}

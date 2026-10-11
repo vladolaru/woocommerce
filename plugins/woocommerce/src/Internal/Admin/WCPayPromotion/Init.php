@@ -1,191 +1,155 @@
 <?php
 /**
- * Handles WooPayments promotion.
+ * Deprecated WooPayments promotion engine stub.
  */
+
+declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\WCPayPromotion;
 
 defined( 'ABSPATH' ) || exit;
 
-use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\EvaluateSuggestion;
-use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
-use Automattic\WooCommerce\Utilities\FeaturesUtil;
 
 /**
  * WooPayments Promotion engine.
  *
- * @deprecated 9.9.0 The WooPayments promotion engine is deprecated and will be removed in a future version of WooCommerce.
+ * Kept only so third-party references keep resolving; every method is an inert no-op.
+ * Also reachable through the `Automattic\WooCommerce\Admin\Features\WcPayPromotion\Init` alias.
+ *
+ * @deprecated 9.9.0 The WooPayments promotion engine no longer runs. Scheduled for removal in WooCommerce 12.0.0.
  */
 class Init extends RemoteSpecsEngine {
 
 	/**
-	 * Possibly registers the pre-install WooPayments promoted gateway.
+	 * Return the gateway list unchanged.
+	 *
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
 	 *
 	 * @param array $gateways List of gateway classes.
 	 *
-	 * @return array List of gateway classes.
+	 * @return array The unchanged list of gateway classes.
 	 */
 	public static function possibly_register_pre_install_wc_pay_promotion_gateway( $gateways ) {
-		if ( self::can_show_promotion() && ! WCPaymentGatewayPreInstallWCPayPromotion::is_dismissed() ) {
-			$gateways[] = 'Automattic\WooCommerce\Internal\Admin\WCPayPromotion\WCPaymentGatewayPreInstallWCPayPromotion';
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0' );
+
 		return $gateways;
 	}
 
 	/**
-	 * Checks if promoted gateway can be registered.
+	 * The promotion is never shown.
 	 *
-	 * @return boolean If promoted gateway should be registered.
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return boolean Always false.
 	 */
 	public static function can_show_promotion() {
-		// Don't show if WooPayments is enabled.
-		if ( class_exists( '\WC_Payments' ) ) {
-			return false;
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		// Don't show if there is no WooPayments promotion spec.
-		$wc_pay_spec = self::get_wc_pay_promotion_spec();
-		if ( ! $wc_pay_spec ) {
-			return false;
-		}
-
-		return true;
+		return false;
 	}
 
 	/**
-	 * By default, new payment gateways are put at the bottom of the list on the admin "Payments" settings screen.
-	 * For visibility, we want WooPayments to be at the top of the list.
+	 * Return the gateway ordering unchanged.
+	 *
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
 	 *
 	 * @param array $ordering Existing ordering of the payment gateways.
 	 *
-	 * @return array Modified ordering.
+	 * @return array The unchanged ordering.
 	 */
 	public static function set_gateway_top_of_list( $ordering ) {
-		$ordering = (array) $ordering;
-		$id       = WCPaymentGatewayPreInstallWCPayPromotion::GATEWAY_ID;
-		// Only tweak the ordering if the list hasn't been reordered with WooPayments in it already.
-		if ( ! isset( $ordering[ $id ] ) || ! is_numeric( $ordering[ $id ] ) ) {
-			$is_empty        = empty( $ordering ) || ( count( $ordering ) === 1 && in_array( $ordering[0], array( false, '' ) ) );
-			$ordering[ $id ] = $is_empty ? 0 : ( min( array_map( 'intval', $ordering ) ) - 1 );
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
 		return $ordering;
 	}
 
 	/**
-	 * Get WooPayments promotion spec.
+	 * There is no promotion spec.
 	 *
-	 * @param boolean $fetch_from_remote Whether to fetch the spec from remote or not.
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
 	 *
-	 * @return object|false WooPayments promotion spec or false if there isn't one.
+	 * @param boolean $fetch_from_remote Unused.
+	 *
+	 * @return false Always false.
 	 */
-	public static function get_wc_pay_promotion_spec( $fetch_from_remote = true ) {
-		$promotions            = $fetch_from_remote ? self::get_promotions() : self::get_cached_or_default_promotions();
-		$wc_pay_promotion_spec = array_values(
-			array_filter(
-				$promotions,
-				function ( $promotion ) {
-					return isset( $promotion->plugins ) && in_array( 'woocommerce-payments', $promotion->plugins, true );
-				}
-			)
-		);
+	public static function get_wc_pay_promotion_spec( $fetch_from_remote = true ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Kept for signature compatibility.
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		return current( $wc_pay_promotion_spec );
+		return false;
 	}
 
 	/**
-	 * Go through the specs and run them.
+	 * There are no promotions.
 	 *
-	 * @return array List of promotions.
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return array Always an empty list.
 	 */
 	public static function get_promotions() {
-		$locale = get_user_locale();
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		$specs           = self::get_specs();
-		$results         = EvaluateSuggestion::evaluate_specs( $specs, array( 'source' => 'wc-wcpay-promotions' ) );
-		$specs_to_return = $results['suggestions'];
-		$specs_to_save   = null;
-
-		if ( empty( $specs_to_return ) ) {
-			// When specs are empty, replace it with defaults and save for 3 hours.
-			$specs_to_save   = DefaultPromotions::get_all();
-			$specs_to_return = EvaluateSuggestion::evaluate_specs( $specs_to_save )['suggestions'];
-		} elseif ( count( $results['errors'] ) > 0 ) {
-			// When specs are not empty but have errors, save for 3 hours.
-			$specs_to_save = $specs;
-		}
-
-		if ( count( $results['errors'] ) > 0 ) {
-			self::log_errors( $results['errors'] );
-		}
-
-		if ( $specs_to_save ) {
-			WCPayPromotionDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
-		}
-
-		return $specs_to_return;
+		return array();
 	}
 
 	/**
-	 * Gets either cached or default promotions.
+	 * There are no promotions.
 	 *
-	 * @return array
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return array Always an empty list.
 	 */
 	public static function get_cached_or_default_promotions() {
-		$specs = 'no' === get_option( 'woocommerce_show_marketplace_suggestions', 'yes' )
-			? DefaultPromotions::get_all()
-			: WCPayPromotionDataSourcePoller::get_instance()->get_cached_specs();
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		if ( ! is_array( $specs ) || 0 === count( $specs ) ) {
-			$specs = DefaultPromotions::get_all();
-		}
-		$results = EvaluateSuggestion::evaluate_specs( $specs, array( 'source' => 'wc-wcpay-promotions' ) );
-		return $results['suggestions'];
+		return array();
 	}
 
 	/**
-	 * Get merchant WooPay eligibility.
+	 * The merchant is never reported as WooPay eligible by this engine.
 	 *
-	 * @return boolean If merchant is eligible for WooPay.
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return boolean Always false.
 	 */
 	public static function is_woopay_eligible() {
-		$wcpay_promotion = self::get_wc_pay_promotion_spec( false );
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		return $wcpay_promotion && 'woocommerce_payments:woopay' === $wcpay_promotion->id;
+		return false;
 	}
 
 	/**
-	 * Delete the specs transient.
+	 * Do nothing: there are no specs to delete.
+	 *
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return void
 	 */
 	public static function delete_specs_transient() {
-		WCPayPromotionDataSourcePoller::get_instance()->delete_specs_transient();
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 	}
 
 	/**
-	 * Get specs or fetch remotely if they don't exist.
+	 * There are no specs.
 	 *
-	 * @return array List of specs.
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return array Always an empty list.
 	 */
 	public static function get_specs() {
-		if ( get_option( 'woocommerce_show_marketplace_suggestions', 'yes' ) === 'no' ) {
-			return DefaultPromotions::get_all();
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 
-		$specs = WCPayPromotionDataSourcePoller::get_instance()->get_specs_from_data_sources();
-		// On empty remote specs, fallback to default ones.
-		if ( ! is_array( $specs ) || 0 === count( $specs ) ) {
-			$specs = DefaultPromotions::get_all();
-		}
-
-		return $specs;
+		return array();
 	}
 
 	/**
-	 * Loads the payment method promotions scripts and styles.
+	 * Do nothing: there are no promotion assets to load.
+	 *
+	 * @deprecated 9.9.0 The WooPayments promotion engine no longer runs.
+	 *
+	 * @return void
 	 */
 	public static function load_payment_method_promotions() {
-		WCAdminAssets::register_style( 'payment-method-promotions', 'style', array( 'wp-components' ) );
-		WCAdminAssets::register_script( 'wp-admin-scripts', 'payment-method-promotions', true );
+		wc_deprecated_function( __METHOD__, '9.9.0' );
 	}
 }

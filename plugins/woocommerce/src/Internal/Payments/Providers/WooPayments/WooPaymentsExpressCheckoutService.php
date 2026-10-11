@@ -1,0 +1,1098 @@
+<?php
+/**
+ * WooPaymentsExpressCheckoutService class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+
+/**
+ * Native WooPayments express checkout helpers for platform payment methods.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsExpressCheckoutService {
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * WooPayments provider.
+	 *
+	 * @var WooPaymentsProvider
+	 */
+	private WooPaymentsProvider $provider;
+
+	/**
+	 * Frontend tracking controller.
+	 *
+	 * @var WooPaymentsFrontendTrackingController
+	 */
+	private WooPaymentsFrontendTrackingController $frontend_tracking_controller;
+
+	/**
+	 * Whether the stable product-page shortcode context has been resolved.
+	 *
+	 * @var bool
+	 */
+	private bool $product_page_shortcode_context_resolved = false;
+
+	/**
+	 * Product resolved from the stable product-page shortcode context.
+	 *
+	 * @var \WC_Product|null
+	 */
+	private ?\WC_Product $product_page_shortcode_product = null;
+
+	/**
+	 * Whether the current order-pay surface can show ECE, decided once per request, or null before the first decision.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $pay_for_order_supported = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsAccountService             $account_service              WooPayments account service.
+	 * @param WooPaymentsProvider                   $provider                     WooPayments provider.
+	 * @param WooPaymentsFrontendTrackingController $frontend_tracking_controller Frontend tracking controller.
+	 */
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsProvider $provider, WooPaymentsFrontendTrackingController $frontend_tracking_controller ): void {
+		$this->account_service              = $account_service;
+		$this->provider                     = $provider;
+		$this->frontend_tracking_controller = $frontend_tracking_controller;
+	}
+
+	/**
+	 * Tell whether the payment-request express checkout button should be shown.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	public function should_show_payment_request_button( string $context = 'checkout' ): bool {
+		$context = $this->normalize_button_context( $context );
+
+		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
+		if ( WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) ) {
+			return false;
+		}
+
+		if ( ! $this->provider->can_process_payments() ) {
+			return false;
+		}
+
+		if ( 'pay_for_order' === $context && ! $this->is_pay_for_order_supported() ) {
+			return false;
+		}
+
+		if ( 'product' === $context && ! $this->is_product_supported() ) {
+			return false;
+		}
+
+		if ( in_array( $context, array( 'cart', 'checkout' ), true ) && ! $this->is_cart_supported() ) {
+			return false;
+		}
+
+		if ( 'pay_for_order' !== $context && $this->would_add_unshown_billing_address_tax( $context ) ) {
+			return false;
+		}
+
+		if ( 'pay_for_order' !== $context && $this->is_zero_amount( $context ) ) {
+			return false;
+		}
+
+		return ! empty( $this->get_allowed_payment_method_types_for_context( $context, $this->get_context_currency( $context ) ) );
+	}
+
+	/**
+	 * Get express checkout params for Apple Pay, Google Pay and Amazon Pay.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return array<string,mixed>
+	 */
+	public function get_express_checkout_params( string $context = 'checkout' ): array {
+		$context          = $this->normalize_button_context( $context );
+		$context_currency = $this->get_context_currency( $context );
+		$currency         = strtolower( '' === $context_currency ? get_woocommerce_currency() : $context_currency );
+		$decimals         = wc_get_price_decimals();
+		$tracking_enabled = $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled( false, true );
+
+		$params = array(
+			'ajax_url'                    => admin_url( 'admin-ajax.php' ),
+			'tracks_url'                  => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'wc_ajax_url'                 => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
+			'nonce'                       => array(
+				'platform_tracker'             => wp_create_nonce( 'platform_tracks_nonce' ),
+				'tracks_rest'                  => wp_create_nonce( 'wp_rest' ),
+				'tokenized_cart_nonce'         => wp_create_nonce( WooPaymentsTokenizedCartSessionController::TOKENIZED_CART_NONCE_ACTION ),
+				'tokenized_cart_session_nonce' => wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' ),
+				'store_api_nonce'              => wp_create_nonce( 'wc_store_api' ),
+			),
+			'checkout'                    => array(
+				'currency_code'              => $currency,
+				'currency_decimals'          => $decimals,
+				'stripe_minor_unit'          => WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ),
+				'country_code'               => $this->get_store_base_country(),
+				'needs_shipping'             => WC() && WC()->cart ? WC()->cart->needs_shipping() : false,
+				'needs_payer_phone'          => 'required' === get_option( 'woocommerce_checkout_phone_field', 'required' ),
+				'allowed_shipping_countries' => WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
+				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
+			),
+			'has_subscription'            => $this->context_has_subscription( $context ),
+			'is_manual_capture'           => $this->is_truthy_gateway_setting( 'manual_capture' ),
+			// Snake case only, as client 11.1.0 adds it to these params (class-woopay-tracker.php:672).
+			'is_shopper_tracking_enabled' => $tracking_enabled,
+			'button'                      => $this->get_button_settings( $context ),
+			'login_confirmation'          => $this->get_login_confirmation_settings( $context ),
+			'button_context'              => $context,
+			'has_block'                   => has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ),
+			'product'                     => 'product' === $context ? $this->get_product_data() : array(),
+			'store_name'                  => get_bloginfo( 'name' ),
+			'enabled_methods'             => $this->get_enabled_methods_for_context( $context, $context_currency ),
+			'payment_method_types'        => $this->get_allowed_payment_method_types_for_context( $context, $context_currency ),
+			'stripe'                      => array(
+				'publishableKey' => $this->account_service->get_publishable_key(),
+				'accountId'      => $this->account_service->get_account_id(),
+				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
+				// Drives the Link autofill beta on the express Stripe instances,
+				// matching the reference client's shared connected-account instance.
+				'linkEnabled'    => WooPaymentsFeaturePolicy::is_link_folded_into_card(
+					$this->account_service,
+					wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry::class ),
+					$context_currency
+				),
+			),
+			'flags'                       => array(
+				'isEceUsingConfirmationTokens' => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
+			),
+		);
+
+		return 'pay_for_order' === $context ? array_merge( $params, $this->get_pay_for_order_params() ) : $params;
+	}
+
+	/**
+	 * Get the frontend tracking controller.
+	 *
+	 * @return WooPaymentsFrontendTrackingController
+	 */
+	private function get_frontend_tracking_controller(): WooPaymentsFrontendTrackingController {
+		if ( ! isset( $this->frontend_tracking_controller ) ) {
+			$this->frontend_tracking_controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
+		}
+
+		return $this->frontend_tracking_controller;
+	}
+
+	/**
+	 * Get enabled express checkout platform methods for a context.
+	 *
+	 * @param string $context Express checkout context.
+	 * @param string $currency Optional order/cart currency.
+	 * @return array<int,string>
+	 */
+	public function get_enabled_methods_for_context( string $context = 'checkout', string $currency = '' ): array {
+		return WooPaymentsExpressPaymentMethodTypes::get_enabled_methods_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
+	}
+
+	/**
+	 * Get server-allowed Stripe payment method types for a context.
+	 *
+	 * @param string $context Express checkout context.
+	 * @param string $currency Optional order/cart currency.
+	 * @return array<int,string>
+	 */
+	public function get_allowed_payment_method_types_for_context( string $context = 'checkout', string $currency = '' ): array {
+		return WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
+	}
+
+	/**
+	 * Tell whether the gateway-level payment-request switch is enabled.
+	 *
+	 * @return bool
+	 */
+	public function is_payment_request_enabled(): bool {
+		return $this->account_service->is_payment_request_enabled();
+	}
+
+	/**
+	 * Tell whether Amazon Pay is usable for express checkout, whichever locations list it.
+	 *
+	 * The client's `can_use_amazon_pay()` (11.1.0 class-wc-payments-express-checkout-button-helper.php:362-388).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $context  Express checkout context.
+	 * @param string $currency Optional order/cart currency; the store currency when empty.
+	 * @return bool
+	 */
+	public function is_amazon_pay_usable( string $context = 'checkout', string $currency = '' ): bool {
+		return WooPaymentsExpressPaymentMethodTypes::is_amazon_pay_usable( $this->account_service, $this->normalize_button_context( $context ), $currency );
+	}
+
+	/**
+	 * Tell whether express checkout is available, using the guards WooPayments checks before
+	 * registering its express checkout Store API hooks: payments enabled on the account, the
+	 * gateway enabled, and Apple Pay/Google Pay or Amazon Pay usable.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_express_checkout_available(): bool {
+		return $this->account_service->is_gateway_enabled()
+			&& $this->account_service->has_working_account()
+			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 checks Amazon Pay whichever locations list it.
+			&& ( $this->is_payment_request_enabled() || $this->is_amazon_pay_usable() );
+	}
+
+	/**
+	 * Get button settings shared by Apple Pay and Google Pay.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return array<string,string>
+	 */
+	private function get_button_settings( string $context ): array {
+		$type = $this->get_string_gateway_setting( 'payment_request_button_type', 'default' );
+
+		return array(
+			'type'         => $type,
+			'theme'        => $this->get_string_gateway_setting( 'payment_request_button_theme', 'dark' ),
+			'height'       => $this->get_button_height(),
+			'radius'       => $this->get_string_gateway_setting_allow_empty( 'payment_request_button_border_radius', '' ),
+			'size'         => $this->get_string_gateway_setting( 'payment_request_button_size', 'default' ),
+			'context'      => $this->normalize_button_context( $context ),
+			'locale'       => substr( get_locale(), 0, 2 ),
+			'branded_type' => 'default' === $type ? 'short' : 'long',
+		);
+	}
+
+	/**
+	 * Get the button height from the express checkout size setting.
+	 *
+	 * @return string
+	 */
+	private function get_button_height(): string {
+		$size = $this->get_string_gateway_setting( 'payment_request_button_size', 'medium' );
+
+		if ( 'medium' === $size ) {
+			return '48';
+		}
+
+		if ( 'large' === $size ) {
+			return '55';
+		}
+
+		return '40';
+	}
+
+	/**
+	 * Normalize an express checkout context.
+	 *
+	 * @param string $context Context.
+	 * @return string
+	 */
+	private function normalize_button_context( string $context ): string {
+		$context = sanitize_key( $context );
+
+		return in_array( $context, array( 'product', 'cart', 'checkout', 'pay_for_order' ), true ) ? $context : 'checkout';
+	}
+
+	/**
+	 * Tell whether the current order-pay surface can show ECE.
+	 *
+	 * Only with the order-pay params the button needs (WooPaymentsOrderPayAccess::get_pay_for_order_page_params()), as the
+	 * WooPay button does. The sheet's amount and currency come from the Store API order, so the order must be stated there as
+	 * it is charged (WooPaymentsOrderPayAccess::store_api_states_order_total()). Decided once per request: multi-currency
+	 * switches the active currency to the order's inside the pay form, after the config is built, and the button follows it.
+	 *
+	 * @return bool
+	 */
+	private function is_pay_for_order_supported(): bool {
+		if ( null === $this->pay_for_order_supported ) {
+			$order = $this->get_pay_for_order_order();
+
+			$this->pay_for_order_supported = $order instanceof \WC_Order
+				&& $order->needs_payment()
+				&& array() !== $this->get_pay_for_order_params()
+				&& WooPaymentsOrderPayAccess::store_api_states_order_total( $order );
+		}
+
+		return $this->pay_for_order_supported;
+	}
+
+	/**
+	 * Tell whether the current product page can show ECE.
+	 *
+	 * @return bool
+	 */
+	private function is_product_supported(): bool {
+		$product = $this->get_product_for_product_page();
+		if ( ! $product instanceof \WC_Product ) {
+			return false;
+		}
+
+		$supported_types = $this->get_supported_product_types();
+		if ( ! is_array( $supported_types ) || ! in_array( $product->get_type(), $supported_types, true ) ) {
+			return false;
+		}
+
+		// The raw price, as client 11.1.0 (button helper :657): a sign-up fee or deposit alone does not make a free product payable here.
+		$supported = ! $this->is_reference_blocked_product( $product ) && (float) $product->get_price() > 0;
+
+		/**
+		 * Filters whether a product can show WooPayments product-page express checkout.
+		 *
+		 * @param bool        $supported Whether the product is supported.
+		 * @param \WC_Product $product   Product object.
+		 *
+		 * @since 11.0.0
+		 */
+		$supported = (bool) apply_filters( 'wcpay_payment_request_is_product_supported', $supported, $product );
+
+		return $supported && $product->is_purchasable() && $product->is_in_stock();
+	}
+
+	/**
+	 * Get the product types express checkout supports.
+	 *
+	 * Client 11.1.0 `supported_product_types()` (button helper :686-709).
+	 *
+	 * @return mixed Product type IDs, as returned by the filter.
+	 */
+	private function get_supported_product_types() {
+		/**
+		 * Filters WooPayments product types that can use express checkout.
+		 *
+		 * @param array<int,string> $supported_types Product type IDs.
+		 *
+		 * @since 11.0.0
+		 */
+		return apply_filters(
+			'wcpay_payment_request_supported_types',
+			array(
+				'simple',
+				'variable',
+				'variation',
+				'subscription',
+				'variable-subscription',
+				'subscription_variation',
+				'booking',
+				'bundle',
+				'composite',
+				'mix-and-match',
+			)
+		);
+	}
+
+	/**
+	 * Tell whether every product in the current cart supports payment-request express checkout.
+	 *
+	 * Port of the client 11.1.0 `has_allowed_items_in_cart()` (button helper :716-751).
+	 *
+	 * @return bool
+	 */
+	private function is_cart_supported(): bool {
+		$woocommerce = WC();
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+		if ( ! $cart instanceof \WC_Cart ) {
+			return false;
+		}
+
+		// A pre-order charged upon release needs a saved method and a later charge the wallet flow does not set up.
+		if (
+			class_exists( '\WC_Pre_Orders_Cart' ) &&
+			class_exists( '\WC_Pre_Orders_Product' ) &&
+			\WC_Pre_Orders_Cart::cart_contains_pre_order() &&
+			\WC_Pre_Orders_Product::product_is_charged_upon_release( \WC_Pre_Orders_Cart::get_pre_order_product() )
+		) {
+			return false;
+		}
+
+		$supported_types = $this->get_supported_product_types();
+		if ( ! is_array( $supported_types ) ) {
+			return false;
+		}
+
+		foreach ( $cart->get_cart() as $cart_item_key => $cart_item ) {
+			$product = $cart_item['data'] ?? null;
+			if ( ! $product instanceof \WC_Product ) {
+				return false;
+			}
+
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce core hook.
+			$product = apply_filters( 'woocommerce_cart_item_product', $product, $cart_item, $cart_item_key );
+			if ( ! $product instanceof \WC_Product || ! in_array( $product->get_type(), $supported_types, true ) ) {
+				return false;
+			}
+
+			/**
+			 * Filters whether a cart product supports WooPayments payment-request express checkout.
+			 *
+			 * @since 11.2.0
+			 *
+			 * @param bool        $supported Whether the product is supported.
+			 * @param \WC_Product $product   Product object.
+			 */
+			if ( ! apply_filters( 'wcpay_payment_request_is_cart_supported', true, $product ) ) {
+				return false;
+			}
+		}
+
+		// The wallet sheet can only choose one shipping rate.
+		return count( $cart->get_shipping_packages() ) <= 1;
+	}
+
+	/**
+	 * Tell whether the order would add billing-address tax that the wallet sheet never shows.
+	 *
+	 * With nothing to ship, no shipping address change recalculates the sheet's total, so tax based on the billing
+	 * address on tax-exclusive prices is only added at placement. Client 11.1.0 button helper :634-651.
+	 *
+	 * @param string $context Express checkout context: product, cart or checkout.
+	 * @return bool
+	 */
+	private function would_add_unshown_billing_address_tax( string $context ): bool {
+		if ( ! WooPaymentsExpressPaymentMethodTypes::is_tax_based_on_billing_address() || 'yes' === get_option( 'woocommerce_prices_include_tax' ) ) {
+			return false;
+		}
+
+		if ( 'product' === $context ) {
+			$product = $this->get_product_for_product_page();
+
+			return $product instanceof \WC_Product && ! $this->product_needs_shipping( $product );
+		}
+
+		$woocommerce = WC();
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+
+		return $cart instanceof \WC_Cart && ! $cart->needs_shipping();
+	}
+
+	/**
+	 * Tell whether the page has nothing to charge: a zero cart total, or a zero raw product price on the product page.
+	 *
+	 * Checked after the product support filters, so they cannot bring the button back for a free product. A cart that
+	 * becomes free after the page loads is handled in the browser. Client 11.1.0 button helper :652-660.
+	 *
+	 * @param string $context Express checkout context: product, cart or checkout.
+	 * @return bool
+	 */
+	private function is_zero_amount( string $context ): bool {
+		if ( 'product' === $context ) {
+			$product = $this->get_product_for_product_page();
+
+			return $product instanceof \WC_Product && 0.0 === (float) $product->get_price();
+		}
+
+		$woocommerce = WC();
+		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+
+		return $cart instanceof \WC_Cart && 0.0 === (float) $cart->get_total( 'edit' );
+	}
+
+	/**
+	 * Get reference-shaped product data for product-page ECE.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_product_data(): array {
+		$product = $this->get_product_for_product_page();
+		if ( ! $product instanceof \WC_Product ) {
+			return array();
+		}
+
+		$product = $this->get_initially_selected_variation( $product );
+		$price   = $this->get_product_price( $product );
+		if ( null === $price ) {
+			return array();
+		}
+
+		$currency  = get_woocommerce_currency();
+		$total_tax = 0.0;
+		$items     = array(
+			array(
+				'label'  => $product->get_name(),
+				'amount' => $this->prepare_amount( $price, $currency ),
+			),
+		);
+
+		foreach ( $this->get_taxes_like_cart( $product, $price ) as $tax ) {
+			$tax        = (float) $tax;
+			$total_tax += $tax;
+			$items[]    = array(
+				'label'   => __( 'Tax', 'woocommerce' ),
+				'amount'  => $this->prepare_amount( $tax, $currency ),
+				'pending' => 0.0 === $tax,
+			);
+		}
+
+		/**
+		 * Filters WooPayments product-page express checkout total label.
+		 *
+		 * @param string $label Total label.
+		 *
+		 * @since 11.0.0
+		 */
+		$total_label = apply_filters( 'wcpay_payment_request_total_label', $this->get_total_label() );
+
+		$data = array(
+			'displayItems'   => $items,
+			'total'          => array(
+				'label'   => $total_label,
+				'amount'  => $this->prepare_amount( $price + $total_tax, $currency ),
+				'pending' => true,
+			),
+			'needs_shipping' => $this->product_needs_shipping( $product ),
+			'currency'       => strtolower( $currency ),
+			'country_code'   => $this->get_store_base_country(),
+			'product_type'   => $product->get_type(),
+		);
+
+		if ( $data['needs_shipping'] ) {
+			$data['displayItems'][]  = array(
+				'label'   => __( 'Shipping', 'woocommerce' ),
+				'amount'  => 0,
+				'pending' => true,
+			);
+			$data['shippingOptions'] = array(
+				'id'     => 'pending',
+				'label'  => __( 'Pending', 'woocommerce' ),
+				'detail' => '',
+				'amount' => 0,
+			);
+		}
+
+		/**
+		 * Filters whether to hide itemized product data in WooPayments express checkout.
+		 *
+		 * @since 11.2.0
+		 *
+		 * @param bool $hide_itemization Whether to hide itemized display items.
+		 */
+		if ( apply_filters( 'wcpay_payment_request_hide_itemization', false ) ) {
+			unset( $data['displayItems'] );
+		}
+
+		/**
+		 * Filters WooPayments product-page express checkout product data.
+		 *
+		 * @param array<string,mixed> $data    Product data.
+		 * @param \WC_Product        $product Product object.
+		 *
+		 * @since 11.0.0
+		 */
+		$data = apply_filters( 'wcpay_payment_request_product_data', $data, $product );
+
+		return $data;
+	}
+
+	/**
+	 * Get the product-page payment-request total label.
+	 *
+	 * @return string
+	 */
+	private function get_total_label(): string {
+		$account_data         = $this->account_service->get_cached_account_data();
+		$statement_descriptor = isset( $account_data['statement_descriptor'] ) ? (string) $account_data['statement_descriptor'] : '';
+
+		/**
+		 * Filters the suffix appended to the payment-request total label.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param string $suffix Total label suffix.
+		 */
+		$suffix = apply_filters( 'wcpay_payment_request_total_label_suffix', ' (via WooCommerce)' );
+
+		return str_replace( "'", '', $statement_descriptor ) . $suffix;
+	}
+
+	/**
+	 * Tell whether the product hits a reference WooPayments product-page ECE fail-closed guardrail.
+	 *
+	 * @param \WC_Product $product Product object.
+	 * @return bool
+	 */
+	private function is_reference_blocked_product( \WC_Product $product ): bool {
+		if ( class_exists( '\WC_Pre_Orders_Product' ) && \WC_Pre_Orders_Product::product_is_charged_upon_release( $product ) ) {
+			return true;
+		}
+
+		if ( class_exists( '\WC_Composite_Products' ) && $product->is_type( 'composite' ) ) {
+			return true;
+		}
+
+		if ( class_exists( '\WC_Mix_and_Match' ) && $product->is_type( 'mix-and-match' ) ) {
+			return true;
+		}
+
+		if (
+			class_exists( '\WC_Subscriptions_Product' ) &&
+			\WC_Subscriptions_Product::is_subscription( $product ) &&
+			\WC_Subscriptions_Product::get_trial_length( $product ) > 0 &&
+			0.0 >= (float) \WC_Subscriptions_Product::get_sign_up_fee( $product )
+		) {
+			return true;
+		}
+
+		if ( class_exists( '\WC_Product_Addons_Helper' ) ) {
+			$product_addons = \WC_Product_Addons_Helper::get_product_addons( $product->get_id() );
+			foreach ( $product_addons as $addon ) {
+				if ( is_array( $addon ) && 'file_upload' === ( $addon['type'] ?? '' ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the current product-page product.
+	 *
+	 * @return \WC_Product|null
+	 */
+	private function get_product_for_product_page(): ?\WC_Product {
+		$current_product = $GLOBALS['product'] ?? null;
+		if ( doing_action( 'woocommerce_after_add_to_cart_form' ) && $current_product instanceof \WC_Product ) {
+			return $current_product;
+		}
+
+		$shortcode_product = $this->get_product_from_product_page_shortcode();
+		if ( $shortcode_product instanceof \WC_Product ) {
+			return $shortcode_product;
+		}
+
+		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
+		if ( $post_id <= 0 ) {
+			$post_id = get_the_ID();
+		}
+
+		$queried_product = $post_id ? wc_get_product( $post_id ) : null;
+
+		return $queried_product instanceof \WC_Product ? $queried_product : null;
+	}
+
+	/**
+	 * Get the product from a product_page shortcode in the main query host.
+	 *
+	 * @return \WC_Product|null
+	 */
+	private function get_product_from_product_page_shortcode(): ?\WC_Product {
+		if ( $this->product_page_shortcode_context_resolved ) {
+			return $this->product_page_shortcode_product;
+		}
+
+		$main_query = $GLOBALS['wp_the_query'] ?? null;
+		if ( ! $main_query instanceof \WP_Query || ! $main_query->is_singular() ) {
+			return null;
+		}
+
+		$host = $main_query->get_queried_object();
+		if ( ! $host instanceof \WP_Post ) {
+			return null;
+		}
+
+		$this->product_page_shortcode_context_resolved = true;
+
+		if ( ! preg_match_all( '/' . get_shortcode_regex( array( 'product_page' ) ) . '/', $host->post_content, $matches, PREG_SET_ORDER ) ) {
+			return null;
+		}
+
+		foreach ( $matches as $shortcode ) {
+			if ( 'product_page' !== $shortcode[2] ) {
+				continue;
+			}
+
+			if ( '[' === $shortcode[1] && ']' === $shortcode[6] ) {
+				continue;
+			}
+
+			$atts = shortcode_parse_atts( $shortcode[3] );
+			if ( ! is_array( $atts ) ) {
+				return null;
+			}
+
+			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
+			if ( ! $product_id && isset( $atts['sku'] ) && is_scalar( $atts['sku'] ) ) {
+				$sku        = wc_clean( wp_unslash( (string) $atts['sku'] ) );
+				$sku        = is_scalar( $sku ) ? (string) $sku : '';
+				$product_id = '' !== $sku ? wc_get_product_id_by_sku( $sku ) : 0;
+			}
+
+			$product                              = $product_id ? wc_get_product( $product_id ) : null;
+			$this->product_page_shortcode_product = $product instanceof \WC_Product ? $product : null;
+
+			return $this->product_page_shortcode_product;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the variation a variable product's form starts with, or the product itself when none matches.
+	 *
+	 * Port of the client 11.1.0 `get_product_data()` (button helper :768-786): an attribute passed in the URL wins over
+	 * the product's default attribute, as on the product form, so the wallet opens at the preselected variation's price.
+	 *
+	 * @param \WC_Product $product Product on the page.
+	 * @return \WC_Product
+	 */
+	private function get_initially_selected_variation( \WC_Product $product ): \WC_Product {
+		if ( ! in_array( $product->get_type(), array( 'variable', 'variable-subscription' ), true ) || ! $product instanceof \WC_Product_Variable ) {
+			return $product;
+		}
+
+		$attributes = array();
+		foreach ( array_keys( $product->get_variation_attributes() ) as $attribute_name ) {
+			$attribute_key = 'attribute_' . sanitize_title( $attribute_name );
+
+			// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only preselection, as the product form does.
+			$attributes[ $attribute_key ] = isset( $_GET[ $attribute_key ] ) && is_string( $_GET[ $attribute_key ] )
+				? wc_clean( wp_unslash( $_GET[ $attribute_key ] ) )
+				: $product->get_variation_default_attribute( $attribute_name );
+			// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		}
+
+		/** @var \WC_Product_Data_Store_Interface $data_store */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort
+		$data_store   = \WC_Data_Store::load( 'product' );
+		$variation_id = $data_store->find_matching_product_variation( $product, $attributes );
+		$variation    = $variation_id ? wc_get_product( $variation_id ) : null;
+
+		return $variation instanceof \WC_Product ? $variation : $product;
+	}
+
+	/**
+	 * Get the amount the product-page wallet sheet shows for one unit of the product.
+	 *
+	 * Port of the client 11.1.0 `get_product_price()` (button helper :1023-1075): the display price, the WooCommerce
+	 * Deposits amount of the product's default choice instead when Deposits is on for it, plus the sign-up fee of a
+	 * subscription. Null when either part is not a number, so no product data is sent.
+	 *
+	 * @param \WC_Product $product Product object.
+	 * @return float|null
+	 */
+	private function get_product_price( \WC_Product $product ): ?float {
+		$base_price = $this->cart_prices_include_tax() ? wc_get_price_including_tax( $product ) : wc_get_price_excluding_tax( $product );
+
+		if ( class_exists( '\WC_Deposits_Product_Manager' ) && class_exists( '\WC_Deposits_Plans_Manager' ) && \WC_Deposits_Product_Manager::deposits_enabled( $product->get_id() ) ) {
+			// Deposits' own default choice: pay a deposit or pay in full.
+			if ( 'deposit' === \WC_Deposits_Product_Manager::get_deposit_selected_type( $product->get_id() ) ) {
+				$deposit_plan_id    = 0;
+				$available_plan_ids = \WC_Deposits_Plans_Manager::get_plan_ids_for_product( $product->get_id() );
+				if ( 'plan' === \WC_Deposits_Product_Manager::get_deposit_type( $product->get_id() ) && ! empty( $available_plan_ids ) ) {
+					$deposit_plan_id = $available_plan_ids[0];
+				}
+
+				$base_price = \WC_Deposits_Product_Manager::get_deposit_amount( $product, $deposit_plan_id, 'display', $base_price );
+			}
+		}
+
+		$sign_up_fee = 0;
+		if ( in_array( $product->get_type(), array( 'subscription', 'subscription_variation' ), true ) && class_exists( '\WC_Subscriptions_Product' ) ) {
+			$sign_up_fee = \WC_Subscriptions_Product::get_sign_up_fee( $product );
+		}
+
+		if ( ! is_numeric( $base_price ) || ! is_numeric( $sign_up_fee ) ) {
+			return null;
+		}
+
+		return (float) $base_price + (float) $sign_up_fee;
+	}
+
+	/**
+	 * Tell whether product prices are displayed as tax-inclusive in cart-like contexts.
+	 *
+	 * @return bool
+	 */
+	private function cart_prices_include_tax(): bool {
+		return ! wc_tax_enabled() || 'incl' === get_option( 'woocommerce_tax_display_cart' );
+	}
+
+	/**
+	 * Calculate product taxes like cart totals for product-page ECE display.
+	 *
+	 * @param \WC_Product $product Product object.
+	 * @param float       $price   Display price.
+	 * @return array<int|float>
+	 */
+	private function get_taxes_like_cart( \WC_Product $product, float $price ): array {
+		if ( ! wc_tax_enabled() || $this->cart_prices_include_tax() ) {
+			return array();
+		}
+
+		return \WC_Tax::calc_tax( $price, \WC_Tax::get_rates( $product->get_tax_class() ), false );
+	}
+
+	/**
+	 * Convert a decimal WooCommerce amount to a Stripe minor-unit amount.
+	 *
+	 * @param float  $amount   Decimal amount.
+	 * @param string $currency Currency code the amount is in.
+	 * @return int
+	 */
+	private function prepare_amount( float $amount, string $currency ): int {
+		return (int) round( $amount * ( 10 ** WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ) ) );
+	}
+
+	/**
+	 * Get the login confirmation settings for the wallet click gate.
+	 *
+	 * When checkout requires an authenticated account that the express flow
+	 * cannot create, the wallet sheet must not open; the scripts show a
+	 * login redirect confirmation instead.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return array{message:string,redirect_url:string}|false
+	 */
+	private function get_login_confirmation_settings( string $context ) {
+		if ( is_user_logged_in() || ! $this->is_authentication_required( $context ) ) {
+			return false;
+		}
+
+		/* translators: The text encapsulated in `**` can be replaced with "Apple Pay" or "Google Pay". Please translate this text, but don't remove the `**`. */
+		$message      = __( 'To complete your transaction with **the selected payment method**, you must log in or create an account with our site.', 'woocommerce' );
+		$redirect_url = add_query_arg(
+			array(
+				'_wpnonce'                            => wp_create_nonce( 'wcpay-set-redirect-url' ),
+				'wcpay_express_checkout_redirect_url' => rawurlencode( home_url( add_query_arg( array() ) ) ),
+			),
+			home_url()
+		);
+
+		return array(
+			'message'      => $message,
+			'redirect_url' => $redirect_url,
+		);
+	}
+
+	/**
+	 * Tell whether authentication is required for checkout.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	private function is_authentication_required( string $context ): bool {
+		// If guest checkout is disabled and account creation is not possible, authentication is required.
+		if ( 'no' === get_option( 'woocommerce_enable_guest_checkout', 'yes' ) && ! $this->is_account_creation_possible( $context ) ) {
+			return true;
+		}
+
+		// If a subscription is being bought and account creation is not possible, authentication is required.
+		if ( $this->context_has_subscription( $context ) && ! $this->is_account_creation_possible( $context ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether express checkout should treat the context as carrying a subscription: a subscription product on the
+	 * product page, or any subscription schedule in the cart (initial, renewal, resubscribe or switch).
+	 *
+	 * Client 11.1.0 `has_subscription_product()` (class-wc-payments-express-checkout-button-helper.php:321-347): both
+	 * WooCommerce Subscriptions classes must be loaded, and the Subscriptions version is not checked.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	private function context_has_subscription( string $context ): bool {
+		$legacy_proxy = wc_get_container()->get( LegacyProxy::class );
+		if ( ! $legacy_proxy->call_function( 'class_exists', 'WC_Subscriptions_Product' ) || ! $legacy_proxy->call_function( 'class_exists', 'WC_Subscriptions_Cart' ) ) {
+			return false;
+		}
+
+		if ( 'product' === $context ) {
+			$product         = $this->get_product_for_product_page();
+			$is_subscription = array( 'WC_Subscriptions_Product', 'is_subscription' );
+
+			return $product instanceof \WC_Product && is_callable( $is_subscription ) && (bool) call_user_func( $is_subscription, $product );
+		}
+
+		return $this->cart_has_any_subscription_schedule();
+	}
+
+	/**
+	 * Tell whether the cart carries any subscription schedule: an initial subscription, a renewal, a resubscribe or a switch.
+	 *
+	 * @return bool
+	 */
+	private function cart_has_any_subscription_schedule(): bool {
+		$cart_contains_subscription = array( 'WC_Subscriptions_Cart', 'cart_contains_subscription' );
+		if ( is_callable( $cart_contains_subscription ) && call_user_func( $cart_contains_subscription ) ) {
+			return true;
+		}
+
+		if ( function_exists( 'wcs_cart_contains_renewal' ) && wcs_cart_contains_renewal() ) {
+			return true;
+		}
+
+		if ( function_exists( 'wcs_cart_contains_resubscribe' ) && wcs_cart_contains_resubscribe() ) {
+			return true;
+		}
+
+		return function_exists( 'wcs_cart_contains_switches' ) && (bool) wcs_cart_contains_switches();
+	}
+
+	/**
+	 * Tell whether account creation is possible during checkout.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return bool
+	 */
+	private function is_account_creation_possible( string $context ): bool {
+		$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
+
+		// If a subscription is being purchased, check if account creation is allowed for subscriptions.
+		if ( ! $is_signup_from_checkout_allowed && $this->context_has_subscription( $context ) ) {
+			$is_signup_from_checkout_allowed = 'yes' === get_option( 'woocommerce_enable_signup_from_checkout_for_subscriptions', 'no' );
+		}
+
+		// With automatically generated username/password disabled, the express
+		// checkout payload can't carry those fields, so account creation is
+		// not possible.
+		return $is_signup_from_checkout_allowed
+			&& 'yes' === get_option( 'woocommerce_registration_generate_username', 'yes' )
+			&& 'yes' === get_option( 'woocommerce_registration_generate_password', 'yes' );
+	}
+
+	/**
+	 * Tell whether product-page ECE should ask Stripe for shipping.
+	 *
+	 * @param \WC_Product $product Product object.
+	 * @return bool
+	 */
+	private function product_needs_shipping( \WC_Product $product ): bool {
+		return wc_shipping_enabled() && 0 !== wc_get_shipping_method_count( true ) && $product->needs_shipping();
+	}
+
+	/**
+	 * Get the currency that should drive context-specific Stripe Elements eligibility.
+	 *
+	 * @param string $context Express checkout context.
+	 * @return string
+	 */
+	private function get_context_currency( string $context ): string {
+		if ( 'pay_for_order' !== $context ) {
+			return '';
+		}
+
+		$order = $this->get_pay_for_order_order();
+
+		return $order instanceof \WC_Order ? (string) $order->get_currency() : '';
+	}
+
+	/**
+	 * Get pay-for-order params for the frontend.
+	 *
+	 * The shared order-pay rule: only for a pay link with the pay_for_order flag and the order's key, as client 11.1.0 needs
+	 * the flag (class-wc-payments-express-checkout-button-display-handler.php:195); the billing email follows the visitor and
+	 * the page-cache guard (WooPaymentsOrderPayAccess::get_pay_for_order_page_params()).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_pay_for_order_params(): array {
+		return WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+	}
+
+	/**
+	 * Get the current order-pay order.
+	 *
+	 * @return \WC_Order|null
+	 */
+	private function get_pay_for_order_order(): ?\WC_Order {
+		$order_id = $this->get_pay_for_order_id();
+		if ( $order_id <= 0 ) {
+			return null;
+		}
+
+		$order = wc_get_order( $order_id );
+
+		return $order instanceof \WC_Order ? $order : null;
+	}
+
+	/**
+	 * Get the current order-pay order ID.
+	 *
+	 * @return int
+	 */
+	private function get_pay_for_order_id(): int {
+		global $wp;
+
+		if ( is_object( $wp ) && isset( $wp->query_vars['order-pay'] ) ) {
+			return absint( $wp->query_vars['order-pay'] );
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Get a string gateway setting.
+	 *
+	 * @param string $key      Setting key.
+	 * @param string $fallback Fallback value.
+	 * @return string
+	 */
+	private function get_string_gateway_setting( string $key, string $fallback ): string {
+		$value = $this->account_service->get_gateway_setting( $key, $fallback );
+
+		return is_scalar( $value ) && '' !== (string) $value ? sanitize_text_field( (string) $value ) : $fallback;
+	}
+
+	/**
+	 * Get a string gateway setting while preserving empty string values.
+	 *
+	 * @param string $key      Setting key.
+	 * @param string $fallback Fallback value.
+	 * @return string
+	 */
+	private function get_string_gateway_setting_allow_empty( string $key, string $fallback ): string {
+		$value = $this->account_service->get_gateway_setting( $key, $fallback );
+
+		return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : $fallback;
+	}
+
+	/**
+	 * Tell whether a gateway setting is truthy.
+	 *
+	 * @param string $key Setting key.
+	 * @return bool
+	 */
+	private function is_truthy_gateway_setting( string $key ): bool {
+		$value = $this->account_service->get_gateway_setting( $key, 'no' );
+
+		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
+	}
+
+	/**
+	 * Get the store base country.
+	 *
+	 * @return string
+	 */
+	private function get_store_base_country(): string {
+		$country = (string) get_option( 'woocommerce_default_country', 'US' );
+		if ( WC() && WC()->countries ) {
+			$country = (string) WC()->countries->get_base_country();
+		}
+
+		if ( false !== strpos( $country, ':' ) ) {
+			$base_country = strtok( $country, ':' );
+			$country      = is_string( $base_country ) ? $base_country : '';
+		}
+
+		$country = strtoupper( $country );
+
+		return '' !== $country ? $country : 'US';
+	}
+}

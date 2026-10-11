@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "disputes-list-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "bfb9c16e705f070aa7e8c25baca3f6c391eb692b",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/payouts-disputes-smoke.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-15 blocked-environment deferral and its four-field-only transition, strict separation from payouts and dispute lifecycles, retained manage_woocommerce protected native route, exact same-account default list and summary HTTP 200 responses, awaited Disputes heading, exact Disputes loaded or No disputes found terminal status, absence of admin-unavailable, alert, and exception states, frozen false-positive rejection, pending owner and target preservation, earliest native-readiness blocker and exact unlock, lower-layer non-substitution, shared-target bundle risk, listener irrelevance, predecessor and calibration bindings, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract and implementation owner and a fresh exact-store/account readiness artifact proving native ownership and enablement, authenticated route availability, and matching callback registration and reachability before one native read-only execution.",
+		"affected_scope": "Only the exact line-15 disputes-list release smoke: an authenticated merchant with manage_woocommerce reaches the protected native disputes route; the exact default disputes list and summary requests both return HTTP 200 for the same connected account; an awaited semantic Disputes heading is visible; terminal status is exactly Disputes loaded. or No disputes found.; and the admin-unavailable state, disputes-page alert, and page exception are absent. No dispute count, amount, currency, reason, deadline, status, row action, order, customer, export, provider ID, reconciliation, decision, evidence submission, or webhook is claimed.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, assign the unresolved target owner or exact contract, or supply the exact authenticated connected native fixture. Existing route, mocked page/data, navigation, REST-controller, API-client, order-enrichment, and event-handler tests prove useful pieces but cannot substitute for the assembled authenticated native admin route, built assets, runtime ownership, capability wiring, two real connected HTTP responses, and terminal browser render. The frozen plugin route, loading CSS, positional heading, and un-awaited assertion are not durable proof.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a fresh readiness artifact for the exact store/account showing native ownership and enablement, authenticated account-route availability, and matching callback registration and reachability; resolve the exact target contract and implementation owner; then run one zero-retry native read-only target that requires HTTP 200 from the exact default list and summary requests, awaits the semantic Disputes heading and loaded-or-empty terminal status, and excludes protected-route, alert, and exception states. Before closure, resolve the shared provisional target bundle topology by completing intended shared-file edits or assigning a disputes-only target under an authorized specification decision.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, and created no quarantine. The existing separately owned listener is irrelevant to this connected-read contract and remains untouched.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-admin-disputes.spec.ts:15::Merchant disputes › Load the disputes list page",
+				"unlock_decision": "Externally provide a fresh readiness artifact for the exact store/account showing native ownership and enablement, authenticated account-route availability, and matching callback registration and reachability; resolve the exact target contract and implementation owner; then run one zero-retry native read-only target that requires HTTP 200 from the exact default list and summary requests, awaits the semantic Disputes heading and loaded-or-empty terminal status, and excludes protected-route, alert, and exception states. Before closure, resolve the shared provisional target bundle topology by completing intended shared-file edits or assigning a disputes-only target under an authorized specification decision.",
+				"satisfied_on": "2026-08-07",
+				"reference": "calibration-notes:2026-08-07:admin-surface-load-family-smoke"
+			}
+		]
+	}
+}

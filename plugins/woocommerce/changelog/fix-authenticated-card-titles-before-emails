@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the authenticated card title in order emails for saved-card and renewal payments.

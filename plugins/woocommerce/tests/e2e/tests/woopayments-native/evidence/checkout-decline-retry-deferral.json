@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-decline-retry-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5ee93fd094e4fc4fac212dba56668dd4ebba7ffe",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:205::Shopper › Checkout › Retry after failure without page refresh › should successfully complete order after retrying with a valid card without refreshing the page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA 45b062175d3469c74cb2d425eabe4e4d4d708e89532a4ee5cc4574ef32b7f9c0 against mutated ledger SHA 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 and committed baseline 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 at 5ee93fd094e4fc4fac212dba56668dd4ebba7ffe, with no findings. Exactly the intended decline-family rows change fields 37-40 while fields 1-36 and target tuples remain exact. The artifact binds one document, session and order to two terminally separated intentional attempts and the exact one-order, two-method, two-intent, one-capture graph while leaving idempotency semantics to a post-readiness human decision. Readiness remains first; one writer and exclusive listener apply only where provider-backed, with zero retries/replay, complete journals, restoration, retention, halt, quarantine, accessibility and drift controls, and no unsupported product-defect, known-gap, implementation, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, callback, gateway-ownership, and native Payment Element readiness fails before this row may allocate a provider writer, exclusive listener, browser, fresh checkout graph, or either payment-attempt journal. The shared decline target is absent, its contract remains pending, ownership is owner-decision-required, and no protected two-attempt oracle is approved. After readiness, a bounded design candidate also requires a lower-layer RED and explicit human product/API decision: WooCommerce may reuse the unchanged-cart order while native PaymentOperationIdempotency lacks a per-attempt or payment-credential discriminator, so a distinct-card second attempt may replay the first failure or conflict at the provider. This static candidate is not a current product defect or known gap, does not supersede readiness as the first blocker, and establishes nothing until an exact RED runs.",
+		"affected_scope": "Exactly one fresh browser document, shopper session, cart, uniquely marked Woo order O, line-item set, total, and currency across two intentional, separately journaled submissions. Attempt 1 uses 4000000000000002 and must become terminal before attempt 2: exactly one PaymentMethod and one PaymentIntent fail with error.code=card_declined and decline_code=generic_decline, exactly one relevant payment_intent.payment_failed event and one order failure effect are ingested once, the order is failed and unpaid, no charge exists, and the announced alert equals Error: Your card was declined. Checkout releases accessibly, remains on the same document, and retains all entered non-payment state. Only then attempt 2 uses distinct basic card 4242424242424242 and creates one distinct PaymentMethod and one distinct successful PaymentIntent, exactly one captured charge and one balance transaction for O's original amount/currency, one paid transition, and the Order received page for O. The final exact graph is one Woo order; two intentional submissions, journals, PaymentMethods, and PaymentIntents, one failed and one successful; one failed event/effect and one successful/captured intent event/effect, each ingested once; exactly one charge/capture and one balance transaction total; and zero second order, duplicate paid effect, duplicate event effect, or saved token when saving was not selected.",
+		"no_allowlisted_action_reason": "The run cannot repair standing native readiness, approve the absent shared target or owner, allocate the exact test account/store and one provider writer, take exclusive listener ownership, establish ordered locks and two durable attempt journals, or decide idempotency semantics. Final Order received UI, a failed alert, local order status, private provider selectors, the frozen helper's up-to-three Place order clicks, or lower-layer happy-path tests cannot substitute for the same-document/session/order temporal sequence and exact two-method/two-intent/one-charge graph. The second action is a distinct intentional submission only after fully correlated terminal failure, never replay of an ambiguous write. Use one worker, zero Playwright retries, zero harness/manual replay, and halt on any uncertain first or second dispatch.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "First externally satisfy exact native readiness against the bound account, store, callback, gateway, and Payment Element identities. Then add the bounded lower-layer distinct-credential-attempt RED and obtain a human-owned product/API decision for separating a new payment attempt from a same-key transport replay; do not invent discriminator semantics autonomously. Assign an owner and approve a drift-safe decline-specific target and exact two-attempt adapter; confirm the frozen contract, source bundle, target, runtime, and provider configuration have not drifted; allocate one protected test-mode account/store, one provider writer, and one exclusively owned listener; acquire account, store, session, record, event, and listener locks; snapshot all touched settings, session/cart, limiter, and listener state; and open separate pre-dispatch journals for attempts 1 and 2. Run once with one worker and zero retries or replay, begin attempt 2 only after terminal attempt-1 reconciliation, prove accessible release and retained non-payment state plus the exact final graph, retain immutable redacted financial evidence, restore reversible run-owned state byte-exactly without broad reset or limiter changes, quarantine fail-closed, and obtain fresh required reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, shopper, product, cart, session, order, PaymentMethod, PaymentIntent, charge, balance transaction, event, effect, token, setting, listener, lock, journal, retention record, or quarantine was created or changed; the separately owned listener remains untouched. A future readiness or identity mismatch, uncertain or duplicate submission, attempt 2 before terminal attempt 1, changed document/session/order/cart/amount/currency, reused intent or method, wrong or duplicate order/event/effect/charge/balance transaction/token, missing accessible release, idempotency replay/conflict, listener or lock loss, source/target/runtime drift after dispatch, restoration mismatch, cleanup uncertainty, or evidence-publication failure must preserve diagnostics and immutable financial history and quarantine the exact account/store/settings/session/order/provider/event graph and both attempt journals without replay, provider deletion, broad reset, limiter disablement, listener takeover, or shared-state repair."
+	}
+}

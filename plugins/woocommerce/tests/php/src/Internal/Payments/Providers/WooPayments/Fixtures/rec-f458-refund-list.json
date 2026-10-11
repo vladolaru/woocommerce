@@ -1,0 +1,259 @@
+{
+	"_meta": {
+		"recording": "F458 (a)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per entry, no retries; metadata.refund_attempt added to the refund POSTs on wcpay_api_request_params",
+		"sanitized": "client_secret, receipt_url, email-like keys, fingerprint and the shopper IP/UA keys replaced with REDACTED where present (none occur in list items); response bodies are JSON-decoded and otherwise verbatim; list items keep the unexpanded list shape (payment_intent and balance_transaction are bare ids)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at c0f490f35e5, WooPayments plugin inactive, test mode), 2026-10-10",
+		"notes": "Recorded for the native refund ambiguity hold (divergence register row 458), before it was built. The list is newest first; count is the page size, not a total; has_more is the only signal that a page is incomplete. A third read of the same list after the error cases (b) and (c) returned the limit-100 body unchanged and is not repeated here."
+	},
+	"entries": [
+		{
+			"pair": "list_limit_100_complete",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (pi_3UOv4vBzWlxcwgpP096bz0cn, 43.21 USD, pm_card_visa, no order) refunded three times through refund_charge: 11.11 with metadata.refund_attempt equal to its Idempotency-Key 366fa04f-cf23-4be7-bab2-e622ae2696a5 and reason requested_by_customer; 7.77 without the marker and without a reason; 5.55 with metadata.refund_attempt equal to its Idempotency-Key 8dfc0ff3-4161-4bde-97c7-2e909facf280 and a free-text reason",
+			"recorded_at": "2026-10-10T07:53:02+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
+				"method": "GET",
+				"path": "/sites/4/wcpay/refunds?test_mode=1&charge=ch_3UOv4vBzWlxcwgpP0ALlMGAw&limit=100 (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": null,
+				"query": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"limit": 100
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"object": "list",
+					"count": 3,
+					"data": [
+						{
+							"id": "re_3UOv4vBzWlxcwgpP0Mxsx0Nk",
+							"object": "refund",
+							"amount": 555,
+							"balance_transaction": "txn_3UOv4vBzWlxcwgpP0e2eEkI2",
+							"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+							"created": 1791618755,
+							"currency": "usd",
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"destination_details": {
+								"card": {
+									"reference": "614450301574219",
+									"reference_status": "available",
+									"reference_type": "acquirer_reference_number",
+									"type": "refund"
+								},
+								"type": "card"
+							},
+							"metadata": {
+								"merchant_refund_reason": "F458 free-text reason",
+								"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+								"refund_source": "woocommerce_native"
+							},
+							"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+							"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+							"payment_method_details": {
+								"card": {
+									"acquirer_reference_number": "614450301574219",
+									"acquirer_reference_number_status": "available"
+								},
+								"type": "card"
+							},
+							"reason": null,
+							"receipt_number": null,
+							"source_transfer_reversal": null,
+							"status": "succeeded",
+							"transfer_reversal": null
+						},
+						{
+							"id": "re_3UOv4vBzWlxcwgpP0AwrnrcH",
+							"object": "refund",
+							"amount": 777,
+							"balance_transaction": "txn_3UOv4vBzWlxcwgpP0NIscHKa",
+							"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+							"created": 1791618751,
+							"currency": "usd",
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"destination_details": {
+								"card": {
+									"reference": "6813260776934211",
+									"reference_status": "available",
+									"reference_type": "acquirer_reference_number",
+									"type": "refund"
+								},
+								"type": "card"
+							},
+							"metadata": {
+								"refund_source": "woocommerce_native"
+							},
+							"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+							"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+							"payment_method_details": {
+								"card": {
+									"acquirer_reference_number": "6813260776934211",
+									"acquirer_reference_number_status": "available"
+								},
+								"type": "card"
+							},
+							"reason": null,
+							"receipt_number": null,
+							"source_transfer_reversal": null,
+							"status": "succeeded",
+							"transfer_reversal": null
+						},
+						{
+							"id": "re_3UOv4vBzWlxcwgpP00h5YCby",
+							"object": "refund",
+							"amount": 1111,
+							"balance_transaction": "txn_3UOv4vBzWlxcwgpP0Yz2DDdY",
+							"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+							"created": 1791618748,
+							"currency": "usd",
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"destination_details": {
+								"card": {
+									"reference": "3195053601272128",
+									"reference_status": "available",
+									"reference_type": "acquirer_reference_number",
+									"type": "refund"
+								},
+								"type": "card"
+							},
+							"metadata": {
+								"merchant_refund_reason": "requested_by_customer",
+								"refund_attempt": "366fa04f-cf23-4be7-bab2-e622ae2696a5",
+								"refund_source": "woocommerce_native"
+							},
+							"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+							"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+							"payment_method_details": {
+								"card": {
+									"acquirer_reference_number": "3195053601272128",
+									"acquirer_reference_number_status": "available"
+								},
+								"type": "card"
+							},
+							"reason": "requested_by_customer",
+							"receipt_number": null,
+							"source_transfer_reversal": null,
+							"status": "succeeded",
+							"transfer_reversal": null
+						}
+					],
+					"has_more": false,
+					"url": "/v1/refunds"
+				}
+			}
+		},
+		{
+			"pair": "list_limit_2_has_more",
+			"setup": "charge ch_3UOv4vBzWlxcwgpP0ALlMGAw (pi_3UOv4vBzWlxcwgpP096bz0cn, 43.21 USD, pm_card_visa, no order) refunded three times through refund_charge: 11.11 with metadata.refund_attempt equal to its Idempotency-Key 366fa04f-cf23-4be7-bab2-e622ae2696a5 and reason requested_by_customer; 7.77 without the marker and without a reason; 5.55 with metadata.refund_attempt equal to its Idempotency-Key 8dfc0ff3-4161-4bde-97c7-2e909facf280 and a free-text reason; the same list read with limit 2",
+			"recorded_at": "2026-10-10T07:53:03+00:00",
+			"request": {
+				"transport": "WooPaymentsApiClient::send_site_request( array( 'charge' => ..., 'limit' => ... ), 'refunds', 'GET' ), the request list_charge_refunds() sends",
+				"method": "GET",
+				"path": "/sites/4/wcpay/refunds?test_mode=1&charge=ch_3UOv4vBzWlxcwgpP0ALlMGAw&limit=2 (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": null,
+				"query": {
+					"test_mode": true,
+					"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+					"limit": 2
+				}
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"object": "list",
+					"count": 2,
+					"data": [
+						{
+							"id": "re_3UOv4vBzWlxcwgpP0Mxsx0Nk",
+							"object": "refund",
+							"amount": 555,
+							"balance_transaction": "txn_3UOv4vBzWlxcwgpP0e2eEkI2",
+							"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+							"created": 1791618755,
+							"currency": "usd",
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"destination_details": {
+								"card": {
+									"reference": "614450301574219",
+									"reference_status": "available",
+									"reference_type": "acquirer_reference_number",
+									"type": "refund"
+								},
+								"type": "card"
+							},
+							"metadata": {
+								"merchant_refund_reason": "F458 free-text reason",
+								"refund_attempt": "8dfc0ff3-4161-4bde-97c7-2e909facf280",
+								"refund_source": "woocommerce_native"
+							},
+							"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+							"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+							"payment_method_details": {
+								"card": {
+									"acquirer_reference_number": "614450301574219",
+									"acquirer_reference_number_status": "available"
+								},
+								"type": "card"
+							},
+							"reason": null,
+							"receipt_number": null,
+							"source_transfer_reversal": null,
+							"status": "succeeded",
+							"transfer_reversal": null
+						},
+						{
+							"id": "re_3UOv4vBzWlxcwgpP0AwrnrcH",
+							"object": "refund",
+							"amount": 777,
+							"balance_transaction": "txn_3UOv4vBzWlxcwgpP0NIscHKa",
+							"charge": "ch_3UOv4vBzWlxcwgpP0ALlMGAw",
+							"created": 1791618751,
+							"currency": "usd",
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"destination_details": {
+								"card": {
+									"reference": "6813260776934211",
+									"reference_status": "available",
+									"reference_type": "acquirer_reference_number",
+									"type": "refund"
+								},
+								"type": "card"
+							},
+							"metadata": {
+								"refund_source": "woocommerce_native"
+							},
+							"payment_intent": "pi_3UOv4vBzWlxcwgpP096bz0cn",
+							"payment_method": "pm_1UOv4vBzWlxcwgpPNTLhGPI2",
+							"payment_method_details": {
+								"card": {
+									"acquirer_reference_number": "6813260776934211",
+									"acquirer_reference_number_status": "available"
+								},
+								"type": "card"
+							},
+							"reason": null,
+							"receipt_number": null,
+							"source_transfer_reversal": null,
+							"status": "succeeded",
+							"transfer_reversal": null
+						}
+					],
+					"has_more": true,
+					"url": "/v1/refunds"
+				}
+			}
+		}
+	]
+}

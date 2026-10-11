@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Decouple native multi-currency settings account wiring from WooPayments adapter type hints.

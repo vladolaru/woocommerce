@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings text fields keep the WooPayments plugin's width, the support email and phone stack, and the payout schedule selects are compact.

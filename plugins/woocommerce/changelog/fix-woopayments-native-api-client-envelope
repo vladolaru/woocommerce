@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Report a versioned platform client identity, drop JSON bodies from DELETE requests and align retry and error handling on the native WooPayments API client.

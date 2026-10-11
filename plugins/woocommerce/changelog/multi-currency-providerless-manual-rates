@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Allow Multi-Currency to use manual rates without an automatic-rate provider and confirm disabling when currency data exists.

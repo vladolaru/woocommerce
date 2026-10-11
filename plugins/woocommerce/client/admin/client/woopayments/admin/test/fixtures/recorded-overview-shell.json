@@ -1,0 +1,100 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc-admin/settings/payments/woopayments/overview on the native :8889 store (Transact platform via wpcom-local, Stripe test mode, test-drive account), 2026-09-30, with the account_status.deposits projection in place",
+		"sanitized": "account id replaced with acct_test; store host replaced with store.example.com; every other value verbatim",
+		"notes": "account_link is empty because the account is a test drive (client 11.1.0 class-wc-payments-account.php:382); minimum_scheduled_deposit_amounts is the platform list keyed by lowercase currency"
+	},
+	"response": {
+		"account": {
+			"id": "acct_test",
+			"mode": "test",
+			"connected": true,
+			"working": true,
+			"can_process_payments": true,
+			"details_submitted": true,
+			"test_mode": true,
+			"test_mode_onboarding": true,
+			"dev_mode": true,
+			"test_drive": true,
+			"sandbox": false,
+			"live": false
+		},
+		"account_status": {
+			"status": "complete",
+			"current_deadline": null,
+			"past_due": false,
+			"account_link": "",
+			"requirements": {
+				"errors": []
+			},
+			"details_submitted": true,
+			"payments_enabled": true,
+			"deposits_enabled": true,
+			"deposits": {
+				"restrictions": "deposits_unrestricted",
+				"completed_waiting_period": true,
+				"minimum_scheduled_deposit_amounts": {
+					"aed": 200,
+					"aud": 0,
+					"bgn": 100,
+					"cad": 0,
+					"chf": 500,
+					"czk": 3000,
+					"dkk": 2000,
+					"eur": 100,
+					"gbp": 100,
+					"hkd": 0,
+					"huf": 36000,
+					"jpy": 1,
+					"nok": 2000,
+					"nzd": 0,
+					"pln": 500,
+					"ron": 500,
+					"sek": 2000,
+					"sgd": 100,
+					"usd": 0
+				}
+			}
+		},
+		"show_update_details_task": false,
+		"overview_tasks_visibility": {
+			"dismissed_todo_tasks": [],
+			"deleted_todo_tasks": [],
+			"remind_me_later_todo_tasks": []
+		},
+		"is_connection_success_modal_dismissed": false,
+		"disputes_awaiting_response_count": 55,
+		"account_details": {
+			"account_status": {
+				"text": "Connected",
+				"background_color": "green"
+			},
+			"payout_status": {
+				"text": "Active",
+				"background_color": "green",
+				"popover": {
+					"text": "Your next payout will be sent in 2 days based on your daily schedule. Arrival time depends on your bank's processing speed.",
+					"cta_text": "Learn more about payouts",
+					"cta_link": "https://woocommerce.com/document/woopayments/payouts/payout-schedule/#new-accounts"
+				}
+			},
+			"banner": null
+		},
+		"account_fees": [],
+		"feature_flags": {
+			"dispute_readiness_overview": true
+		},
+		"account_loans": {
+			"has_active_loan": false,
+			"loans": []
+		},
+		"instant_deposits_previously_eligible": false,
+		"wpcom_reconnect_url": "",
+		"urls": {
+			"overview_page": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview",
+			"settings": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings",
+			"onboarding": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding",
+			"setup": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding"
+		}
+	}
+}

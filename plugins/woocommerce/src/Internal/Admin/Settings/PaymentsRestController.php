@@ -1076,6 +1076,12 @@ class PaymentsRestController extends RestApiControllerBase {
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
+				'_native'        => array(
+					'type'        => 'boolean',
+					'description' => esc_html__( 'Whether the provider is the WooPayments gateway built into WooCommerce rather than one run by its extension.', 'woocommerce' ),
+					'context'     => array( 'view', 'edit' ),
+					'readonly'    => true,
+				),
 				'_incentive'     => $this->get_schema_for_incentive(),
 				'_links'         => array(
 					'type'       => 'object',

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "refunded-transaction-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "684c3c3c1c986d38b77e0cbcf2b84a18038a5059",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-full-refund.spec.ts:62::WooCommerce Payments - Full Refund › should be able to view a refunded transaction"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/transaction-navigation.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-62 blocked-environment deferral and four-field-only transition, strict separation from line 38 and refusal to borrow its absent runtime state, requirement for line-38 closure or an independently approved immutable provider-correlated retained fixture, exact order/intent/charge/refund identities and amount/currency/terminal-status/reason oracle, authorized semantic native navigation and exact amount/Refunded/No longer wanted discovery, bounded same-record UI/order/API/provider reconciliation, rejected #order_data/pi_/plugin-route/copy/DOM mechanics, approved read authority and ownership, one worker and zero retries with no listener or mutation, public-safe evidence, fresh merchant cleanup, retained records and quarantine, exact shared-target preservation and drift handling, predecessor/calibration binding, PILOT-first prerequisite order, no native-defect claim, zero current resources, and listener irrelevance."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership and readiness fails first. The run also lacks a resolved exact target contract, implementation owner, and row-safe closure-bundle topology; a closed line-38 lifecycle or independently approved immutable same-account fixture with exact order, intent, charge, refund, amount, currency, terminal state, and merchant reason; stable semantic native order-to-transaction navigation; bounded same-record UI, order, API, and provider reconciliation; approved retained-record read authority and ownership; and approved public-safe evidence, cleanup, and quarantine handling.",
+		"affected_scope": "Only line 62 refunded-transaction audit observation: from an exact approved provider-correlated retained refunded order/transaction, an authenticated authorized merchant semantically navigates to native transaction detail and discovers the exact full-refund amount, terminal Refunded status, and merchant reason No longer wanted; bounded UI, order, API, and provider reads reconcile those semantics to the same order, intent, charge, and refund identities. It claims no checkout or refund mutation, setting change, provider write, line-38 closure, exposed pi_ link, #order_data selector, plugin route, exact timeline prose, DOM structure, or WooPayments branding.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, resolve target/bundle ownership, close line 38, invent or approve an exact retained refunded-record fixture, or establish semantic navigation, same-account read authority, exact record ownership, bounded correlation, public-safe evidence, and quarantine policy. Money-movement REST and UI tests cannot substitute for the exact browser discoverability and same-record financial audit trail. The frozen shared page and module variables provide no independent evidence. No native defect is known before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful native readiness; resolve the row-safe target and owner; close line 38 with an explicitly shareable retained record or approve an independent immutable same-account fixture with exact order/intent/charge/refund identities, amount, currency, terminal state, and reason; then run once with one worker and zero retries under exact read ownership, fresh merchant context, semantic order-to-transaction navigation, shrinking-deadline UI/order/API/provider reconciliation, public-safe evidence, context cleanup, retained financial records, and fail-closed quarantine. Explicitly reopen/re-close this row if the shared transaction-navigation target later drifts.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease, lock, or retained fixture, performed no browser or provider read/write, consumed no provider capacity, and created no quarantine. The existing separately owned listener remains untouched and irrelevant because the observation performs no write or event attribution. Any uncertain eventual fixture identity, cross-record read, provider correlation, context cleanup, or ownership state must quarantine the affected retained fixture/account resource and must not be retried to produce a match."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Give PHPUnit runs a machine-independent baseline so local wp-env and mu-plugin configuration cannot decide test outcomes.

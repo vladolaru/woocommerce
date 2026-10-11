@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Speed up the cart block page with WooPayments by no longer loading the card payment form scripts and styles there.

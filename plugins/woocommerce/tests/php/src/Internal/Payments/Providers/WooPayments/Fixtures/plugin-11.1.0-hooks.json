@@ -1,0 +1,2938 @@
+{
+  "schema": "woopayments-plugin-inventory.v1",
+  "inventory": "hooks",
+  "source": {
+    "plugin": "woocommerce-payments",
+    "tag": "11.1.0",
+    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+  },
+  "count": 147,
+  "entries": [
+    {
+      "name": "__wcpay_customer_data_localized",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:447",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:447",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "__wcpay_upe_config_localized",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:430",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:430",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wc_pay_get_authorizations_summary",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1479",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-payments-admin.php:1479",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        },
+        {
+          "site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:90",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_account_id_for_intent_confirmation",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:214",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:214",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_add_upe_payment_fields",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:634",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:634",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_api_client",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments.php:1186",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments.php:1186",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_display_save_payment_method_checkbox",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:513",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:513",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_get_onboarding_data_args",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:1167",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:1167",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        },
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:1214",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_http",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WC_Payments_Http_Interface|null"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments.php:2263",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments.php:2263",
+          "arity": 1,
+          "params": [
+            "WC_Payments_Http_Interface|null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_save_to_account_text",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1160",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1160",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_set_gateway",
+      "kind": "action",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:628",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:628",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_thank_you_page_bnpl_payment_method_logo_url",
+      "kind": "filter",
+      "arity": 2,
+      "params": null,
+      "deprecated": true,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-order-success-page.php:335",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-order-success-page.php:335",
+          "arity": 2,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wc_payments_thank_you_page_lpm_payment_method_logo_url",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "string",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-order-success-page.php:352",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-order-success-page.php:352",
+          "arity": 2,
+          "params": [
+            "string",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_activate_pm_promotion_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Activate_PM_Promotion"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-activate-pm-promotion.php:23",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-activate-pm-promotion.php:23",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Activate_PM_Promotion"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_add_account_tos_agreement",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Add_Account_Tos_Agreement"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-add-account-tos-agreement.php:29",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-add-account-tos-agreement.php:29",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Add_Account_Tos_Agreement"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_api_request_headers",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:533",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:533",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        },
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:2708",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_api_request_params",
+      "kind": "filter",
+      "arity": 3,
+      "params": [
+        "array",
+        "string",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:2651",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:2651",
+          "arity": 3,
+          "params": [
+            "array",
+            "string",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_api_request_response",
+      "kind": "filter",
+      "arity": 4,
+      "params": [
+        "array|WP_Error",
+        "string",
+        "string",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:2752",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:2752",
+          "arity": 4,
+          "params": [
+            "array|WP_Error",
+            "string",
+            "string",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_calculated_total",
+      "kind": "filter",
+      "arity": 3,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:198",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:198",
+          "arity": 3,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_cancel_intent_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Cancel_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-cancel-intention.php:31",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-cancel-intention.php:31",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Cancel_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_capture_intent_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Capture_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-capture-intention.php:33",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-capture-intention.php:33",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Capture_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_confirm_without_payment_intent",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1688",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1688",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_and_confirm_intent_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Create_And_Confirm_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-create-and-confirm-intention.php:45",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-create-and-confirm-intention.php:45",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Create_And_Confirm_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_and_confirm_intent_request_api",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-payment-intents-controller.php:143",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-payment-intents-controller.php:143",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_and_confirm_setup_intention_request",
+      "kind": "filter",
+      "arity": 4,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Create_And_Confirm_Setup_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-create-and-confirm-setup-intention.php:35",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-create-and-confirm-setup-intention.php:35",
+          "arity": 4,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Create_And_Confirm_Setup_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_customer_disallowed_order_statuses",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:466",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-orders-controller.php:466",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_intent_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Create_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-create-intention.php:30",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-create-intention.php:30",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Create_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_request",
+      "kind": "filter",
+      "arity": 3,
+      "params": [
+        "WCPay\\Core\\Server\\Request|null",
+        "string",
+        "mixed"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments.php:2110",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments.php:2110",
+          "arity": 3,
+          "params": [
+            "WCPay\\Core\\Server\\Request|null",
+            "string",
+            "mixed"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_create_setup_intention_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Create_Setup_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-create-setup-intention.php:30",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-create-setup-intention.php:30",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Create_Setup_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_database_cache_ttl",
+      "kind": "filter",
+      "arity": 3,
+      "params": [
+        "int",
+        "string",
+        "mixed"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-database-cache.php:506",
+      "sites": [
+        {
+          "site": "includes/class-database-cache.php:506",
+          "arity": 3,
+          "params": [
+            "int",
+            "string",
+            "mixed"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_dev_mode",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/class-mode.php:101",
+      "sites": [
+        {
+          "site": "includes/core/class-mode.php:101",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_disable_new_onboarding",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-utils.php:1113",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-utils.php:1113",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_express_checkout_js_params",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:234",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:234",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_force_network_saved_cards",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments.php:1702",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments.php:1702",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_frontend_tracks",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-woopay-tracker.php:689",
+      "sites": [
+        {
+          "site": "includes/class-woopay-tracker.php:689",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_account",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Account"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-account.php:24",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-account.php:24",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Account"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_account_capital_link",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Account_Capital_Link"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-account-capital-link.php:30",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-account-capital-link.php:30",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Account_Capital_Link"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_active_loan_summary_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-capital-controller.php:55",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-capital-controller.php:55",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        },
+        {
+          "site": "includes/class-wc-payments-account.php:2796",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_add_payment_method_redirect_url",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4463",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:4463",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_all_deposits_overviews",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:128",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-deposits-controller.php:128",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_authorization_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:79",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:79",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_charge_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Charge"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-charge.php:25",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-charge.php:25",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Charge"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_deposit",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:140",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-deposits-controller.php:140",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_dispute_status_counts",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1449",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-payments-admin.php:1449",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_fraud_outcome_transactions_export_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:427",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:427",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_fraud_outcome_transactions_search_autocomplete_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:375",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:375",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_intent_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-intention.php:32",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-intention.php:32",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_loans_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-capital-controller.php:64",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-capital-controller.php:64",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_pm_promotions_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_PM_Promotions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-pm-promotions.php:23",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-pm-promotions.php:23",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_PM_Promotions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_reporting_balance_summary_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Reporting_Balance_Summary"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-reporting-balance-summary.php:41",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-reporting-balance-summary.php:41",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Reporting_Balance_Summary"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_setup_intent_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Setup_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-setup-intention.php:25",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-setup-intention.php:25",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Setup_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_terminal_location",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:247",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:247",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_terminal_locations",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:314",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:314",
+          "arity": 1,
+          "params": null
+        },
+        {
+          "site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:330",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_terminal_readers_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-reader-controller.php:246",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-reader-controller.php:246",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_get_transactions_summary_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Transactions_Summary"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-transactions-summary.php:23",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-transactions-summary.php:23",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Transactions_Summary"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_is_wcpay_subscriptions_enabled",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-features.php:93",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-features.php:93",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_is_woopay_email_input_enabled",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/woopay/class-woopay-utilities.php:100",
+      "sites": [
+        {
+          "site": "includes/woopay/class-woopay-utilities.php:100",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_is_woopay_store_api_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1219",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1219",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_js_settings",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1092",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-payments-admin.php:1092",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_authorizations_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Authorizations"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-authorizations.php:22",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-authorizations.php:22",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Authorizations"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_charge_refunds_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Charge_Refunds"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-charge-refunds.php:32",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-charge-refunds.php:32",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Charge_Refunds"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_deposits_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Deposits"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-deposits.php:25",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-deposits.php:25",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Deposits"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_disputes_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Disputes"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-disputes.php:30",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-disputes.php:30",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Disputes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_documents_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Documents"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-documents.php:25",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-documents.php:25",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Documents"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_fraud_outcome_transactions_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:325",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:325",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_fraud_outcome_transactions_summary_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/wc-payment-api/class-wc-payments-api-client.php:348",
+      "sites": [
+        {
+          "site": "includes/wc-payment-api/class-wc-payments-api-client.php:348",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Fraud_Outcome_Transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_list_transactions_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\List_Transactions"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-list-transactions.php:35",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-list-transactions.php:35",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\List_Transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_localized_messages",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array<string,"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-utils.php:841",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-utils.php:841",
+          "arity": 1,
+          "params": [
+            "array<string,"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_metadata_from_order",
+      "kind": "filter",
+      "arity": 3,
+      "params": [
+        "array",
+        "WC_Order",
+        "WCPay\\Constants\\Payment_Type|null"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "src/Internal/Service/OrderService.php:133",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1957",
+          "arity": 2,
+          "params": [
+            "array",
+            "WC_Order"
+          ]
+        },
+        {
+          "site": "src/Internal/Service/OrderService.php:133",
+          "arity": 3,
+          "params": [
+            "array",
+            "WC_Order",
+            "WCPay\\Constants\\Payment_Type|null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_apply_charm_only_to_products",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:930",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:930",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_async_price_type",
+      "kind": "filter",
+      "arity": 3,
+      "params": [
+        "string",
+        "float",
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/AsyncPriceRenderer.php:88",
+      "sites": [
+        {
+          "site": "includes/multi-currency/AsyncPriceRenderer.php:88",
+          "arity": 3,
+          "params": [
+            "string",
+            "float",
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_available_currencies",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1949",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:1949",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_disable_filter_join_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:319",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:319",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_disable_filter_select_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:244",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:244",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_disable_filter_select_orders_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:434",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:434",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_disable_filter_where_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:381",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:381",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_filter_join_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string[]"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:363",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:363",
+          "arity": 1,
+          "params": [
+            "string[]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_filter_select_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string[]"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:298",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:298",
+          "arity": 1,
+          "params": [
+            "string[]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_filter_select_orders_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string[]"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:469",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:469",
+          "arity": 1,
+          "params": [
+            "string[]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_filter_where_clauses",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string[]"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Analytics.php:416",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Analytics.php:416",
+          "arity": 1,
+          "params": [
+            "string[]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_override_notice_country",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1093",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:1093",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_override_notice_currency_name",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:1101",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:1101",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_override_selected_currency",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "mixed"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:91",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:91",
+          "arity": 1,
+          "params": [
+            "mixed"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_page_caching_active",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/CachingEnvironment.php:75",
+      "sites": [
+        {
+          "site": "includes/multi-currency/CachingEnvironment.php:75",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_convert_coupon_amount",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "bool",
+        "object"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:168",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:168",
+          "arity": 2,
+          "params": [
+            "bool",
+            "object"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_convert_product_price",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "bool",
+        "object"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:191",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:191",
+          "arity": 2,
+          "params": [
+            "bool",
+            "object"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_convert_shipping_amount",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "bool",
+        "object"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:217",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:217",
+          "arity": 2,
+          "params": [
+            "bool",
+            "object"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_disable_currency_switching",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:145",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:145",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_hide_widgets",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:135",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:135",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_output_explicit_price",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-explicit-price-formatter.php:73",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-explicit-price-formatter.php:73",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_should_return_store_currency",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/Compatibility.php:233",
+      "sites": [
+        {
+          "site": "includes/multi-currency/Compatibility.php:233",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_storefront_widget_args",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/StorefrontIntegration.php:85",
+      "sites": [
+        {
+          "site": "includes/multi-currency/StorefrontIntegration.php:85",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_storefront_widget_css",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/StorefrontIntegration.php:58",
+      "sites": [
+        {
+          "site": "includes/multi-currency/StorefrontIntegration.php:58",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_storefront_widget_instance",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/StorefrontIntegration.php:77",
+      "sites": [
+        {
+          "site": "includes/multi-currency/StorefrontIntegration.php:77",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_theme_widget_args",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:613",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:613",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_multi_currency_theme_widget_instance",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/multi-currency/MultiCurrency.php:605",
+      "sites": [
+        {
+          "site": "includes/multi-currency/MultiCurrency.php:605",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_order_intent_id_updated",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-order-service.php:915",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-order-service.php:915",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_order_payment_method_id_updated",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-order-service.php:949",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-order-service.php:949",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_fields_js_config",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:283",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:283",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_fields_upe",
+      "kind": "action",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-checkout.php:531",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-checkout.php:531",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_button_locale",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:146",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:146",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_hide_itemization",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:113",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:113",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_is_cart_supported",
+      "kind": "filter",
+      "arity": 2,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:740",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:740",
+          "arity": 2,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_is_product_supported",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "bool",
+        "WC_Product|null"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:993",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:993",
+          "arity": 2,
+          "params": [
+            "bool",
+            "WC_Product|null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_level3_data",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "array",
+        "WCPay\\Internal\\Service\\WC_Order"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "src/Internal/Service/Level3Service.php:116",
+      "sites": [
+        {
+          "site": "src/Internal/Service/Level3Service.php:116",
+          "arity": 2,
+          "params": [
+            "array",
+            "WCPay\\Internal\\Service\\WC_Order"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_payment_method_title_suffix",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:2735",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:2735",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_product_data",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "array",
+        "WC_Product"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:857",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:857",
+          "arity": 2,
+          "params": [
+            "array",
+            "WC_Product"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_supported_types",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string[]"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:694",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:694",
+          "arity": 1,
+          "params": [
+            "string[]"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_total_label",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:839",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:839",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_payment_request_total_label_suffix",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:229",
+      "sites": [
+        {
+          "site": "includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:229",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_platform_checkout_button_are_cart_items_supported",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-woopay-button-handler.php:436",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-woopay-button-handler.php:436",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_plugins_page_js_settings",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1110",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-payments-admin.php:1110",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_prepare_fraud_config",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "array|null",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-fraud-service.php:133",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-fraud-service.php:133",
+          "arity": 2,
+          "params": [
+            "array|null",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_prepare_terminal_payment_request",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Prepare_Terminal_Payment"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-prepare-terminal-payment.php:32",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-prepare-terminal-payment.php:32",
+          "arity": 2,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Prepare_Terminal_Payment"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_refund_charge_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Refund_Charge"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-refund-charge.php:39",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-refund-charge.php:39",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Refund_Charge"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_review_prompt_experiment_variant",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:1625",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-payments-admin.php:1625",
+          "arity": 1,
+          "params": [
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_shopper_tracking_enabled",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-woopay-tracker.php:238",
+      "sites": [
+        {
+          "site": "includes/class-woopay-tracker.php:238",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_should_prevent_payment_for_paid_order",
+      "kind": "filter",
+      "arity": 3,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-duplicate-payment-prevention-service.php:267",
+      "sites": [
+        {
+          "site": "includes/class-duplicate-payment-prevention-service.php:267",
+          "arity": 3,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_subscriptions_prepare_subscription_data",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/subscriptions/class-wc-payments-subscription-service.php:860",
+      "sites": [
+        {
+          "site": "includes/subscriptions/class-wc-payments-subscription-service.php:860",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_terminal_payment_completed_order_status",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-order-service.php:760",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-order-service.php:760",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_test_mode",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/class-mode.php:144",
+      "sites": [
+        {
+          "site": "includes/core/class-mode.php:144",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_test_mode_onboarding",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/class-mode.php:123",
+      "sites": [
+        {
+          "site": "includes/core/class-mode.php:123",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_tracks_event_properties",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "array",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-woopay-tracker.php:326",
+      "sites": [
+        {
+          "site": "includes/class-woopay-tracker.php:326",
+          "arity": 2,
+          "params": [
+            "array",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_update_account_settings",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Update_Account"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-update-account.php:24",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-update-account.php:24",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Update_Account"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_update_intention_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Update_Intention"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-update-intention.php:33",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-update-intention.php:33",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Update_Intention"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_update_payment_result_on_error",
+      "kind": "action",
+      "arity": 2,
+      "params": [
+        "Exception",
+        "WC_Order"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1434",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1434",
+          "arity": 2,
+          "params": [
+            "Exception",
+            "WC_Order"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_upe_available_payment_methods",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:4864",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:4864",
+          "arity": 1,
+          "params": [
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_usd_format",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "array",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": {
+        "placeholder": "{currency}",
+        "sample": "usd"
+      },
+      "plugin_site": "includes/class-wc-payments-localization-service.php:75",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-localization-service.php:75",
+          "arity": 2,
+          "params": [
+            "array",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_validate_vat_request",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Request"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-payments-vat-controller.php:74",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-payments-vat-controller.php:74",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Request"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_webhook_platform_checkout_order_status_changed",
+      "kind": "action",
+      "arity": 2,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/woopay/class-woopay-order-status-sync.php:207",
+      "sites": [
+        {
+          "site": "includes/woopay/class-woopay-order-status-sync.php:207",
+          "arity": 2,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_woopay_button_is_product_supported",
+      "kind": "filter",
+      "arity": 2,
+      "params": [
+        "bool",
+        "WC_Product|false|null"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-woopay-button-handler.php:406",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-woopay-button-handler.php:406",
+          "arity": 2,
+          "params": [
+            "bool",
+            "WC_Product|false|null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_woopay_enabled",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-woopay-button-handler.php:101",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-woopay-button-handler.php:101",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wcpay_woopay_is_signed_with_blog_token",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:97",
+      "sites": [
+        {
+          "site": "includes/admin/class-wc-rest-woopay-session-controller.php:97",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        },
+        {
+          "site": "includes/woopay/class-woopay-session.php:864",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcpay_woopay_use_blog_token",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/woopay/class-woopay-utilities.php:288",
+      "sites": [
+        {
+          "site": "includes/woopay/class-woopay-utilities.php:288",
+          "arity": 1,
+          "params": [
+            "bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_abilities_enabled",
+      "kind": "filter",
+      "arity": 1,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "src/Internal/Abilities/AbilitiesRegistrar.php:93",
+      "sites": [
+        {
+          "site": "src/Internal/Abilities/AbilitiesRegistrar.php:93",
+          "arity": 1,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_account_refreshed",
+      "kind": "action",
+      "arity": 1,
+      "params": [
+        "array|bool"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-account.php:2503",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-account.php:2503",
+          "arity": 1,
+          "params": [
+            "array|bool"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_after_webhook_delivery",
+      "kind": "action",
+      "arity": 2,
+      "params": [
+        "string",
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-webhook-processing-service.php:254",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-webhook-processing-service.php:254",
+          "arity": 2,
+          "params": [
+            "string",
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_before_webhook_delivery",
+      "kind": "action",
+      "arity": 2,
+      "params": [
+        "string",
+        "array"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments-webhook-processing-service.php:175",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments-webhook-processing-service.php:175",
+          "arity": 2,
+          "params": [
+            "string",
+            "array"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_changed_subscription_payment_method",
+      "kind": "action",
+      "arity": 2,
+      "params": [
+        "WC_Order",
+        "WC_Payment_Token"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1757",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1757",
+          "arity": 2,
+          "params": [
+            "WC_Order",
+            "WC_Payment_Token"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_email_ipp_receipt_compliance_details",
+      "kind": "action",
+      "arity": 2,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "templates/emails/customer-ipp-receipt.php:57",
+      "sites": [
+        {
+          "site": "templates/emails/customer-ipp-receipt.php:57",
+          "arity": 2,
+          "params": null
+        },
+        {
+          "site": "templates/emails/plain/customer-ipp-receipt.php:54",
+          "arity": 2,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_email_ipp_receipt_store_details",
+      "kind": "action",
+      "arity": 2,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "templates/emails/customer-ipp-receipt.php:39",
+      "sites": [
+        {
+          "site": "templates/emails/customer-ipp-receipt.php:39",
+          "arity": 2,
+          "params": null
+        },
+        {
+          "site": "templates/emails/plain/customer-ipp-receipt.php:33",
+          "arity": 2,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_order_failed",
+      "kind": "action",
+      "arity": 2,
+      "params": [
+        "WC_Order",
+        "Exception"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1317",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1317",
+          "arity": 2,
+          "params": [
+            "WC_Order",
+            "Exception"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_payments_save_user_in_woopay",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1465",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1465",
+          "arity": 0,
+          "params": null
+        },
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1971",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_woocommerce_payments_admin_notices",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1080",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1080",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_woocommerce_payments_payment_requires_action",
+      "kind": "action",
+      "arity": 6,
+      "params": [
+        "WC_Order",
+        "string",
+        "string",
+        "string",
+        "string",
+        "string"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:1921",
+      "sites": [
+        {
+          "site": "includes/class-wc-payment-gateway-wcpay.php:1921",
+          "arity": 6,
+          "params": [
+            "WC_Order",
+            "string",
+            "string",
+            "string",
+            "string",
+            "string"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "woocommerce_woocommerce_payments_updated",
+      "kind": "action",
+      "arity": 0,
+      "params": null,
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/class-wc-payments.php:1571",
+      "sites": [
+        {
+          "site": "includes/class-wc-payments.php:1571",
+          "arity": 0,
+          "params": null
+        }
+      ]
+    },
+    {
+      "name": "wpcay_get_account_login_data",
+      "kind": "filter",
+      "arity": 1,
+      "params": [
+        "WCPay\\Core\\Server\\Request\\Get_Account_Login_Data"
+      ],
+      "deprecated": false,
+      "dynamic": null,
+      "plugin_site": "includes/core/server/request/class-get-account-login-data.php:29",
+      "sites": [
+        {
+          "site": "includes/core/server/request/class-get-account-login-data.php:29",
+          "arity": 1,
+          "params": [
+            "WCPay\\Core\\Server\\Request\\Get_Account_Login_Data"
+          ]
+        }
+      ]
+    }
+  ]
+}

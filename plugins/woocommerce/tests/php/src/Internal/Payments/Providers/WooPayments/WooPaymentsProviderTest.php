@@ -1,0 +1,687 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProviderGatewayAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsProvider class.
+ */
+class WooPaymentsProviderTest extends WC_Unit_Test_Case {
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var WooPaymentsProvider
+	 */
+	private $sut;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+		$this->sut = wc_get_container()->get( WooPaymentsProvider::class );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_affirm_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_klarna_settings' );
+		delete_option( '_wcpay_feature_amazon_pay' );
+		remove_all_filters( 'wcpay_upe_available_payment_methods' );
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Provider identity preserves the WooPayments gateway ID.
+	 */
+	public function test_provider_identity_preserves_woopayments_gateway_id(): void {
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
+	}
+
+	/** @testdox Provider exposes its Multi-Currency bootstrap root without core-owned composition knowledge. */
+	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
+		$this->assertTrue( method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) );
+		if ( ! method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) ) {
+			return;
+		}
+
+		$this->assertSame(
+			array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class ),
+			WooPaymentsProvider::get_multi_currency_provider_roots()
+		);
+	}
+
+	/**
+	 * @testdox Provider identity exposes the WooPayments persistence profile.
+	 */
+	public function test_provider_identity_exposes_woopayments_persistence_vocabulary(): void {
+		$vocabulary = $this->sut->get_persistence_vocabulary();
+
+		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $vocabulary );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
+	}
+
+	/**
+	 * @testdox Provider contracts keep persistence vocabulary separate from outcome mapping behavior.
+	 */
+	public function test_provider_contract_separates_persistence_vocabulary_from_outcome_mapping(): void {
+		$return_type = ( new \ReflectionMethod( ProviderInterface::class, 'get_persistence_vocabulary' ) )->getReturnType();
+
+		$this->assertSame( ProviderPersistenceVocabularyInterface::class, (string) $return_type );
+		$this->assertInstanceOf( ProviderOutcomeMetadataMapperInterface::class, $this->sut );
+	}
+
+	/**
+	 * @testdox A3 provider publishes money-moving operations once native processing exists.
+	 */
+	public function test_provider_publishes_money_moving_operations_for_native_processing(): void {
+		foreach (
+			array(
+				'get_payment_gateways',
+				'charge',
+				'capture',
+				'cancel',
+				'refund',
+			) as $method
+		) {
+			$this->assertTrue( method_exists( $this->sut, $method ), "{$method} must be exposed through ProviderInterface for A3." );
+		}
+	}
+
+	/**
+	 * @testdox Provider exposes and delegates the optional pre- and post-lifecycle effect ports.
+	 */
+	public function test_provider_delegates_woopayments_operation_effects(): void {
+		$order           = wc_create_order();
+		$context         = PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_effects' );
+		$effect_plan     = WooPaymentsOrderEffectPlan::for_payment_intent( array( 'status' => 'succeeded' ), false );
+		$outcome         = ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_effects' ) )->with_effect_plan( $effect_plan );
+		$call_sequence   = array();
+		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'finalize_charge_idempotency_key' ) )
+			->getMock();
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$effect_applier  = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply', 'apply_payment_method_display_details' ) )
+			->getMock();
+		$effect_applier->expects( $this->once() )
+			->method( 'apply' )
+			->with( $context, $outcome, $effect_plan )
+			->willReturnCallback(
+				static function () use ( &$call_sequence, $outcome ): PaymentOutcome {
+					$call_sequence[] = 'apply';
+					return $outcome;
+				}
+			);
+		$effect_applier->expects( $this->never() )
+			->method( 'apply_payment_method_display_details' )
+			->with( $order, array( 'status' => 'succeeded' ) );
+		$gateway_adapter->expects( $this->once() )
+			->method( 'finalize_charge_idempotency_key' )
+			->with( $order, $outcome )
+			->willReturnCallback(
+				function () use ( &$call_sequence ): void {
+					$this->assertSame( array( 'apply' ), $call_sequence, 'Charge key finalization must remain after the completed PaymentIntent pre-lifecycle effect.' );
+				}
+			);
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service, null, $effect_applier );
+
+		$this->assertInstanceOf( ProviderOperationEffectApplierInterface::class, $provider );
+		$this->assertInstanceOf( ProviderPostLifecycleEffectApplierInterface::class, $provider );
+		$this->assertSame( $outcome, $provider->apply_operation_effects( $context, $outcome, 'charge' ) );
+		$provider->apply_post_lifecycle_effects( $context, $outcome, 'charge' );
+	}
+
+	/**
+	 * @testdox A card payment waiting for 3D Secure, with no charge yet, titles the order "Card".
+	 *
+	 * The intent is REC-3DS-1's recorded new-card requires_action response (`Fixtures/rec-t3-3ds-requires-action.json`, pair
+	 * `new_card_requires_action`), whose `charges.data` is empty. Client 11.1.0 titles the order from the charge's card
+	 * details when it has them (gw:2162-2195), and with none falls back to the card definition's title
+	 * (includes/payment-methods/class-upe-payment-method.php:176-182,
+	 * includes/payment-methods/Configs/Definitions/CardDefinition.php:63-64): "Card".
+	 */
+	public function test_post_lifecycle_effects_title_a_card_payment_without_a_charge_card(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-requires-action.json' ), true );
+		$intent  = array();
+		foreach ( $fixture['entries'] as $entry ) {
+			if ( 'new_card_requires_action' === $entry['pair'] ) {
+				$intent = $entry['response']['body'];
+			}
+		}
+		$this->assertSame( array(), $intent['charges']['data'] );
+
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_payment_method_title( 'WooPayments' );
+		$order->save();
+		$outcome = ( new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, (string) $intent['id'] ) )
+			->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
+
+		$this->sut->apply_post_lifecycle_effects(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
+			$outcome,
+			'charge'
+		);
+
+		$this->assertSame( 'Card', wc_get_order( $order->get_id() )->get_payment_method_title() );
+	}
+
+	/**
+	 * @testdox The post-lifecycle effects schedule the Fee details job only when the lifecycle added the payment's capture note ($_dataName).
+	 *
+	 * @dataProvider capture_note_before_the_lifecycle
+	 *
+	 * @param bool $note_before  Whether the order had the note before the lifecycle applied.
+	 * @param bool $expected_job Whether the job is scheduled.
+	 */
+	public function test_post_lifecycle_effects_schedule_the_fee_details_job_when_the_lifecycle_added_the_note( bool $note_before, bool $expected_job ): void {
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = wc_create_order();
+		$order->save();
+		$context        = PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$outcome        = ( new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_fee_details',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_NOTE      => 'Captured.',
+				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+			)
+		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array() ) );
+		$identity_meta  = array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', 'payment_lifecycle:pi_fee_details|completed|capture_success' ) );
+		$effect_applier = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$effect_applier->method( 'apply' )->willReturn( $outcome );
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( WooPaymentsAccountService::class ),
+			null,
+			$effect_applier
+		);
+		if ( $note_before ) {
+			$order->add_order_note( 'Captured.', 0, false, $identity_meta );
+		}
+
+		$applied = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		if ( ! $note_before ) {
+			// The payment lifecycle adds the note between the two ports.
+			$order->add_order_note( 'Captured.', 0, false, $identity_meta );
+		}
+		$provider->apply_post_lifecycle_effects( $context, $applied, 'capture' );
+
+		$this->assertSame(
+			$expected_job,
+			as_has_scheduled_action(
+				WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_fee_details',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+	}
+
+	/**
+	 * @testdox The post-lifecycle effects schedule the Fee details job once when the lifecycle's capture note was written without its identity meta, and not when the capture is reported again.
+	 *
+	 * WC_Order::add_order_note() stores the note's meta with update_comment_meta() and ignores the result
+	 * (includes/class-wc-order.php:2128-2133), so a plugin that short-circuits update_comment_metadata leaves the note
+	 * without its identity. Before this unit the job was scheduled whenever the note was inserted.
+	 */
+	public function test_post_lifecycle_effects_schedule_the_fee_details_job_when_the_note_lost_its_identity_meta(): void {
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = wc_create_order();
+		$order->save();
+		$context        = PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$outcome        = ( new PaymentOutcome(
+			PaymentOutcome::STATUS_COMPLETED,
+			'pi_fee_details',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_NOTE      => 'Captured.',
+				PaymentOutcome::DATA_NOTE_TYPE => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_SUCCESS,
+			)
+		) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_capture( array() ) );
+		$effect_applier = $this->getMockBuilder( WooPaymentsOrderEffectApplier::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply' ) )
+			->getMock();
+		$effect_applier->method( 'apply' )->willReturn( $outcome );
+		$provider = new WooPaymentsProvider();
+		$provider->init(
+			$this->createMock( WooPaymentsProviderGatewayAdapter::class ),
+			$this->createMock( WooPaymentsApiClient::class ),
+			$this->createMock( WooPaymentsAccountService::class ),
+			null,
+			$effect_applier
+		);
+		$refuse_identity_meta = static function ( $check, $object_id, $meta_key ) {
+			unset( $object_id );
+			return WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY === $meta_key ? true : $check;
+		};
+
+		$applied = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		add_filter( 'update_comment_metadata', $refuse_identity_meta, 10, 3 );
+		try {
+			// The payment lifecycle adds the note between the two ports; its identity meta is refused.
+			$order->add_order_note( 'Captured.', 0, false, array( WooPaymentsPersistenceVocabulary::NOTE_IDENTITY_META_KEY => hash( 'sha256', 'payment_lifecycle:pi_fee_details|completed|capture_success' ) ) );
+		} finally {
+			remove_filter( 'update_comment_metadata', $refuse_identity_meta, 10 );
+		}
+		$provider->apply_post_lifecycle_effects( $context, $applied, 'capture' );
+
+		$jobs = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'args'     => array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_fee_details',
+					'is_test_mode' => false,
+				),
+				'group'    => 'woocommerce_payments',
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		);
+		$this->assertCount( 1, $jobs );
+
+		// The same capture reported again finds the note by its text and schedules nothing. The first job is removed, so
+		// the scheduler's pending-job check cannot hide a second schedule.
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$replayed = $provider->apply_operation_effects( $context, $outcome, 'capture' );
+		$provider->apply_post_lifecycle_effects( $context, $replayed, 'capture' );
+
+		$this->assertSame(
+			array(),
+			as_get_scheduled_actions(
+				array(
+					'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => -1,
+				)
+			)
+		);
+	}
+
+	/**
+	 * Whether the order had the capture note before the lifecycle, and whether the job is scheduled.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function capture_note_before_the_lifecycle(): array {
+		return array(
+			'note added by the lifecycle' => array( false, true ),
+			'note already on the order'   => array( true, false ),
+		);
+	}
+
+	/**
+	 * @testdox Provider should publish gateway identity independently of transient capability state.
+	 */
+	public function test_provider_publishes_native_gateway_instances_for_active_payment_method_definitions(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'saved_cards' => 'yes',
+			)
+		);
+
+		$provider = $this->create_provider_with_capabilities(
+			array(
+				'card_payments'       => 'active',
+				'link_payments'       => 'active',
+				'klarna_payments'     => 'active',
+				'sepa_debit_payments' => 'active',
+				'affirm_payments'     => 'unrequested',
+			)
+		);
+		$gateways = $provider->get_payment_gateways();
+
+		$gateway_ids = array_map(
+			static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
+			$gateways
+		);
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_klarna', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_affirm', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_apple_pay', $gateway_ids );
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_google_pay', $gateway_ids );
+		$this->assertNotContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link', $gateway_ids );
+
+		$klarna_gateway = $provider->get_gateway_for_method( 'klarna' );
+		$link_gateway   = $provider->get_gateway_for_method( 'link' );
+
+		$this->assertInstanceOf( WooPaymentsGateway::class, $klarna_gateway );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $link_gateway );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $provider->get_gateway_for_method( 'card' )->id );
+		$this->assertSame( 'Klarna', $klarna_gateway->get_title() );
+		$this->assertSame( 'WooPayments (Klarna)', $klarna_gateway->method_title );
+		// Only the WooPayments settings store saved_cards here; a split gateway reads its own row, which holds none, so it claims no
+		// tokenization (client 11.1.0 class-wc-payment-gateway-wcpay.php:338-340, :379-387, :987-989).
+		$this->assertFalse( $klarna_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+		$this->assertFalse( $link_gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+		$this->assertSame( $gateways, $provider->get_payment_gateways(), 'Provider should cache split gateway instances for the request.' );
+	}
+
+	/**
+	 * @testdox Provider batches cold canonical and split gateway settings reads before construction.
+	 */
+	public function test_provider_batches_cold_canonical_and_split_gateway_settings_reads_before_construction(): void {
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_klarna_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_affirm_settings' );
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_set( 'notoptions', array(), 'options' );
+
+		$option_family_queries = array();
+		$option_query_observer = static function ( string $query ) use ( &$option_family_queries ): string {
+			if ( false !== strpos( $query, 'woocommerce_woocommerce_payments_' ) ) {
+				$option_family_queries[] = $query;
+			}
+
+			return $query;
+		};
+		add_filter( 'query', $option_query_observer );
+		try {
+			$this->create_provider_with_capabilities( array() )->get_payment_gateways();
+		} finally {
+			remove_filter( 'query', $option_query_observer );
+		}
+
+		$this->assertCount( 1, $option_family_queries, 'Cold split gateway settings must be fetched in one batched option-family query.' );
+		$this->assertStringContainsString( ' IN (', $option_family_queries[0], 'The option-family query must use a batched IN clause.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_settings'", $option_family_queries[0], 'The canonical gateway setting must be primed.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_klarna_settings'", $option_family_queries[0], 'The Klarna split setting must be primed.' );
+		$this->assertStringContainsString( "'woocommerce_woocommerce_payments_affirm_settings'", $option_family_queries[0], 'The Affirm split setting must be primed.' );
+	}
+
+	/**
+	 * @testdox Provider honors a stored split gateway enabled setting after cache priming.
+	 */
+	public function test_provider_honors_stored_split_gateway_enabled_setting_after_cache_priming(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_klarna_settings',
+			array(
+				'enabled' => 'no',
+			)
+		);
+
+		$gateway = $this->create_provider_with_capabilities( array() )->get_gateway_for_method( 'klarna' );
+
+		$this->assertSame( 'no', $gateway->enabled, 'The stored Klarna setting must continue to control the derived gateway enabled state.' );
+	}
+
+	/**
+	 * Client 11.1.0 builds a gateway for every registered definition (`includes/class-wc-payments.php:616-645`); the
+	 * availability filter only shapes the settings list (`includes/class-wc-payment-gateway-wcpay.php:4848-4879`).
+	 *
+	 * @testdox Should register the gateway of a payment method the availability filter removes, without running the filter.
+	 */
+	public function test_provider_registers_gateways_without_the_availability_filter(): void {
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_upe_available_payment_methods',
+			static function ( array $payment_method_ids ) use ( &$filter_calls ): array {
+				++$filter_calls;
+
+				return array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) );
+			}
+		);
+		$provider = $this->create_provider_with_capabilities( array( 'sepa_debit_payments' => 'active' ) );
+
+		$gateway_ids = array_map(
+			static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
+			$provider->get_payment_gateways()
+		);
+
+		$this->assertContains( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit', $gateway_ids, 'A method the filter removes keeps its gateway.' );
+		$this->assertSame( 0, $filter_calls, 'Gateway registration does not run the availability filter.' );
+	}
+
+	/**
+	 * @testdox Provider should preserve gateway identity independently of transient account capability state.
+	 */
+	public function test_provider_builds_gateways_for_inactive_payment_method_definitions(): void {
+		$provider = $this->create_provider_with_capabilities(
+			array(
+				'card_payments'   => 'restricted',
+				'affirm_payments' => 'unrequested',
+			)
+		);
+
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'card' ) );
+		$this->assertInstanceOf( WooPaymentsGateway::class, $provider->get_gateway_for_method( 'affirm' ) );
+		$this->assertContains(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_affirm',
+			array_map(
+				static fn( WooPaymentsGateway $gateway ): string => $gateway->id,
+				$provider->get_payment_gateways()
+			)
+		);
+	}
+
+	/**
+	 * @testdox Amazon Pay identity is published only when its shared feature prerequisites are enabled.
+	 */
+	public function test_provider_applies_amazon_pay_feature_policy_when_building_gateways(): void {
+		update_option( '_wcpay_feature_amazon_pay', '1' );
+		$confirmation_tokens_disabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => true )
+		);
+		$this->assertNull( $confirmation_tokens_disabled->get_gateway_for_method( 'amazon_pay' ) );
+
+		update_option( '_wcpay_feature_amazon_pay', '0' );
+		$feature_disabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => false )
+		);
+		$this->assertNull( $feature_disabled->get_gateway_for_method( 'amazon_pay' ) );
+
+		update_option( '_wcpay_feature_amazon_pay', '1' );
+		$enabled = $this->create_provider_with_capabilities(
+			array( 'amazon_pay_payments' => 'active' ),
+			array( 'ece_confirmation_tokens_disabled' => false )
+		);
+		$this->assertInstanceOf( WooPaymentsGateway::class, $enabled->get_gateway_for_method( 'amazon_pay' ) );
+	}
+
+	/**
+	 * Create a WooPayments provider with account capability fixture data.
+	 *
+	 * @param array<string,string> $capabilities Account capability status map.
+	 * @param array<string,mixed>  $account_data Account data overrides.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_with_capabilities( array $capabilities, array $account_data = array() ): WooPaymentsProvider {
+		$gateway_adapter = $this->getMockBuilder( WooPaymentsProviderGatewayAdapter::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->getMock();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service
+			->method( 'get_cached_account_data' )
+			->willReturn(
+				array_merge( array( 'capabilities' => $capabilities ), $account_data )
+			);
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service );
+
+		return $provider;
+	}
+
+	/**
+	 * @testdox A zero-total checkout with a credential reaches charge(), which decides between a setup intent and no intent.
+	 *
+	 * Client 11.1.0 creates a setup intent for a $0 order only when it saves a new payment method and otherwise
+	 * confirms the order without an intent (class-wc-payment-gateway-wcpay.php:1688, 1983-2005).
+	 */
+	public function test_zero_total_checkout_reaches_charge(): void {
+		$order = wc_create_order();
+
+		$this->assertTrue( $this->sut->supports_zero_amount_setup( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_zero' ) ) );
+	}
+
+	/**
+	 * @testdox Provider availability requires native transport and account readiness.
+	 *
+	 * @dataProvider provider_native_readiness
+	 *
+	 * @param bool $transport_available Whether native transport is available.
+	 * @param bool $account_ready       Whether the account can process payments.
+	 * @param bool $expected            Expected readiness.
+	 */
+	public function test_can_process_payments_requires_native_transport_and_account_readiness( bool $transport_available, bool $account_ready, bool $expected ): void {
+		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( $transport_available );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+
+		if ( $transport_available ) {
+			$account_service
+				->expects( $this->once() )
+				->method( 'can_process_payments' )
+				->willReturn( $account_ready );
+		} else {
+			$account_service
+				->expects( $this->never() )
+				->method( 'can_process_payments' );
+		}
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service );
+
+		$this->assertSame( $expected, $provider->can_process_payments() );
+	}
+
+	/**
+	 * @testdox Provider onboarding availability does not require an established WPCOM transport.
+	 */
+	public function test_can_manage_onboarding_before_wpcom_transport_is_connected(): void {
+		$gateway_adapter = $this->createMock( WooPaymentsProviderGatewayAdapter::class );
+		$api_client      = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available' ) )
+			->getMock();
+		$api_client
+			->expects( $this->never() )
+			->method( 'is_available' );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments' ) )
+			->getMock();
+		$account_service
+			->expects( $this->never() )
+			->method( 'can_process_payments' );
+
+		$provider = new WooPaymentsProvider();
+		$provider->init( $gateway_adapter, $api_client, $account_service );
+
+		$this->assertTrue( $provider->can_manage_onboarding() );
+	}
+
+	/**
+	 * Data provider for native provider readiness.
+	 *
+	 * @return array<string,array{bool,bool,bool}>
+	 */
+	public function provider_native_readiness(): array {
+		return array(
+			'transport and account ready' => array( true, true, true ),
+			'transport unavailable'       => array( false, true, false ),
+			'account unavailable'         => array( true, false, false ),
+		);
+	}
+
+	/**
+	 * Data provider for boolean inputs.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function boolean_provider(): array {
+		return array(
+			'true'  => array( true ),
+			'false' => array( false ),
+		);
+	}
+
+	/**
+	 * @testdox Provider should receive the gateway adapter through dependency injection.
+	 */
+	public function test_provider_gateway_adapter_access_is_injected(): void {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for provider-boundary regression coverage.
+		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php' );
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsProviderGatewayAdapter::class\s*\)/',
+			$source,
+			'WooPaymentsProvider should receive the gateway adapter through init injection.'
+		);
+	}
+}

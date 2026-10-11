@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-accept-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "015d823aa0e8c4a21d14d9b4975f68b7fd9976d6",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:103::Disputes › Respond to a dispute › Accept a dispute"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-lifecycle.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-103 blocked-environment deferral and its four-field-only transition, strict separation from winning, losing, and draft lifecycles, full run-owned captured-payment and dispute identities, amount, currency, occurrence, and event correlation, exactly one irreversible close, terminal lost with voluntary-acceptance and accepted-on provenance distinct from adjudicated loss, correct guidance, no evidence submission, actions removed, pending owner and target, earliest native-readiness blocker, later dispute fixture, oracle, exclusive-listener, lock, journal, retention, cleanup, and quarantine prerequisites, lower-layer non-substitution, shared-target drift, no-replay safety, predecessor/calibration binding, and zero current quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks a resolved exact target contract, implementation owner, and closure-bundle topology; an approved deterministic test-mode dispute fixture and exact dispute oracle; one exclusively owned listener interval; exact account, store, provider-write, and record-event ownership; separate durable checkout and irreversible-close journals; bounded event and status reads; and approved cleanup and durable provider-record retention.",
+		"affected_scope": "Only line 103 voluntary acceptance: one run-owned product, shopper, order, credential, provider customer, payment intent, charge, payment method, dispute, and native transaction chain has exactly one successful captured payment and one fraudulent dispute occurrence with exact reconciled amount and currency and one correlated dispute-created event; the merchant sends exactly one confirmed close for that dispute; provider state becomes terminal lost with comprehensible voluntary-acceptance and accepted-on provenance, correct lost financial guidance, no evidence-submission occurrence, and no accept or challenge actions. It is not provider-adjudicated loss.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the deterministic dispute fixture/oracle, resolve target/bundle ownership, obtain exclusive listener attribution, or establish exact locks, journals, correlations, retained-record handling, and cleanup. Mocked close forwarding, cache invalidation, notices, generic lost guidance, action removal, and separate event-handler tests cannot substitute for the real checkout-to-event dispute chain and exactly one irreversible provider close. The apparent missing accepted-versus-adjudicated representation is not a known gap before prerequisites pass and an exact target yields an anchored RED. Retrying the mutation to erase uncertainty is forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; resolve a row-safe target and owner; approve a deterministic dispute fixture/oracle and durable-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under account, store, provider-write, and record-event locks, separate checkout and close journals, exact identity/amount/currency/event correlation, exactly one close, terminal lost plus voluntary-acceptance provenance, no evidence submission, removed actions, bounded reads, cleanup, and fail-closed quarantine. Use row-specific targets or explicitly plan reopen and re-closure before later shared-file edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, performed no browser or provider run, consumed no provider capacity, and created no quarantine. The existing separately owned listener remains untouched and cannot support exclusive future attribution. Any uncertain eventual checkout, event, dispute, close, cleanup, lock, or listener state must quarantine affected resources and must not be replayed."
+	}
+}

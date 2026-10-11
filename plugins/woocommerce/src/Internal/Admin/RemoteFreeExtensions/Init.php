@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
 
@@ -62,7 +63,38 @@ class Init extends RemoteSpecsEngine {
 			RemoteFreeExtensionsDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
 		}
 
-		return $specs_to_return;
+		return self::remove_native_woopayments_plugin( $specs_to_return );
+	}
+
+	/**
+	 * Leave the WooPayments plugin out of the bundles: WooPayments is native, and the remote specs still list it.
+	 *
+	 * The default bundles already leave it out unless merged feature plugins are allowed (DefaultFreeExtensions::get_all()).
+	 *
+	 * @param array $bundles Evaluated bundles.
+	 * @return array
+	 */
+	private static function remove_native_woopayments_plugin( array $bundles ): array {
+		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			return $bundles;
+		}
+
+		foreach ( $bundles as $index => $bundle ) {
+			if ( empty( $bundle['plugins'] ) || ! is_array( $bundle['plugins'] ) ) {
+				continue;
+			}
+
+			$bundles[ $index ]['plugins'] = array_values(
+				array_filter(
+					$bundle['plugins'],
+					static function ( $plugin ): bool {
+						return ! is_object( $plugin ) || 'woocommerce-payments' !== ( $plugin->key ?? '' );
+					}
+				)
+			);
+		}
+
+		return $bundles;
 	}
 
 	/**

@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "bnpl-refund-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "3b0b98095838ffefa44d18732514a174228e020d",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Affirm order",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:113::BNPL checkout › merchant can see and refund a Cash App Afterpay order"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review refund evidence SHA 584334a0dc253641463df9445457f367a6a3e4e659f23aecb302b3df0c2a70e8 against mutated ledger SHA 8925659b401959bed432b35f84c5098b2e55adca0710647499d4315c3c72e9b3 and committed baseline bc4cc924de492205b51380a85ca9eaca3fd42393a56ee9f72b56c0bfb4047c15 at 3b0b98095838ffefa44d18732514a174228e020d, with no findings. Exactly the two refund IDs point to this evidence and only fields 37-40 change. The schema-v2 readiness deferral reuses only the corresponding provider's false-protection captured order after all checkout oracles pass, creates no extra payment, and requires two independent irreversible journals. Each binds one local refund to one provider refund and the exact parent order, charge, intent and type, USD 55.00 amount, currency, terminal status, fully refunded balance, one financial occurrence and duplicate-free callback convergence, with one-writer/listener/no-replay halt discipline, restoration, financial-record retention, quarantine, accessibility and drift controls, and no defect, known-gap or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before the BNPL campaign may allocate its exact account/store, provider writer and exclusive listener or create the required captured Affirm and Afterpay prerequisites. The target contract and owner remain pending, and no approved native provider-refund reader proves refund identity, parent charge, amount, currency, terminal state and occurrence count. Core's locked/idempotent refund flow and event convergence are supporting evidence only; no native defect, known gap, authority conflict, or source drift is established.",
+		"affected_scope": "Two independent irreversible merchant refund journeys inside the serialized BNPL campaign. After all four checkout rows pass, the Affirm refund reuses only the exact Affirm false-protection USD 55.00 captured order and the Afterpay refund reuses only the exact Afterpay false-protection order. An authorized merchant locates each exact order semantically and dispatches one full USD 55.00 refund with reason No longer wanted. Each row owns a separate refund journal and joins exactly one local refund to exactly one terminal provider refund, original charge, intent, order, method type, amount, currency, fully refunded balance, order status, callback deliveries, accessible confirmation and audit text. No extra captured payment is created.",
+		"no_allowlisted_action_reason": "The campaign cannot establish native readiness, safely create the two exact prerequisite financial graphs, allocate sole listener ownership, approve the shared target/owner, or read authoritative provider refund evidence. A local refunded status, order note, payment-detail amount, provider link, refund metadata, webhook alone, source helper retry, checkout sibling, or idempotency key cannot substitute for one irreversible merchant action joined to exact local and provider refund identities, parent relations, USD 55.00, successful terminal state, fully refunded charge, one financial occurrence and bounded duplicate-free callback convergence. Use one worker, zero retries and no replay; uncertainty in checkout or either refund halts later writes.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Satisfy the checkout slice prerequisites and execute its four-order campaign first; approve the refund target/owner, semantic merchant driver, and read-only provider refund oracle; keep the same protected account/store and exclusively owned listener through both refunds and bounded final quiescence. Open one durable journal before each single full-refund confirmation, prove the exact local/provider/charge/intent/order/type/amount/currency/status/occurrence and callback joins plus accessible audit semantics, retain financial history, restore raw settings/account state under locks, quarantine ambiguity, and obtain fresh code, E2E-test, reliability, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, setting, shopper, product, cart, session, order, intent, charge, payment method, refund, callback, event, lock, journal, listener, retention record, or quarantine was created or changed; the separately owned listener remains untouched. A future prerequisite, identity, bundle, lock, listener, merchant-action, refund, parent, amount, currency, status, occurrence, callback, restoration, cleanup, or teardown mismatch must preserve every checkout/refund journal and all financial records and quarantine the exact account/store/settings/order/provider/refund/event graph without replay, manual completion, provider deletion, account repair, or continuation to the second refund."
+	}
+}

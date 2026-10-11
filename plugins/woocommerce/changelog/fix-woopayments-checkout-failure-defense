@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+When a WooPayments checkout fails with an unexpected error before the payment succeeds, the order is now marked failed with a note explaining the error, and a charge that went through is never reported to the shopper as a failure.

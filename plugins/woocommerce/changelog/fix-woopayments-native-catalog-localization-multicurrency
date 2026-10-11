@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Map the Payment Element locale, follow the enabled billing fields, translate payment-method labels and align the payment-method catalog and multi-currency settlement handling on native WooPayments.

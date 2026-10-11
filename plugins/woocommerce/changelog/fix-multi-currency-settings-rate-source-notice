@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Remove the automatic rate source notice from the multi-currency settings while automatic rates are available.

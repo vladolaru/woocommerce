@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Decode the WooCommerce guest session cookie before the card-testing protection E2E driver reads or replays it.

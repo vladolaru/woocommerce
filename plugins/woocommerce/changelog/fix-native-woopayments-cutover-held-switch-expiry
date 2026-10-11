@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stop a WooPayments switch held back for more than a day from completing on the original click; the switch is offered again instead.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Normalize Hong Kong Apple Pay and Google Pay wallet addresses before WooPayments Store API validation.

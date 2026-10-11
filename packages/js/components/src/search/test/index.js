@@ -15,6 +15,16 @@ const delay = ( timeout ) =>
 	new Promise( ( resolve ) => setTimeout( resolve, timeout ) );
 
 describe( 'Search', () => {
+	it( 'forwards an accessible name to the search combobox', () => {
+		const { getByRole } = render(
+			<Search type="products" ariaLabel="Search products" />
+		);
+
+		expect(
+			getByRole( 'combobox', { name: 'Search products' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'shows the free text search option', () => {
 		const { getByRole, queryAllByRole } = render(
 			<Search type="products" allowFreeTextSearch />

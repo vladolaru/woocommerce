@@ -1,0 +1,94 @@
+@import "../../_tokens.scss";
+
+// The header and Reports content mount in separate roots.
+// prettier-ignore
+body.woocommerce_page_wc-settings.woocommerce-settings-payments-tab:has(.woocommerce-woopayments-reports) {
+	.woocommerce-layout__header {
+		background: $white;
+	}
+}
+
+.woocommerce-woopayments-reports {
+	max-width: $woopayments-wide-page-max-width;
+
+	&__intro {
+		margin: 0 0 $gap;
+		color: $studio-gray-60;
+	}
+
+	&__tabs {
+		display: flex;
+		gap: $gap-smallest;
+		margin-bottom: $gap-large;
+		border-bottom: 1px solid $studio-gray-5;
+
+		[role="tab"] {
+			margin: 0;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- the tab padding; no token at 10px or 14px.
+			padding: 10px 14px;
+			border: 0;
+			border-bottom: 3px solid transparent;
+			background: transparent;
+			color: $studio-gray-80;
+			cursor: pointer;
+
+			&[aria-selected="true"] {
+				border-bottom-color: var(--wp-admin-theme-color);
+				color: $studio-gray-90;
+				font-weight: 600;
+			}
+
+			&:focus-visible {
+				outline: var(--wp-admin-border-width-focus) solid var(--wp-admin-theme-color);
+				outline-offset: 2px;
+			}
+		}
+	}
+
+	&__toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: $gap;
+		margin-bottom: $gap;
+
+		h2 {
+			margin: 0;
+			font-size: $font-size-x-large;
+			line-height: $font-line-height-large;
+		}
+	}
+
+	&__date-range {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the date range select's minimum width; no upstream token.
+		min-width: 180px;
+		margin: 0;
+	}
+
+	&__actions {
+		display: flex;
+		gap: $gap-smaller;
+	}
+}
+
+.woocommerce-woopayments-reports-state {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- the empty and error state's measure; no upstream token.
+	max-width: 560px;
+	padding: $gap-large;
+	border: 1px solid $studio-gray-5;
+	background: $white;
+
+	h2 {
+		margin-top: 0;
+		font-size: $font-size-x-large;
+		line-height: $font-line-height-large;
+	}
+
+	&__description {
+		color: $studio-gray-60;
+	}
+
+	&__action {
+		margin-top: $gap;
+	}
+}

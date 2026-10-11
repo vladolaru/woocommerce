@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Load the WooPayments order confirmation styles and scripts only on order pages for orders paid with WooPayments.

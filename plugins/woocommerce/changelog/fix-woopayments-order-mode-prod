@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Store the WooPayments 11.1.0 order mode value prod (not the account mode live) in native WooPayments _wcpay_mode order meta, read it through a WooPaymentsOrderMode constant class, and fix the one-and-done notice query that looked for production.
+

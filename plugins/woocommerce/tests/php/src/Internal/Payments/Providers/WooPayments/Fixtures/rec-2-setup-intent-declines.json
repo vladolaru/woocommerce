@@ -1,0 +1,1112 @@
+{
+	"_meta": {
+		"recording": "REC-2",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP, test mode, Stripe test payment methods",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments, WooPayments plugin inactive)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing), one request per pair, no retries",
+		"sanitized": "client_secret, request_log_url, and setup_intent.metadata fraud_prevention_data_shopper_ip_hash / fraud_prevention_data_ip_country values replaced with REDACTED; customer id in request summary abstracted; response bodies are JSON-decoded and otherwise verbatim",
+		"notes": "data/rec-2-setup-intent-declines.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "generic_decline",
+			"test_card": "4000000000000002",
+			"recorded_at": "2026-09-25T09:25:07+00:00",
+			"request": {
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "add_payment_method_1_2bfbd3c136fc2e5728b7ce5d54ff860f (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
+				"ajax_request": {
+					"_ajax_nonce": "wcpay_create_setup_intent_nonce (valid)",
+					"wcpay-payment-method": "pm_card_visa_chargeDeclined",
+					"payment_method": "woocommerce_payments"
+				},
+				"body": {
+					"customer": "cus_* (store user 1 test customer, from WooPaymentsCustomerService::get_or_create_customer_id_for_user)",
+					"payment_method": "pm_card_visa_chargeDeclined",
+					"payment_method_types": [
+						"card"
+					],
+					"metadata": "fraud_prevention_data_* from WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value('') (echoed in response setup_intent.metadata, sanitized)",
+					"confirm": "true"
+				}
+			},
+			"response": {
+				"http_status": 402,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"error": {
+						"advice_code": "try_again_later",
+						"code": "card_declined",
+						"decline_code": "generic_decline",
+						"doc_url": "https://stripe.com/docs/error-codes/card-declined",
+						"message": "Your card was declined.",
+						"network_decline_code": "01",
+						"payment_method": {
+							"id": "pm_1UJVNRBzWlxcwgpPmEwQ74TH",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": null,
+									"line1": null,
+									"line2": null,
+									"postal_code": null,
+									"state": null
+								},
+								"email": null,
+								"name": null,
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": null,
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 9,
+								"exp_year": 2027,
+								"fingerprint": "bKwxG6zhlhKoiLa8",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "0002",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790328309,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"request_log_url": "REDACTED",
+						"setup_intent": {
+							"id": "seti_1UJVNRBzWlxcwgpPVcyECxPq",
+							"object": "setup_intent",
+							"allowed_payment_method_types": null,
+							"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+							"automatic_payment_methods": null,
+							"cancellation_reason": null,
+							"client_secret": "REDACTED",
+							"created": 1790328309,
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"description": null,
+							"excluded_payment_method_types": null,
+							"flow_directions": null,
+							"last_setup_error": {
+								"advice_code": "try_again_later",
+								"code": "card_declined",
+								"decline_code": "generic_decline",
+								"doc_url": "https://stripe.com/docs/error-codes/card-declined",
+								"message": "Your card was declined.",
+								"network_decline_code": "01",
+								"payment_method": {
+									"id": "pm_1UJVNRBzWlxcwgpPmEwQ74TH",
+									"object": "payment_method",
+									"allow_redisplay": "unspecified",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"card": {
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"display_brand": "visa",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"fingerprint": "bKwxG6zhlhKoiLa8",
+										"funding": "credit",
+										"generated_from": null,
+										"iin": "400000",
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "0002",
+										"networks": {
+											"available": [
+												"visa"
+											],
+											"preferred": null
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure_usage": {
+											"supported": true
+										},
+										"wallet": null
+									},
+									"created": 1790328309,
+									"customer": null,
+									"customer_account": null,
+									"livemode": false,
+									"metadata": [],
+									"shared_payment_granted_token": null,
+									"type": "card"
+								},
+								"type": "card_error"
+							},
+							"latest_attempt": "setatt_1UJVNRBzWlxcwgpPXDxb9Teh",
+							"livemode": false,
+							"managed_payments": {
+								"enabled": false
+							},
+							"mandate": null,
+							"metadata": {
+								"fraud_prevention_data_cart_contents": "25",
+								"fraud_prevention_data_ip_country": "REDACTED",
+								"fraud_prevention_data_available": "1",
+								"fraud_prevention_data_shopper_ip_hash": "REDACTED"
+							},
+							"next_action": null,
+							"on_behalf_of": null,
+							"payment_method": null,
+							"payment_method_configuration_details": null,
+							"payment_method_options": {
+								"card": {
+									"mandate_options": null,
+									"network": null,
+									"request_three_d_secure": "automatic"
+								}
+							},
+							"payment_method_types": [
+								"card"
+							],
+							"single_use_mandate": null,
+							"status": "requires_payment_method",
+							"usage": "off_session"
+						},
+						"type": "card_error"
+					}
+				}
+			},
+			"native_observation": {
+				"note": "native controller output at recording time; not an expectation source (finding F1: client 11.1.0 maps 402 to 400)",
+				"ajax_response": {
+					"success": false,
+					"data": {
+						"error": {
+							"message": "Error: Your card was declined."
+						}
+					},
+					"status_code": 502
+				}
+			}
+		},
+		{
+			"pair": "incorrect_cvc",
+			"test_card": "4000000000000127",
+			"recorded_at": "2026-09-25T09:25:20+00:00",
+			"request": {
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "add_payment_method_1_9c107d5e484c5fc36b296cd56ae64175 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
+				"ajax_request": {
+					"_ajax_nonce": "wcpay_create_setup_intent_nonce (valid)",
+					"wcpay-payment-method": "pm_card_chargeDeclinedIncorrectCvc",
+					"payment_method": "woocommerce_payments"
+				},
+				"body": {
+					"customer": "cus_* (store user 1 test customer, from WooPaymentsCustomerService::get_or_create_customer_id_for_user)",
+					"payment_method": "pm_card_chargeDeclinedIncorrectCvc",
+					"payment_method_types": [
+						"card"
+					],
+					"metadata": "fraud_prevention_data_* from WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value('') (echoed in response setup_intent.metadata, sanitized)",
+					"confirm": "true"
+				}
+			},
+			"response": {
+				"http_status": 402,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"error": {
+						"advice_code": "confirm_card_data",
+						"code": "incorrect_cvc",
+						"decline_code": "incorrect_cvc",
+						"doc_url": "https://stripe.com/docs/error-codes/incorrect-cvc",
+						"message": "Your card's security code is incorrect.",
+						"network_advice_code": "03",
+						"network_decline_code": "N7",
+						"param": "cvc",
+						"payment_method": {
+							"id": "pm_1UJVNdBzWlxcwgpP6VPXs0Wp",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": null,
+									"line1": null,
+									"line2": null,
+									"postal_code": null,
+									"state": null
+								},
+								"email": null,
+								"name": null,
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": null,
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 9,
+								"exp_year": 2027,
+								"fingerprint": "f1BgKeYxd3NKd8JU",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "0127",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790328321,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"request_log_url": "REDACTED",
+						"setup_intent": {
+							"id": "seti_1UJVNdBzWlxcwgpPR5BlFnY8",
+							"object": "setup_intent",
+							"allowed_payment_method_types": null,
+							"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+							"automatic_payment_methods": null,
+							"cancellation_reason": null,
+							"client_secret": "REDACTED",
+							"created": 1790328321,
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"description": null,
+							"excluded_payment_method_types": null,
+							"flow_directions": null,
+							"last_setup_error": {
+								"advice_code": "confirm_card_data",
+								"code": "incorrect_cvc",
+								"decline_code": "incorrect_cvc",
+								"doc_url": "https://stripe.com/docs/error-codes/incorrect-cvc",
+								"message": "Your card's security code is incorrect.",
+								"network_advice_code": "03",
+								"network_decline_code": "N7",
+								"param": "cvc",
+								"payment_method": {
+									"id": "pm_1UJVNdBzWlxcwgpP6VPXs0Wp",
+									"object": "payment_method",
+									"allow_redisplay": "unspecified",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"card": {
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"display_brand": "visa",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"fingerprint": "f1BgKeYxd3NKd8JU",
+										"funding": "credit",
+										"generated_from": null,
+										"iin": "400000",
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "0127",
+										"networks": {
+											"available": [
+												"visa"
+											],
+											"preferred": null
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure_usage": {
+											"supported": true
+										},
+										"wallet": null
+									},
+									"created": 1790328321,
+									"customer": null,
+									"customer_account": null,
+									"livemode": false,
+									"metadata": [],
+									"shared_payment_granted_token": null,
+									"type": "card"
+								},
+								"type": "card_error"
+							},
+							"latest_attempt": "setatt_1UJVNdBzWlxcwgpPTqYHRFft",
+							"livemode": false,
+							"managed_payments": {
+								"enabled": false
+							},
+							"mandate": null,
+							"metadata": {
+								"fraud_prevention_data_cart_contents": "25",
+								"fraud_prevention_data_ip_country": "REDACTED",
+								"fraud_prevention_data_available": "1",
+								"fraud_prevention_data_shopper_ip_hash": "REDACTED"
+							},
+							"next_action": null,
+							"on_behalf_of": null,
+							"payment_method": null,
+							"payment_method_configuration_details": null,
+							"payment_method_options": {
+								"card": {
+									"mandate_options": null,
+									"network": null,
+									"request_three_d_secure": "automatic"
+								}
+							},
+							"payment_method_types": [
+								"card"
+							],
+							"single_use_mandate": null,
+							"status": "requires_payment_method",
+							"usage": "off_session"
+						},
+						"type": "card_error"
+					}
+				}
+			},
+			"native_observation": {
+				"note": "native controller output at recording time; not an expectation source (finding F1: client 11.1.0 maps 402 to 400)",
+				"ajax_response": {
+					"success": false,
+					"data": {
+						"error": {
+							"message": "Error: Your card's security code is incorrect."
+						}
+					},
+					"status_code": 502
+				}
+			}
+		},
+		{
+			"pair": "expired_card",
+			"test_card": "4000000000000069",
+			"recorded_at": "2026-09-25T09:25:23+00:00",
+			"request": {
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "add_payment_method_1_f9a8a33533848e9498302d3d60fe8d64 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
+				"ajax_request": {
+					"_ajax_nonce": "wcpay_create_setup_intent_nonce (valid)",
+					"wcpay-payment-method": "pm_card_chargeDeclinedExpiredCard",
+					"payment_method": "woocommerce_payments"
+				},
+				"body": {
+					"customer": "cus_* (store user 1 test customer, from WooPaymentsCustomerService::get_or_create_customer_id_for_user)",
+					"payment_method": "pm_card_chargeDeclinedExpiredCard",
+					"payment_method_types": [
+						"card"
+					],
+					"metadata": "fraud_prevention_data_* from WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value('') (echoed in response setup_intent.metadata, sanitized)",
+					"confirm": "true"
+				}
+			},
+			"response": {
+				"http_status": 402,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"error": {
+						"advice_code": "confirm_card_data",
+						"code": "expired_card",
+						"decline_code": "expired_card",
+						"doc_url": "https://stripe.com/docs/error-codes/expired-card",
+						"message": "Your card has expired.",
+						"network_advice_code": "03",
+						"network_decline_code": "54",
+						"param": "exp_month",
+						"payment_method": {
+							"id": "pm_1UJVNgBzWlxcwgpP3ubAQWHd",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": null,
+									"line1": null,
+									"line2": null,
+									"postal_code": null,
+									"state": null
+								},
+								"email": null,
+								"name": null,
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": null,
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 9,
+								"exp_year": 2027,
+								"fingerprint": "uw4HIjQzc0EPw2DG",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "0069",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790328324,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"request_log_url": "REDACTED",
+						"setup_intent": {
+							"id": "seti_1UJVNgBzWlxcwgpPordp7Wmw",
+							"object": "setup_intent",
+							"allowed_payment_method_types": null,
+							"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+							"automatic_payment_methods": null,
+							"cancellation_reason": null,
+							"client_secret": "REDACTED",
+							"created": 1790328324,
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"description": null,
+							"excluded_payment_method_types": null,
+							"flow_directions": null,
+							"last_setup_error": {
+								"advice_code": "confirm_card_data",
+								"code": "expired_card",
+								"decline_code": "expired_card",
+								"doc_url": "https://stripe.com/docs/error-codes/expired-card",
+								"message": "Your card has expired.",
+								"network_advice_code": "03",
+								"network_decline_code": "54",
+								"param": "exp_month",
+								"payment_method": {
+									"id": "pm_1UJVNgBzWlxcwgpP3ubAQWHd",
+									"object": "payment_method",
+									"allow_redisplay": "unspecified",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"card": {
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"display_brand": "visa",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"fingerprint": "uw4HIjQzc0EPw2DG",
+										"funding": "credit",
+										"generated_from": null,
+										"iin": "400000",
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "0069",
+										"networks": {
+											"available": [
+												"visa"
+											],
+											"preferred": null
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure_usage": {
+											"supported": true
+										},
+										"wallet": null
+									},
+									"created": 1790328324,
+									"customer": null,
+									"customer_account": null,
+									"livemode": false,
+									"metadata": [],
+									"shared_payment_granted_token": null,
+									"type": "card"
+								},
+								"type": "card_error"
+							},
+							"latest_attempt": "setatt_1UJVNgBzWlxcwgpPKPIRlkwQ",
+							"livemode": false,
+							"managed_payments": {
+								"enabled": false
+							},
+							"mandate": null,
+							"metadata": {
+								"fraud_prevention_data_cart_contents": "25",
+								"fraud_prevention_data_ip_country": "REDACTED",
+								"fraud_prevention_data_available": "1",
+								"fraud_prevention_data_shopper_ip_hash": "REDACTED"
+							},
+							"next_action": null,
+							"on_behalf_of": null,
+							"payment_method": null,
+							"payment_method_configuration_details": null,
+							"payment_method_options": {
+								"card": {
+									"mandate_options": null,
+									"network": null,
+									"request_three_d_secure": "automatic"
+								}
+							},
+							"payment_method_types": [
+								"card"
+							],
+							"single_use_mandate": null,
+							"status": "requires_payment_method",
+							"usage": "off_session"
+						},
+						"type": "card_error"
+					}
+				}
+			},
+			"native_observation": {
+				"note": "native controller output at recording time; not an expectation source (finding F1: client 11.1.0 maps 402 to 400)",
+				"ajax_response": {
+					"success": false,
+					"data": {
+						"error": {
+							"message": "Error: Your card has expired."
+						}
+					},
+					"status_code": 502
+				}
+			}
+		},
+		{
+			"pair": "insufficient_funds",
+			"test_card": "4000000000009995",
+			"recorded_at": "2026-09-25T09:25:27+00:00",
+			"request": {
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "add_payment_method_1_4ed6364ab2f8b5e74731e2810df6b3a9 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
+				"ajax_request": {
+					"_ajax_nonce": "wcpay_create_setup_intent_nonce (valid)",
+					"wcpay-payment-method": "pm_card_visa_chargeDeclinedInsufficientFunds",
+					"payment_method": "woocommerce_payments"
+				},
+				"body": {
+					"customer": "cus_* (store user 1 test customer, from WooPaymentsCustomerService::get_or_create_customer_id_for_user)",
+					"payment_method": "pm_card_visa_chargeDeclinedInsufficientFunds",
+					"payment_method_types": [
+						"card"
+					],
+					"metadata": "fraud_prevention_data_* from WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value('') (echoed in response setup_intent.metadata, sanitized)",
+					"confirm": "true"
+				}
+			},
+			"response": {
+				"http_status": 402,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"error": {
+						"advice_code": "try_again_later",
+						"code": "card_declined",
+						"decline_code": "insufficient_funds",
+						"doc_url": "https://stripe.com/docs/error-codes/card-declined",
+						"message": "Your card has insufficient funds.",
+						"network_advice_code": "02",
+						"network_decline_code": "51",
+						"payment_method": {
+							"id": "pm_1UJVNjBzWlxcwgpPQ5iNtRV2",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": null,
+									"line1": null,
+									"line2": null,
+									"postal_code": null,
+									"state": null
+								},
+								"email": null,
+								"name": null,
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": null,
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 9,
+								"exp_year": 2027,
+								"fingerprint": "mcuuWoygk81juvIG",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "9995",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790328327,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"request_log_url": "REDACTED",
+						"setup_intent": {
+							"id": "seti_1UJVNjBzWlxcwgpPhHOkeKW8",
+							"object": "setup_intent",
+							"allowed_payment_method_types": null,
+							"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+							"automatic_payment_methods": null,
+							"cancellation_reason": null,
+							"client_secret": "REDACTED",
+							"created": 1790328327,
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"description": null,
+							"excluded_payment_method_types": null,
+							"flow_directions": null,
+							"last_setup_error": {
+								"advice_code": "try_again_later",
+								"code": "card_declined",
+								"decline_code": "insufficient_funds",
+								"doc_url": "https://stripe.com/docs/error-codes/card-declined",
+								"message": "Your card has insufficient funds.",
+								"network_advice_code": "02",
+								"network_decline_code": "51",
+								"payment_method": {
+									"id": "pm_1UJVNjBzWlxcwgpPQ5iNtRV2",
+									"object": "payment_method",
+									"allow_redisplay": "unspecified",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"card": {
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"display_brand": "visa",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"fingerprint": "mcuuWoygk81juvIG",
+										"funding": "credit",
+										"generated_from": null,
+										"iin": "400000",
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "9995",
+										"networks": {
+											"available": [
+												"visa"
+											],
+											"preferred": null
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure_usage": {
+											"supported": true
+										},
+										"wallet": null
+									},
+									"created": 1790328327,
+									"customer": null,
+									"customer_account": null,
+									"livemode": false,
+									"metadata": [],
+									"shared_payment_granted_token": null,
+									"type": "card"
+								},
+								"type": "card_error"
+							},
+							"latest_attempt": "setatt_1UJVNjBzWlxcwgpPsM1ol1vr",
+							"livemode": false,
+							"managed_payments": {
+								"enabled": false
+							},
+							"mandate": null,
+							"metadata": {
+								"fraud_prevention_data_cart_contents": "25",
+								"fraud_prevention_data_ip_country": "REDACTED",
+								"fraud_prevention_data_available": "1",
+								"fraud_prevention_data_shopper_ip_hash": "REDACTED"
+							},
+							"next_action": null,
+							"on_behalf_of": null,
+							"payment_method": null,
+							"payment_method_configuration_details": null,
+							"payment_method_options": {
+								"card": {
+									"mandate_options": null,
+									"network": null,
+									"request_three_d_secure": "automatic"
+								}
+							},
+							"payment_method_types": [
+								"card"
+							],
+							"single_use_mandate": null,
+							"status": "requires_payment_method",
+							"usage": "off_session"
+						},
+						"type": "card_error"
+					}
+				}
+			},
+			"native_observation": {
+				"note": "native controller output at recording time; not an expectation source (finding F1: client 11.1.0 maps 402 to 400)",
+				"ajax_response": {
+					"success": false,
+					"data": {
+						"error": {
+							"message": "Error: Your card has insufficient funds."
+						}
+					},
+					"status_code": 502
+				}
+			}
+		},
+		{
+			"pair": "processing_error",
+			"test_card": "4000000000000119",
+			"recorded_at": "2026-09-25T09:25:30+00:00",
+			"request": {
+				"transport": "WooPaymentsCheckoutAjaxController::get_create_setup_intent_response -> WooPaymentsApiClient::create_and_confirm_setup_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/setup_intents (wpcom/v2 via Jetpack blog token)",
+				"idempotency_key": "add_payment_method_1_c30849a600e747f5d0093c1f986c92a2 (controller-derived: add_payment_method_<user_id>_md5(<payment method>))",
+				"ajax_request": {
+					"_ajax_nonce": "wcpay_create_setup_intent_nonce (valid)",
+					"wcpay-payment-method": "pm_card_chargeDeclinedProcessingError",
+					"payment_method": "woocommerce_payments"
+				},
+				"body": {
+					"customer": "cus_* (store user 1 test customer, from WooPaymentsCustomerService::get_or_create_customer_id_for_user)",
+					"payment_method": "pm_card_chargeDeclinedProcessingError",
+					"payment_method_types": [
+						"card"
+					],
+					"metadata": "fraud_prevention_data_* from WooPaymentsIntentRequestBuilder::fingerprint_metadata_from_value('') (echoed in response setup_intent.metadata, sanitized)",
+					"confirm": "true"
+				}
+			},
+			"response": {
+				"http_status": 402,
+				"content_type": "application/json; charset=UTF-8",
+				"body": {
+					"error": {
+						"advice_code": "try_again_later",
+						"code": "processing_error",
+						"decline_code": "processing_error",
+						"doc_url": "https://stripe.com/docs/error-codes/processing-error",
+						"message": "An error occurred while processing your card. Try again in a little bit.",
+						"network_decline_code": "06",
+						"payment_method": {
+							"id": "pm_1UJVNnBzWlxcwgpPoRa3MQrd",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": null,
+									"line1": null,
+									"line2": null,
+									"postal_code": null,
+									"state": null
+								},
+								"email": null,
+								"name": null,
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": null,
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 9,
+								"exp_year": 2027,
+								"fingerprint": "pj2SfKMyIIGZ7BZm",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "0119",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790328331,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"request_log_url": "REDACTED",
+						"setup_intent": {
+							"id": "seti_1UJVNnBzWlxcwgpPQ4zPbInt",
+							"object": "setup_intent",
+							"allowed_payment_method_types": null,
+							"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+							"automatic_payment_methods": null,
+							"cancellation_reason": null,
+							"client_secret": "REDACTED",
+							"created": 1790328331,
+							"customer": "cus_UsIeTbmGHPc9jY",
+							"customer_account": null,
+							"description": null,
+							"excluded_payment_method_types": null,
+							"flow_directions": null,
+							"last_setup_error": {
+								"advice_code": "try_again_later",
+								"code": "processing_error",
+								"decline_code": "processing_error",
+								"doc_url": "https://stripe.com/docs/error-codes/processing-error",
+								"message": "An error occurred while processing your card. Try again in a little bit.",
+								"network_decline_code": "06",
+								"payment_method": {
+									"id": "pm_1UJVNnBzWlxcwgpPoRa3MQrd",
+									"object": "payment_method",
+									"allow_redisplay": "unspecified",
+									"billing_details": {
+										"address": {
+											"city": null,
+											"country": null,
+											"line1": null,
+											"line2": null,
+											"postal_code": null,
+											"state": null
+										},
+										"email": null,
+										"name": null,
+										"phone": null,
+										"tax_id": null
+									},
+									"card": {
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"display_brand": "visa",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"fingerprint": "pj2SfKMyIIGZ7BZm",
+										"funding": "credit",
+										"generated_from": null,
+										"iin": "400000",
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "0119",
+										"networks": {
+											"available": [
+												"visa"
+											],
+											"preferred": null
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure_usage": {
+											"supported": true
+										},
+										"wallet": null
+									},
+									"created": 1790328331,
+									"customer": null,
+									"customer_account": null,
+									"livemode": false,
+									"metadata": [],
+									"shared_payment_granted_token": null,
+									"type": "card"
+								},
+								"type": "card_error"
+							},
+							"latest_attempt": "setatt_1UJVNnBzWlxcwgpP02RUlQUW",
+							"livemode": false,
+							"managed_payments": {
+								"enabled": false
+							},
+							"mandate": null,
+							"metadata": {
+								"fraud_prevention_data_cart_contents": "25",
+								"fraud_prevention_data_ip_country": "REDACTED",
+								"fraud_prevention_data_available": "1",
+								"fraud_prevention_data_shopper_ip_hash": "REDACTED"
+							},
+							"next_action": null,
+							"on_behalf_of": null,
+							"payment_method": null,
+							"payment_method_configuration_details": null,
+							"payment_method_options": {
+								"card": {
+									"mandate_options": null,
+									"network": null,
+									"request_three_d_secure": "automatic"
+								}
+							},
+							"payment_method_types": [
+								"card"
+							],
+							"single_use_mandate": null,
+							"status": "requires_payment_method",
+							"usage": "off_session"
+						},
+						"type": "card_error"
+					}
+				}
+			},
+			"native_observation": {
+				"note": "native controller output at recording time; not an expectation source (finding F1: client 11.1.0 maps 402 to 400)",
+				"ajax_response": {
+					"success": false,
+					"data": {
+						"error": {
+							"message": "Error: An error occurred while processing your card. Try again in a little bit."
+						}
+					},
+					"status_code": 502
+				}
+			}
+		}
+	]
+}

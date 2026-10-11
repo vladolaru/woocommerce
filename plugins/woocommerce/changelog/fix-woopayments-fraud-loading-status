@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the advanced fraud protection loading message for screen readers only, so the page shows just the loading placeholders.

@@ -1,0 +1,132 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the native WooPayments subscription payment-method policy.
+ */
+class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Clear the cart state the tests set.
+	 */
+	public function tearDown(): void {
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should expose the reusable gateway IDs supported by WooPayments 10.8 subscriptions.
+	 */
+	public function test_get_reusable_gateway_ids_matches_woopayments_contract(): void {
+		if ( ! class_exists( WooPaymentsSubscriptionMethodPolicy::class ) ) {
+			$this->fail( 'The shared WooPayments subscription method policy does not exist.' );
+		}
+
+		$this->assertSame(
+			array(
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
+			),
+			WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids()
+		);
+	}
+
+	/**
+	 * @testdox Should distinguish reusable subscription methods from non-reusable split gateways.
+	 * @dataProvider provider_reusable_gateway_ids
+	 *
+	 * @param string $gateway_id  Gateway ID.
+	 * @param bool   $is_reusable Whether the gateway is reusable.
+	 */
+	public function test_is_reusable_gateway_id_classifies_subscription_methods( string $gateway_id, bool $is_reusable ): void {
+		if ( ! class_exists( WooPaymentsSubscriptionMethodPolicy::class ) ) {
+			$this->fail( 'The shared WooPayments subscription method policy does not exist.' );
+		}
+
+		$this->assertSame( $is_reusable, WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) );
+	}
+
+	/**
+	 * @testdox Should treat a renewal-only cart as a subscription cart, like the extension.
+	 */
+	public function test_cart_contains_subscription_or_renewal_includes_renewal_carts(): void {
+		$this->report_classes_loaded( array( 'WC_Subscriptions_Core_Plugin' ) );
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
+
+		$this->assertTrue( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
+	 * @testdox Should report no subscription cart when neither a subscription nor a renewal is present.
+	 */
+	public function test_cart_contains_subscription_or_renewal_false_without_either(): void {
+		$this->report_classes_loaded( array( 'WC_Subscriptions_Core_Plugin' ) );
+		WooCommerceSubscriptionsDoubles::load_cart();
+
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
+	 * @testdox Should report no subscription cart while WooCommerce Subscriptions' cart class is not loaded (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:97`).
+	 */
+	public function test_cart_contains_subscription_or_renewal_false_without_the_cart_class(): void {
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = true;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name
+					|| ( 'WC_Subscriptions_Cart' !== $class_name && class_exists( $class_name, ...$args ) ),
+			)
+		);
+
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
+	 * @testdox Should report no subscription cart while subscriptions support is not available (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:97`).
+	 */
+	public function test_cart_contains_subscription_or_renewal_false_without_subscriptions_support(): void {
+		WooCommerceSubscriptionsDoubles::load_cart();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = true;
+
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() );
+		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+	}
+
+	/**
+	 * Report classes as loaded through LegacyProxy's `class_exists`, which the policy asks; the mock is reset after every test.
+	 *
+	 * @param string[] $class_names Class names to report as loaded.
+	 */
+	private function report_classes_loaded( array $class_names ): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => in_array( $class_name, $class_names, true ) || class_exists( $class_name, ...$args ),
+			)
+		);
+	}
+
+	/**
+	 * Reusable gateway ID scenarios.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provider_reusable_gateway_ids(): array {
+		return array(
+			'base card gateway'          => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, true ),
+			'Amazon Pay gateway'         => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay', true ),
+			'non-reusable split gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact', false ),
+			'unrelated gateway'          => array( 'other_gateway', false ),
+		);
+	}
+}

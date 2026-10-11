@@ -16,7 +16,10 @@ import { useState } from '@wordpress/element';
  * Internal dependencies
  */
 import './ellipsis-menu-content.scss';
-import { recordPaymentsProviderEvent } from '~/settings-payments/utils';
+import {
+	isWooPayments,
+	recordPaymentsProviderEvent,
+} from '~/settings-payments/utils';
 
 interface EllipsisMenuContentProps {
 	/**
@@ -214,6 +217,11 @@ export const EllipsisMenuContent = ( {
 			} );
 	};
 
+	// Built-in WooPayments ships inside WooCommerce, so there is no extension to deactivate.
+	const isBuiltInWooPayments =
+		pluginFile === 'woocommerce/woocommerce' &&
+		isWooPayments( provider?.id ?? '' );
+
 	// Filter links in accordance with the gateway state.
 	const contextLinks = links.filter( ( link: PaymentsProviderLink ) => {
 		switch ( link._type ) {
@@ -312,7 +320,7 @@ export const EllipsisMenuContent = ( {
 					</Button>
 				</div>
 			) }
-			{ ! isSuggestion && ! isEnabled && (
+			{ ! isSuggestion && ! isEnabled && ! isBuiltInWooPayments && (
 				<div
 					className="woocommerce-ellipsis-menu__content__item"
 					key="deactivate"

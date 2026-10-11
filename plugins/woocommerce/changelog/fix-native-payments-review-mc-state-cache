@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Memoize the native multi-currency state per request so product price filters do not rebuild it dozens of times per page.

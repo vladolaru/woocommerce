@@ -1,0 +1,1751 @@
+<?php
+/**
+ * WooPaymentsOrderNoteService class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
+use WC_Order;
+
+/**
+ * Formats and deduplicates WooPayments order notes.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsOrderNoteService {
+
+	/**
+	 * FROD (Future Refunds or Disputes) balances are unavailable in these account countries.
+	 */
+	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a payment-success note.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param ?string  $order_mode             `_wcpay_mode` value (WooPaymentsOrderMode), or null to use the persisted order mode.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_payment_success_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '', ?string $order_mode = null ): array {
+		$order_mode = $this->get_payment_success_note_order_mode( $order, $order_mode );
+
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, $text_domain, $formatted_amount, $order_mode )
+		);
+	}
+
+	/**
+	 * Resolve a payment-success note order mode from the synchronous value or persisted order snapshot.
+	 *
+	 * @param WC_Order $order      Order object.
+	 * @param ?string  $order_mode Synchronous order mode, when available.
+	 * @return string
+	 */
+	private function get_payment_success_note_order_mode( WC_Order $order, ?string $order_mode ): string {
+		if ( null !== $order_mode ) {
+			return $order_mode;
+		}
+
+		$persisted_order_mode = $order->get_meta( '_wcpay_mode', true );
+
+		return is_string( $persisted_order_mode ) ? $persisted_order_mode : '';
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a payment-authorization note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_payment_authorized_note_candidates( WC_Order $order, string $intent_id, string $charge_id ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_authorized_note_for_domain( $order, $intent_id, $charge_id, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build the note client 11.1.0 writes when its order-status callback completes a $0 order's SetupIntent.
+	 *
+	 * Client `update_order_status()` (gw:4248-4275) writes this plain line instead of the success note: no explicit
+	 * currency code, no emphasis, the SetupIntent ID without a link.
+	 *
+	 * @param WC_Order $order           Order object.
+	 * @param string   $setup_intent_id SetupIntent ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_zero_amount_setup_success_note_candidates( WC_Order $order, string $setup_intent_id ): array {
+		$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) $order->get_total(), $order->get_currency() );
+
+		return $this->unique_note_candidates(
+			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
+			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ),
+			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
+			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce-payments' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a payment-started note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_payment_started_note_candidates( WC_Order $order, string $intent_id ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_started_note_for_domain( $order, $intent_id, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a capture-success note.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_capture_success_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id = '' ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_capture_success_note_for_domain( $order, $intent_id, $charge_id, $balance_transaction_id, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of an authorization-cancellation note.
+	 *
+	 * @param string $intent_id Payment intent ID.
+	 * @param string $charge_id Charge ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_capture_cancelled_note_candidates( string $intent_id, string $charge_id ): array {
+		return $this->unique_note_candidates(
+			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
+			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a capture-failure note.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @param string   $message   Failure message.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_capture_failed_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $message ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_capture_failed_note_for_domain( $order, $intent_id, $charge_id, $message, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build the renderings of a failed authorization-cancel note.
+	 *
+	 * Mirrors the plugin's cancel_authorization() failure notes: the provider's
+	 * message is quoted when there is one, the generic copy otherwise.
+	 *
+	 * @param string $message Failure message from the provider, if any.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_cancel_failed_note_candidates( string $message ): array {
+		if ( '' === $message ) {
+			return array( WooPaymentsHtmlUtils::escape_interpolated_html( __( 'Canceling authorization <strong>failed</strong> to complete.', 'woocommerce' ), array( 'strong' => '<strong>' ) ) );
+		}
+
+		return array(
+			sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: error message */
+					__( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>%1$s</code>.', 'woocommerce' ),
+					array(
+						'strong' => '<strong>',
+						'code'   => '<code>',
+					)
+				),
+				esc_html( $message )
+			),
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a fraud-blocked payment note.
+	 *
+	 * Mirrors the plugin's blocked-payment note: fired risk filters render as a
+	 * bullet list with a link to the blocked transaction, and a block without
+	 * ruleset results falls back to the generic blocked copy.
+	 *
+	 * @param WC_Order             $order           Order object.
+	 * @param string               $intent_id       Blocked payment intent ID, when the block carried one.
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_fraud_blocked_note_candidates( WC_Order $order, string $intent_id, array $ruleset_results ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_fraud_blocked_note_for_domain( $order, $intent_id, $ruleset_results, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a fraud-held payment note.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order            $order           Order object.
+	 * @param string              $intent_id       Held payment intent ID.
+	 * @param string              $charge_id       Held charge ID.
+	 * @param array<string,mixed> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 */
+	public function format_fraud_held_for_review_note_candidates( WC_Order $order, string $intent_id, string $charge_id, array $ruleset_results ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_fraud_held_for_review_note_for_domain( $order, $intent_id, $charge_id, $ruleset_results, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build the blocked-transaction details URL for a fraud-blocked payment note.
+	 *
+	 * Links the note to the specific blocked attempt: the intent id when the
+	 * block carried one, otherwise the order id (rule-engine blocks fire before
+	 * an intent exists).
+	 *
+	 * @param string $intent_id Blocked payment intent ID.
+	 * @param string $order_id  Order ID fallback.
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function blocked_transaction_url( string $intent_id, string $order_id ): string {
+		if ( '' === $intent_id && '' === $order_id ) {
+			return '';
+		}
+
+		if ( false !== strpos( $intent_id, 'seti_' ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_legacy_admin_url(
+			rawurlencode( '/payments/transactions/details' ),
+			array(
+				'id'        => '' !== $intent_id ? $intent_id : $order_id,
+				'status_is' => 'block',
+				'type_is'   => 'order_note',
+			)
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a synchronous checkout payment-failure note.
+	 *
+	 * Mirrors the plugin's gateway decline note: the raw diagnostics (plus the
+	 * card_declined seller message when the charge outcome carried one) render
+	 * inside the message code block, and an incorrect_zip card error swaps in
+	 * the postal-code guidance instead of the raw diagnostics.
+	 *
+	 * @param WC_Order $order            Order object.
+	 * @param string   $message          Provider error message.
+	 * @param string   $merchant_message Merchant-facing seller message, when present.
+	 * @param string   $error_type       Provider error type.
+	 * @param string   $error_code       Provider error code.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_checkout_payment_failed_note_candidates( WC_Order $order, string $message, string $merchant_message, string $error_type, string $error_code ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_checkout_payment_failed_note_for_domain( $message, $merchant_message, $error_type, $error_code, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings for an unusable saved renewal payment method.
+	 *
+	 * @param WC_Order $order              Order object.
+	 * @param string   $token_display_name Saved payment method display name.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_unusable_saved_payment_method_note_candidates( WC_Order $order, string $token_display_name ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_unusable_saved_payment_method_note_for_domain( $token_display_name, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a payment-failure note.
+	 *
+	 * @param WC_Order            $order              Order object.
+	 * @param string              $intent_id          Payment intent ID.
+	 * @param string              $charge_id          Charge ID.
+	 * @param array<string,mixed> $last_payment_error Provider error details.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_payment_failed_note_candidates( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_failed_note_for_domain( $order, $intent_id, $charge_id, $last_payment_error, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a redirect-return payment-failure note.
+	 *
+	 * Client 11.1.0 gw:2376-2382, 2440-2441: "UPE payment failed: We're not able to process this payment. Please try again later.",
+	 * or "UPE payment failed: <message>" when another exception, such as a failed intent fetch, ended the return.
+	 *
+	 * @param WC_Order    $order             Order object.
+	 * @param string      $intent_id         Intent ID.
+	 * @param string|null $exception_message Message of the exception that ended the return, or null for the intent-error message.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_redirect_payment_failed_note_candidates( WC_Order $order, string $intent_id, ?string $exception_message = null ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			function ( string $text_domain, string $formatted_amount ) use ( $order, $intent_id, $exception_message ): string {
+				if ( 'woocommerce-payments' === $text_domain ) {
+					/* translators: %s: localized exception message. */
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce-payments' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce-payments' ) ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				} else {
+					/* translators: %s: localized exception message. */
+					$message = sprintf( __( 'UPE payment failed: %s', 'woocommerce' ), $exception_message ?? __( "We're not able to process this payment. Please try again later.", 'woocommerce' ) );
+				}
+
+				return $this->format_payment_failed_note_for_domain( $order, $intent_id, '', array(), $text_domain, $formatted_amount, $message );
+			}
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a terminal payment-failure note.
+	 *
+	 * @param WC_Order            $order              Order object.
+	 * @param string              $intent_id          Payment intent ID.
+	 * @param string              $charge_id          Charge ID.
+	 * @param array<string,mixed> $last_payment_error Provider error details.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_terminal_payment_failed_note_candidates( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_terminal_payment_failed_note_for_domain( $order, $intent_id, $charge_id, $last_payment_error, $text_domain, $formatted_amount )
+		);
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of an authorization-expiry note.
+	 *
+	 * @param string $intent_id Payment intent ID.
+	 * @param string $charge_id Charge ID.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_capture_expired_note_candidates( string $intent_id, string $charge_id ): array {
+		return $this->unique_note_candidates(
+			$this->format_capture_expired_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
+			$this->format_capture_expired_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' )
+		);
+	}
+
+	/**
+	 * Build the note for an event on a WooPayments charge that does not pay the order.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string                                                                                                                                                                               $event_type Provider event type.
+	 * @param array{intent_id?:string,charge_id?:string,refund_id?:string,dispute_id?:string,warning_id?:string,status?:string,message?:string,dispute_url?:string,amount?:float,currency?:string} $facts      The event's intent, charge, refund, dispute and warning IDs, its status and message, the dispute details URL, and its amount and currency when it moves money.
+	 * @return string
+	 * @throws \InvalidArgumentException When the event type has no note.
+	 */
+	public function format_other_charge_note( string $event_type, array $facts ): string {
+		$intent_id        = (string) ( $facts['intent_id'] ?? '' );
+		$charge_id        = (string) ( $facts['charge_id'] ?? '' );
+		$refund_id        = (string) ( $facts['refund_id'] ?? '' );
+		$dispute_id       = (string) ( $facts['dispute_id'] ?? '' );
+		$status           = (string) ( $facts['status'] ?? '' );
+		$transaction_url  = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
+		$dispute_url      = esc_url( (string) ( $facts['dispute_url'] ?? '' ) );
+		$dispute_elements = array(
+			'code' => '<code>',
+			'a'    => '<a href="%3$s" target="_blank" rel="noopener noreferrer">',
+		);
+		$link             = static fn( string $url_placeholder ): array => array(
+			'a' => '' !== $transaction_url ? '<a href="' . $url_placeholder . '" target="_blank" rel="noopener noreferrer">' : '<code>',
+		);
+
+		switch ( $event_type ) {
+			case 'payment_intent.succeeded':
+				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( (string) ( $facts['currency'] ?? '' ) ) );
+				/* translators: %1$s: WooPayments charge ID, %2$s: charged amount, %3$s: transaction URL. */
+				$format = __( 'WooPayments charge <a>%1$s</a> for %2$s does not pay this order, so it was recorded without changing the order.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%3$s' ) ), esc_html( '' !== $charge_id ? $charge_id : $intent_id ), $amount, $transaction_url );
+
+			case 'payment_intent.payment_failed':
+				/* translators: %1$s: WooPayments payment intent ID, %2$s: transaction URL. */
+				$format = __( 'A WooPayments payment attempt (<a>%1$s</a>) that does not pay this order failed.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $intent_id ), $transaction_url );
+
+			case 'charge.expired':
+				/* translators: %1$s: WooPayments charge ID, %2$s: transaction URL. */
+				$format = __( 'The authorization of WooPayments charge <a>%1$s</a>, which does not pay this order, expired.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $charge_id ), $transaction_url );
+
+			case 'charge.refunded':
+				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( (string) ( $facts['currency'] ?? '' ) ) );
+				/* translators: %1$s: refunded amount, %2$s: WooPayments refund ID, %3$s: WooPayments charge ID, %4$s: transaction URL. */
+				$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a>, which does not pay this order. No refund was added to the order.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), $amount, esc_html( $refund_id ), esc_html( $charge_id ), $transaction_url );
+
+			case 'charge.refund.updated':
+				$statuses = array(
+					'succeeded' => __( 'successful', 'woocommerce' ),
+					'failed'    => __( 'failed', 'woocommerce' ),
+					'canceled'  => __( 'canceled', 'woocommerce' ),
+					'cancelled' => __( 'canceled', 'woocommerce' ),
+				);
+				/* translators: %1$s: WooPayments refund ID, %2$s: WooPayments charge ID, %3$s: refund status, such as "failed", %4$s: transaction URL. */
+				$format = __( 'The refund <code>%1$s</code> on WooPayments charge <a>%2$s</a>, which does not pay this order, is now %3$s.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), esc_html( $refund_id ), esc_html( $charge_id ), esc_html( $statuses[ $status ] ?? $status ), $transaction_url );
+
+			case 'charge.dispute.created':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL. */
+				$format = __( 'A dispute (<code>%1$s</code>) was opened on WooPayments charge <code>%2$s</code>, which does not pay this order. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url );
+
+			case 'charge.dispute.closed':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "lost". */
+				$format = __( 'The dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, was closed with status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ) );
+
+			case 'charge.dispute.updated':
+			case 'charge.dispute.funds_withdrawn':
+			case 'charge.dispute.funds_reinstated':
+				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "under_review", %5$s: what happened, such as "Payment dispute has been updated". */
+				$format = __( '%5$s: the dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, has status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( (string) ( $facts['message'] ?? '' ) ) );
+
+			case 'radar.early_fraud_warning.created':
+				/* translators: %1$s: WooPayments early fraud warning ID, %2$s: WooPayments charge ID, %3$s: transaction URL. */
+				$format = __( 'An early fraud warning (<code>%1$s</code>) was raised on WooPayments charge <a>%2$s</a>, which does not pay this order.', 'woocommerce' );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%3$s' ), array( 'code' => '<code>' ) ) ), esc_html( (string) ( $facts['warning_id'] ?? '' ) ), esc_html( $charge_id ), $transaction_url );
+		}
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Event types are fixed strings, not HTML output.
+		throw new \InvalidArgumentException( sprintf( 'No other-charge note for WooPayments event type %s.', $event_type ) );
+	}
+
+	/**
+	 * Build an early fraud warning rendering from one known catalog.
+	 *
+	 * @param string $charge_id  Provider charge ID.
+	 * @param bool   $actionable Whether refunding can still prevent a dispute.
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_early_fraud_warning_note_for_domain( string $charge_id, bool $actionable, string $fraud_type, string $text_domain ): string {
+		$transaction_url = esc_url_raw( $this->transaction_url( '', $charge_id ) );
+		$reason          = $this->get_early_fraud_warning_reason_for_domain( $fraud_type, $text_domain );
+
+		if ( ! $actionable ) {
+			$note_format = 'woocommerce-payments' === $text_domain
+				? __( 'The early fraud warning received for this payment is no longer actionable, because the payment was refunded or disputed. See <a>payment details</a> for more information.', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				: __( 'The early fraud warning received for this payment is no longer actionable, because the payment was refunded or disputed. See <a>payment details</a> for more information.', 'woocommerce' );
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array( 'a' => '' !== $transaction_url ? '<a href="%1$s" target="_blank" rel="noopener noreferrer">' : '<code>' )
+				),
+				$transaction_url
+			);
+		}
+
+		if ( '' === $reason ) {
+			$note_format = 'woocommerce-payments' === $text_domain
+				? __( 'Payment has received an early fraud warning. <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce-payments' ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				: __( 'Payment has received an early fraud warning. <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce' );
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'refund' => '' !== $transaction_url ? '<a href="%1$s" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">' : '<code>',
+						'a'      => '' !== $transaction_url ? '<a href="%1$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: early fraud warning reason. */
+			$note_format = __( 'Payment has received an early fraud warning with reason "%1$s". <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: early fraud warning reason. */
+			$note_format = __( 'Payment has received an early fraud warning with reason "%1$s". <refund>Refunding the payment now</refund> can prevent a dispute. See <a>payment details</a> for more information.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'refund' => '' !== $transaction_url ? '<a href="%2$s" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">' : '<code>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$reason,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Map a known early fraud warning reason with one translation catalog.
+	 *
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function get_early_fraud_warning_reason_for_domain( string $fraud_type, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			switch ( $fraud_type ) {
+				case 'card_never_received':
+					return __( 'Card never received', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'fraudulent_card_application':
+					return __( 'Fraudulent card application', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_counterfeit_card':
+					return __( 'Made with counterfeit card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_lost_card':
+					return __( 'Made with lost card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'made_with_stolen_card':
+					return __( 'Made with stolen card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'misc':
+					return __( 'Other', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'unauthorized_use_of_card':
+					return __( 'Unauthorized use of card', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			}
+
+			return '';
+		}
+
+		switch ( $fraud_type ) {
+			case 'card_never_received':
+				return __( 'Card never received', 'woocommerce' );
+			case 'fraudulent_card_application':
+				return __( 'Fraudulent card application', 'woocommerce' );
+			case 'made_with_counterfeit_card':
+				return __( 'Made with counterfeit card', 'woocommerce' );
+			case 'made_with_lost_card':
+				return __( 'Made with lost card', 'woocommerce' );
+			case 'made_with_stolen_card':
+				return __( 'Made with stolen card', 'woocommerce' );
+			case 'misc':
+				return __( 'Other', 'woocommerce' );
+			case 'unauthorized_use_of_card':
+				return __( 'Unauthorized use of card', 'woocommerce' );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Build a payment-success rendering from one known catalog.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param string   $text_domain            Translation catalog to render.
+	 * @param ?string  $formatted_amount       Preformatted order amount, when supplied.
+	 * @param string   $order_mode             `_wcpay_mode` value (WooPaymentsOrderMode).
+	 * @return string
+	 */
+	private function format_payment_success_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id, string $text_domain, ?string $formatted_amount = null, string $order_mode = '' ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, $balance_transaction_id );
+		if ( WooPaymentsOrderMode::TEST === $order_mode ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				$note_format = __( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+				$note_format = __( 'A test payment of %1$s was processed using %2$s in <strong>test mode</strong> (<a>%3$s</a>). No real funds were collected.', 'woocommerce' );
+			}
+		} elseif ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: charged amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a payment-authorization rendering from one known catalog.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @param string   $text_domain Translation catalog to render.
+	 * @param ?string  $formatted_amount Preformatted order amount, when supplied.
+	 * @return string
+	 */
+	private function format_payment_authorized_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $text_domain, ?string $formatted_amount = null ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>authorized</strong> using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>authorized</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a payment-started rendering from one known catalog.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $text_domain Translation catalog to render.
+	 * @param ?string  $formatted_amount Preformatted order amount, when supplied.
+	 * @return string
+	 */
+	private function format_payment_started_note_for_domain( WC_Order $order, string $intent_id, string $text_domain, ?string $formatted_amount = null ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: started amount, %2$s: WooPayments, %3$s: payment intent ID. */
+			$note_format = __( 'A payment of %1$s was <strong>started</strong> using %2$s (<code>%3$s</code>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: started amount, %2$s: WooPayments, %3$s: payment intent ID. */
+			$note_format = __( 'A payment of %1$s was <strong>started</strong> using %2$s (<code>%3$s</code>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$intent_id
+		);
+	}
+
+	/**
+	 * Build a capture-success rendering from one known catalog.
+	 *
+	 * @param WC_Order $order                  Order object.
+	 * @param string   $intent_id              Payment intent ID.
+	 * @param string   $charge_id              Charge ID.
+	 * @param string   $balance_transaction_id Balance transaction ID.
+	 * @param string   $text_domain            Translation catalog to render.
+	 * @param ?string  $formatted_amount       Preformatted order amount, when supplied.
+	 * @return string
+	 */
+	private function format_capture_success_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $balance_transaction_id, string $text_domain, ?string $formatted_amount = null ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, $balance_transaction_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: captured amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: captured amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s was <strong>successfully captured</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build an authorization-cancellation rendering from one known catalog.
+	 *
+	 * @param string $intent_id Payment intent ID.
+	 * @param string $charge_id Charge ID.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_capture_cancelled_note_for_domain( string $intent_id, string $charge_id, string $text_domain ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+			$note_format = __( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+			$note_format = __( 'Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a capture-failure rendering from one known catalog.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @param string   $message   Failure message.
+	 * @param string   $text_domain Translation catalog to render.
+	 * @param ?string  $formatted_amount Preformatted order amount, when supplied.
+	 * @return string
+	 */
+	private function format_capture_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, string $message, string $text_domain, ?string $formatted_amount = null ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id, (string) $order->get_meta( '_wcpay_payment_transaction_id', true ) );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A capture of %1$s <strong>failed</strong> to complete using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: authorized amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A capture of %1$s <strong>failed</strong> to complete using %2$s (<a>%3$s</a>).', 'woocommerce' );
+		}
+		$note = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+
+		// The provider error message is inert text in the note, matching the
+		// plugin's esc_html() before mark_payment_capture_failed.
+		return '' === $message ? $note : $note . ' ' . esc_html( $message );
+	}
+
+	/**
+	 * Build a fraud-blocked payment rendering from one known catalog.
+	 *
+	 * @param WC_Order             $order            Order object.
+	 * @param string               $intent_id        Blocked payment intent ID.
+	 * @param array<string,string> $ruleset_results  Fired fraud-rule results, keyed by rule.
+	 * @param string               $text_domain      Translation catalog to render.
+	 * @param string               $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_fraud_blocked_note_for_domain( WC_Order $order, string $intent_id, array $ruleset_results, string $text_domain, string $formatted_amount ): string {
+		$transaction_url = $this->blocked_transaction_url( $intent_id, (string) $order->get_id() );
+		$labels          = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
+
+		if ( array() !== $labels ) {
+			$rules_list = '&#8226; ' . implode( '<br>&#8226; ', array_map( 'esc_html', $labels ) );
+
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the blocked amount, %2$s: the list of risk filters that blocked the payment. */
+				$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the blocked amount, %2$s: the list of risk filters that blocked the payment. */
+				$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'strong' => '<strong>',
+						'br'     => '<br>',
+						'a'      => '' !== $transaction_url ? '<a href="%3$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$formatted_amount,
+				$rules_list,
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the blocked amount. */
+			$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the blocked amount. */
+			$note_format = __( '&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'br'     => '<br>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build a fraud-held payment rendering from one known catalog.
+	 *
+	 * @param WC_Order            $order            Order object.
+	 * @param string              $intent_id        Held payment intent ID.
+	 * @param string              $charge_id        Held charge ID.
+	 * @param array<string,mixed> $ruleset_results  Fired fraud-rule results, keyed by rule.
+	 * @param string              $text_domain      Translation catalog to render.
+	 * @param string              $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_fraud_held_for_review_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $ruleset_results, string $text_domain, string $formatted_amount ): string {
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		$labels          = $this->get_ruleset_result_labels( $ruleset_results, $text_domain );
+
+		if ( array() !== $labels ) {
+			$rules_list = '&#8226; ' . implode( '<br>&#8226; ', array_map( 'esc_html', $labels ) );
+
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the held amount, %2$s: the list of risk filters that held the payment. */
+				$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the held amount, %2$s: the list of risk filters that held the payment. */
+				$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by the following risk filters:<br>%2$s<br><br><a>View more details</a>.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					$note_format,
+					array(
+						'strong' => '<strong>',
+						'br'     => '<br>',
+						'a'      => '' !== $transaction_url ? '<a href="%3$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+					)
+				),
+				$formatted_amount,
+				$rules_list,
+				$transaction_url
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the held amount. */
+			$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the held amount. */
+			$note_format = __( '&#x26D4; A payment of %1$s was <strong>held for review</strong> by one or more risk filters.<br><br><a>View more details</a>.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'br'     => '<br>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Get merchant-facing Core labels for fired fraud-rule results.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @return string[]
+	 */
+	public function get_fraud_ruleset_result_labels_for_display( array $ruleset_results ): array {
+		return $this->get_ruleset_result_labels( $ruleset_results, 'woocommerce' );
+	}
+
+	/**
+	 * Map fired fraud-rule results to the plugin's merchant-facing filter labels.
+	 *
+	 * @param array<string,string> $ruleset_results Fired fraud-rule results, keyed by rule.
+	 * @param string               $text_domain     Translation catalog to render.
+	 * @return string[]
+	 */
+	private function get_ruleset_result_labels( array $ruleset_results, string $text_domain ): array {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			// phpcs:disable WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			$mapping = array(
+				'review' => array(
+					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce-payments' ),
+					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce-payments' ),
+					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
+					'ip_address_mismatch'      => __( 'Place in review if the order originates from a country different from the shipping address country', 'woocommerce-payments' ),
+					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce-payments' ),
+					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce-payments' ),
+				),
+				'block'  => array(
+					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce-payments' ),
+					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce-payments' ),
+					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce-payments' ),
+					'ip_address_mismatch'      => __( 'Block if the order originates from a country different from the shipping address country', 'woocommerce-payments' ),
+					'order_items_threshold'    => __( 'Block if the items count is not in your defined range', 'woocommerce-payments' ),
+					'purchase_price_threshold' => __( 'Block if the purchase price is not in your defined range', 'woocommerce-payments' ),
+				),
+			);
+			// phpcs:enable WordPress.WP.I18n.TextDomainMismatch
+		} else {
+			$mapping = array(
+				'review' => array(
+					'avs_verification'         => __( 'Place in review if the AVS verification fails', 'woocommerce' ),
+					'address_mismatch'         => __( 'Place in review if the shipping address country differs from the billing address country', 'woocommerce' ),
+					'international_ip_address' => __( 'Place in review if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
+					'ip_address_mismatch'      => __( 'Place in review if the order originates from a country different from the shipping address country', 'woocommerce' ),
+					'order_items_threshold'    => __( 'Place in review if the items count is not in your defined range', 'woocommerce' ),
+					'purchase_price_threshold' => __( 'Place in review if the purchase price is not in your defined range', 'woocommerce' ),
+				),
+				'block'  => array(
+					'avs_verification'         => __( 'Block if the AVS verification fails', 'woocommerce' ),
+					'address_mismatch'         => __( 'Block if the shipping address differs from the billing address', 'woocommerce' ),
+					'international_ip_address' => __( 'Block if the country resolved from customer IP is not listed in your selling countries', 'woocommerce' ),
+					'ip_address_mismatch'      => __( 'Block if the order originates from a country different from the shipping address country', 'woocommerce' ),
+					'order_items_threshold'    => __( 'Block if the items count is not in your defined range', 'woocommerce' ),
+					'purchase_price_threshold' => __( 'Block if the purchase price is not in your defined range', 'woocommerce' ),
+				),
+			);
+		}
+
+		$labels = array();
+		foreach ( $ruleset_results as $key => $outcome ) {
+			if ( ! is_string( $key ) || ! is_string( $outcome ) || 'allow' === $outcome ) {
+				continue;
+			}
+
+			$labels[] = $mapping[ $outcome ][ $key ] ?? ucfirst( str_replace( '_', ' ', $key ) );
+		}
+
+		return $labels;
+	}
+
+	/**
+	 * Build a synchronous checkout payment-failure rendering from one known catalog.
+	 *
+	 * @param string $message          Provider error message.
+	 * @param string $merchant_message Merchant-facing seller message, when present.
+	 * @param string $error_type       Provider error type.
+	 * @param string $error_code       Provider error code.
+	 * @param string $text_domain      Translation catalog to render.
+	 * @param string $formatted_amount Preformatted order amount.
+	 * @return string
+	 */
+	private function format_checkout_payment_failed_note_for_domain( string $message, string $merchant_message, string $error_type, string $error_code, string $text_domain, string $formatted_amount ): string {
+		$error_details = esc_html( rtrim( $message, '.' ) );
+		if ( '' !== $merchant_message ) {
+			$error_details = $error_details . '. ' . esc_html( rtrim( $merchant_message, '.' ) );
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: the failed payment amount, %2$s: error message. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: the failed payment amount, %2$s: error message. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.', 'woocommerce' );
+		}
+
+		if ( 'card_error' === $error_type && 'incorrect_zip' === $error_code ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: the failed payment amount, %2$s: error message. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>. %2$s', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+
+				$error_details = __( 'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: the failed payment amount, %2$s: error message. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>. %2$s', 'woocommerce' );
+
+				$error_details = __( 'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.', 'woocommerce' );
+			}
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'code'   => '<code>',
+				)
+			),
+			$formatted_amount,
+			$error_details
+		);
+	}
+
+	/**
+	 * Build a payment-failure rendering from one known catalog.
+	 *
+	 * @param WC_Order            $order              Order object.
+	 * @param string              $intent_id          Payment intent ID.
+	 * @param string              $charge_id          Charge ID.
+	 * @param array<string,mixed> $last_payment_error Provider error details.
+	 * @param string              $text_domain        Translation catalog to render.
+	 * @param ?string             $formatted_amount   Preformatted order amount, when supplied.
+	 * @param ?string             $message            Failure message to append instead of the provider error details.
+	 * @return string
+	 */
+	private function format_payment_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error, string $text_domain, ?string $formatted_amount = null, ?string $message = null ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: order amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: order amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>).', 'woocommerce' );
+		}
+
+		$note = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+
+		return $note . ' ' . ( $message ?? $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain ) );
+	}
+
+	/**
+	 * Build an unusable saved renewal payment method note from one known catalog.
+	 *
+	 * @param string $token_display_name Saved payment method display name.
+	 * @param string $text_domain        Translation catalog to render.
+	 * @param string $formatted_amount   Formatted order amount.
+	 * @return string
+	 */
+	private function format_unusable_saved_payment_method_note_for_domain( string $token_display_name, string $text_domain, string $formatted_amount ): string {
+		if ( '' === $token_display_name ) {
+			if ( 'woocommerce-payments' === $text_domain ) {
+				/* translators: %1$s: failed payment amount. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: failed payment amount. */
+				$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method can no longer be used. A new payment method is required.', 'woocommerce' );
+			}
+
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html( $note_format, array( 'strong' => '<strong>' ) ),
+				$formatted_amount
+			);
+		}
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: failed payment amount, %2$s: saved payment method display name. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method <strong>%2$s</strong> can no longer be used. A new payment method is required.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: failed payment amount, %2$s: saved payment method display name. */
+			$note_format = __( 'A payment of %1$s <strong>failed</strong>: the saved payment method <strong>%2$s</strong> can no longer be used. A new payment method is required.', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html( $note_format, array( 'strong' => '<strong>' ) ),
+			$formatted_amount,
+			esc_html( $token_display_name )
+		);
+	}
+
+	/**
+	 * Build a terminal payment-failure rendering from one known catalog.
+	 *
+	 * @param WC_Order            $order              Order object.
+	 * @param string              $intent_id          Payment intent ID.
+	 * @param string              $charge_id          Charge ID.
+	 * @param array<string,mixed> $last_payment_error Provider error details.
+	 * @param string              $text_domain        Translation catalog to render.
+	 * @param ?string             $formatted_amount   Preformatted order amount, when supplied.
+	 * @return string
+	 */
+	private function format_terminal_payment_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error, string $text_domain, ?string $formatted_amount = null ): string {
+		$transaction_id  = $intent_id;
+		$transaction_url = $this->transaction_url( '', $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: order amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A terminal payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>)', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: order amount, %2$s: WooPayments, %3$s: transaction ID, %4$s: transaction URL. */
+			$note_format = __( 'A terminal payment of %1$s <strong>failed</strong> using %2$s (<a>%3$s</a>)', 'woocommerce' );
+		}
+
+		$note = sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			'WooPayments',
+			$transaction_id,
+			$transaction_url
+		);
+
+		return $note . ' ' . $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain );
+	}
+
+	/**
+	 * Build an authorization-expiry rendering from one known catalog.
+	 *
+	 * @param string $intent_id   Payment intent ID.
+	 * @param string $charge_id   Charge ID.
+	 * @param string $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_capture_expired_note_for_domain( string $intent_id, string $charge_id, string $text_domain ): string {
+		$transaction_id  = '' !== $intent_id ? $intent_id : $charge_id;
+		$transaction_url = $this->transaction_url( $intent_id, $charge_id );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+			$note_format = __( 'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		} else {
+			/* translators: %1$s: transaction ID, %2$s: transaction URL. */
+			$note_format = __( 'Payment authorization has <strong>expired</strong> (<a>%1$s</a>).', 'woocommerce' );
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				$note_format,
+				array(
+					'strong' => '<strong>',
+					'a'      => '' !== $transaction_url ? '<a href="%2$s" target="_blank" rel="noopener noreferrer">' : '<code>',
+				)
+			),
+			$transaction_id,
+			$transaction_url
+		);
+	}
+
+	/**
+	 * Build the WooPayments webhook failure suffix from one known catalog.
+	 *
+	 * @param array<string,mixed> $last_payment_error Provider error details.
+	 * @param string              $text_domain        Translation catalog to render.
+	 * @return string
+	 */
+	private function format_payment_failure_message_for_domain( array $last_payment_error, string $text_domain ): string {
+		$code         = isset( $last_payment_error['code'] ) && is_string( $last_payment_error['code'] ) ? $last_payment_error['code'] : '';
+		$decline_code = isset( $last_payment_error['decline_code'] ) && is_string( $last_payment_error['decline_code'] ) ? $last_payment_error['decline_code'] : '';
+		$message      = isset( $last_payment_error['message'] ) && is_string( $last_payment_error['message'] ) ? $last_payment_error['message'] : '';
+
+		if ( 'woocommerce-payments' === $text_domain ) {
+			switch ( $code ) {
+				case 'account_closed':
+					return __( "The customer's bank account has been closed.", 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'debit_not_authorized':
+					return __( 'The customer has notified their bank that this payment was unauthorized.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'insufficient_funds':
+					return __( "The customer's account has insufficient funds to cover this payment.", 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'no_account':
+					return __( "The customer's bank account could not be located.", 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'payment_method_microdeposit_failed':
+					return __( 'Microdeposit transfers failed. Please check the account, institution and transit numbers.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'payment_method_microdeposit_verification_attempts_exceeded':
+					return __( 'You have exceeded the number of allowed verification attempts.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'payment_intent_mandate_invalid':
+					return __( 'The mandate used for this renewal payment is invalid. You may need to bring the customer back to your store and ask them to resubmit their payment information.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+				case 'card_declined':
+					if ( 'debit_notification_undelivered' === $decline_code ) {
+						return __( "The customer's bank could not send pre-debit notification for the payment.", 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+					}
+					if ( 'transaction_not_approved' === $decline_code ) {
+						return __( 'For recurring payment greater than mandate amount or INR 15000, payment was not approved by the card holder.', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+					}
+					break;
+			}
+
+			/* translators: %s: provider error message. */
+			return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce-payments' ), $message ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+		}
+
+		switch ( $code ) {
+			case 'account_closed':
+				return __( "The customer's bank account has been closed.", 'woocommerce' );
+			case 'debit_not_authorized':
+				return __( 'The customer has notified their bank that this payment was unauthorized.', 'woocommerce' );
+			case 'insufficient_funds':
+				return __( "The customer's account has insufficient funds to cover this payment.", 'woocommerce' );
+			case 'no_account':
+				return __( "The customer's bank account could not be located.", 'woocommerce' );
+			case 'payment_method_microdeposit_failed':
+				return __( 'Microdeposit transfers failed. Please check the account, institution and transit numbers.', 'woocommerce' );
+			case 'payment_method_microdeposit_verification_attempts_exceeded':
+				return __( 'You have exceeded the number of allowed verification attempts.', 'woocommerce' );
+			case 'payment_intent_mandate_invalid':
+				return __( 'The mandate used for this renewal payment is invalid. You may need to bring the customer back to your store and ask them to resubmit their payment information.', 'woocommerce' );
+			case 'card_declined':
+				if ( 'debit_notification_undelivered' === $decline_code ) {
+					return __( "The customer's bank could not send pre-debit notification for the payment.", 'woocommerce' );
+				}
+				if ( 'transaction_not_approved' === $decline_code ) {
+					return __( 'For recurring payment greater than mandate amount or INR 15000, payment was not approved by the card holder.', 'woocommerce' );
+				}
+				break;
+		}
+
+		// The message is the platform's text, so it is escaped as the checkout path escapes it; the plugin-catalog rendering
+		// above stays as the client wrote it, so a note written before cutover still matches.
+		/* translators: %s: provider error message. */
+		return sprintf( __( 'With the following message: <code>%s</code>', 'woocommerce' ), esc_html( $message ) );
+	}
+
+	/**
+	 * Build the order note for a refund that failed for insufficient WooPayments balance.
+	 *
+	 * The generic failure line would bury the actionable guidance: this note tells the
+	 * merchant how to fund the refund, pointing at the FROD balance where the account
+	 * country supports one.
+	 *
+	 * @param WC_Order $order           Order object.
+	 * @param float    $amount          Refund amount.
+	 * @param string   $currency        Refund currency.
+	 * @param string   $account_country Connected account country.
+	 * @return string
+	 */
+	public function format_insufficient_balance_refund_note( WC_Order $order, float $amount, string $currency, string $account_country ): string {
+		$currency         = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
+		$formatted_amount = WooPaymentsCurrencyUtils::format_price_in_currency( $amount, $currency );
+
+		if ( in_array( strtoupper( $account_country ), self::FROD_UNSUPPORTED_COUNTRIES, true ) ) {
+			$note = sprintf(
+				/* translators: %1$s: Formatted refund amount. */
+				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance.', 'woocommerce' ),
+				$formatted_amount
+			);
+		} else {
+			$learn_more_url = 'https://woocommerce.com/document/woopayments/fees/preventing-negative-balances/#adding-funds';
+			$note           = sprintf(
+				/* translators: 1: Formatted refund amount, 2: Learn more URL. */
+				__( 'Refund of %1$s <strong>failed</strong> due to insufficient funds in your WooPayments balance. To prevent delays in refunding customers, please consider adding funds to your Future Refunds or Disputes (FROD) balance. <a href="%2$s" target="_blank" rel="noopener noreferrer">Learn more</a>.', 'woocommerce' ),
+				$formatted_amount,
+				esc_url( $learn_more_url )
+			);
+		}
+
+		return wp_kses_post( $note );
+	}
+
+	/**
+	 * Build the order note for a checkout refused by the failed-transaction rate limiter.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_rate_limited_payment_note( WC_Order $order ): string {
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: the failed payment amount. */
+				__( 'A payment of %1$s <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.', 'woocommerce' ),
+				array( 'strong' => '<strong>' )
+			),
+			WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order )
+		);
+	}
+
+	/**
+	 * Build the order note for a synchronous refund attempt that failed.
+	 *
+	 * @param WC_Order $order         Order object.
+	 * @param float    $amount        Refund amount.
+	 * @param string   $currency      Refund currency.
+	 * @param string   $error_message Failure message.
+	 * @return string
+	 */
+	public function format_refund_failure_note( WC_Order $order, float $amount, string $currency, string $error_message ): string {
+		return sprintf(
+			/* translators: %1$s: the refund amount, %2$s: error message. */
+			__( 'A refund of %1$s failed to complete: %2$s', 'woocommerce' ),
+			WooPaymentsCurrencyUtils::format_explicit_order_price( $amount, $currency, $order ),
+			$error_message
+		);
+	}
+
+	/**
+	 * Build a localized provider refund failure message.
+	 *
+	 * @param string $provider_status Provider refund status.
+	 * @param string $failure_reason  Provider failure reason.
+	 * @return string
+	 */
+	public function format_refund_failure_message( string $provider_status, string $failure_reason ): string {
+		return sprintf(
+			/* translators: %1$s: refund status, %2$s: failure reason. */
+			__( 'The refund returned status "%1$s". Reason: %2$s', 'woocommerce' ),
+			$provider_status,
+			'' !== $failure_reason ? $failure_reason : __( 'No reason provided.', 'woocommerce' )
+		);
+	}
+
+	/**
+	 * Get the WooPayments transaction details URL.
+	 *
+	 * @param string $intent_id              Payment intent ID.
+	 * @param string $charge_id              Charge ID.
+	 * @param string $balance_transaction_id Balance transaction ID.
+	 * @return string
+	 */
+	public function transaction_url( string $intent_id, string $charge_id, string $balance_transaction_id = '' ): string {
+		if ( '' === $intent_id && '' === $charge_id && '' === $balance_transaction_id ) {
+			return '';
+		}
+
+		if ( false !== strpos( $intent_id, 'seti_' ) ) {
+			return '';
+		}
+
+		return Utils::wc_payments_legacy_admin_url(
+			rawurlencode( '/payments/transactions/details' ),
+			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
+		);
+	}
+
+	/**
+	 * Get the merchant-facing label for a known early fraud warning reason.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @return string
+	 */
+	public function get_early_fraud_warning_reason_for_display( string $fraud_type ): string {
+		return $this->get_early_fraud_warning_reason_for_domain( $fraud_type, 'woocommerce' );
+	}
+
+	/**
+	 * Build Core and legacy-plugin renderings for an early fraud warning note.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $charge_id  Provider charge ID.
+	 * @param bool   $actionable Whether refunding can still prevent a dispute.
+	 * @param string $fraud_type Provider fraud warning reason.
+	 * @return string[] Core rendering first, then legacy-plugin compatibility rendering.
+	 */
+	public function format_early_fraud_warning_note_candidates( string $charge_id, bool $actionable, string $fraud_type ): array {
+		return $this->unique_note_candidates(
+			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce' ),
+			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce-payments' )
+		);
+	}
+
+	/**
+	 * Build a WooPayments-compatible created-refund note.
+	 *
+	 * @param WC_Order $order      Order object.
+	 * @param float    $amount     Refunded amount.
+	 * @param string   $currency   Refund currency.
+	 * @param string   $refund_id  Provider refund ID.
+	 * @param string   $reason     Refund reason.
+	 * @param bool     $is_pending Whether the provider refund is pending.
+	 * @return string
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_created_refund_note( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending ): string {
+		return $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce' );
+	}
+
+	/**
+	 * Build exact Core- and plugin-catalog renderings of a created-refund note.
+	 *
+	 * @param WC_Order $order      Order object.
+	 * @param float    $amount     Refunded amount.
+	 * @param string   $currency   Refund currency.
+	 * @param string   $refund_id  Provider refund ID.
+	 * @param string   $reason     Refund reason.
+	 * @param bool     $is_pending Whether the provider refund is pending.
+	 * @return string[] Exact equivalent renderings, with the native Core rendering first.
+	 *
+	 * @since 11.0.0
+	 */
+	public function format_created_refund_note_candidates( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending ): array {
+		$notes = array( $this->format_created_refund_note( $order, $amount, $currency, $refund_id, $reason, $is_pending ) );
+
+		foreach ( $this->format_plugin_amount_candidates( $order, $amount, $currency ) as $formatted_amount ) {
+			$notes[] = $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce-payments', $formatted_amount );
+		}
+
+		return $this->unique_note_candidates( ...$notes );
+	}
+
+	/**
+	 * Build exact amount-bearing note candidates without initializing plugin state.
+	 *
+	 * @param WC_Order                       $order     Order object.
+	 * @param callable(string,string):string $formatter Note formatter receiving text domain and amount.
+	 * @return string[] Unique exact renderings, with the native rendering first.
+	 */
+	private function format_amount_note_candidates( WC_Order $order, callable $formatter ): array {
+		$notes = array( $formatter( 'woocommerce', $this->format_order_amount( $order ) ) );
+
+		foreach ( $this->format_plugin_amount_candidates( $order, (float) $order->get_total(), $order->get_currency() ) as $formatted_amount ) {
+			$notes[] = $formatter( 'woocommerce-payments', $formatted_amount );
+		}
+
+		return $this->unique_note_candidates( ...$notes );
+	}
+
+	/**
+	 * Collapse identical Core and plugin catalog renderings.
+	 *
+	 * @param string ...$notes Exact note renderings, native first.
+	 * @return string[] Unique exact renderings, with the native rendering first.
+	 */
+	private function unique_note_candidates( string ...$notes ): array {
+		return array_values( array_unique( $notes ) );
+	}
+
+	/**
+	 * Build a created-refund note from one known translation catalog.
+	 *
+	 * @param WC_Order $order       Order object.
+	 * @param float    $amount      Refunded amount.
+	 * @param string   $currency    Refund currency.
+	 * @param string   $refund_id   Provider refund ID.
+	 * @param string   $reason      Refund reason.
+	 * @param bool     $is_pending  Whether the provider refund is pending.
+	 * @param string   $text_domain Translation catalog to render.
+	 * @param ?string  $formatted_amount Preformatted refund amount, when supplied.
+	 * @return string
+	 */
+	private function format_created_refund_note_for_domain( WC_Order $order, float $amount, string $currency, string $refund_id, string $reason, bool $is_pending, string $text_domain, ?string $formatted_amount = null ): string {
+		$formatted_price = $formatted_amount ?? WooPaymentsCurrencyUtils::format_explicit_order_price( $amount, $currency, $order );
+		if ( 'woocommerce-payments' === $text_domain ) {
+			// phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Intentionally render the legacy plugin catalog for cross-cutover deduplication.
+			$status_text = $is_pending ? __( 'is pending', 'woocommerce-payments' ) : __( 'was successfully processed', 'woocommerce-payments' );
+			if ( '' === $reason ) {
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: provider refund ID, %4$s: refund status. */
+				$note_format = __( 'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			} else {
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
+				$note_format = __( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Legacy plugin catalog compatibility.
+			}
+		} else {
+			$status_text = $is_pending ? __( 'is pending', 'woocommerce' ) : __( 'was successfully processed', 'woocommerce' );
+			if ( '' === $reason ) {
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: provider refund ID, %4$s: refund status. */
+				$note_format = __( 'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).', 'woocommerce' );
+			} else {
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
+				$note_format = __( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)', 'woocommerce' );
+			}
+		}
+
+		if ( $is_pending ) {
+			$status_text = sprintf(
+				'<a href="https://woocommerce.com/document/woopayments/managing-money/#pending-refunds" target="_blank" rel="noopener noreferrer">%1$s</a>',
+				$status_text
+			);
+		}
+
+		if ( '' === $reason ) {
+			return sprintf(
+				WooPaymentsHtmlUtils::escape_interpolated_html(
+					/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: provider refund ID, %4$s: refund status. */
+					$note_format,
+					array( 'code' => '<code>' )
+				),
+				$formatted_price,
+				'WooPayments',
+				$refund_id,
+				$status_text
+			);
+		}
+
+		return sprintf(
+			WooPaymentsHtmlUtils::escape_interpolated_html(
+				/* translators: %1$s: refund amount, %2$s: WooPayments, %3$s: refund reason, %4$s: provider refund ID, %5$s: refund status. */
+				$note_format,
+				array( 'code' => '<code>' )
+			),
+			$formatted_price,
+			'WooPayments',
+			$reason,
+			$refund_id,
+			$status_text
+		);
+	}
+
+	/**
+	 * Find a note already on the order, by its private identity or else by its text. Writes nothing.
+	 *
+	 * @param WC_Order $order            Order object.
+	 * @param string   $note             Note content.
+	 * @param string   $identity         Stable private note identity.
+	 * @param string[] $equivalent_notes Exact catalog renderings equivalent to the native note.
+	 * @return int The note's comment ID, or 0 when the order does not have the note.
+	 *
+	 * @since 11.2.0
+	 */
+	public function find_note( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array() ): int {
+		if ( '' === $note ) {
+			return 0;
+		}
+
+		$order_payment_notes = $this->get_order_payment_notes();
+		$note_id             = $order_payment_notes->find_by_identity( $order, $identity, $this->get_persistence_vocabulary() );
+
+		return 0 < $note_id
+			? $note_id
+			: $order_payment_notes->find_by_content( $order, $note, array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate ) );
+	}
+
+	/**
+	 * Record a private identity on a note, so the next write of the same note finds it whatever its text reads by then.
+	 *
+	 * Nothing is written when the note already carries the identity or the identity is empty.
+	 *
+	 * @param int    $note_id  Note comment ID.
+	 * @param string $identity Stable private note identity.
+	 *
+	 * @since 11.2.0
+	 */
+	public function record_note_identity( int $note_id, string $identity ): void {
+		$this->get_order_payment_notes()->record_identity( $note_id, $identity, $this->get_persistence_vocabulary() );
+	}
+
+	/**
+	 * Add an order note unless its content or private identity already exists.
+	 *
+	 * @param WC_Order      $order            Order object.
+	 * @param string        $note             Note content.
+	 * @param string        $identity         Stable private note identity.
+	 * @param string[]      $equivalent_notes Exact catalog renderings equivalent to the native note.
+	 * @param callable|null $before_add       Side effects to apply only when the note is new.
+	 * @return bool True when the note was added.
+	 *
+	 * @since 11.0.0
+	 */
+	public function add_note_once( WC_Order $order, string $note, string $identity = '', array $equivalent_notes = array(), ?callable $before_add = null ): bool {
+		if ( '' === $note ) {
+			return false;
+		}
+
+		$note_id = $this->find_note( $order, $note, $identity, $equivalent_notes );
+		if ( 0 < $note_id ) {
+			// A note found by its text gets the identity, so the next write finds it whatever its text reads by then.
+			$this->record_note_identity( $note_id, $identity );
+			return false;
+		}
+
+		if ( null !== $before_add ) {
+			$before_add();
+		}
+
+		return 0 < $this->get_order_payment_notes()->add( $order, $note, $identity, $this->get_persistence_vocabulary() );
+	}
+
+	/**
+	 * Get the payments runtime's order note finder.
+	 *
+	 * @return OrderPaymentNotes
+	 */
+	private function get_order_payment_notes(): OrderPaymentNotes {
+		return wc_get_container()->get( OrderPaymentNotes::class );
+	}
+
+	/**
+	 * Get the WooPayments persistence vocabulary, which names the note identity key.
+	 *
+	 * @return WooPaymentsPersistenceVocabulary
+	 */
+	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
+		return wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+	}
+
+	/**
+	 * Format the finite set of historical WooPayments amount variants.
+	 *
+	 * Loaded WooPayments code remains the canonical source. Without it, configured
+	 * additional currencies leave runtime readiness ambiguous, so both exact legacy
+	 * variants are returned rather than initializing state from order-note rendering.
+	 *
+	 * @param WC_Order $order    Order object.
+	 * @param float    $amount   Amount to format.
+	 * @param string   $currency Amount currency.
+	 * @return string[] Plugin-compatible formatted order amounts.
+	 */
+	private function format_plugin_amount_candidates( WC_Order $order, float $amount, string $currency ): array {
+		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
+		$formatted_price = wc_price( $amount, array( 'currency' => $currency ) );
+		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
+
+		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {
+			return array( (string) call_user_func( $formatter, $formatted_price, $order ) );
+		}
+
+		if ( ! $this->is_multi_currency_feature_enabled() || ! $this->has_configured_additional_currency() ) {
+			return array( $formatted_price );
+		}
+
+		return array_values(
+			array_unique(
+				array(
+					$formatted_price,
+					MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency( $formatted_price, strtoupper( $order->get_currency() ), true ),
+				)
+			)
+		);
+	}
+
+	/**
+	 * Format an order total using the canonical WooPayments note shape.
+	 *
+	 * Client 11.1.0 order-service.php:2904-2910 get_order_amount(): the code is added only when the explicit price is required.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
+	 */
+	private function format_order_amount( WC_Order $order ): string {
+		return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
+	}
+
+	/**
+	 * Format an order total for one known catalog.
+	 *
+	 * @param WC_Order $order       Order object.
+	 * @param string   $text_domain Translation catalog to render.
+	 * @return string
+	 */
+	private function format_order_amount_for_domain( WC_Order $order, string $text_domain ): string {
+		if ( 'woocommerce-payments' === $text_domain ) {
+			return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
+		}
+
+		return $this->format_order_amount( $order );
+	}
+
+	/**
+	 * Tell whether the WooPayments multi-currency feature flag is on.
+	 *
+	 * WooPayments 11.1.0 omits the explicit currency when it is off (explicit price formatter :170-172).
+	 *
+	 * @return bool
+	 */
+	private function is_multi_currency_feature_enabled(): bool {
+		return '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' );
+	}
+
+	/**
+	 * Tell whether an additional currency is configured in plugin options.
+	 *
+	 * @return bool
+	 */
+	private function has_configured_additional_currency(): bool {
+		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();
+		$enabled_currencies = array_map(
+			static fn( $currency_code ) => strtoupper( (string) $currency_code ),
+			$enabled_currencies
+		);
+
+		return count( array_unique( array_merge( array( $store_currency ), $enabled_currencies ) ) ) > 1;
+	}
+}

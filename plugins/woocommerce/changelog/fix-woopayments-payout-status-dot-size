@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments payout status dot on payout details at its usual size instead of oversized.

@@ -1,0 +1,640 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use WC_Order;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsOrderTrackingService class.
+ */
+class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Created services whose hooks must be removed after each test.
+	 *
+	 * @var WooPaymentsOrderTrackingService[]
+	 */
+	private array $services = array();
+
+	/**
+	 * Fraud-services config the fraud-service double returns.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $fraud_services_config = array();
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		foreach ( $this->services as $service ) {
+			$this->remove_tracking_hooks( $service );
+		}
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should register preserved order-tracking hooks when native owns runtime.
+	 */
+	public function test_registers_preserved_order_tracking_hooks_when_native_owns_runtime(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+
+		$service->register();
+
+		$this->assertSame( 10, has_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) ) );
+		$this->assertSame( 10, has_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) ) );
+		$this->assertSame( 10, has_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) ) );
+	}
+
+	/**
+	 * @testdox Should register renewal tracking meta filters when native owns runtime.
+	 */
+	public function test_registers_renewal_tracking_meta_filter_when_native_owns_runtime(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+
+		$service->register();
+
+		if ( class_exists( 'WC_Subscriptions_Data_Copier' ) ) {
+			$this->assertSame( 10, has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+			$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+			return;
+		}
+
+		$this->assertSame( 10, has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+		$this->assertFalse( has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register order-tracking hooks when plugin owns runtime.
+	 */
+	public function test_registers_no_order_tracking_hooks_when_plugin_owns_runtime(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
+
+		$service->register();
+
+		$this->assertFalse( has_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) ) );
+		$this->assertFalse( has_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) ) );
+		$this->assertFalse( has_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register renewal tracking meta filters when plugin owns runtime.
+	 */
+	public function test_registers_no_renewal_tracking_meta_filter_when_plugin_owns_runtime(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
+
+		$service->register();
+
+		$this->assertFalse( has_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) ) );
+		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) ) );
+	}
+
+	/**
+	 * @testdox Should remove tracking completion meta from renewal order data.
+	 */
+	public function test_removes_tracking_complete_meta_from_renewal_order_data(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+
+		$result = $service->handle_wc_subscriptions_renewal_order_data(
+			array(
+				'_new_order_tracking_complete' => 'yes',
+				'_payment_method_id'           => 'pm_123',
+			)
+		);
+
+		$this->assertArrayNotHasKey( '_new_order_tracking_complete', $result );
+		$this->assertSame( 'pm_123', $result['_payment_method_id'] );
+	}
+
+	/**
+	 * @testdox Should remove tracking completion meta from legacy renewal meta queries.
+	 */
+	public function test_removes_tracking_complete_meta_from_legacy_renewal_meta_query(): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$query   = 'SELECT meta_key, meta_value FROM wp_postmeta WHERE post_id = 123';
+
+		$result = $service->handle_wcs_renewal_order_meta_query( $query );
+
+		$this->assertStringContainsString( $query, $result );
+		$this->assertStringContainsString( "`meta_key` NOT IN ('_new_order_tracking_complete')", $result );
+	}
+
+	/**
+	 * @testdox Should skip scheduling when no Sift fraud config is available.
+	 */
+	public function test_skips_scheduling_without_sift_fraud_config(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+			)
+		);
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should schedule a preserved new-order tracking action for untracked WooPayments orders.
+	 */
+	public function test_schedules_new_order_tracking_for_untracked_woopayments_orders(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'test',
+			)
+		);
+
+		$this->enable_sift_tracking();
+
+		$before = time();
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertSame( 'wcpay_track_new_order', $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
+		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+	}
+
+	/**
+	 * @testdox Should not schedule Sift tracking for split sub-gateway orders — the plugin trains Sift on the card gateway only.
+	 */
+	public function test_does_not_schedule_tracking_for_split_sub_gateway_orders(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact',
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'test',
+			)
+		);
+
+		$this->enable_sift_tracking();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should schedule a preserved update-order tracking action for previously tracked WooPayments orders.
+	 */
+	public function test_schedules_update_order_tracking_for_tracked_woopayments_orders(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'           => 'pm_123',
+				'_new_order_tracking_complete' => 'yes',
+			)
+		);
+
+		$this->enable_sift_tracking();
+
+		$before = time();
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertSame( 'wcpay_track_update_order', $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
+		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
+		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+	}
+
+	/**
+	 * @testdox Should skip scheduling when the order is not a WooPayments order.
+	 */
+	public function test_skips_scheduling_for_non_woopayments_orders(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			'cod',
+			array(
+				'_payment_method_id' => 'pm_123',
+			)
+		);
+
+		$this->enable_sift_tracking();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should skip scheduling when the provider payment method ID is missing.
+	 */
+	public function test_skips_scheduling_without_payment_method_id(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+
+		$this->enable_sift_tracking();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should skip scheduling when Sift tracking is disabled.
+	 */
+	public function test_skips_scheduling_when_sift_is_disabled(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+			)
+		);
+
+		$this->fraud_services_config = array( 'stripe' => array() );
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox Should skip scheduling while a preserved order-tracking action is running.
+	 */
+	public function test_skips_scheduling_during_order_tracking_actions(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$order     = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+			)
+		);
+
+		$this->enable_sift_tracking();
+
+		global $wp_current_filter;
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Needed to simulate doing_action() in a unit test.
+		$wp_current_filter[] = 'wcpay_track_new_order';
+
+		try {
+			$service->handle_woocommerce_update_order( $order->get_id(), $order );
+		} finally {
+			array_pop( $wp_current_filter );
+		}
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a card order with no payment method ID takes its parent's, and its parent's customer, so it is tracked.
+	 *
+	 * Client 11.1.0 `maybe_schedule_subscription_order_tracking()` (trait-wc-payment-gateway-wcpay-subscriptions.php:1108-1160),
+	 * run first on every order update (class-wc-payment-gateway-wcpay.php:4492).
+	 */
+	public function test_repairs_an_untokened_order_from_its_parent_and_tracks_it(): void {
+		$this->make_subscriptions_available();
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$parent    = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_parent',
+				'_stripe_customer_id' => 'cus_parent',
+			)
+		);
+		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+		$this->enable_sift_tracking();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pm_parent', $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_parent', $saved->get_meta( '_stripe_customer_id', true ) );
+		$this->assertCount( 1, $scheduler->scheduled_jobs, 'The repaired order is tracked.' );
+	}
+
+	/**
+	 * @testdox With WooCommerce Subscriptions, a card order's stored payment method ID follows its latest token, and a missing customer comes from the parent.
+	 */
+	public function test_repairs_a_stale_payment_method_id_from_the_order_token(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_stripe_customer_id' => 'cus_parent' ) );
+		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_old' ) );
+		$token   = new \WC_Payment_Token_CC();
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_token( 'pm_new' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->set_user_id( 1 );
+		$token->save();
+		$order->add_payment_token( $token );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pm_new', $saved->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( 'cus_parent', $saved->get_meta( '_stripe_customer_id', true ) );
+	}
+
+	/**
+	 * @testdox The repair leaves orders of other gateways alone, split WooPayments gateways included.
+	 *
+	 * Native departure: the client repairs every updated order, writing WooPayments meta onto other gateways' orders.
+	 */
+	public function test_repair_leaves_other_gateways_orders_alone(): void {
+		$this->make_subscriptions_available();
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService() );
+		$parent  = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( '_payment_method_id' => 'pm_parent' ) );
+		$order   = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
+		$order->set_parent_id( $parent->get_id() );
+		$order->save();
+
+		$service->handle_woocommerce_update_order( $order->get_id(), $order );
+
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_payment_method_id', true ) );
+	}
+
+	/**
+	 * Make WooCommerce Subscriptions look available through its core library.
+	 */
+	private function make_subscriptions_available(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( string $class_name ): bool => 'WC_Subscriptions_Core_Plugin' === $class_name || class_exists( $class_name ),
+			)
+		);
+	}
+
+	/**
+	 * Enable Sift tracking for scheduling tests.
+	 */
+	private function enable_sift_tracking(): void {
+		$this->fraud_services_config = array( 'sift' => array() );
+	}
+
+	/**
+	 * @testdox Should track new orders through the native API and mark creation tracking complete.
+	 */
+	public function test_track_new_order_posts_order_data_and_marks_complete(): void {
+		$order      = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'  => 'pm_123',
+				'_stripe_customer_id' => 'cus_123',
+				'_wcpay_mode'         => 'test',
+			)
+		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->once() )
+			->method( 'track_order' )
+			->with(
+				$this->callback(
+					function ( array $order_data ) use ( $order ): bool {
+						return $order->get_id() === $order_data['id']
+							&& 'pm_123' === $order_data['_payment_method_id']
+							&& 'cus_123' === $order_data['_stripe_customer_id']
+							&& 'test' === $order_data['_wcpay_mode'];
+					}
+				),
+				false
+			)
+			->willReturn( array( 'result' => 'success' ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
+
+		$service->handle_wcpay_track_new_order( $order->get_id() );
+
+		$updated_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $updated_order );
+		$this->assertSame( 'yes', $updated_order->get_meta( '_new_order_tracking_complete', true ) );
+	}
+
+	/**
+	 * @testdox Should track order updates without rewriting the creation tracking marker.
+	 */
+	public function test_track_update_order_posts_update_without_rewriting_marker(): void {
+		$order      = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id'           => 'pm_123',
+				'_new_order_tracking_complete' => 'already-marked',
+			)
+		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->once() )
+			->method( 'track_order' )
+			->with( $this->isType( 'array' ), true )
+			->willReturn( array( 'result' => 'success' ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client );
+
+		$service->handle_wcpay_track_update_order( $order->get_id() );
+
+		$updated_order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $updated_order );
+		$this->assertSame( 'already-marked', $updated_order->get_meta( '_new_order_tracking_complete', true ) );
+	}
+
+	/**
+	 * @testdox Should skip tracking when the order mode does not match the current WooPayments mode.
+	 */
+	public function test_track_order_skips_mode_mismatch(): void {
+		$order      = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'prod',
+			)
+		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->never() )->method( 'track_order' );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( true ) );
+
+		$service->handle_wcpay_track_new_order( $order->get_id() );
+	}
+
+	/**
+	 * @testdox Should track a live order and send the client's `prod` order mode to the platform.
+	 *
+	 * Plugin 11.1.0 posts the stored `_wcpay_mode` after matching it with `Order_Mode::PRODUCTION` (class-wc-payments-action-scheduler-service.php:171-190).
+	 */
+	public function test_track_order_sends_prod_mode_for_live_orders(): void {
+		$order      = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'prod',
+			)
+		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->once() )
+			->method( 'track_order' )
+			->with( $this->callback( static fn( array $order_data ): bool => 'prod' === $order_data['_wcpay_mode'] ) )
+			->willReturn( array( 'result' => 'success' ) );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
+
+		$service->handle_wcpay_track_new_order( $order->get_id() );
+	}
+
+	/**
+	 * @testdox Should skip a live-mode order stored with the account-mode `live` slug, like the client.
+	 *
+	 * Plugin 11.1.0 treats any value other than the current `Order_Mode` as a mode mismatch (class-wc-payments-action-scheduler-service.php:173-179).
+	 */
+	public function test_track_order_skips_account_mode_live_value(): void {
+		$order      = $this->create_order(
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			array(
+				'_payment_method_id' => 'pm_123',
+				'_wcpay_mode'        => 'live',
+			)
+		);
+		$api_client = $this->create_api_client();
+		$api_client->expects( $this->never() )->method( 'track_order' );
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( false ) );
+
+		$service->handle_wcpay_track_new_order( $order->get_id() );
+	}
+
+	/**
+	 * Create an order with payment metadata.
+	 *
+	 * @param string              $payment_method Payment method.
+	 * @param array<string,mixed> $meta           Order meta.
+	 * @return WC_Order
+	 */
+	private function create_order( string $payment_method, array $meta = array() ): WC_Order {
+		$order = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+
+		$order->set_payment_method( $payment_method );
+		$order->set_total( 12.34 );
+
+		foreach ( $meta as $key => $value ) {
+			$order->update_meta_data( $key, $value );
+		}
+
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create an order-tracking service.
+	 *
+	 * @param WooPaymentsRuntimeArbiter              $arbiter         Runtime arbiter.
+	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
+	 * @param WooPaymentsApiClient|null              $api_client      API client.
+	 * @param WooPaymentsAccountService|null         $account_service Account service.
+	 * @param WooPaymentsFraudService|null           $fraud_service   Fraud service.
+	 * @return WooPaymentsOrderTrackingService
+	 */
+	private function create_service(
+		WooPaymentsRuntimeArbiter $arbiter,
+		?WooPaymentsActionSchedulerService $scheduler = null,
+		?WooPaymentsApiClient $api_client = null,
+		?WooPaymentsAccountService $account_service = null,
+		?WooPaymentsFraudService $fraud_service = null
+	): WooPaymentsOrderTrackingService {
+		$service = new WooPaymentsOrderTrackingService();
+		$service->init(
+			$arbiter,
+			$scheduler ?? new RecordingActionSchedulerService(),
+			$api_client ?? $this->create_api_client(),
+			$account_service ?? $this->create_account_service( true ),
+			$fraud_service ?? $this->create_fraud_service()
+		);
+
+		$this->services[] = $service;
+
+		return $service;
+	}
+
+	/**
+	 * Create a WooPayments API client mock.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_api_client(): WooPaymentsApiClient {
+		return $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'track_order' ) )
+			->getMock();
+	}
+
+	/**
+	 * Create a WooPayments account service mock.
+	 *
+	 * @param bool $test_mode Whether WooPayments should run in test mode.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service( bool $test_mode ): WooPaymentsAccountService {
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+
+		return $account_service;
+	}
+
+	/**
+	 * Create a WooPayments fraud service mock that returns the test's fraud-services config, so tests control Sift presence.
+	 *
+	 * @return WooPaymentsFraudService
+	 */
+	private function create_fraud_service(): WooPaymentsFraudService {
+		$fraud_service = $this->getMockBuilder( WooPaymentsFraudService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_fraud_services_config' ) )
+			->getMock();
+
+		$fraud_service
+			->method( 'get_fraud_services_config' )
+			->willReturnCallback(
+				fn(): array => $this->fraud_services_config
+			);
+
+		return $fraud_service;
+	}
+
+	/**
+	 * Remove registered order-tracking hooks for a service.
+	 *
+	 * @param WooPaymentsOrderTrackingService $service Service instance.
+	 */
+	private function remove_tracking_hooks( WooPaymentsOrderTrackingService $service ): void {
+		remove_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) );
+		remove_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) );
+		remove_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) );
+		remove_filter( 'wc_subscriptions_renewal_order_data', array( $service, 'handle_wc_subscriptions_renewal_order_data' ) );
+		remove_filter( 'wcs_renewal_order_meta_query', array( $service, 'handle_wcs_renewal_order_meta_query' ) );
+	}
+}

@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "widget-frontend-properties-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1ee5653f5e6653fccb43ca347f0ab2c1d1b7ee7f",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-multi-currency-widget.spec.ts:204::Multi-currency widget setup › widget settings are applied in the frontend"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php;plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencyFrontendPricesControllerTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/MultiCurrency/WooPaymentsCurrencyRateProviderTest.php;plugins/woocommerce/client/blocks/assets/js/blocks/multi-currency-switcher/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-204 blocked-environment deferral and four-field-only transition, strict separation from line 79 and adjacent widget rows, independently durably seeded single switcher with the full flags/symbols/border plus 15/40/2.3/purple/amber values, combined exhaustive lower-layer projection and real semantic storefront proof boundary without weakening, rejected DOM/inline-whitespace/emoji-mechanism/theme-CSS details, disposable shopper lifecycle, byte-exact option/theme/widget restoration without normalization or blanket deletion, ordered locks and journals, one worker and zero retries, exact full multi-target preservation and drift handling, predecessor/calibration binding, PILOT-first prerequisite order, no native-defect claim, listener/provider irrelevance, and zero current resources/quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership and readiness fails first. The run also lacks a resolved exact storefront-render owner and row-safe target topology; an approved independently saved switcher and active-theme fixture; a stable semantic published-control adapter; complete lower-layer attribute-to-render projection coverage; byte-exact feature, currency, theme, sidebar, widget, and block snapshot/restoration; ordered locks and durable journals; bounded publication/render confirmation; and approved shopper cleanup/quarantine handling.",
+		"affected_scope": "Only line 204 persisted presentation reaching the storefront: exactly one independently and durably seeded supported native switcher has flags, currency symbols, and border enabled, radius 15, font size 40, line height 2.3, text color rgb(155, 81, 224), and border color rgb(252, 185, 0). Exact lower-layer coverage proves every attribute-to-render mapping, and a fresh disposable shopper proves the same published block exposes correct flag and symbol semantics plus representative configured border/style presentation across the real storefront boundary. It claims no merchant editing/save behavior, membership, selection, repricing, checkout, payment, provider state, exact DOM class, inline whitespace, emoji glyph implementation, theme-specific CSS pixel mechanism, or Storefront/sidebar placement.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair readiness, choose the exact native render owner/row-safe target, approve deterministic saved-block/theme mutation, or establish exhaustive projection coverage plus the semantic storefront adapter, byte-exact snapshot/restoration, locks, journals, and quarantine. Lower tests cannot substitute for real publication to a shopper, while one browser CSS check cannot substitute for the full attribute matrix. The line-79 deferral supplied no runtime block, the future smoke target does not exist, and frozen currency normalization or blanket switcher deletion is destructive and forbidden. No native defect is known before prerequisites and exact-target RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful native readiness; resolve the exact render owner and row-safe multi-target topology; approve an independent active-theme saved-switcher fixture and semantic storefront adapter; complete exact lower-layer projection coverage; acquire ordered store, settings, theme, and widget locks; snapshot option existence and byte-exact values; journal every mutation; use a fresh disposable shopper; run once with one worker and zero retries; prove the semantic published crossing; close the shopper context; and restore and verify every prior byte. Quarantine uncertainty and explicitly reopen/re-close this row if its target bundle drifts.",
+		"quarantine_status": "This deferral allocated and mutated nothing, opened no browser or shopper context, acquired no lock, opened no journal, consumed no provider capacity, and created no quarantine. It creates no payment, order, provider, or listener resource; the separately owned listener remains untouched and irrelevant. Any uncertain eventual insertion, publication, render observation, restoration, shopper cleanup, lock, or journal state must quarantine affected store/session resources and must not be replayed."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the address bar on admin.php when WooPayments payment details redirect a charge and when the disputes, payouts and documents lists change their filters.

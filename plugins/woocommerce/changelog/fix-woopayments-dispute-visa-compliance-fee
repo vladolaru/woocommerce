@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments Visa compliance disputes explain the $500 USD network fee and require acknowledging it before the dispute can be challenged.

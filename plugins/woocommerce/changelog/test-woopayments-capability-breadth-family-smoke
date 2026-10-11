@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a provider-free WooPayments-native E2E smoke proving editor wp-admin access stays intact on a connected store while payment administration stays capability-gated, and reopen the two capability-breadth contracts under the family-smoke acceptance.

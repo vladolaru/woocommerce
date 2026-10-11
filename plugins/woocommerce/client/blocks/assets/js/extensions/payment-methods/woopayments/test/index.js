@@ -1,0 +1,3467 @@
+/**
+ * External dependencies
+ */
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from '@testing-library/react';
+// user-event resolves another @testing-library/dom than @testing-library/react configures, so its events are not
+// wrapped in act(); the tests wrap each interaction, as other Blocks tests do.
+import userEvent from '@testing-library/user-event';
+import { createElement, useEffect, useReducer } from '@wordpress/element';
+import { Skeleton } from '@woocommerce/base-components/skeleton';
+import { useSelect } from '@wordpress/data';
+import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
+
+/**
+ * Internal dependencies
+ */
+import { validatePhoneNumber } from 'woocommerce-phone-number-validation';
+import registerWooPayments from '../index';
+import { recordWooPaymentsUserEvent } from '../tracks';
+import {
+	getAppearance,
+	getBlocksCheckoutAppearance,
+	getFieldStyles,
+	normalizeAppearanceForStripe,
+	normalizeAppearanceValueForStripe,
+	resolveCurrentColor,
+} from '../upe-styles';
+
+jest.mock( '@fingerprintjs/fingerprintjs', () => ( {
+	__esModule: true,
+	default: {
+		load: jest.fn().mockResolvedValue( {
+			get: () => Promise.resolve( { visitorId: 'device_fp_123' } ),
+		} ),
+	},
+} ) );
+
+jest.mock( '@woocommerce/blocks-registry', () => ( {
+	registerPaymentMethod: jest.fn(),
+	registerExpressPaymentMethod: jest.fn(),
+} ) );
+
+jest.mock( '@woocommerce/settings', () => {
+	const paymentMethodData = {
+		title: 'WooPayments',
+		supports: [ 'products', 'subscriptions', 'multiple_subscriptions' ],
+		gatewayId: 'woocommerce_payments',
+		publishableKey: 'pk_test_123',
+		accountId: 'acct_123',
+		cartTotal: 0,
+		stylesCacheVersion: 'styles-v1',
+		currency: 'USD',
+		forceNetworkSavedCards: true,
+		isSavedCardsEnabled: false,
+		initWooPayNonce: 'init-nonce',
+		isCoreNativeCheckoutAvailable: true,
+		isWooPayEnabled: true,
+		shouldShowWooPayButton: true,
+		testMode: true,
+		platformTrackerNonce: 'tracks-nonce',
+		isShopperTrackingEnabled: true,
+		wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+		woopayButton: {
+			type: 'default',
+			theme: 'dark',
+			height: '48',
+			radius: '4',
+			size: 'default',
+			context: 'checkout',
+		},
+		woopayAppearance: {
+			theme: 'stripe',
+			labels: 'floating',
+		},
+		woopayFontRules: [
+			{
+				cssSrc: 'https://fonts.wp.com/font.css',
+				family: 'Inter',
+			},
+		],
+		woopaySessionNonce: 'session-nonce',
+		PRE_CHECK_SAVE_MY_INFO: true,
+		paymentMethodsConfig: {
+			card: {
+				title: 'Card',
+				isReusable: true,
+				showSaveOption: false,
+				forceNetworkSavedCards: true,
+				cardBrandIcons: [
+					{
+						id: 'visa',
+						alt: 'Visa',
+						src: 'https://example.test/visa.svg',
+					},
+					{
+						id: 'mastercard',
+						alt: 'Mastercard',
+						src: 'https://example.test/mastercard.svg',
+					},
+					{
+						id: 'amex',
+						alt: 'American Express',
+						src: 'https://example.test/amex.svg',
+					},
+					{
+						id: 'discover',
+						alt: 'Discover',
+						src: 'https://example.test/discover.svg',
+					},
+					{
+						id: 'jcb',
+						alt: 'JCB',
+						src: 'https://example.test/jcb.svg',
+					},
+					{
+						id: 'unionpay',
+						alt: 'Union Pay',
+						src: 'https://example.test/unionpay.svg',
+					},
+				],
+				testingInstructions:
+					// Markup of WooPaymentsCheckoutAssets::get_card_testing_instructions().
+					'Use test card <button type="button" class="js-woopayments-copy-test-number" title="Copy to clipboard"><i></i><span>4242 4242 4242 4242</span></button><span class="js-woopayments-copy-test-number-status screen-reader-text" role="status" aria-live="polite" data-copied-message="Copied to clipboard."></span> or refer to our <a href="https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards" target="_blank">testing guide</a>.',
+			},
+			link: {
+				isReusable: false,
+			},
+		},
+		ajaxUrl: 'https://example.test/wp-admin/admin-ajax.php',
+		tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+		tracksRestNonce: 'rest-nonce',
+	};
+
+	return {
+		getPaymentMethodData: jest.fn( () => paymentMethodData ),
+		getSetting: jest.fn( ( setting, defaultValue ) => {
+			if ( setting === 'paymentMethodData' ) {
+				return { woocommerce_payments: paymentMethodData };
+			}
+
+			// Blocks settings shape of the store pages (src/Blocks/Assets/AssetDataRegistry.php storePages, get_store_pages()).
+			if ( setting === 'storePages' ) {
+				return {
+					checkout: { permalink: 'https://example.test/checkout/' },
+				};
+			}
+
+			return defaultValue;
+		} ),
+	};
+} );
+
+// The bundle loads StoreNotice from the wc-blocks-components script at runtime; its package entry pulls in every
+// Blocks data store, which needs the full settings fixture, so the tests render a plain stand-in.
+jest.mock( '@woocommerce/blocks-components', () => ( {
+	StoreNotice: ( { children } ) => <div role="alert">{ children }</div>,
+} ) );
+
+// The validation store actions the WooPay save-user section dispatches (wc/store/validation).
+const mockValidationActions = {
+	setValidationErrors: jest.fn(),
+	clearValidationError: jest.fn(),
+};
+
+jest.mock( '@wordpress/data', () => ( {
+	useSelect: jest.fn(),
+	dispatch: jest.fn( () => mockValidationActions ),
+} ) );
+
+const originalFetch = window.fetch;
+const OriginalResizeObserver = window.ResizeObserver;
+
+/**
+ * Stripe createPaymentMethod result used by the new-card test harness.
+ *
+ * @typedef {Object} NewCardPaymentMethodResult
+ * @property {{ id: string, card: { fingerprint: string } }}                         [paymentMethod] - Successful payment method.
+ * @property {{ code: string, decline_code: string, message: string, type: string }} [error]         - Provider error.
+ */
+
+describe( 'wc-payment-method-woopayments', () => {
+	// The Blocks payment store selectors the bundle reads (wc/store/payment getActivePaymentMethod, getPaymentMethodData).
+	let activePaymentMethod;
+	// Components re-render when the store changes, as with the real useSelect subscription.
+	const storeListeners = new Set();
+	const setActivePaymentMethod = ( method ) => {
+		activePaymentMethod = method;
+		act( () => storeListeners.forEach( ( listener ) => listener() ) );
+	};
+
+	// The validation store (wc/store/validation): errors set through dispatch are what getValidationError() returns.
+	let validationErrors;
+
+	beforeEach( () => {
+		activePaymentMethod = 'woocommerce_payments';
+		storeListeners.clear();
+		validationErrors = {};
+		mockValidationActions.setValidationErrors.mockImplementation(
+			( errors ) => {
+				Object.assign( validationErrors, errors );
+				storeListeners.forEach( ( listener ) => listener() );
+			}
+		);
+		mockValidationActions.clearValidationError.mockImplementation(
+			( id ) => {
+				delete validationErrors[ id ];
+				storeListeners.forEach( ( listener ) => listener() );
+			}
+		);
+		useSelect.mockImplementation( ( callback ) => {
+			const [ , rerender ] = useReducer( ( count ) => count + 1, 0 );
+
+			useEffect( () => {
+				storeListeners.add( rerender );
+				return () => storeListeners.delete( rerender );
+			}, [] );
+
+			return callback( () => ( {
+				getActivePaymentMethod: () => activePaymentMethod,
+				getValidationError: ( id ) => validationErrors[ id ],
+				getPaymentMethodData: () => ( {
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '12',
+					token: '12',
+					isSavedToken: true,
+				} ),
+			} ) );
+		} );
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
+		jest.restoreAllMocks();
+		delete window.Stripe;
+		delete window.wcWooPaymentsPhoneValidation;
+		delete window.navigator.clipboard;
+		delete window.wcpayFraudPreventionToken;
+		window.fetch = originalFetch;
+		document.body.innerHTML = '';
+		window.history.pushState( {}, '', '/' );
+		window.localStorage.clear();
+		jest.clearAllMocks();
+	} );
+
+	const setUpNewCardPayment = async ( billing ) => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		const calls = [];
+		const elementsInstance = {
+			create: jest.fn( () => ( {
+				on: jest.fn(),
+				mount: jest.fn(),
+			} ) ),
+			submit: jest.fn( () => {
+				calls.push( 'submit' );
+				return Promise.resolve( {} );
+			} ),
+		};
+		/** @type {jest.Mock<Promise<NewCardPaymentMethodResult>>} */
+		const createPaymentMethod = jest.fn( () => {
+			calls.push( 'createPaymentMethod' );
+			return Promise.resolve( {
+				paymentMethod: {
+					id: 'pm_123',
+					card: {
+						fingerprint: 'fp_123',
+					},
+				},
+			} );
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => elementsInstance ),
+			createPaymentMethod,
+		} ) );
+
+		const registration = registerWooPayments();
+		const setupCallbacks = [];
+		const unsubscribePaymentSetup = jest.fn();
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupCallbacks.push( callback );
+			return unsubscribePaymentSetup;
+		} );
+		const onCheckoutSuccess = jest.fn();
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const content = registration.content;
+		const createContent = ( nextBilling ) =>
+			createElement( content.type, {
+				...content.props,
+				...( nextBilling === undefined
+					? {}
+					: { billing: nextBilling } ),
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} );
+
+		const view = render( createContent( billing ) );
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		return {
+			...view,
+			calls,
+			createContent,
+			createPaymentMethod,
+			elementsInstance,
+			onPaymentSetup,
+			setupCallbacks,
+			unsubscribePaymentSetup,
+		};
+	};
+
+	it( 'submits wcpay-payment-method metadata for a new card method', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
+		const harness = await setUpNewCardPayment();
+
+		await expect( harness.setupCallbacks[ 0 ]() ).resolves.toEqual( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method': 'pm_123',
+					'wcpay-payment-method-error-code': '',
+					'wcpay-payment-method-error-message': '',
+					'wcpay-fingerprint': 'device_fp_123',
+					'wcpay-is-platform-payment-method': 'true',
+					'wcpay-fraud-prevention-token': 'fraud-token-123',
+				},
+			},
+		} );
+	} );
+
+	it( 'records a WooPayments place-order event when Blocks payment setup runs', async () => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		const registration = registerWooPayments();
+		let setupResult;
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupResult = callback();
+		} );
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalled();
+		} );
+		await setupResult;
+
+		const trackingRequest = window.fetch.mock.calls.find(
+			( [ url ] ) =>
+				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
+		);
+
+		expect( trackingRequest ).toBeDefined();
+		expect( trackingRequest[ 1 ] ).toEqual(
+			expect.objectContaining( {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': 'rest-nonce' },
+			} )
+		);
+		expect( trackingRequest[ 1 ].body.has( 'action' ) ).toBe( false );
+		expect( trackingRequest[ 1 ].body.get( 'tracksNonce' ) ).toBe(
+			'tracks-nonce'
+		);
+		expect( trackingRequest[ 1 ].body.get( 'tracksEventName' ) ).toBe(
+			'checkout_place_order_button_click'
+		);
+		expect(
+			JSON.parse( trackingRequest[ 1 ].body.get( 'tracksEventProp' ) )
+		).toEqual( {} );
+	} );
+
+	it( 'does not record tracking events when shopper tracking is disabled', () => {
+		window.fetch = jest.fn();
+
+		recordWooPaymentsUserEvent(
+			{
+				tracksUrl: 'https://example.test/wp-json/wc/v3/payments/tracks',
+				platformTrackerNonce: 'tracks-nonce',
+				isShopperTrackingEnabled: false,
+			},
+			'checkout_place_order_button_click'
+		);
+
+		expect( window.fetch ).not.toHaveBeenCalled();
+	} );
+
+	it( 'honors backend saved-payment controls', () => {
+		const registration = registerWooPayments();
+
+		expect( registration.supports ).toEqual(
+			expect.objectContaining( {
+				features: expect.arrayContaining( [
+					'products',
+					'subscriptions',
+					'multiple_subscriptions',
+				] ),
+				showSavedCards: false,
+				showSaveOption: false,
+			} )
+		);
+	} );
+
+	it( 'returns saved-token payment data during Blocks payment setup without creating a new payment method', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
+		const createPaymentMethod = jest.fn();
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn(),
+			createPaymentMethod,
+		} ) );
+		const registration = registerWooPayments();
+		let setupResult;
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupResult = callback();
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalled();
+		} );
+
+		expect( setupResult ).toEqual( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '12',
+					token: '12',
+					isSavedToken: true,
+					'wcpay-fraud-prevention-token': 'fraud-token-123',
+				},
+			},
+		} );
+		expect( createPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
+	// Stand-in for core's PaymentMethodLabel (base/components/cart-checkout/payment-method-label/index.tsx): the icon
+	// element followed by the text.
+	const PaymentMethodLabel = ( { text, icon } ) => (
+		<span>
+			{ icon }
+			{ text }
+		</span>
+	);
+
+	function renderCardBrandTrigger() {
+		const registration = registerWooPayments();
+		const LabelComponent = registration.label.type;
+		const view = render(
+			createElement( LabelComponent, {
+				components: { PaymentMethodLabel },
+			} )
+		);
+		return {
+			trigger: screen.getByRole( 'button', {
+				name: 'Show all supported credit card brands',
+			} ),
+			unmount: view.unmount,
+		};
+	}
+
+	// The document listeners the open popover added, so a test can require that exactly those are removed.
+	function spyOnPopoverListeners() {
+		const added = jest.spyOn( document, 'addEventListener' );
+		const removed = jest.spyOn( document, 'removeEventListener' );
+		const listenersFor = ( spy ) =>
+			spy.mock.calls
+				.filter( ( [ type ] ) =>
+					[ 'keydown', 'mousedown' ].includes( type )
+				)
+				.map( ( [ type, listener ] ) => [ type, listener ] );
+
+		return {
+			added: () => listenersFor( added ),
+			removed: () => listenersFor( removed ),
+			restore: () => {
+				added.mockRestore();
+				removed.mockRestore();
+			},
+		};
+	}
+
+	it( 'opens the card brand popover as a dialog, focuses it and returns focus on Escape', async () => {
+		const user = userEvent.setup();
+		const { trigger } = renderCardBrandTrigger();
+
+		expect( trigger ).toHaveAttribute( 'aria-haspopup', 'dialog' );
+		await act( () => user.tab() );
+		expect( trigger ).toHaveFocus();
+		await act( () => user.keyboard( '{Enter}' ) );
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Supported credit card brands',
+		} );
+		expect( dialog ).toHaveFocus();
+		// The trigger's name replaces its images' alt text, so the dialog names every brand.
+		expect( dialog ).toHaveAccessibleDescription(
+			'Visa, Mastercard, American Express, Discover, JCB, Union Pay'
+		);
+
+		await act( () => user.keyboard( '{Escape}' ) );
+
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		expect( trigger ).toHaveFocus();
+	} );
+
+	it( 'closes the card brand popover on an outside click and removes the listeners it added', async () => {
+		const user = userEvent.setup();
+		const { trigger } = renderCardBrandTrigger();
+		const listeners = spyOnPopoverListeners();
+
+		await act( () => user.click( trigger ) );
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+
+		// Bare mousedown events: user-event's press would also move focus to the pressed element, which would hide
+		// whether the outside-click close itself leaves focus off the trigger.
+		fireEvent.mouseDown( screen.getByRole( 'dialog' ) );
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+
+		fireEvent.mouseDown( document.body );
+
+		expect( screen.queryByRole( 'dialog' ) ).not.toBeInTheDocument();
+		expect( trigger ).not.toHaveFocus();
+		expect( listeners.added() ).toHaveLength( 2 );
+		expect( listeners.removed() ).toEqual( listeners.added() );
+		listeners.restore();
+	} );
+
+	it( 'removes the card brand popover listeners when it unmounts while open', async () => {
+		const user = userEvent.setup();
+		const { trigger, unmount } = renderCardBrandTrigger();
+		const listeners = spyOnPopoverListeners();
+
+		await act( () => user.click( trigger ) );
+		unmount();
+
+		expect( listeners.added() ).toHaveLength( 2 );
+		expect( listeners.removed() ).toEqual( listeners.added() );
+		listeners.restore();
+	} );
+
+	it( 'shows the test mode badge in the payment method label', () => {
+		const registration = registerWooPayments();
+		const LabelComponent = registration.label.type;
+
+		render(
+			createElement( LabelComponent, {
+				components: {
+					PaymentMethodLabel,
+				},
+			} )
+		);
+
+		expect( screen.getByText( 'Card' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Test Mode' ) ).toBeInTheDocument();
+		expect( screen.getByAltText( 'Visa' ) ).toHaveAttribute(
+			'src',
+			'https://example.test/visa.svg'
+		);
+		expect( screen.getByAltText( 'Mastercard' ) ).toHaveAttribute(
+			'src',
+			'https://example.test/mastercard.svg'
+		);
+		expect( screen.getByText( '+ 2' ) ).toBeInTheDocument();
+		expect(
+			document.querySelector( '.payment-methods--logos' )
+		).toBeInTheDocument();
+		expect(
+			document.querySelector( '.wcpay-core-card-brand-icons' )
+		).not.toBeInTheDocument();
+		expect( registration.ariaLabel ).toContain( 'Test Mode' );
+	} );
+
+	it( 'renders the WooPay save-my-info section after the Blocks payment step', async () => {
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+			<input id="billing-phone" value="5551234567" />
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect(
+				screen.getByRole( 'heading', { name: 'Save my info' } )
+			).toBeInTheDocument();
+		} );
+
+		expect(
+			document.querySelector( '#remember-me' )?.previousElementSibling
+		).toHaveClass( 'wp-block-woocommerce-checkout-payment-block' );
+		expect(
+			screen.getByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
+		).toBeChecked();
+		expect(
+			document.querySelector( 'input[name="woopay_viewport"]' )
+		).toBeInTheDocument();
+		// The posted number carries its country code, as the client's phone input posts it.
+		expect(
+			document.querySelector(
+				'input[name="woopay_user_phone_field[full]"]'
+			)
+		).toHaveValue( '+15551234567' );
+		expect( screen.getByLabelText( 'Mobile phone number' ) ).toHaveValue(
+			'5551234567'
+		);
+	} );
+
+	it( 'records WooPay save-info checkbox events and leaves the offer to the email check', async () => {
+		const user = userEvent.setup();
+		// The validation script the section loads on opt-in (phone-validation.js), already present here.
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+			<input id="billing-phone" value="2015550123" />
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		const saveMyInfo = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
+		await waitFor( () => {
+			expect( saveMyInfo ).toBeChecked();
+		} );
+
+		await act( () => user.click( saveMyInfo ) );
+		expect( saveMyInfo ).not.toBeChecked();
+
+		await act( () => user.click( saveMyInfo ) );
+		expect( saveMyInfo ).toBeChecked();
+
+		await waitFor( () => {
+			const events = window.fetch.mock.calls
+				.filter(
+					( [ url ] ) =>
+						url ===
+						'https://example.test/wp-json/wc/v3/payments/tracks'
+				)
+				.map( ( [ , options ] ) => ( {
+					name: options.body.get( 'tracksEventName' ),
+					props: JSON.parse( options.body.get( 'tracksEventProp' ) ),
+				} ) );
+
+			// The offer is recorded by the WooPay email check (client 11.1.0 email-input-iframe.js:411-427), not here;
+			// mobile_enter follows each time the number becomes valid (checkout-page-save-user.js:169-174).
+			expect( events ).toEqual( [
+				{
+					name: 'checkout_woopay_save_my_info_mobile_enter',
+					props: {},
+				},
+				{
+					name: 'checkout_save_my_info_click',
+					props: { status: 'unchecked' },
+				},
+				{
+					name: 'checkout_save_my_info_click',
+					props: { status: 'checked' },
+				},
+				{
+					name: 'checkout_woopay_save_my_info_mobile_enter',
+					props: {},
+				},
+			] );
+		} );
+
+		expect(
+			document.querySelector( 'input[name="woopay_source_url"]' )
+		).toHaveValue( 'https://example.test/checkout/' );
+		// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout permalink, not the browser URL.
+		const saveUserBodies = window.fetch.mock.calls
+			.filter( ( [ url ] ) =>
+				String( url ).includes( 'set_woopay_phone_number' )
+			)
+			.map( ( [ , options ] ) => options.body )
+			.filter( ( body ) => ! body.has( 'empty' ) );
+		expect( saveUserBodies.length ).toBeGreaterThan( 0 );
+		saveUserBodies.forEach( ( body ) => {
+			expect( body.get( 'woopay_source_url' ) ).toBe(
+				'https://example.test/checkout/'
+			);
+		} );
+	} );
+
+	// fetch() resolves with a Response whose ok is false for an HTTP error (https://developer.mozilla.org/docs/Web/API/Response/ok).
+	const saveUserFailure = { ok: false, status: 500 };
+
+	const renderSaveUserSection = () => {
+		window.fetch = jest.fn().mockResolvedValue( {
+			ok: true,
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+			<input id="billing-phone" value="5551234567" />
+		`;
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		return render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: { SUCCESS: 'success', ERROR: 'error' },
+					noticeContexts: { PAYMENTS: 'payments' },
+				},
+			} )
+		);
+	};
+
+	const getSaveUserRequests = () =>
+		window.fetch.mock.calls
+			.filter( ( [ url ] ) =>
+				String( url ).includes( 'set_woopay_phone_number' )
+			)
+			.map( ( [ , options ] ) => options.body );
+
+	it( 'hides WooPay save my info while another payment method is selected', async () => {
+		activePaymentMethod = 'woocommerce_payments_klarna';
+		renderSaveUserSection();
+
+		await waitFor( () => {
+			expect( document.querySelector( '#remember-me' ) ).not.toBeNull();
+		} );
+		expect(
+			screen.queryByRole( 'checkbox', {
+				name: 'Securely save my information for 1-click checkout',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'hides WooPay save my info for a WooPay user and clears the stored opt-in', async () => {
+		renderSaveUserSection();
+		await screen.findByLabelText( 'Mobile phone number' );
+		// A checked box with a usable number is stored when the section mounts (checkout-page-save-user.js:184-196).
+		expect(
+			getSaveUserRequests().some( ( body ) => ! body.has( 'empty' ) )
+		).toBe( true );
+
+		// Dispatched by the WooPay email check (woopay/email-input-iframe.js) for a known WooPay user.
+		act( () => {
+			window.dispatchEvent(
+				new window.CustomEvent( 'woopayUserCheck', {
+					detail: { isRegisteredUser: true },
+				} )
+			);
+		} );
+
+		await waitFor( () => {
+			expect(
+				screen.queryByLabelText( 'Mobile phone number' )
+			).not.toBeInTheDocument();
+		} );
+		const requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+	} );
+
+	const getPhoneErrorCalls = () =>
+		mockValidationActions.setValidationErrors.mock.calls.filter(
+			( [ errors ] ) => errors[ 'invalid-woopay-phone-number' ]
+		);
+
+	it( 'blocks the checkout for an invalid WooPay phone number once the shopper leaves the field', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		mockValidationActions.setValidationErrors.mockClear();
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+
+		fireEvent.change( phoneField, { target: { value: '123' } } );
+		// Client 11.1.0 checkout-page-save-user.js:184-223: hidden until touched, still blocking the checkout.
+		expect( getPhoneErrorCalls().pop()[ 0 ] ).toEqual( {
+			'invalid-woopay-phone-number': {
+				message: 'Please enter a valid mobile phone number.',
+				hidden: true,
+			},
+		} );
+
+		fireEvent.blur( phoneField );
+		expect(
+			getPhoneErrorCalls().pop()[ 0 ][ 'invalid-woopay-phone-number' ]
+				.hidden
+		).toBe( false );
+	} );
+
+	it( 'shows the WooPay phone error under the field once the shopper leaves it', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+
+		fireEvent.change( phoneField, { target: { value: '123' } } );
+		expect( screen.queryByRole( 'alert' ) ).not.toBeInTheDocument();
+
+		fireEvent.blur( phoneField );
+
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			'Please enter a valid mobile phone number.'
+		);
+		expect( phoneField ).toHaveAttribute( 'aria-invalid', 'true' );
+	} );
+
+	it( 'blocks the checkout while the phone validation script loads and not after it fails to load', async () => {
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		const defaultData = settings.getPaymentMethodData();
+		settings.getPaymentMethodData.mockImplementation( () => ( {
+			...defaultData,
+			woopayPhoneValidationScriptUrl:
+				'https://example.test/failing-phone-validation.js',
+		} ) );
+		renderSaveUserSection();
+		await screen.findByLabelText( 'Mobile phone number' );
+
+		expect( validationErrors ).toHaveProperty(
+			'invalid-woopay-phone-number'
+		);
+
+		act( () => {
+			document
+				.querySelector(
+					'script[src="https://example.test/failing-phone-validation.js"]'
+				)
+				.dispatchEvent( new window.Event( 'error' ) );
+		} );
+
+		await waitFor( () => {
+			expect( validationErrors ).not.toHaveProperty(
+				'invalid-woopay-phone-number'
+			);
+		} );
+		settings.getPaymentMethodData.mockImplementation( () => defaultData );
+	} );
+
+	const getStoredPhones = () =>
+		getSaveUserRequests().map( ( body ) =>
+			body.has( 'empty' )
+				? 'empty'
+				: body.get( 'woopay_user_phone_field[full]' )
+		);
+
+	// Fails the next save-user request only; Tracks events share window.fetch and must not take the failure.
+	const failNextSaveUserRequest = ( failure ) => {
+		const succeed = window.fetch.getMockImplementation();
+		let failed = false;
+		window.fetch.mockImplementation( ( url, options ) => {
+			if (
+				! failed &&
+				String( url ).includes( 'set_woopay_phone_number' )
+			) {
+				failed = true;
+				return failure();
+			}
+			return succeed( url, options );
+		} );
+	};
+
+	// Lets the persistence promise settle so a failed request is recorded before the next change.
+	const settleSaveUserRequest = () =>
+		act( async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		} );
+
+	it( 'stores each valid WooPay phone change once, without waiting for blur', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		const before = getStoredPhones().length;
+
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+		fireEvent.change( phoneField, { target: { value: '2015550188' } } );
+		fireEvent.blur( phoneField );
+
+		expect( getStoredPhones().slice( before ) ).toEqual( [
+			'+12015550123',
+			'+12015550188',
+		] );
+	} );
+
+	it.each( [
+		[ 'rejected', () => Promise.reject( new Error( 'offline' ) ) ],
+		[ 'HTTP error', () => Promise.resolve( saveUserFailure ) ],
+	] )(
+		'sends the same WooPay number again after a %s request',
+		async ( description, failure ) => {
+			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			renderSaveUserSection();
+			const phoneField = await screen.findByLabelText(
+				'Mobile phone number'
+			);
+			failNextSaveUserRequest( failure );
+
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
+			await settleSaveUserRequest();
+			const before = getStoredPhones().length;
+			fireEvent.change( phoneField, { target: { value: '123' } } );
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
+
+			expect( getStoredPhones().slice( before ) ).toEqual( [
+				'+12015550123',
+			] );
+		}
+	);
+
+	it.each( [
+		[
+			'the shopper unchecks save my info',
+			( user ) =>
+				act( () =>
+					user.click(
+						screen.getByRole( 'checkbox', {
+							name: 'Securely save my information for 1-click checkout',
+						} )
+					)
+				),
+		],
+		[
+			'another payment method is chosen',
+			async () => setActivePaymentMethod( 'woocommerce_payments_klarna' ),
+		],
+	] )(
+		'still clears a stored WooPay opt-in after a failed update when %s',
+		async ( description, withdraw ) => {
+			const user = userEvent.setup();
+			window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+			renderSaveUserSection();
+			const phoneField = await screen.findByLabelText(
+				'Mobile phone number'
+			);
+			fireEvent.change( phoneField, {
+				target: { value: '2015550123' },
+			} );
+			await settleSaveUserRequest();
+			failNextSaveUserRequest( () => Promise.resolve( saveUserFailure ) );
+			fireEvent.change( phoneField, {
+				target: { value: '2015550188' },
+			} );
+			await settleSaveUserRequest();
+
+			await withdraw( user );
+
+			expect( getStoredPhones().pop() ).toBe( 'empty' );
+		}
+	);
+
+	it( 'sends the WooPay clear again after a failed clear', async () => {
+		const user = userEvent.setup();
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+		await settleSaveUserRequest();
+		const before = getStoredPhones().length;
+		failNextSaveUserRequest( () => Promise.resolve( saveUserFailure ) );
+
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
+		);
+		await settleSaveUserRequest();
+		setActivePaymentMethod( 'woocommerce_payments_klarna' );
+
+		expect( getStoredPhones().slice( before ) ).toEqual( [
+			'empty',
+			'empty',
+		] );
+	} );
+
+	it( 'clears the WooPay phone error for a valid number', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		mockValidationActions.clearValidationError.mockClear();
+
+		fireEvent.change( phoneField, { target: { value: '(201) 555-0123' } } );
+
+		expect(
+			mockValidationActions.clearValidationError
+		).toHaveBeenCalledWith( 'invalid-woopay-phone-number' );
+		expect(
+			document.querySelector(
+				'input[name="woopay_user_phone_field[full]"]'
+			)
+		).toHaveValue( '+12015550123' );
+	} );
+
+	it( 'loads the phone validation script only when the shopper opts in', async () => {
+		const user = userEvent.setup();
+		const settings = jest.requireMock( '@woocommerce/settings' );
+		const defaultData = settings.getPaymentMethodData();
+		// Keys from WooPaymentsWooPaySessionService::get_save_user_checkout_data().
+		settings.getPaymentMethodData.mockImplementation( () => ( {
+			...defaultData,
+			PRE_CHECK_SAVE_MY_INFO: false,
+			woopayPhoneValidationScriptUrl:
+				'https://example.test/wc-woopayments-phone-validation.js',
+		} ) );
+		renderSaveUserSection();
+		const checkbox = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
+		const getScript = () =>
+			document.querySelector(
+				'script[src="https://example.test/wc-woopayments-phone-validation.js"]'
+			);
+		expect( getScript() ).toBeNull();
+
+		await act( () => user.click( checkbox ) );
+
+		expect( getScript() ).not.toBeNull();
+		settings.getPaymentMethodData.mockImplementation( () => defaultData );
+	} );
+
+	it( 'clears the WooPay opt-in for another method and stores it again back on WooPayments', async () => {
+		window.wcWooPaymentsPhoneValidation = { validatePhoneNumber };
+		renderSaveUserSection();
+		const phoneField = await screen.findByLabelText(
+			'Mobile phone number'
+		);
+		fireEvent.change( phoneField, { target: { value: '2015550123' } } );
+
+		setActivePaymentMethod( 'woocommerce_payments_klarna' );
+		let requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+
+		setActivePaymentMethod( 'woocommerce_payments' );
+		requests = getSaveUserRequests();
+		const last = requests[ requests.length - 1 ];
+		expect( last.has( 'empty' ) ).toBe( false );
+		expect( last.get( 'save_user_in_woopay' ) ).toBe( 'true' );
+		expect( last.get( 'woopay_user_phone_field[full]' ) ).toBe(
+			'+12015550123'
+		);
+	} );
+
+	it( 'clears the stored WooPay opt-in when the shopper unchecks save my info', async () => {
+		const user = userEvent.setup();
+		renderSaveUserSection();
+		const checkbox = await screen.findByRole( 'checkbox', {
+			name: 'Securely save my information for 1-click checkout',
+		} );
+
+		await act( () => user.click( checkbox ) );
+
+		const requests = getSaveUserRequests();
+		expect( requests[ requests.length - 1 ].get( 'empty' ) ).toBe( '1' );
+	} );
+
+	it( 'shows the WooPay terms and privacy agreement under save my info and records link clicks', async () => {
+		const user = userEvent.setup();
+		// Client 11.1.0 client/components/woopay/save-user/agreement.js,
+		// rendered in the checked save-details form (checkout-page-save-user.js:402-403).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		const termsLink = await screen.findByRole( 'link', {
+			name: 'Terms of Service',
+		} );
+		const privacyLink = screen.getByRole( 'link', {
+			name: 'Privacy Policy',
+		} );
+
+		expect( termsLink.closest( '.tos' ).textContent ).toBe(
+			"By continuing, you agree to WooPay's Terms of Service and Privacy Policy."
+		);
+		expect( termsLink ).toHaveAttribute(
+			'href',
+			'https://wordpress.com/tos/'
+		);
+		expect( privacyLink ).toHaveAttribute(
+			'href',
+			'https://automattic.com/privacy/'
+		);
+		[ termsLink, privacyLink ].forEach( ( link ) => {
+			expect( link ).toHaveAttribute( 'target', '_blank' );
+			expect( link ).toHaveAttribute( 'rel', 'noopener noreferrer' );
+		} );
+
+		await act( () => user.click( termsLink ) );
+		await act( () => user.click( privacyLink ) );
+
+		const trackedNames = () =>
+			window.fetch.mock.calls
+				.filter(
+					( [ url ] ) =>
+						url ===
+						'https://example.test/wp-json/wc/v3/payments/tracks'
+				)
+				.map( ( [ , options ] ) =>
+					options.body.get( 'tracksEventName' )
+				);
+
+		expect( trackedNames() ).toEqual(
+			expect.arrayContaining( [
+				'checkout_save_my_info_tos_click',
+				'checkout_save_my_info_privacy_policy_click',
+			] )
+		);
+
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
+		);
+
+		await waitFor( () => {
+			expect(
+				screen.queryByRole( 'link', { name: 'Terms of Service' } )
+			).not.toBeInTheDocument();
+		} );
+	} );
+
+	it( 'shows the WooPay additional-information line above the agreement under save my info', async () => {
+		const user = userEvent.setup();
+		// Client 11.1.0 client/components/woopay/save-user/additional-information.js,
+		// rendered directly before the agreement (checkout-page-save-user.js:402-403).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( { success: true } ),
+		} );
+		document.body.innerHTML = `
+			<div class="wc-block-checkout">
+				<div class="wp-block-woocommerce-checkout-payment-block"></div>
+			</div>
+		`;
+
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		const additionalInfo = await screen.findByText(
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
+		);
+		expect( additionalInfo ).toHaveClass( 'additional-information' );
+
+		const phoneInput = document.querySelector(
+			'input[name="woopay_user_phone_field[full]"]'
+		);
+		const agreement = document.querySelector( '.tos' );
+
+		// querySelectorAll returns matches in document order, so this also
+		// proves the additional-information line sits between the phone
+		// field and the agreement, matching the client's placement.
+		const orderedNodes = document.querySelectorAll(
+			'input[name="woopay_user_phone_field[full]"], .additional-information, .tos'
+		);
+		expect( Array.from( orderedNodes ) ).toEqual( [
+			phoneInput,
+			additionalInfo,
+			agreement,
+		] );
+
+		await act( () =>
+			user.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Securely save my information for 1-click checkout',
+				} )
+			)
+		);
+
+		await waitFor( () => {
+			expect(
+				screen.queryByText(
+					"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay."
+				)
+			).not.toBeInTheDocument();
+		} );
+	} );
+
+	it( 'renders test card instructions while the account is in test mode', () => {
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		expect( screen.getByText( /Use test card/ ) ).toBeInTheDocument();
+		expect( screen.getByText( '4242 4242 4242 4242' ) ).toBeInTheDocument();
+		expect( screen.getByText( /testing guide/ ) ).toBeInTheDocument();
+	} );
+
+	function renderWooPaymentsContent() {
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		// The visible number names the button (WCAG 2.5.3).
+		return screen.getByRole( 'button', {
+			name: '4242 4242 4242 4242',
+		} );
+	}
+
+	it( 'prevents the default action when copying the test card number', () => {
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
+		Object.defineProperty( window.navigator, 'clipboard', {
+			value: {
+				writeText,
+			},
+			configurable: true,
+		} );
+		const button = renderWooPaymentsContent();
+		const event = new window.MouseEvent( 'click', {
+			bubbles: true,
+			cancelable: true,
+		} );
+
+		button.dispatchEvent( event );
+
+		expect( event.defaultPrevented ).toBe( true );
+	} );
+
+	// userEvent.setup() puts its own navigator.clipboard stub in place, so each test sets up the user first and then
+	// installs the clipboard it needs.
+	const setClipboard = ( clipboard ) =>
+		Object.defineProperty( window.navigator, 'clipboard', {
+			value: clipboard,
+			configurable: true,
+		} );
+
+	it( 'copies the test card number with the Clipboard API', async () => {
+		const user = userEvent.setup();
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest.fn().mockResolvedValue( undefined );
+		setClipboard( { writeText } );
+		const button = renderWooPaymentsContent();
+
+		await act( () => user.click( button ) );
+
+		expect( writeText ).toHaveBeenCalledWith( '4242 4242 4242 4242' );
+	} );
+
+	it( 'shows the test card number in a prompt when the Clipboard API is unavailable', async () => {
+		const user = userEvent.setup();
+		setClipboard( undefined );
+		const prompt = jest
+			.spyOn( window, 'prompt' )
+			.mockImplementation( () => null );
+		const button = renderWooPaymentsContent();
+
+		await act( () => user.click( button ) );
+
+		expect( prompt ).toHaveBeenCalledWith(
+			'Copy test card number:',
+			'4242 4242 4242 4242'
+		);
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+	} );
+
+	it( 'does not announce a copy the clipboard rejected', async () => {
+		const user = userEvent.setup();
+		// Clipboard.writeText() rejects when the write is not allowed (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText).
+		const writeText = jest
+			.fn()
+			.mockRejectedValue( new Error( 'NotAllowedError' ) );
+		setClipboard( { writeText } );
+		const button = renderWooPaymentsContent();
+
+		await act( () => user.click( button ) );
+
+		expect( writeText ).toHaveBeenCalled();
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+	} );
+
+	it( 'shows and clears the copied state after copying the test card number', async () => {
+		jest.useFakeTimers();
+		const user = userEvent.setup( {
+			advanceTimers: jest.advanceTimersByTime,
+		} );
+		// Clipboard.writeText() returns a Promise<void> (https://developer.mozilla.org/docs/Web/API/Clipboard/writeText),
+		// held here until the test lets the write finish.
+		let finishWrite;
+		const write = new Promise( ( resolve ) => {
+			finishWrite = resolve;
+		} );
+		const writeText = jest.fn( () => write );
+		setClipboard( { writeText } );
+		const button = renderWooPaymentsContent();
+
+		await act( () => user.click( button ) );
+
+		expect( writeText ).toHaveBeenCalledWith( '4242 4242 4242 4242' );
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+
+		finishWrite();
+		// The bundle's success callback was chained on the write first, so it has run once this await resumes.
+		await write;
+
+		expect( button ).toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'Copied to clipboard.'
+		);
+
+		jest.advanceTimersByTime( 2000 );
+
+		expect( button ).not.toHaveClass( 'state--success' );
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent( '' );
+	} );
+
+	it( 'does not register WooPay express from the card payment method bundle', () => {
+		registerWooPayments();
+
+		expect( registerExpressPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
+	it( 'submits Stripe Elements before creating a payment method', async () => {
+		document.body.innerHTML = `
+			<input id="email" value="dom@example.test" />
+			<input id="billing-first_name" value="Grace" />
+			<input id="billing-last_name" value="Hopper" />
+			<input id="billing-address_1" value="2 DOM Street" />
+			<input id="billing-address_2" value="DOM suite" />
+			<input id="billing-city" value="New York" />
+			<input id="billing-state" value="NY" />
+			<input id="billing-postcode" value="10001" />
+			<input id="billing-phone" value="5550000000" />
+			<select id="billing-country">
+				<option value="US" selected>United States</option>
+			</select>
+		`;
+		const harness = await setUpNewCardPayment( {
+			billingAddress: {
+				first_name: 'Ada',
+				last_name: 'Lovelace',
+				email: 'customer@example.test',
+				phone: '07123456789',
+				address_1: '1 Test Street',
+				address_2: 'Suite 2',
+				city: 'London',
+				state: '',
+				postcode: ' SW1A 1AA ',
+				country: 'GB',
+			},
+		} );
+
+		await expect( harness.setupCallbacks[ 0 ]() ).resolves.toMatchObject( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method': 'pm_123',
+					'wcpay-fingerprint': 'device_fp_123',
+					'wcpay-is-platform-payment-method': 'true',
+				},
+			},
+		} );
+		expect( harness.elementsInstance.submit ).toHaveBeenCalled();
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: 'Ada Lovelace',
+					email: 'customer@example.test',
+					phone: '07123456789',
+					address: {
+						city: 'London',
+						country: 'GB',
+						line1: '1 Test Street',
+						line2: 'Suite 2',
+						postal_code: 'SW1A 1AA',
+						state: '',
+					},
+				},
+			},
+		} );
+		expect( harness.calls ).toEqual( [ 'submit', 'createPaymentMethod' ] );
+	} );
+
+	it( 'returns the Stripe submit validation error without creating a payment method', async () => {
+		// T.3 Task 3 (`plan-task-t3.md`, carried from the revised T.1 Batch 9):
+		// `elements.submit()` validates the card fields inside the hosted Stripe
+		// element before any PaymentMethod is created. A validation error there
+		// (an incomplete field, for example) must surface as a Blocks payments
+		// notice and stop short of `createPaymentMethod`, matching
+		// `index.js:1015` (`if ( submitResult?.error )`). Client 11.1.0 oracle:
+		// `checkout/utils/validate-elements.js:8-12` throws `result.error.message`
+		// from `elements.submit()`, and `blocks/payment-processor.js:165-171`
+		// catches it into `{ type: 'error', message: e.message }` with no
+		// `messageContext` key (F-SUBMIT, T.7), so the result is pinned exactly.
+		const harness = await setUpNewCardPayment();
+		harness.elementsInstance.submit.mockResolvedValueOnce( {
+			error: {
+				code: 'incomplete_cvc',
+				message: "Your card's security code is incomplete.",
+			},
+		} );
+
+		const result = await harness.setupCallbacks[ 0 ]();
+
+		expect( result ).toEqual( {
+			type: 'error',
+			message: "Your card's security code is incomplete.",
+		} );
+		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 1 );
+		expect( harness.createPaymentMethod ).not.toHaveBeenCalled();
+	} );
+
+	it( 'records failed tokenization with the error sentinel instead of aborting', async () => {
+		const harness = await setUpNewCardPayment();
+		harness.createPaymentMethod.mockResolvedValueOnce( {
+			error: {
+				code: 'incomplete_number',
+				decline_code: 'do_not_honor',
+				message: 'Your card number is invalid.',
+				type: 'validation_error',
+			},
+		} );
+
+		const result = await harness.setupCallbacks[ 0 ]();
+
+		expect( result.type ).toBe( 'success' );
+		expect( result.meta.paymentMethodData ).toMatchObject( {
+			'wcpay-payment-method': 'woocommerce_payments_payment_method_error',
+			'wcpay-payment-method-error-code': 'incomplete_number',
+			'wcpay-payment-method-error-decline-code': 'do_not_honor',
+			'wcpay-payment-method-error-message':
+				'Your card number is invalid.',
+			'wcpay-payment-method-error-type': 'validation_error',
+			'wcpay-fingerprint': 'device_fp_123',
+		} );
+	} );
+
+	it( 'creates a fresh payment method when retrying after failed tokenization', async () => {
+		const harness = await setUpNewCardPayment();
+		harness.createPaymentMethod
+			.mockResolvedValueOnce( {
+				error: {
+					code: 'card_declined',
+					decline_code: 'generic_decline',
+					message: 'Your card was declined.',
+					type: 'card_error',
+				},
+			} )
+			.mockResolvedValueOnce( {
+				paymentMethod: {
+					id: 'pm_retry_success',
+					card: { fingerprint: 'fp_retry_success' },
+				},
+			} );
+
+		const firstResult = await harness.setupCallbacks[ 0 ]();
+		const secondResult = await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.elementsInstance.submit ).toHaveBeenCalledTimes( 2 );
+		expect( harness.createPaymentMethod ).toHaveBeenCalledTimes( 2 );
+		expect( firstResult.meta.paymentMethodData ).toMatchObject( {
+			'wcpay-payment-method': 'woocommerce_payments_payment_method_error',
+			'wcpay-payment-method-error-code': 'card_declined',
+			'wcpay-payment-method-error-decline-code': 'generic_decline',
+			'wcpay-payment-method-error-message': 'Your card was declined.',
+			'wcpay-payment-method-error-type': 'card_error',
+		} );
+		expect( secondResult ).toEqual( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method': 'pm_retry_success',
+					'wcpay-payment-method-error-code': '',
+					'wcpay-payment-method-error-message': '',
+					'wcpay-fingerprint': 'device_fp_123',
+					'wcpay-is-platform-payment-method': 'true',
+					'wcpay-fraud-prevention-token': '',
+				},
+			},
+		} );
+	} );
+
+	it( 'uses the historical Blocks billing data alias when the modern alias is absent', async () => {
+		const harness = await setUpNewCardPayment( {
+			billingData: {
+				first_name: 'Katherine',
+				last_name: 'Johnson',
+				email: 'katherine@example.test',
+				phone: '5551234567',
+				address_1: '3 Legacy Avenue',
+				address_2: '',
+				city: 'Hampton',
+				state: 'VA',
+				postcode: ' 23666 ',
+				country: 'US',
+			},
+		} );
+
+		await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: 'Katherine Johnson',
+					email: 'katherine@example.test',
+					phone: '5551234567',
+					address: {
+						city: 'Hampton',
+						country: 'US',
+						line1: '3 Legacy Avenue',
+						line2: '',
+						postal_code: '23666',
+						state: 'VA',
+					},
+				},
+			},
+		} );
+	} );
+
+	it.each( [
+		[
+			'an empty modern billing address over a populated historical alias',
+			{
+				billingAddress: {},
+				billingData: {
+					first_name: 'Legacy',
+					last_name: 'Shopper',
+					country: 'GB',
+				},
+			},
+		],
+		[ 'empty billing details when both aliases are absent', undefined ],
+	] )( 'submits %s', async ( description, billing ) => {
+		document.body.innerHTML = `
+			<input id="email" value="dom@example.test" />
+			<input id="billing-first_name" value="DOM" />
+			<input id="billing-last_name" value="Shopper" />
+			<input id="billing-address_1" value="4 DOM Road" />
+			<input id="billing-address_2" value="DOM suite" />
+			<input id="billing-city" value="Boston" />
+			<input id="billing-state" value="MA" />
+			<input id="billing-postcode" value="02108" />
+			<input id="billing-phone" value="5559999999" />
+			<select id="billing-country">
+				<option value="US" selected>United States</option>
+			</select>
+		`;
+		const harness = await setUpNewCardPayment( billing );
+
+		await harness.setupCallbacks[ 0 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: '',
+					email: '',
+					phone: '',
+					address: {
+						city: '',
+						country: '',
+						line1: '',
+						line2: '',
+						postal_code: '',
+						state: '',
+					},
+				},
+			},
+		} );
+	} );
+
+	it( 'refreshes payment setup when the Blocks billing address changes', async () => {
+		const initialBilling = {
+			billingAddress: {
+				first_name: 'Initial',
+				last_name: 'Shopper',
+				country: 'US',
+			},
+		};
+		const updatedBilling = {
+			billingAddress: {
+				first_name: 'Updated',
+				last_name: 'Shopper',
+				email: 'updated@example.test',
+				phone: '5551111111',
+				address_1: '5 Current Street',
+				address_2: '',
+				city: 'Chicago',
+				state: 'IL',
+				postcode: '60601',
+				country: 'US',
+			},
+		};
+		const harness = await setUpNewCardPayment( initialBilling );
+
+		harness.rerender( harness.createContent( initialBilling ) );
+		expect( harness.onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+
+		harness.rerender( harness.createContent( updatedBilling ) );
+		await waitFor( () => {
+			expect( harness.onPaymentSetup ).toHaveBeenCalledTimes( 2 );
+		} );
+		expect( harness.unsubscribePaymentSetup ).toHaveBeenCalledTimes( 1 );
+
+		await harness.setupCallbacks[ 1 ]();
+
+		expect( harness.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements: harness.elementsInstance,
+			params: {
+				billing_details: {
+					name: 'Updated Shopper',
+					email: 'updated@example.test',
+					phone: '5551111111',
+					address: {
+						city: 'Chicago',
+						country: 'US',
+						line1: '5 Current Street',
+						line2: '',
+						postal_code: '60601',
+						state: 'IL',
+					},
+				},
+			},
+		} );
+	} );
+
+	it( 'initializes Stripe Elements in setup mode for zero-total checkouts', async () => {
+		const create = jest.fn( () => ( {
+			on: jest.fn(),
+			mount: jest.fn(),
+		} ) );
+		const elements = jest.fn( () => ( {
+			create,
+		} ) );
+		window.Stripe = jest.fn( () => ( {
+			elements,
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( elements ).toHaveBeenCalled();
+		} );
+
+		expect( elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				currency: 'usd',
+				loader: 'never',
+				mode: 'setup',
+				paymentMethodCreation: 'manual',
+				paymentMethodTypes: [ 'card', 'link' ],
+			} )
+		);
+		expect( elements.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty( 'amount' );
+		expect( create ).toHaveBeenCalledWith(
+			'payment',
+			expect.objectContaining( {
+				fields: {
+					billingDetails: {
+						name: 'never',
+						email: 'never',
+						phone: 'never',
+						address: {
+							country: 'never',
+							line1: 'never',
+							line2: 'never',
+							city: 'never',
+							state: 'never',
+							postalCode: 'never',
+						},
+					},
+				},
+				wallets: {
+					applePay: 'never',
+					googlePay: 'never',
+					link: 'auto',
+				},
+				terms: {
+					card: 'never',
+				},
+			} )
+		);
+	} );
+
+	// Client 11.1.0 mounts the same Stripe PaymentElement declaratively into
+	// `.wcpay-payment-element` inside its `.wcpay-payment-element-wrapper`
+	// (client/checkout/blocks/payment-processor.js:271-291); native does the
+	// same job imperatively via `elements.create('payment').mount(...)`.
+	it( 'mounts the card PaymentElement into the core Blocks container', async () => {
+		const mount = jest.fn();
+		const create = jest.fn( () => ( { on: jest.fn(), mount } ) );
+		const elements = jest.fn( () => ( { create } ) );
+		window.Stripe = jest.fn( () => ( {
+			elements,
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		const { container } = render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( mount ).toHaveBeenCalled();
+		} );
+
+		const paymentElementContainer = container.querySelector(
+			'#wcpay-core-blocks-payment-element'
+		);
+		expect( paymentElementContainer ).not.toBeNull();
+		expect( mount ).toHaveBeenCalledWith( paymentElementContainer );
+	} );
+
+	describe( 'Stripe.js loading', () => {
+		const renderCardWithPaymentSetup = () => {
+			let paymentSetup;
+			const registration = registerWooPayments();
+			const content = registration.content;
+			render(
+				createElement( content.type, {
+					...content.props,
+					eventRegistration: {
+						onPaymentSetup: jest.fn( ( callback ) => {
+							paymentSetup = callback;
+						} ),
+						onCheckoutSuccess: jest.fn(),
+					},
+					emitResponse: {
+						responseTypes: {
+							SUCCESS: 'success',
+							ERROR: 'error',
+						},
+						noticeContexts: {
+							PAYMENTS: 'payments',
+						},
+					},
+				} )
+			);
+
+			return () => paymentSetup();
+		};
+
+		it( 'mounts the card PaymentElement once Stripe.js loads after the checkout renders', async () => {
+			jest.useFakeTimers();
+			const mount = jest.fn();
+			delete window.Stripe;
+
+			renderCardWithPaymentSetup();
+			expect( mount ).not.toHaveBeenCalled();
+
+			// Minimal Stripe double: stripe.elements().create( 'payment' ) with on() and mount(), as client 11.1.0
+			// classic/payment-processing.js:282-300 uses it.
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( { on: jest.fn(), mount } ) ),
+				} ) ),
+			} ) );
+			await act( async () => {
+				jest.advanceTimersByTime( 100 );
+			} );
+
+			expect( mount ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'refuses to submit while the card PaymentElement is not mounted', async () => {
+			delete window.Stripe;
+
+			const runPaymentSetup = renderCardWithPaymentSetup();
+
+			await expect( runPaymentSetup() ).resolves.toEqual( {
+				type: 'error',
+				message:
+					'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+				messageContext: 'payments',
+			} );
+		} );
+
+		it( 'shows the PaymentElement load error and refuses to submit', async () => {
+			const handlers = {};
+			const submit = jest.fn().mockResolvedValue( {} );
+			// Minimal Stripe double: the element's on() captures the handlers, as client 11.1.0
+			// blocks/payment-processor.js:296 subscribes onLoadError.
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( {
+						on: jest.fn( ( event, handler ) => {
+							handlers[ event ] = handler;
+						} ),
+						mount: jest.fn(),
+					} ) ),
+					submit,
+				} ) ),
+			} ) );
+
+			const runPaymentSetup = renderCardWithPaymentSetup();
+			await waitFor( () => {
+				expect( handlers.loaderror ).toEqual( expect.any( Function ) );
+			} );
+			// Synthetic loaderror event: client 11.1.0 blocks/payment-elements.js:108-120 reads only event.error.message.
+			act( () => {
+				handlers.loaderror( {
+					error: {
+						message: 'The payment form could not be loaded.',
+					},
+				} );
+			} );
+
+			expect(
+				screen.getByText( 'The payment form could not be loaded.' )
+			).toBeInTheDocument();
+			await expect( runPaymentSetup() ).resolves.toEqual( {
+				type: 'error',
+				message:
+					'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+				messageContext: 'payments',
+			} );
+			expect( submit ).not.toHaveBeenCalled();
+		} );
+	} );
+
+	describe( 'reserved Payment Element space', () => {
+		const renderCardContent = () => {
+			const on = jest.fn();
+			window.Stripe = jest.fn( () => ( {
+				elements: jest.fn( () => ( {
+					create: jest.fn( () => ( { on, mount: jest.fn() } ) ),
+				} ) ),
+				createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			} ) );
+			const content = registerWooPayments().content;
+			const view = render(
+				createElement( content.type, {
+					...content.props,
+					components: { Skeleton },
+					eventRegistration: {
+						onPaymentSetup: jest.fn(),
+						onCheckoutSuccess: jest.fn(),
+					},
+					emitResponse: {
+						responseTypes: { SUCCESS: 'success', ERROR: 'error' },
+						noticeContexts: { PAYMENTS: 'payments' },
+					},
+				} )
+			);
+
+			return { ...view, on };
+		};
+
+		afterEach( () => {
+			window.ResizeObserver = OriginalResizeObserver;
+		} );
+
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:89-98.
+		it.each( [
+			[ 800, '70px' ],
+			[ 660, '70px' ],
+			[ 659, '145px' ],
+			[ 415, '145px' ],
+			[ 414, '220px' ],
+		] )(
+			'reserves the card fields height for a %ipx wide wrapper',
+			( width, minHeight ) => {
+				let resize;
+				window.ResizeObserver = jest.fn( ( callback ) => {
+					resize = callback;
+					return { observe: jest.fn(), disconnect: jest.fn() };
+				} );
+				const { container } = renderCardContent();
+				const wrapper = container.querySelector(
+					'.wcpay-core-blocks-payment-element-wrapper'
+				);
+
+				act( () => {
+					resize( [ { contentRect: { width } } ] );
+				} );
+
+				expect( wrapper ).toContainElement(
+					container.querySelector(
+						'#wcpay-core-blocks-payment-element'
+					)
+				);
+				expect( wrapper ).not.toHaveClass( 'is-apm' );
+				expect( wrapper.style.minHeight ).toBe( minHeight );
+			}
+		);
+
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:111-117, 276-299.
+		it( 'fades the skeleton out when Stripe is ready and removes it after the transition', async () => {
+			const { container, on } = renderCardContent();
+			const getSkeleton = () =>
+				container.querySelector(
+					'.wcpay-core-blocks-payment-element-skeleton'
+				);
+
+			await waitFor( () => {
+				expect( on ).toHaveBeenCalledWith(
+					'ready',
+					expect.any( Function )
+				);
+			} );
+			expect( getSkeleton() ).not.toHaveClass( 'is-hidden' );
+
+			act( () => {
+				on.mock.calls.find( ( [ event ] ) => event === 'ready' )[ 1 ]();
+			} );
+
+			expect( getSkeleton() ).toHaveClass( 'is-hidden' );
+			expect( getSkeleton() ).toHaveAttribute( 'aria-hidden', 'true' );
+
+			fireEvent.transitionEnd( getSkeleton() );
+
+			expect( getSkeleton() ).toBeNull();
+		} );
+	} );
+
+	it( 'initializes the card PaymentElement without a connected Stripe account when network saved cards are forced', async () => {
+		const elements = jest.fn( () => ( {
+			create: jest.fn( () => ( {
+				on: jest.fn(),
+				mount: jest.fn(),
+			} ) ),
+		} ) );
+		window.Stripe = jest.fn( () => ( {
+			elements,
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( window.Stripe ).toHaveBeenCalled();
+		} );
+
+		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
+			locale: 'auto',
+		} );
+		expect( window.Stripe.mock.calls[ 0 ][ 1 ] ).not.toHaveProperty(
+			'stripeAccount'
+		);
+	} );
+
+	it( 'initializes Stripe Elements with cached Blocks checkout appearance and font rules', async () => {
+		const appearance = {
+			theme: 'stripe',
+			labels: 'floating',
+			rules: {
+				'.Input': {
+					fontSize: '16px',
+				},
+			},
+		};
+		const create = jest.fn( () => ( {
+			on: jest.fn(),
+			mount: jest.fn(),
+		} ) );
+		const elements = jest.fn( () => ( {
+			create,
+		} ) );
+		// The page's stylesheets as document.styleSheets lists them: CSSStyleSheet objects carrying their href
+		// (https://developer.mozilla.org/docs/Web/API/CSSStyleSheet). The suite's restoreAllMocks() puts jsdom's back.
+		jest.spyOn( document, 'styleSheets', 'get' ).mockReturnValue( [
+			{
+				href: 'https://fonts.wp.com/inter.css',
+			},
+			{
+				href: 'https://example.test/theme.css',
+			},
+		] );
+		window.localStorage.setItem(
+			'wcpay_appearance_blocks_checkout',
+			JSON.stringify( {
+				version: 'styles-v1',
+				appearance,
+			} )
+		);
+		window.Stripe = jest.fn( () => ( {
+			elements,
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( elements ).toHaveBeenCalled();
+		} );
+
+		expect( elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				appearance,
+				fonts: [
+					{
+						cssSrc: 'https://fonts.wp.com/inter.css',
+					},
+				],
+				loader: 'never',
+			} )
+		);
+	} );
+
+	it( 'normalizes modern computed CSS colors before passing them to Stripe Elements', () => {
+		expect(
+			normalizeAppearanceValueForStripe(
+				'1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)'
+			)
+		).toBe( '1px solid rgb(85, 87, 89)' );
+		expect(
+			normalizeAppearanceValueForStripe(
+				'rgb(43 45 47 / 0.8) 0px 1px 2px'
+			)
+		).toBe( 'rgb(85, 87, 89) 0px 1px 2px' );
+		expect(
+			normalizeAppearanceForStripe( {
+				rules: {
+					'.Input': {
+						borderColor:
+							'color(srgb 0.168627 0.176471 0.184314 / 0.8)',
+					},
+				},
+			} )
+		).toEqual( {
+			rules: {
+				'.Input': {
+					borderColor: 'rgb(85, 87, 89)',
+				},
+			},
+		} );
+	} );
+
+	it( 'resolves only whole currentColor values for WooPay link rules', () => {
+		expect( resolveCurrentColor( ' CuRrEnTcOlOr ', 'rgb(1, 2, 3)' ) ).toBe(
+			'rgb(1, 2, 3)'
+		);
+		expect( resolveCurrentColor( 'currentColor', ' CURRENTCOLOR ' ) ).toBe(
+			'#000000'
+		);
+		expect( resolveCurrentColor( 'rgb(4, 5, 6)', 'rgb(1, 2, 3)' ) ).toBe(
+			'rgb(4, 5, 6)'
+		);
+	} );
+
+	it( 'omits computed alpha color values from generated Stripe Elements appearance rules', () => {
+		document.body.innerHTML = '<input id="wcpay-test-input" />';
+		const originalGetComputedStyle = window.getComputedStyle;
+		window.getComputedStyle = jest.fn( () => ( {
+			getPropertyValue: ( property ) =>
+				( {
+					border: '1px solid color(srgb 0.168627 0.176471 0.184314 / 0.8)',
+					'border-color':
+						'color(srgb 0.168627 0.176471 0.184314 / 0.8)',
+					'border-style': 'solid',
+					'border-width': '1px',
+					'box-shadow': 'rgb(43 45 47 / 0.8) 0px 1px 2px',
+					color: 'rgb(43 45 47)',
+					'font-size': '16px',
+				} )[ property ] || '',
+		} ) );
+
+		try {
+			const rules = getFieldStyles( '#wcpay-test-input', '.Input' );
+
+			expect( rules ).toMatchObject( {
+				borderStyle: 'solid',
+				borderWidth: '1px',
+				color: 'rgb(43, 45, 47)',
+				fontSize: '16px',
+			} );
+			expect( rules ).not.toHaveProperty( 'border' );
+			expect( rules ).not.toHaveProperty( 'borderColor' );
+			expect( rules ).not.toHaveProperty( 'boxShadow' );
+		} finally {
+			window.getComputedStyle = originalGetComputedStyle;
+		}
+	} );
+
+	const makeBlocksAppearanceFixture = ( labelPosition = 'absolute' ) => {
+		document.body.innerHTML = `
+			<form class="wc-block-checkout__form">
+				<div class="wc-block-checkout__contact-fields">
+					<p class="wc-block-components-checkout-step__description">Pay with card.</p>
+					<div class="wc-block-components-text-input is-active">
+						<input id="email" value="shopper@example.test" />
+						<label for="email">Email address</label>
+					</div>
+					<div class="wc-block-components-radio-control__label-group">Card</div>
+				</div>
+				<div id="payment-method" class="wc-block-components-radio-control-accordion-option"></div>
+			</form>
+		`;
+
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => ( {
+				getPropertyValue: ( property ) => {
+					if (
+						element.matches?.(
+							'.wc-block-components-radio-control__label-group'
+						)
+					) {
+						return (
+							{
+								'font-size': '12px',
+								'background-color': 'rgba(0, 0, 0, 0)',
+							}[ property ] || ''
+						);
+					}
+
+					if ( element.tagName === 'LABEL' ) {
+						return (
+							{
+								color: 'rgb(100, 105, 112)',
+								'font-size': '10px',
+								'line-height': '12px',
+								position: labelPosition,
+								transform: 'none',
+							}[ property ] || ''
+						);
+					}
+
+					if ( element.tagName === 'INPUT' ) {
+						return (
+							{
+								color: 'rgb(29, 35, 39)',
+								'font-size': '13px',
+								'line-height': '18px',
+								'padding-top': '10px',
+								'padding-bottom': '10px',
+							}[ property ] || ''
+						);
+					}
+
+					return (
+						{
+							'background-color': 'rgb(255, 255, 255)',
+							color: 'rgb(29, 35, 39)',
+							'font-size': '13px',
+						}[ property ] || ''
+					);
+				},
+			} )
+		);
+	};
+
+	it( 'keeps floating label padding compensation when the checkout label is positioned out of flow', () => {
+		makeBlocksAppearanceFixture( 'absolute' );
+
+		const appearance = getAppearance( 'blocks_checkout' );
+
+		expect( appearance.labels ).toBe( 'floating' );
+		expect( appearance.rules ).toHaveProperty( [ '.Label--floating' ] );
+		expect( appearance.rules[ '.Input' ].paddingTop ).toBe(
+			'calc(10px - 12px - 4px - 1px)'
+		);
+	} );
+
+	it( 'uses above labels without padding compensation when the checkout label is static', () => {
+		makeBlocksAppearanceFixture( 'static' );
+
+		const appearance = getAppearance( 'blocks_checkout' );
+
+		expect( appearance.labels ).toBe( 'above' );
+		expect( appearance.rules ).not.toHaveProperty( [ '.Label--floating' ] );
+		expect( appearance.rules[ '.Input' ].paddingTop ).toBe( '10px' );
+		expect( appearance.rules[ '.Input' ].paddingBottom ).toBe( '10px' );
+	} );
+
+	it( 'does not clamp the PaymentElement base font size to the payment method label size', () => {
+		makeBlocksAppearanceFixture( 'absolute' );
+
+		const appearance = getAppearance( 'blocks_checkout' );
+
+		expect( appearance.variables.fontSizeBase ).toBe( '13px' );
+	} );
+
+	it( 'reads the cart quantity input, not the checkout email field, for BNPL messaging appearance', () => {
+		// Cart block markup (cart-line-items quantity selector), plus a checkout-style email field as the decoy the
+		// checkout extraction would read.
+		document.body.innerHTML = `
+			<div class="wp-block-woocommerce-cart">
+				<div class="wc-block-cart">
+					<div class="wc-block-components-quantity-selector">
+						<input type="number" class="wc-block-components-quantity-selector__input" value="1" />
+					</div>
+				</div>
+				<div class="wc-block-components-text-input">
+					<input type="email" id="email" value="shopper@example.test" />
+				</div>
+			</div>
+		`;
+		// getAppearance() reads the clone of the chosen input, which keeps its class and type but not its id.
+		jest.spyOn( window, 'getComputedStyle' ).mockImplementation(
+			( element ) => ( {
+				getPropertyValue: ( property ) => {
+					let style = {};
+					if (
+						element.matches?.(
+							'.wc-block-components-quantity-selector__input'
+						)
+					) {
+						style = {
+							color: 'rgb(10, 20, 30)',
+							'font-size': '15px',
+						};
+					} else if ( element.matches?.( 'input[type="email"]' ) ) {
+						style = {
+							color: 'rgb(200, 0, 0)',
+							'font-size': '22px',
+						};
+					}
+
+					return style[ property ] || '';
+				},
+			} )
+		);
+
+		const appearance = getAppearance( 'bnpl_cart_block' );
+
+		expect( appearance.rules[ '.Input' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+			fontSize: '15px',
+		} );
+		expect( appearance.rules[ '.Input--invalid' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+		} );
+		expect( appearance.rules[ '.Tab' ] ).toMatchObject( {
+			color: 'rgb(10, 20, 30)',
+		} );
+	} );
+
+	it( 'persists valid Blocks appearance to the shared WooPay shopper endpoint once', async () => {
+		const appearance = {
+			theme: 'stripe',
+			rules: {
+				'.Input': {
+					fontSize: '16px',
+				},
+			},
+		};
+		window.localStorage.setItem(
+			'wcpay_appearance_blocks_checkout',
+			JSON.stringify( {
+				version: 'styles-v1',
+				appearance,
+			} )
+		);
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+		const paymentSettings = {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		};
+
+		getBlocksCheckoutAppearance( 'styles-v1', document, paymentSettings );
+		getBlocksCheckoutAppearance( 'styles-v1', document, paymentSettings );
+		await Promise.resolve();
+
+		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		expect( window.fetch ).toHaveBeenCalledWith(
+			'/?wc-ajax=wcpay_shopper_set_woopay_appearance',
+			expect.objectContaining( {
+				method: 'POST',
+				credentials: 'same-origin',
+			} )
+		);
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( '_ajax_nonce' ) ).toBe( 'session-nonce' );
+		expect( body.get( 'appearance[rules][.Input][fontSize]' ) ).toBe(
+			'16px'
+		);
+		expect( paymentSettings.woopayAppearance.rules ).toHaveProperty( [
+			'.Link',
+		] );
+	} );
+
+	it( 'persists WooPay link rules without adding them to the cached Blocks card appearance', async () => {
+		jest.resetModules();
+		const {
+			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+		} = require( '../upe-styles' );
+		makeBlocksAppearanceFixture( 'absolute' );
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<a class="wc-block-checkout-link">Checkout link</a><footer><a>Footer link</a></footer>'
+		);
+		window.getComputedStyle.mockImplementation( ( element ) => ( {
+			getPropertyValue: ( property ) => {
+				if ( element.matches?.( '.wc-block-checkout-link' ) ) {
+					return property === 'color' ? 'rgb(1, 2, 3)' : '';
+				}
+				if ( element.matches?.( 'footer a' ) ) {
+					return property === 'color' ? ' CuRrEnTcOlOr ' : '';
+				}
+				return (
+					{
+						'background-color': 'rgb(255, 255, 255)',
+						color: 'rgb(29, 35, 39)',
+						'font-size': '13px',
+						position: 'absolute',
+						transform: 'none',
+						'line-height': '12px',
+						'padding-top': '10px',
+						'padding-bottom': '10px',
+					}[ property ] || ''
+				);
+			},
+		} ) );
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+
+		const paymentSettings = {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		};
+		const appearance = getFreshBlocksCheckoutAppearance(
+			'styles-v1',
+			document,
+			paymentSettings
+		);
+		await Promise.resolve();
+
+		expect( appearance.rules ).not.toHaveProperty( [ '.Link' ] );
+		expect( appearance.rules ).not.toHaveProperty( [ '.Footer-link' ] );
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( 'appearance[rules][.Link][color]' ) ).toBe(
+			'rgb(1, 2, 3)'
+		);
+		expect( body.get( 'appearance[rules][.Footer-link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
+		);
+		expect( paymentSettings.woopayAppearance.rules[ '.Link' ].color ).toBe(
+			'rgb(1, 2, 3)'
+		);
+	} );
+
+	it( 'falls back missing Blocks link rules to the computed text color', async () => {
+		jest.resetModules();
+		const {
+			getBlocksCheckoutAppearance: getFreshBlocksCheckoutAppearance,
+		} = require( '../upe-styles' );
+		makeBlocksAppearanceFixture( 'absolute' );
+		window.fetch = jest.fn().mockResolvedValue( { ok: true } );
+
+		getFreshBlocksCheckoutAppearance( 'styles-v1', document, {
+			isWooPayGlobalThemeSupportEnabled: true,
+			wcAjaxUrl: '/?wc-ajax=%%endpoint%%',
+			woopaySessionNonce: 'session-nonce',
+		} );
+		await Promise.resolve();
+
+		const body = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( body.get( 'appearance[rules][.Link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
+		);
+		expect( body.get( 'appearance[rules][.Footer-link][color]' ) ).toBe(
+			'rgb(29, 35, 39)'
+		);
+	} );
+
+	it( 'updates reusable card terms when the Blocks save choice changes', async () => {
+		const mount = jest.fn();
+		const update = jest.fn();
+		const create = jest.fn( () => ( { on: jest.fn(), mount, update } ) );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create,
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+		const createContent = ( shouldSavePayment ) =>
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+				shouldSavePayment,
+			} );
+		const { rerender } = render( createContent( false ) );
+
+		await waitFor( () => {
+			expect( create ).toHaveBeenCalled();
+		} );
+
+		expect( create ).toHaveBeenCalledWith(
+			'payment',
+			expect.objectContaining( {
+				terms: {
+					card: 'never',
+				},
+			} )
+		);
+
+		rerender( createContent( true ) );
+
+		await waitFor( () => {
+			expect( update ).toHaveBeenCalledWith( {
+				terms: {
+					card: 'always',
+				},
+			} );
+		} );
+
+		rerender( createContent( false ) );
+
+		await waitFor( () => {
+			expect( update ).toHaveBeenLastCalledWith( {
+				terms: {
+					card: 'never',
+				},
+			} );
+		} );
+
+		expect( create ).toHaveBeenCalledTimes( 1 );
+		expect( mount ).toHaveBeenCalledTimes( 1 );
+		expect( update ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'keeps reusable card terms visible for a subscription cart', async () => {
+		const create = jest.fn( () => ( {
+			on: jest.fn(),
+			mount: jest.fn(),
+		} ) );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create,
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+		const registration = registerWooPayments();
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				paymentSettings: {
+					...content.props.paymentSettings,
+					cartContainsSubscription: true,
+				},
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+				shouldSavePayment: false,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( create ).toHaveBeenCalledWith(
+				'payment',
+				expect.objectContaining( {
+					terms: {
+						card: 'always',
+					},
+				} )
+			);
+		} );
+	} );
+
+	it( 'keeps checkout event subscriptions stable across parent rerenders', async () => {
+		const registration = registerWooPayments();
+		const unsubscribePaymentSetup = jest.fn();
+		const unsubscribeCheckoutSuccess = jest.fn();
+		const onPaymentSetup = jest.fn( () => unsubscribePaymentSetup );
+		const onCheckoutSuccess = jest.fn( () => unsubscribeCheckoutSuccess );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+		const createContent = () =>
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess,
+				},
+				emitResponse: {
+					responseTypes: {
+						...emitResponse.responseTypes,
+					},
+					noticeContexts: {
+						...emitResponse.noticeContexts,
+					},
+				},
+			} );
+
+		const { rerender } = render( createContent() );
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+		} );
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		rerender( createContent() );
+
+		expect( onPaymentSetup ).toHaveBeenCalledTimes( 1 );
+		expect( onCheckoutSuccess ).toHaveBeenCalledTimes( 1 );
+		expect( unsubscribePaymentSetup ).not.toHaveBeenCalled();
+		expect( unsubscribeCheckoutSuccess ).not.toHaveBeenCalled();
+	} );
+
+	it( 'submits the tokenization failure so the server records the attempt', async () => {
+		const createPaymentMethod = jest.fn().mockResolvedValue( {
+			error: {
+				code: 'incomplete_number',
+				message: 'Your card number is incomplete.',
+			},
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod,
+		} ) );
+
+		const registration = registerWooPayments();
+		let setupResult;
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupResult = callback();
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalled();
+		} );
+
+		await expect( setupResult ).resolves.toMatchObject( {
+			type: 'success',
+			meta: {
+				paymentMethodData: {
+					'wcpay-payment-method':
+						'woocommerce_payments_payment_method_error',
+					'wcpay-payment-method-error-code': 'incomplete_number',
+					'wcpay-payment-method-error-message':
+						'Your card number is incomplete.',
+				},
+			},
+		} );
+	} );
+
+	it( 'returns a payment notice when Stripe does not provide a payment method', async () => {
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+		} ) );
+
+		const registration = registerWooPayments();
+		let setupResult;
+		const onPaymentSetup = jest.fn( ( callback ) => {
+			setupResult = callback();
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup,
+					onCheckoutSuccess: jest.fn(),
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onPaymentSetup ).toHaveBeenCalled();
+		} );
+
+		await expect( setupResult ).resolves.toEqual( {
+			type: 'error',
+			message: 'There was a problem validating your payment details.',
+			messageContext: 'payments',
+		} );
+	} );
+
+	it( 'handles PaymentIntent next actions from Blocks payment details redirects', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			paymentIntent: {
+				id: 'pi_123',
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+				shouldSavePayment: true,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_123_secret_abc',
+		} );
+		expect( window.Stripe ).toHaveBeenNthCalledWith( 1, 'pk_test_123', {
+			locale: 'auto',
+		} );
+		expect( window.Stripe ).toHaveBeenNthCalledWith( 2, 'pk_test_123', {
+			locale: 'auto',
+			stripeAccount: 'acct_123',
+			betas: [
+				'card_country_event_beta_1',
+				'link_autofill_modal_beta_1',
+			],
+		} );
+		expect( window.fetch ).toHaveBeenCalledWith(
+			'https://example.test/wp-admin/admin-ajax.php',
+			expect.objectContaining( {
+				method: 'POST',
+			} )
+		);
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( '_ajax_nonce' ) ).toBe( 'nonce_123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+		expect( requestBody.get( 'should_save_payment_method' ) ).toBe(
+			'true'
+		);
+	} );
+
+	// A failed next action carries the Stripe error (REC-3DS-3b's shopper-facing
+	// decline message) to the Blocks payments notice, and still posts
+	// update_order_status with the error's intent ID so the server can fail the
+	// order. The client fires that call without waiting for it and throws the
+	// Stripe error (client 11.1.0 client/checkout/api/index.js:244-281).
+	it( 'returns the Stripe error in the payments notice context when a Blocks next action fails', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			error: {
+				message: 'Your card was declined.',
+				payment_intent: {
+					id: 'pi_123',
+				},
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				error: {
+					message:
+						"We're not able to process this payment. Please try again later.",
+				},
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'error',
+			message: 'Your card was declined.',
+			messageContext: 'payments',
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_123_secret_abc',
+		} );
+		expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+	} );
+
+	it( 'handles PaymentIntent next actions from Blocks saved-token redirects', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			paymentIntent: {
+				id: 'pi_123',
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'pi_123_secret_abc',
+		} );
+		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
+			locale: 'auto',
+			stripeAccount: 'acct_123',
+			betas: [
+				'card_country_event_beta_1',
+				'link_autofill_modal_beta_1',
+			],
+		} );
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( '_ajax_nonce' ) ).toBe( 'nonce_123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'pi_123' );
+		expect( requestBody.get( 'should_save_payment_method' ) ).toBe(
+			'false'
+		);
+		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'false' );
+	} );
+
+	const runSavedTokenConfirmation = async () => {
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				processingResponse: {
+					paymentDetails: {
+						redirect:
+							'#wcpay-confirm-pi:123:pi_123_secret_abc:nonce_123',
+					},
+				},
+			} );
+		} );
+		const savedTokenComponent = registration.savedTokenComponent;
+
+		render(
+			createElement( savedTokenComponent.type, {
+				...savedTokenComponent.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse: {
+					responseTypes: {
+						SUCCESS: 'success',
+						ERROR: 'error',
+					},
+					noticeContexts: {
+						PAYMENTS: 'payments',
+					},
+				},
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		return checkoutSuccessResult;
+	};
+
+	it( 'shows the server message when the order update fails after a successful next action', async () => {
+		// Next-action result shape read by client 11.1.0 client/checkout/api/index.js:220-245 (paymentIntent.id).
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+		// Error shape of the update_order_status AJAX action (WooPaymentsCheckoutAjaxController::get_update_order_status_response()).
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				error: {
+					message: 'We could not update your order.',
+				},
+			} ),
+		} );
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'We could not update your order.',
+			messageContext: 'payments',
+		} );
+	} );
+
+	it( 'shows the Stripe.js message when the next action rejects', async () => {
+		// Synthetic rejection: client 11.1.0 confirm-card-payment.js:36-40 shows a rejected confirmation's error.message.
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest
+				.fn()
+				.mockRejectedValue(
+					new Error( 'The authentication frame failed to load.' )
+				),
+		} ) );
+		window.fetch = jest.fn();
+
+		await expect( runSavedTokenConfirmation() ).resolves.toEqual( {
+			type: 'error',
+			message: 'The authentication frame failed to load.',
+			messageContext: 'payments',
+		} );
+	} );
+
+	it( 'confirms once Stripe.js loads during a saved-card confirmation', async () => {
+		delete window.Stripe;
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+
+		const confirmation = runSavedTokenConfirmation();
+		// Next-action result shape read by client 11.1.0 client/checkout/api/index.js:220-245 (paymentIntent.id).
+		window.Stripe = jest.fn( () => ( {
+			handleNextAction: jest.fn().mockResolvedValue( {
+				paymentIntent: {
+					id: 'pi_123',
+				},
+			} ),
+		} ) );
+
+		await expect( confirmation ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+	} );
+
+	it( 'reports a confirmation error instead of success when Stripe.js never loads', async () => {
+		jest.useFakeTimers();
+		delete window.Stripe;
+		window.fetch = jest.fn();
+
+		const confirmation = runSavedTokenConfirmation();
+		await act( async () => {
+			jest.advanceTimersByTime( 600 * 1000 + 100 );
+		} );
+
+		await expect( confirmation ).resolves.toEqual( {
+			type: 'error',
+			message: 'There was a problem confirming your payment.',
+			messageContext: 'payments',
+		} );
+		expect( window.fetch ).not.toHaveBeenCalled();
+	} );
+
+	it( 'confirms full #wcpay-confirm-si redirects with confirmation tokens', async () => {
+		window.history.pushState(
+			{},
+			'',
+			'/checkout/order-pay/123/?change_payment_method=123'
+		);
+		const confirmSetup = jest.fn().mockResolvedValue( {
+			setupIntent: {
+				id: 'seti_123',
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			confirmSetup,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				redirectUrl:
+					'https://example.test/checkout/order-received/#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123:ctoken_123',
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+		expect( confirmSetup ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				clientSecret: 'seti_123_secret_abc',
+				confirmParams: {
+					confirmation_token: 'ctoken_123',
+				},
+				redirect: 'if_required',
+			} )
+		);
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( '_ajax_nonce' ) ).toBe( 'nonce_123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'seti_123' );
+		expect( requestBody.get( 'should_save_payment_method' ) ).toBe(
+			'false'
+		);
+		expect( requestBody.get( 'is_changing_payment' ) ).toBe( 'true' );
+	} );
+
+	it( 'handles SetupIntent next actions when no confirmation token is present', async () => {
+		const handleNextAction = jest.fn().mockResolvedValue( {
+			setupIntent: {
+				id: 'seti_123',
+			},
+		} );
+		window.fetch = jest.fn().mockResolvedValue( {
+			json: jest.fn().mockResolvedValue( {
+				return_url: 'https://example.test/checkout/order-received/123/',
+			} ),
+		} );
+		window.Stripe = jest.fn( () => ( {
+			elements: jest.fn( () => ( {
+				create: jest.fn( () => ( {
+					on: jest.fn(),
+					mount: jest.fn(),
+				} ) ),
+			} ) ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {} ),
+			handleNextAction,
+		} ) );
+
+		const registration = registerWooPayments();
+		let checkoutSuccessResult;
+		const onCheckoutSuccess = jest.fn( ( callback ) => {
+			checkoutSuccessResult = callback( {
+				redirectUrl:
+					'https://example.test/checkout/order-received/#wcpay-confirm-si:123:seti_123_secret_abc:nonce_123',
+			} );
+		} );
+		const emitResponse = {
+			responseTypes: {
+				SUCCESS: 'success',
+				ERROR: 'error',
+			},
+			noticeContexts: {
+				PAYMENTS: 'payments',
+			},
+		};
+
+		const content = registration.content;
+
+		render(
+			createElement( content.type, {
+				...content.props,
+				eventRegistration: {
+					onPaymentSetup: jest.fn(),
+					onCheckoutSuccess,
+				},
+				emitResponse,
+			} )
+		);
+
+		await waitFor( () => {
+			expect( onCheckoutSuccess ).toHaveBeenCalled();
+		} );
+
+		await expect( checkoutSuccessResult ).resolves.toEqual( {
+			type: 'success',
+			redirectUrl: 'https://example.test/checkout/order-received/123/',
+			meta: {
+				paymentMethodData: {},
+			},
+		} );
+		expect( handleNextAction ).toHaveBeenCalledWith( {
+			clientSecret: 'seti_123_secret_abc',
+		} );
+		const requestBody = window.fetch.mock.calls[ 0 ][ 1 ].body;
+		expect( requestBody.get( 'action' ) ).toBe( 'update_order_status' );
+		expect( requestBody.get( 'order_id' ) ).toBe( '123' );
+		expect( requestBody.get( '_ajax_nonce' ) ).toBe( 'nonce_123' );
+		expect( requestBody.get( 'intent_id' ) ).toBe( 'seti_123' );
+	} );
+} );

@@ -1,0 +1,335 @@
+<?php
+/**
+ * WooPaymentsOrderEffectPlan class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+/**
+ * Immutable request-scoped plan for WooPayments order effects.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsOrderEffectPlan {
+
+	/**
+	 * PaymentIntent effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_PAYMENT_INTENT = 'payment_intent';
+
+	/**
+	 * SetupIntent effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_SETUP_INTENT = 'setup_intent';
+
+	/**
+	 * Capture effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_CAPTURE = 'capture';
+
+	/**
+	 * Expired-authorization capture effect plan type.
+	 *
+	 * Declared explicitly at the re-fetch site that detected the dead
+	 * authorization - never inferred from a capture result's status, so a
+	 * non-exception canceled response keeps composing plain failure effects.
+	 */
+	public const TYPE_CAPTURE_EXPIRED = 'capture_expired';
+
+	/**
+	 * Authorization cancellation effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_CANCEL = 'cancel';
+
+	/**
+	 * Refund effect plan.
+	 *
+	 * @var string
+	 */
+	public const TYPE_REFUND = 'refund';
+
+	/**
+	 * A $0 order confirmed without an intent, as client 11.1.0 does when no new payment method is saved.
+	 *
+	 * @var string
+	 */
+	public const TYPE_ZERO_AMOUNT_WITHOUT_INTENT = 'zero_amount_without_intent';
+
+	/**
+	 * Effect plan type.
+	 *
+	 * @var string
+	 */
+	private string $type;
+
+	/**
+	 * Provider response facts.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $provider_result;
+
+	/**
+	 * Whether authorized token effects should run.
+	 *
+	 * @var bool
+	 */
+	private bool $apply_token_effects;
+
+	/**
+	 * Whether token persistence is required for a recurring payment.
+	 *
+	 * @var bool
+	 */
+	private bool $is_recurring;
+
+	/**
+	 * SetupIntent metadata to persist before lifecycle application.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $setup_meta;
+
+	/**
+	 * Whether the effects write the transaction fee and net meta.
+	 *
+	 * @var bool
+	 */
+	private bool $writes_fee_meta = true;
+
+	/**
+	 * Whether the order had the payment's success or capture note before the payment lifecycle applied, or null when
+	 * the outcome brings no such note.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $success_or_capture_note_existed = null;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param string               $type                Effect plan type.
+	 * @param array<string,mixed>  $provider_result     Provider response facts.
+	 * @param bool                 $apply_token_effects Whether token effects should run.
+	 * @param bool                 $is_recurring        Whether recurring token persistence is required.
+	 * @param array<string,string> $setup_meta          SetupIntent metadata.
+	 */
+	private function __construct( string $type, array $provider_result, bool $apply_token_effects, bool $is_recurring, array $setup_meta = array() ) {
+		$this->type                = $type;
+		$this->provider_result     = $provider_result;
+		$this->apply_token_effects = $apply_token_effects;
+		$this->is_recurring        = $is_recurring;
+		$this->setup_meta          = $setup_meta;
+	}
+
+	/**
+	 * Build a PaymentIntent effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Provider PaymentIntent response.
+	 * @param bool                $is_recurring    Whether recurring token persistence is required.
+	 * @return self
+	 */
+	public static function for_payment_intent( array $provider_result, bool $is_recurring ): self {
+		$status = isset( $provider_result['status'] ) ? (string) $provider_result['status'] : '';
+
+		return new self(
+			self::TYPE_PAYMENT_INTENT,
+			$provider_result,
+			WooPaymentsIntentCodec::holds_money( $status ),
+			$is_recurring
+		);
+	}
+
+	/**
+	 * Build a SetupIntent effect plan.
+	 *
+	 * @param array<string,mixed>  $provider_result Provider SetupIntent response.
+	 * @param bool                 $is_recurring    Whether recurring token persistence is required.
+	 * @param array<string,string> $setup_meta      SetupIntent metadata.
+	 * @return self
+	 */
+	public static function for_setup_intent( array $provider_result, bool $is_recurring, array $setup_meta ): self {
+		$status = isset( $provider_result['status'] ) ? (string) $provider_result['status'] : '';
+
+		return new self(
+			self::TYPE_SETUP_INTENT,
+			$provider_result,
+			'succeeded' === $status,
+			$is_recurring,
+			$setup_meta
+		);
+	}
+
+	/**
+	 * Build the effect plan of a $0 order confirmed without an intent (client 11.1.0 gw:1673-1771).
+	 *
+	 * @param array<string,string> $setup_meta Metadata the client writes before confirming.
+	 * @param int                  $token_id   Saved token the shopper used, or 0 for a payment method that is not saved.
+	 * @return self
+	 */
+	public static function for_zero_amount_without_intent( array $setup_meta, int $token_id ): self {
+		return new self( self::TYPE_ZERO_AMOUNT_WITHOUT_INTENT, array( 'token_id' => $token_id ), false, false, $setup_meta );
+	}
+
+	/**
+	 * Build a capture effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Provider capture response.
+	 * @return self
+	 */
+	public static function for_capture( array $provider_result ): self {
+		return new self( self::TYPE_CAPTURE, $provider_result, false, false );
+	}
+
+	/**
+	 * Get a copy of this plan whose effects write no transaction fee or net meta, for paths where the client writes none.
+	 *
+	 * @return self
+	 */
+	public function without_fee_meta(): self {
+		$plan                  = clone $this;
+		$plan->writes_fee_meta = false;
+
+		return $plan;
+	}
+
+	/**
+	 * Get a copy of this plan that saves and attaches no payment token, for an intent the shopper's current payment method did not pay.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return self
+	 */
+	public function without_token_effects(): self {
+		$plan                      = clone $this;
+		$plan->apply_token_effects = false;
+
+		return $plan;
+	}
+
+	/**
+	 * Get a copy of this plan that records whether the order had the payment's success or capture note before the payment
+	 * lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param bool $existed Whether the order had the note.
+	 * @return self
+	 */
+	public function with_success_or_capture_note_existed( bool $existed ): self {
+		$plan                                  = clone $this;
+		$plan->success_or_capture_note_existed = $existed;
+
+		return $plan;
+	}
+
+	/**
+	 * Tell whether the order had the payment's success or capture note before the payment lifecycle applied.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool|null Null when the outcome brings no such note.
+	 */
+	public function success_or_capture_note_existed(): ?bool {
+		return $this->success_or_capture_note_existed;
+	}
+
+	/**
+	 * Tell whether the effects write the transaction fee and net meta.
+	 *
+	 * @return bool
+	 */
+	public function writes_fee_meta(): bool {
+		return $this->writes_fee_meta;
+	}
+
+	/**
+	 * Build an expired-authorization capture effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Re-fetched canceled intent.
+	 * @return self
+	 */
+	public static function for_capture_expired( array $provider_result ): self {
+		return new self( self::TYPE_CAPTURE_EXPIRED, $provider_result, false, false );
+	}
+
+	/**
+	 * Build an authorization cancellation effect plan.
+	 *
+	 * @param array<string,mixed> $provider_result Provider cancellation response.
+	 * @return self
+	 *
+	 * @since 11.0.0
+	 */
+	public static function for_cancel( array $provider_result ): self {
+		return new self( self::TYPE_CANCEL, $provider_result, false, false );
+	}
+
+	/**
+	 * Build a refund effect plan.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param array<string,mixed> $provider_result Provider refund response.
+	 * @return self
+	 */
+	public static function for_refund( array $provider_result ): self {
+		return new self( self::TYPE_REFUND, $provider_result, false, false );
+	}
+
+	/**
+	 * Get the plan type.
+	 *
+	 * @return string
+	 */
+	public function get_type(): string {
+		return $this->type;
+	}
+
+	/**
+	 * Get provider response facts.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_provider_result(): array {
+		return $this->provider_result;
+	}
+
+	/**
+	 * Tell whether authorized token effects should run.
+	 *
+	 * @return bool
+	 */
+	public function should_apply_token_effects(): bool {
+		return $this->apply_token_effects;
+	}
+
+	/**
+	 * Tell whether recurring token persistence is required.
+	 *
+	 * @return bool
+	 */
+	public function is_recurring(): bool {
+		return $this->is_recurring;
+	}
+
+	/**
+	 * Get SetupIntent metadata.
+	 *
+	 * @return array<string,string>
+	 */
+	public function get_setup_meta(): array {
+		return $this->setup_meta;
+	}
+}

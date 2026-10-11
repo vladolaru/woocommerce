@@ -1,0 +1,3117 @@
+/**
+ * External dependencies
+ */
+import { act, render, waitFor } from '@testing-library/react';
+import { createElement } from '@wordpress/element';
+import { registerExpressPaymentMethod } from '@woocommerce/blocks-registry';
+import apiFetch from '@wordpress/api-fetch';
+
+jest.mock( '@woocommerce/blocks-registry', () => ( {
+	registerExpressPaymentMethod: jest.fn(),
+} ) );
+
+const mockInvalidateResolutionForStore = jest.fn();
+jest.mock( '@wordpress/data', () => ( {
+	dispatch: jest.fn( () => ( {
+		invalidateResolutionForStore: mockInvalidateResolutionForStore,
+	} ) ),
+} ) );
+
+jest.mock( '@woocommerce/block-data', () => ( {
+	cartStore: 'wc/store/cart',
+} ) );
+
+const mockExtensionCartUpdate = jest.fn();
+jest.mock( '@woocommerce/blocks-checkout', () => ( {
+	extensionCartUpdate: ( ...args ) => mockExtensionCartUpdate( ...args ),
+} ) );
+
+const mockGetPaymentMethodData = jest.fn();
+jest.mock( '@woocommerce/settings', () => ( {
+	getPaymentMethodData: ( ...args ) => mockGetPaymentMethodData( ...args ),
+} ) );
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+
+const baseExpressCheckoutParams = {
+	ajax_url: 'https://example.test/admin-ajax.php',
+	tracks_url: 'https://example.test/wp-json/wc/v3/payments/tracks',
+	enabled_methods: [ 'payment_request' ],
+	button_context: 'checkout',
+	store_name: 'Test Store',
+	is_manual_capture: false,
+	nonce: {
+		store_api_nonce: 'store-api-nonce',
+		tokenized_cart_nonce: 'cart-nonce',
+		tokenized_cart_session_nonce: 'cart-session-nonce',
+		platform_tracker: 'tracks-nonce',
+		tracks_rest: 'rest-nonce',
+	},
+	checkout: {
+		currency_code: 'usd',
+		currency_decimals: 2,
+		stripe_minor_unit: 2,
+		country_code: 'US',
+		needs_payer_phone: true,
+		allowed_shipping_countries: [ 'US' ],
+		display_prices_with_tax: false,
+	},
+	button: {
+		type: 'buy',
+		theme: 'dark',
+		height: '48',
+		radius: '4',
+		size: 'medium',
+	},
+	stripe: {
+		publishableKey: 'pk_test_123',
+		accountId: 'acct_123',
+		locale: 'en',
+	},
+	flags: {
+		isEceUsingConfirmationTokens: true,
+	},
+	payment_method_types: [ 'card' ],
+};
+
+const billing = {
+	billingAddress: {
+		email: 'shopper@example.test',
+		first_name: 'Ada',
+		last_name: 'Lovelace',
+		phone: '+15555550123',
+		address_1: '1 Test Street',
+		address_2: '',
+		city: 'San Francisco',
+		state: 'CA',
+		postcode: '94107',
+		country: 'US',
+	},
+	cartTotal: {
+		value: 5000,
+	},
+	cartTotalItems: [
+		{
+			key: 'total_items',
+			value: 4000,
+			valueWithTax: 4000,
+		},
+		{
+			key: 'total_fees',
+			value: 0,
+			valueWithTax: 0,
+		},
+		{
+			key: 'total_discount',
+			value: 0,
+			valueWithTax: 0,
+		},
+		{
+			key: 'total_tax',
+			value: 300,
+			valueWithTax: 300,
+		},
+		{
+			key: 'total_shipping',
+			value: 700,
+			valueWithTax: 700,
+		},
+	],
+	currency: {
+		code: 'USD',
+		minorUnit: 2,
+	},
+};
+
+// The Blocks cart store data, which mirrors the Store API cart response (src/StoreApi/Schemas/V1/CartSchema.php totals;
+// total_refund is an order field, OrderSchema.php, and is not part of a cart).
+const blocksCart = {
+	cartTotals: {
+		total_price: '5000',
+		total_shipping: '700',
+		total_shipping_tax: '0',
+		total_discount: '0',
+		total_discount_tax: '0',
+		total_fees: '0',
+		total_fees_tax: '0',
+		total_tax: '300',
+		currency_code: 'USD',
+		currency_minor_unit: 2,
+	},
+	totals: {
+		total_price: '5000',
+		total_shipping: '700',
+		total_shipping_tax: '0',
+		total_discount: '0',
+		total_discount_tax: '0',
+		total_fees: '0',
+		total_fees_tax: '0',
+		total_tax: '300',
+		currency_code: 'USD',
+		currency_minor_unit: 2,
+	},
+	cartItems: [
+		{
+			name: 'Beanie',
+			quantity: 2,
+			totals: {
+				line_subtotal: '2000',
+				line_subtotal_tax: '0',
+				currency_minor_unit: 2,
+			},
+			prices: {
+				price: '1000',
+				currency_minor_unit: 2,
+			},
+		},
+	],
+	items: [
+		{
+			name: 'Beanie',
+			quantity: 2,
+			totals: {
+				line_subtotal: '2000',
+				line_subtotal_tax: '0',
+				currency_minor_unit: 2,
+			},
+			prices: {
+				price: '1000',
+				currency_minor_unit: 2,
+			},
+			variation: [],
+			item_data: [],
+		},
+	],
+	shippingRates: [
+		{
+			package_id: 0,
+			shipping_rates: [
+				{
+					rate_id: 'flat_rate:1',
+					name: 'Flat rate',
+					price: '700',
+					taxes: '0',
+					selected: true,
+					currency_minor_unit: 2,
+					meta_data: [],
+				},
+			],
+		},
+	],
+	shipping_rates: [
+		{
+			shipping_rates: [
+				{
+					rate_id: 'flat_rate:1',
+					name: 'Flat rate',
+					price: '700',
+					taxes: '0',
+					selected: true,
+					currency_minor_unit: 2,
+					meta_data: [],
+				},
+			],
+		},
+	],
+	extensions: {
+		wcpay: {
+			express_checkout_methods: [ 'payment_request' ],
+		},
+	},
+};
+
+const cartWithExpressMethods = ( methods, overrides = {} ) => ( {
+	...blocksCart,
+	...overrides,
+	extensions: {
+		...blocksCart.extensions,
+		...overrides.extensions,
+		wcpay: {
+			...blocksCart.extensions.wcpay,
+			...overrides.extensions?.wcpay,
+			express_checkout_methods: methods,
+		},
+	},
+} );
+
+const cartWithSubscriptionSchedule = (
+	methods = [ 'payment_request' ],
+	overrides = {}
+) =>
+	cartWithExpressMethods( methods, {
+		...overrides,
+		extensions: {
+			...overrides.extensions,
+			subscriptions: [
+				{
+					billing_period: 'month',
+					billing_interval: 1,
+				},
+			],
+		},
+	} );
+
+// A WooCommerce Subscriptions free trial, shaped like the client 11.1.0 compatibility tests' fixtures.
+const trialSubscriptionItem = {
+	name: 'Premium Plan',
+	quantity: 1,
+	totals: {
+		line_subtotal: '0',
+		line_subtotal_tax: '0',
+		line_total: '0',
+		currency_minor_unit: 2,
+	},
+	variation: [],
+	item_data: [],
+	extensions: {
+		subscriptions: {
+			billing_period: 'month',
+			billing_interval: 1,
+			trial_length: 14,
+			sign_up_fees: '0',
+		},
+	},
+};
+
+const trialSubscriptionSchedule = {
+	billing_period: 'month',
+	billing_interval: 1,
+	next_payment_date: '2026-03-19',
+	totals: {
+		total_price: '1999',
+		total_items: '1999',
+		total_tax: '0',
+		total_shipping: '0',
+		total_shipping_tax: '0',
+		currency_minor_unit: 2,
+		currency_prefix: '$',
+		currency_suffix: '',
+		currency_decimal_separator: '.',
+		currency_thousand_separator: ',',
+		tax_lines: [],
+	},
+};
+
+const freeTrialCart = cartWithExpressMethods( [ 'payment_request' ], {
+	items: [ trialSubscriptionItem ],
+	cartItems: [ trialSubscriptionItem ],
+	totals: {
+		...blocksCart.totals,
+		total_price: '0',
+		total_shipping: '0',
+		total_tax: '0',
+	},
+	cartTotals: {
+		...blocksCart.cartTotals,
+		total_price: '0',
+		total_shipping: '0',
+		total_tax: '0',
+	},
+	extensions: {
+		subscriptions: [ trialSubscriptionSchedule ],
+	},
+} );
+
+const freeTrialBilling = {
+	...billing,
+	cartTotal: { value: 0 },
+	cartTotalItems: [
+		{ key: 'total_items', value: 0, valueWithTax: 0 },
+		{ key: 'total_tax', value: 0, valueWithTax: 0 },
+	],
+};
+
+const shippingData = {
+	needsShipping: true,
+	shippingAddress: {
+		first_name: 'Ada',
+		last_name: 'Lovelace',
+		address_1: '1 Test Street',
+		address_2: '',
+		city: 'San Francisco',
+		state: 'CA',
+		postcode: '94107',
+		country: 'US',
+	},
+	shippingRates: blocksCart.shippingRates,
+};
+
+const getPaymentMethodInterfaceCartData = ( cart = blocksCart ) => ( {
+	cartFees: [],
+	cartItems: cart.items || cart.cartItems || [],
+	extensions: cart.extensions || {},
+} );
+
+const getPaymentMethodInterfaceShippingData = ( cart = blocksCart ) => ( {
+	...shippingData,
+	shippingRates: cart.shipping_rates || cart.shippingRates || [],
+} );
+
+const getPaymentMethodInterfaceProps = ( cart = blocksCart ) => ( {
+	cartData: getPaymentMethodInterfaceCartData( cart ),
+	shippingData: getPaymentMethodInterfaceShippingData( cart ),
+} );
+
+// Stand-in for jQuery BlockUI's page-level `$.blockUI( options )` / `$.unblockUI()`, loaded by WooCommerce's
+// `woocommerce` script (`wc-jquery-blockui`, includes/class-wc-frontend-scripts.php). The page has one overlay: a new
+// block replaces the one up and a single unblock removes it (client/legacy/js/jquery-blockui/jquery.blockUI.js,
+// install() :265-267, remove() :488-489); neither returns anything useful. The stand-in keeps only that state, so tests
+// read whether the page is locked, not how many calls got it there.
+const createPageLock = () => {
+	let locked = false;
+	let overlayOptions;
+
+	return {
+		blockUI: ( options ) => {
+			locked = true;
+			overlayOptions = options;
+		},
+		unblockUI: () => {
+			locked = false;
+		},
+		isLocked: () => locked,
+		getOverlayOptions: () => overlayOptions,
+	};
+};
+
+describe( 'wc-payment-method-woopayments-express-checkout', () => {
+	let expressElement;
+	let expressHandlers;
+	let registerExpressCheckout;
+	let setNavigate;
+	let stripe;
+	let elements;
+	let availablePaymentMethods;
+	let shouldLoadError;
+	let originalFetch;
+
+	beforeAll( () => {
+		originalFetch = window.fetch;
+		mockGetPaymentMethodData.mockReturnValue( {
+			expressCheckoutParams: baseExpressCheckoutParams,
+		} );
+		const expressCheckoutModule = require( '../index' );
+		registerExpressCheckout = expressCheckoutModule.default;
+		setNavigate = expressCheckoutModule.__test__.setNavigate;
+	} );
+
+	beforeEach( () => {
+		jest.clearAllMocks();
+		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
+		baseExpressCheckoutParams.is_manual_capture = false;
+		baseExpressCheckoutParams.has_subscription = false;
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: true,
+		};
+		baseExpressCheckoutParams.login_confirmation = false;
+		baseExpressCheckoutParams.checkout.currency_code = 'usd';
+		baseExpressCheckoutParams.checkout.currency_decimals = 2;
+		baseExpressCheckoutParams.checkout.stripe_minor_unit = 2;
+		billing.cartTotal.value = 5000;
+		billing.currency.code = 'USD';
+		billing.currency.minorUnit = 2;
+		delete baseExpressCheckoutParams.isShopperTrackingEnabled;
+		delete baseExpressCheckoutParams.is_shopper_tracking_enabled;
+		apiFetch.mockResolvedValue( {
+			payment_result: {
+				payment_status: 'success',
+			},
+		} );
+		expressHandlers = {};
+		availablePaymentMethods = undefined;
+		shouldLoadError = false;
+		expressElement = {
+			mount: jest.fn( () => {
+				if ( shouldLoadError ) {
+					expressHandlers.loaderror?.();
+					return;
+				}
+
+				if ( availablePaymentMethods ) {
+					expressHandlers.ready?.( { availablePaymentMethods } );
+				}
+			} ),
+			unmount: jest.fn(),
+			on: jest.fn( ( eventName, handler ) => {
+				expressHandlers[ eventName ] = handler;
+			} ),
+		};
+		elements = {
+			create: jest.fn( () => expressElement ),
+			submit: jest.fn().mockResolvedValue( {} ),
+			// The pages load https://js.stripe.com/v3/, whose `elements.update()` returns nothing: "Starting in Stripe.js
+			// dahlia, this method returns a Promise" (https://docs.stripe.com/js/elements_object/update). Tests that
+			// model dahlia's promise set it explicitly.
+			update: jest.fn(),
+		};
+		stripe = {
+			elements: jest.fn( () => elements ),
+			createConfirmationToken: jest.fn().mockResolvedValue( {
+				confirmationToken: {
+					id: 'ctoken_123',
+				},
+			} ),
+			createPaymentMethod: jest.fn().mockResolvedValue( {
+				paymentMethod: {
+					id: 'pm_456',
+				},
+			} ),
+		};
+		window.Stripe = jest.fn( () => stripe );
+	} );
+
+	afterEach( () => {
+		delete window.Stripe;
+		delete window.wcpayFraudPreventionToken;
+		delete window.confirm;
+		window.fetch = originalFetch;
+		document.body.innerHTML = '';
+	} );
+
+	const getRegistration = ( name ) =>
+		registerExpressPaymentMethod.mock.calls.find(
+			( [ registration ] ) => registration.name === name
+		)?.[ 0 ];
+
+	const renderExpressPaymentMethod = ( registration, props = {} ) =>
+		render(
+			createElement( registration.content.type, {
+				...registration.content.props,
+				billing,
+				...getPaymentMethodInterfaceProps(),
+				onClick: jest.fn(),
+				onClose: jest.fn(),
+				setExpressPaymentError: jest.fn(),
+				...props,
+			} )
+		);
+
+	const getTracksRequests = () =>
+		( window.fetch?.mock?.calls || [] ).filter(
+			( [ url ] ) =>
+				url === 'https://example.test/wp-json/wc/v3/payments/tracks'
+		);
+
+	it( 'registers separate Apple Pay and Google Pay express methods', () => {
+		registerExpressCheckout();
+
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 2 );
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				name: 'woocommerce_payments_express_checkout_applePay',
+				gatewayId: 'woocommerce_payments',
+				paymentMethodId: 'woocommerce_payments_express_checkout',
+				supports: expect.objectContaining( {
+					features: expect.arrayContaining( [ 'products' ] ),
+					style: [ 'height', 'borderRadius' ],
+				} ),
+			} )
+		);
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				name: 'woocommerce_payments_express_checkout_googlePay',
+				gatewayId: 'woocommerce_payments',
+				paymentMethodId: 'woocommerce_payments_express_checkout',
+				supports: expect.objectContaining( {
+					features: expect.arrayContaining( [ 'products' ] ),
+					style: [ 'height', 'borderRadius' ],
+				} ),
+			} )
+		);
+	} );
+
+	it( 'registers Amazon Pay as a separate express method when server config enables it', () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+
+		registerExpressCheckout();
+
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				name: 'woocommerce_payments_express_checkout_amazonPay',
+				gatewayId: 'woocommerce_payments',
+				paymentMethodId: 'woocommerce_payments_express_checkout',
+			} )
+		);
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 3 );
+	} );
+
+	it( 'does not register Amazon Pay when Stripe method types exclude it', () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [ 'card' ];
+
+		registerExpressCheckout();
+
+		expect( registerExpressPaymentMethod ).not.toHaveBeenCalledWith(
+			expect.objectContaining( {
+				name: 'woocommerce_payments_express_checkout_amazonPay',
+			} )
+		);
+		expect( registerExpressPaymentMethod ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'mounts Stripe ECE with method-specific button options', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( window.Stripe ).toHaveBeenCalledWith( 'pk_test_123', {
+			locale: 'en',
+			stripeAccount: 'acct_123',
+			betas: [ 'card_country_event_beta_1' ],
+		} );
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				mode: 'payment',
+				amount: 5000,
+				currency: 'usd',
+				paymentMethodTypes: [ 'card' ],
+			} )
+		);
+		expect( elements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				buttonHeight: 48,
+				buttonTheme: {
+					applePay: 'black',
+					googlePay: 'black',
+				},
+				buttonType: {
+					applePay: 'buy',
+					googlePay: 'buy',
+				},
+				paymentMethods: expect.objectContaining( {
+					applePay: 'always',
+					googlePay: 'never',
+					klarna: 'never',
+				} ),
+			} )
+		);
+	} );
+
+	it( 'mounts Stripe ECE with zero-decimal Stripe amount conversion', async () => {
+		baseExpressCheckoutParams.checkout.currency_code = 'jpy';
+		baseExpressCheckoutParams.checkout.currency_decimals = 1;
+		baseExpressCheckoutParams.checkout.stripe_minor_unit = 0;
+		billing.cartTotal.value = 180;
+		billing.currency.code = 'JPY';
+		billing.currency.minorUnit = 1;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				mode: 'payment',
+				amount: 18,
+				currency: 'jpy',
+				paymentMethodTypes: [ 'card' ],
+			} )
+		);
+	} );
+
+	it( 'mounts Stripe ECE with special-case currency amount conversion', async () => {
+		baseExpressCheckoutParams.checkout.currency_code = 'ugx';
+		baseExpressCheckoutParams.checkout.currency_decimals = 0;
+		baseExpressCheckoutParams.checkout.stripe_minor_unit = 2;
+		billing.cartTotal.value = 379;
+		billing.currency.code = 'UGX';
+		billing.currency.minorUnit = 0;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				mode: 'payment',
+				amount: 37900,
+				currency: 'ugx',
+				paymentMethodTypes: [ 'card' ],
+			} )
+		);
+	} );
+
+	it( 'mounts Stripe ECE with cart-aware Elements options and checkout appearance', async () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.is_manual_capture = true;
+		baseExpressCheckoutParams.has_subscription = false;
+		registerExpressCheckout();
+		const amazonPayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+
+		renderExpressPaymentMethod( amazonPayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithSubscriptionSchedule( [ 'amazon_pay' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				mode: 'payment',
+				amount: 5000,
+				currency: 'usd',
+				paymentMethodTypes: [ 'amazon_pay' ],
+				loader: 'never',
+				captureMethod: 'manual',
+				setupFutureUsage: 'off_session',
+				locale: 'en',
+				appearance: expect.any( Object ),
+			} )
+		);
+	} );
+
+	it( 'clears a stale localized subscription flag when the live cart is ordinary', async () => {
+		baseExpressCheckoutParams.has_subscription = true;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: null,
+			} )
+		);
+	} );
+
+	it( 'detects a subscription schedule on a live cart item', async () => {
+		baseExpressCheckoutParams.has_subscription = false;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const subscriptionItemCart = cartWithExpressMethods(
+			[ 'payment_request' ],
+			{
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						extensions: {
+							subscriptions: {
+								billing_period: 'month',
+								billing_interval: 1,
+							},
+						},
+					},
+				],
+			}
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: 'off_session',
+			} )
+		);
+	} );
+
+	it.each( [
+		{
+			description: 'an empty object',
+			subscriptionData: {},
+		},
+		{
+			description: 'null data',
+			subscriptionData: null,
+		},
+		{
+			description: 'an all-null object',
+			subscriptionData: {
+				billing_period: null,
+				billing_interval: null,
+			},
+		},
+		{
+			description: 'an empty billing period',
+			subscriptionData: {
+				billing_period: '',
+				billing_interval: 1,
+			},
+		},
+		{
+			description: 'a non-positive billing interval',
+			subscriptionData: {
+				billing_period: 'month',
+				billing_interval: 0,
+			},
+		},
+		{
+			description: 'a non-numeric billing interval',
+			subscriptionData: {
+				billing_period: 'month',
+				billing_interval: '1',
+			},
+		},
+	] )(
+		'treats malformed item-level subscription object data as ordinary: $description',
+		async ( { subscriptionData } ) => {
+			registerExpressCheckout();
+			const applePayRegistration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+			const regularItemCart = cartWithExpressMethods(
+				[ 'payment_request' ],
+				{
+					items: [
+						{
+							...blocksCart.items[ 0 ],
+							extensions: {
+								subscriptions: subscriptionData,
+							},
+						},
+					],
+				}
+			);
+
+			renderExpressPaymentMethod( applePayRegistration, {
+				...getPaymentMethodInterfaceProps( regularItemCart ),
+			} );
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					setupFutureUsage: null,
+				} )
+			);
+		}
+	);
+
+	it( 'detects a non-empty subscription array on a live cart item', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const subscriptionItemCart = cartWithExpressMethods(
+			[ 'payment_request' ],
+			{
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						extensions: {
+							subscriptions: [ { billing_period: 'month' } ],
+						},
+					},
+				],
+			}
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( subscriptionItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: 'off_session',
+			} )
+		);
+	} );
+
+	it( 'ignores an empty subscription array on a live cart item', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const regularItemCart = cartWithExpressMethods( [ 'payment_request' ], {
+			items: [
+				{
+					...blocksCart.items[ 0 ],
+					extensions: {
+						subscriptions: [],
+					},
+				},
+			],
+		} );
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps( regularItemCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				setupFutureUsage: null,
+			} )
+		);
+	} );
+
+	it( 'probes Stripe wallet availability before exposing each Blocks express method', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		baseExpressCheckoutParams.enabled_methods = [];
+
+		expect(
+			applePayRegistration.canMakePayment( { cart: blocksCart } )
+		).toBe( false );
+		expect( elements.create ).not.toHaveBeenCalled();
+
+		baseExpressCheckoutParams.enabled_methods = [ 'payment_request' ];
+		availablePaymentMethods = {
+			applePay: true,
+			googlePay: false,
+		};
+
+		await expect(
+			applePayRegistration.canMakePayment( { cart: blocksCart } )
+		).resolves.toBe( true );
+		await expect(
+			googlePayRegistration.canMakePayment( { cart: blocksCart } )
+		).resolves.toBe( false );
+
+		expect( elements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				paymentMethods: expect.objectContaining( {
+					applePay: 'always',
+					googlePay: 'always',
+					amazonPay: 'never',
+					klarna: 'never',
+				} ),
+			} )
+		);
+		expect( expressElement.unmount ).toHaveBeenCalled();
+
+		availablePaymentMethods = {};
+
+		await expect(
+			applePayRegistration.canMakePayment( {
+				cart: {
+					...blocksCart,
+					cartTotals: {
+						...blocksCart.cartTotals,
+						total_price: '5100',
+					},
+					totals: {
+						...blocksCart.totals,
+						total_price: '5100',
+					},
+				},
+			} )
+		).resolves.toBe( false );
+	} );
+
+	it( 'waits for Stripe.js before probing wallet availability', async () => {
+		jest.useFakeTimers();
+		availablePaymentMethods = { applePay: true };
+		const loadedStripe = window.Stripe;
+		delete window.Stripe;
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		const availability = applePayRegistration.canMakePayment( {
+			cart: blocksCart,
+		} );
+		window.Stripe = loadedStripe;
+		jest.advanceTimersByTime( 100 );
+		jest.useRealTimers();
+
+		await expect( availability ).resolves.toBe( true );
+	} );
+
+	it( 'does not reuse availability for ordinary and subscription carts', async () => {
+		availablePaymentMethods = { applePay: true };
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		await expect(
+			applePayRegistration.canMakePayment( { cart: blocksCart } )
+		).resolves.toBe( true );
+		await expect(
+			applePayRegistration.canMakePayment( {
+				cart: cartWithSubscriptionSchedule(),
+			} )
+		).resolves.toBe( true );
+
+		expect( stripe.elements ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'probes Stripe Amazon Pay availability before exposing the Blocks Amazon method', async () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+		registerExpressCheckout();
+		const amazonPayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+
+		availablePaymentMethods = {
+			amazonPay: true,
+		};
+
+		await expect(
+			amazonPayRegistration.canMakePayment( {
+				cart: cartWithExpressMethods( [
+					'payment_request',
+					'amazon_pay',
+				] ),
+			} )
+		).resolves.toBe( true );
+
+		expect( stripe.elements ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				paymentMethodTypes: [ 'card', 'amazon_pay' ],
+			} )
+		);
+		expect( elements.create ).toHaveBeenCalledWith(
+			'expressCheckout',
+			expect.objectContaining( {
+				paymentMethods: expect.objectContaining( {
+					applePay: 'always',
+					googlePay: 'always',
+					amazonPay: 'auto',
+				} ),
+			} )
+		);
+	} );
+
+	it( 'uses Store API cart extension methods when probing wallet availability', async () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const amazonPayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+
+		availablePaymentMethods = {
+			applePay: true,
+			amazonPay: true,
+		};
+
+		await expect(
+			Promise.resolve(
+				applePayRegistration.canMakePayment( {
+					cart: cartWithExpressMethods( [ 'amazon_pay' ] ),
+				} )
+			)
+		).resolves.toBe( false );
+		await expect(
+			Promise.resolve(
+				amazonPayRegistration.canMakePayment( {
+					cart: cartWithExpressMethods( [] ),
+				} )
+			)
+		).resolves.toBe( false );
+		await expect(
+			amazonPayRegistration.canMakePayment( {
+				cart: cartWithExpressMethods( [ 'amazon_pay' ] ),
+			} )
+		).resolves.toBe( true );
+
+		expect( stripe.elements ).toHaveBeenLastCalledWith(
+			expect.objectContaining( {
+				paymentMethodTypes: [ 'amazon_pay' ],
+			} )
+		);
+	} );
+
+	it( 'surfaces a Blocks error when wallet shipping address has no available rates', async () => {
+		const setExpressPaymentError = jest.fn();
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			shipping_rates: [
+				{
+					shipping_rates: [],
+				},
+			],
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			setExpressPaymentError,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		const event = {
+			name: 'Ada Lovelace',
+			address: {
+				line1: '2 Wallet Way',
+				city: 'New York',
+				state: 'NY',
+				postal_code: '10001',
+				country: 'US',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( event );
+		} );
+
+		expect( event.reject ).toHaveBeenCalled();
+		expect( event.resolve ).not.toHaveBeenCalled();
+		expect( setExpressPaymentError ).toHaveBeenCalledWith(
+			'No shipping options are available for the selected address. Choose a different shipping address, or use the regular checkout.'
+		);
+	} );
+
+	it( 'refreshes the Blocks UI through the refresh-ui cart update when a mutated wallet flow is canceled', async () => {
+		mockExtensionCartUpdate.mockResolvedValueOnce( {} );
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: {
+				...blocksCart.totals,
+				total_price: '5700',
+			},
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const onClose = jest.fn();
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		expect( onClose ).toHaveBeenCalled();
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledTimes( 1 );
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledWith( {
+			namespace: 'woopayments/express-checkout/refresh-ui',
+			data: {},
+		} );
+		expect( mockInvalidateResolutionForStore ).not.toHaveBeenCalled();
+	} );
+
+	// Native-only (inbox N-266): a rate pick with no address change also leaves the server cart changed.
+	it( 'refreshes the Blocks UI when a wallet flow that only changed the shipping rate is canceled', async () => {
+		mockExtensionCartUpdate.mockResolvedValueOnce( {} );
+		apiFetch.mockResolvedValueOnce(
+			cartWithExpressMethods( [ 'payment_request' ] )
+		);
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose: jest.fn(),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingratechange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingratechange( {
+				shippingRate: { id: 'flat_rate:1' },
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledWith( {
+			namespace: 'woopayments/express-checkout/refresh-ui',
+			data: {},
+		} );
+	} );
+
+	it( 'falls back to refetching Blocks cart data when the refresh-ui cart update fails', async () => {
+		mockExtensionCartUpdate.mockRejectedValueOnce(
+			new Error( 'Unknown namespace' )
+		);
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: {
+				...blocksCart.totals,
+				total_price: '5700',
+			},
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const onClose = jest.fn();
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		await waitFor( () => {
+			expect( mockInvalidateResolutionForStore ).toHaveBeenCalled();
+		} );
+		expect( mockExtensionCartUpdate ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'does not send the refresh-ui cart update when a wallet flow is canceled without cart changes', async () => {
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+		const onClose = jest.fn();
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClose,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.cancel ).toBeDefined();
+		} );
+
+		await act( async () => {
+			expressHandlers.cancel();
+		} );
+
+		expect( onClose ).toHaveBeenCalled();
+		expect( mockExtensionCartUpdate ).not.toHaveBeenCalled();
+	} );
+
+	it( 'places the Blocks order with a confirmation token through Store API', async () => {
+		window.wcpayFraudPreventionToken = 'fraud-token-123';
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		const checkoutRequest = apiFetch.mock.calls[ 0 ][ 0 ];
+
+		expect( checkoutRequest ).toEqual(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/checkout?currency=USD',
+				headers: expect.objectContaining( {
+					Nonce: 'store-api-nonce',
+					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
+					'X-WooPayments-Tokenized-Cart': true,
+					'X-WooPayments-Payment-Currency': 'usd',
+				} ),
+				data: expect.objectContaining( {
+					payment_method: 'woocommerce_payments',
+					payment_data: expect.arrayContaining( [
+						{
+							key: 'wcpay-confirmation-token',
+							value: 'ctoken_123',
+						},
+						{
+							key: 'wcpay-express-payment-method-types',
+							value: JSON.stringify( [ 'card' ] ),
+						},
+						{
+							key: 'wcpay-express-checkout-context',
+							value: 'checkout',
+						},
+						{
+							key: 'wcpay-fraud-prevention-token',
+							value: 'fraud-token-123',
+						},
+					] ),
+				} ),
+			} )
+		);
+		expect( checkoutRequest.headers ).not.toHaveProperty(
+			'X-WooPayments-Tokenized-Cart-Session-Nonce'
+		);
+		expect(
+			checkoutRequest.data.payment_data.map( ( entry ) => entry.key )
+		).not.toContain( 'wcpay-is-platform-payment-method' );
+	} );
+
+	it( 'falls back to a payment method when confirmation tokens are disabled', async () => {
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: false,
+		};
+		baseExpressCheckoutParams.has_subscription = true;
+
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		const elementsOptions = stripe.elements.mock.calls[ 0 ][ 0 ];
+		expect( elementsOptions.paymentMethodCreation ).toBe( 'manual' );
+		expect( elementsOptions ).not.toHaveProperty( 'paymentMethodTypes' );
+		expect( elementsOptions ).not.toHaveProperty( 'setupFutureUsage' );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( stripe.createPaymentMethod ).toHaveBeenCalledWith( {
+			elements,
+		} );
+		expect( stripe.createConfirmationToken ).not.toHaveBeenCalled();
+
+		const paymentData = apiFetch.mock.calls[ 0 ][ 0 ].data.payment_data;
+		expect( paymentData ).toEqual(
+			expect.arrayContaining( [
+				{ key: 'wcpay-payment-method', value: 'pm_456' },
+			] )
+		);
+		expect( paymentData.map( ( entry ) => entry.key ) ).not.toContain(
+			'wcpay-confirmation-token'
+		);
+	} );
+
+	it( 'gates the wallet sheet behind the login confirmation dialog', async () => {
+		baseExpressCheckoutParams.login_confirmation = {
+			message: 'To pay with **the selected payment method**, log in.',
+			redirect_url: 'https://shop.test/login-redirect/',
+		};
+		window.confirm = jest.fn( () => false );
+
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		const event = {
+			expressPaymentType: 'google_pay',
+			resolve: jest.fn(),
+		};
+		await act( async () => {
+			expressHandlers.click( event );
+		} );
+
+		expect( window.confirm ).toHaveBeenCalledWith(
+			'To pay with Google Pay, log in.'
+		);
+		expect( event.resolve ).not.toHaveBeenCalled();
+	} );
+
+	it( 'sends order attribution data in the extensions payload', async () => {
+		document.body.insertAdjacentHTML(
+			'beforeend',
+			'<wc-order-attribution-inputs id="wcpay-express-checkout__order-attribution-inputs">' +
+				'<input type="hidden" name="wc_order_attribution_source_type" value="referral" />' +
+				'</wc-order-attribution-inputs>'
+		);
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( apiFetch.mock.calls[ 0 ][ 0 ].data.extensions ).toEqual( {
+			'woocommerce/order-attribution': {
+				source_type: 'referral',
+			},
+		} );
+		document
+			.getElementById(
+				'wcpay-express-checkout__order-attribution-inputs'
+			)
+			.remove();
+	} );
+
+	it( 'normalizes wallet billing name and phone on confirm', async () => {
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Cher',
+					phone: '(212) 555-0100',
+				},
+				shippingAddress: {
+					name: 'Cher',
+					address: { city: 'New York', country: 'US' },
+				},
+			} );
+		} );
+
+		const checkoutRequest = apiFetch.mock.calls[ 0 ][ 0 ];
+		expect( checkoutRequest.data.billing_address.last_name ).toBe( '-' );
+		expect( checkoutRequest.data.billing_address.phone ).toBe(
+			'2125550100'
+		);
+		expect( checkoutRequest.data.shipping_address.phone ).toBe(
+			'2125550100'
+		);
+	} );
+
+	it( 'resolves wallet clicks with cart line items and shipping rates', async () => {
+		const onClick = jest.fn();
+		const resolve = jest.fn();
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			onClick,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+
+		act( () => {
+			expressHandlers.click( { resolve } );
+		} );
+
+		expect( resolve ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				lineItems: expect.arrayContaining( [
+					expect.objectContaining( {
+						name: 'Beanie (x2)',
+						amount: 2000,
+					} ),
+					expect.objectContaining( {
+						name: 'Shipping',
+						amount: 700,
+					} ),
+					expect.objectContaining( {
+						name: 'Tax',
+						amount: 300,
+					} ),
+				] ),
+				shippingRates: expect.arrayContaining( [
+					expect.objectContaining( {
+						id: 'flat_rate:1',
+						displayName: 'Flat rate',
+						amount: 700,
+					} ),
+				] ),
+			} )
+		);
+		expect( onClick ).toHaveBeenCalled();
+	} );
+
+	it( 'updates the Store API cart and Elements when the wallet shipping address changes', async () => {
+		baseExpressCheckoutParams.has_subscription = true;
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			items: [
+				{
+					name: 'Wallet Beanie',
+					quantity: 3,
+					totals: {
+						line_subtotal: '3300',
+						line_subtotal_tax: '0',
+						currency_minor_unit: 2,
+					},
+					prices: {
+						price: '1100',
+						currency_minor_unit: 2,
+					},
+					variation: [],
+					item_data: [],
+				},
+			],
+			totals: {
+				...blocksCart.totals,
+				total_price: '5700',
+				total_shipping: '900',
+			},
+			shipping_rates: [
+				{
+					shipping_rates: [
+						{
+							rate_id: 'wallet_rate:1',
+							name: 'Wallet rate',
+							price: '900',
+							taxes: '0',
+							selected: true,
+							currency_minor_unit: 2,
+							meta_data: [],
+						},
+					],
+				},
+			],
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		const paymentMethodInterfaceProps = getPaymentMethodInterfaceProps(
+			cartWithSubscriptionSchedule()
+		);
+		renderExpressPaymentMethod( applePayRegistration, {
+			...paymentMethodInterfaceProps,
+			shippingData: {
+				...paymentMethodInterfaceProps.shippingData,
+				shippingAddress: {
+					...paymentMethodInterfaceProps.shippingData.shippingAddress,
+					city: 'Tai Po',
+					state: '',
+					postcode: '',
+					country: 'HK',
+				},
+			},
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		const event = {
+			name: 'Ada Lovelace',
+			address: {
+				line1: '2 Wallet Way',
+				city: 'Tai Po',
+				state: '',
+				postal_code: 'New Territories',
+				country: 'HK',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( event );
+		} );
+
+		expect( apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/update-customer?currency=USD',
+				headers: expect.objectContaining( {
+					Nonce: 'store-api-nonce',
+					'X-WooPayments-Tokenized-Cart-Nonce': 'cart-nonce',
+					'X-WooPayments-Tokenized-Cart': true,
+				} ),
+				data: {
+					shipping_address: expect.objectContaining( {
+						first_name: 'Ada',
+						last_name: 'Lovelace',
+						address_1: '2 Wallet Way',
+						city: 'Tai Po',
+						state: '',
+						postcode: 'New Territories',
+						country: 'HK',
+					} ),
+				},
+			} )
+		);
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 5700,
+				setupFutureUsage: null,
+			} )
+		);
+		expect( event.resolve ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				lineItems: expect.arrayContaining( [
+					expect.objectContaining( { name: 'Wallet Beanie (x3)' } ),
+				] ),
+				shippingRates: expect.arrayContaining( [
+					expect.objectContaining( { id: 'wallet_rate:1' } ),
+				] ),
+			} )
+		);
+		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
+	it( 'updates Elements when the live Store API cart gains a subscription', async () => {
+		const updatedCart = cartWithSubscriptionSchedule(
+			[ 'payment_request' ],
+			{
+				totals: {
+					...blocksCart.totals,
+					total_price: '5700',
+				},
+			}
+		);
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+		} );
+
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 5700,
+				setupFutureUsage: 'off_session',
+			} )
+		);
+	} );
+
+	describe( 'a cart that changes after the button mounted', () => {
+		const renderAndRerender = async ( nextBilling, nextCart ) => {
+			registerExpressCheckout();
+			const registration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+			const props = {
+				...registration.content.props,
+				onClick: jest.fn(),
+				onClose: jest.fn(),
+				setExpressPaymentError: jest.fn(),
+			};
+			const { rerender } = render(
+				createElement( registration.content.type, {
+					...props,
+					billing,
+					...getPaymentMethodInterfaceProps(),
+				} )
+			);
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+
+			rerender(
+				createElement( registration.content.type, {
+					...props,
+					billing: nextBilling,
+					...getPaymentMethodInterfaceProps( nextCart ),
+				} )
+			);
+		};
+
+		it( 'updates the wallet amount and line items from the live cart', async () => {
+			const nextBilling = {
+				...billing,
+				cartTotal: { value: 7200 },
+				cartTotalItems: billing.cartTotalItems.map( ( item ) => {
+					if ( item.key === 'total_items' ) {
+						return { ...item, value: 6000, valueWithTax: 6000 };
+					}
+
+					return item.key === 'total_shipping'
+						? { ...item, value: 900, valueWithTax: 900 }
+						: item;
+				} ),
+			};
+			const nextCart = {
+				...blocksCart,
+				items: [
+					{
+						...blocksCart.items[ 0 ],
+						quantity: 6,
+						totals: {
+							...blocksCart.items[ 0 ].totals,
+							line_subtotal: '6000',
+						},
+					},
+				],
+			};
+			const resolve = jest.fn();
+
+			await renderAndRerender( nextBilling, nextCart );
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					amount: 7200,
+				} );
+			} );
+
+			act( () => {
+				expressHandlers.click( { resolve } );
+			} );
+
+			expect( resolve ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{ name: 'Beanie (x6)', amount: 6000 },
+						{ name: 'Shipping', amount: 900 },
+						{ name: 'Tax', amount: 300 },
+					],
+				} )
+			);
+		} );
+
+		it( 'asks to save the payment method once the live cart gains a subscription', async () => {
+			await renderAndRerender(
+				billing,
+				cartWithSubscriptionSchedule( [ 'payment_request' ] )
+			);
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					setupFutureUsage: 'off_session',
+				} );
+			} );
+		} );
+
+		it( 'does not update Elements when a re-render leaves the cart unchanged', async () => {
+			await renderAndRerender( { ...billing }, blocksCart );
+
+			expect( elements.update ).not.toHaveBeenCalled();
+		} );
+
+		// A 100% coupon on a cart without subscriptions. The client keeps `mode: 'payment'` and passes the filtered
+		// total, 0 included (express-checkout-container.js:62-84), and probes in payment mode with at least 1 minor
+		// unit (checkPaymentMethodIsAvailable.ts:95-97).
+		const zeroBilling = { ...billing, cartTotal: { value: 0 } };
+		const zeroCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: { ...blocksCart.totals, total_price: '0' },
+			cartTotals: { ...blocksCart.cartTotals, total_price: '0' },
+		} );
+
+		it( 'stays in payment mode with a $0 amount when the cart drops to $0', async () => {
+			await renderAndRerender( zeroBilling, zeroCart );
+
+			await waitFor( () => {
+				expect( elements.update ).toHaveBeenCalledWith( {
+					amount: 0,
+				} );
+			} );
+			expect( elements.update ).not.toHaveBeenCalledWith(
+				expect.objectContaining( { mode: expect.anything() } )
+			);
+		} );
+
+		it( 'probes wallet availability in payment mode when the cart drops to $0', async () => {
+			availablePaymentMethods = { applePay: true };
+			registerExpressCheckout();
+
+			await expect(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				).canMakePayment( { cart: zeroCart } )
+			).resolves.toBe( true );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { mode: 'payment', amount: 1 } )
+			);
+		} );
+	} );
+
+	describe( 'a WooCommerce Subscriptions free trial with nothing to pay today', () => {
+		it( 'mounts the wallet for the recurring total', async () => {
+			registerExpressCheckout();
+
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				),
+				{
+					billing: freeTrialBilling,
+					...getPaymentMethodInterfaceProps( freeTrialCart ),
+				}
+			);
+
+			await waitFor( () => {
+				expect( expressElement.mount ).toHaveBeenCalled();
+			} );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					mode: 'payment',
+					amount: 1999,
+					setupFutureUsage: 'off_session',
+				} )
+			);
+		} );
+
+		it( 'probes wallet availability with the recurring total', async () => {
+			availablePaymentMethods = { applePay: true };
+			registerExpressCheckout();
+
+			await expect(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				).canMakePayment( { cart: freeTrialCart } )
+			).resolves.toBe( true );
+			expect( stripe.elements ).toHaveBeenCalledWith(
+				expect.objectContaining( { mode: 'payment', amount: 1999 } )
+			);
+		} );
+
+		it( 'shows the recurring price and date in the wallet line items', async () => {
+			const resolve = jest.fn();
+			registerExpressCheckout();
+
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_applePay'
+				),
+				{
+					billing: freeTrialBilling,
+					...getPaymentMethodInterfaceProps( freeTrialCart ),
+				}
+			);
+			await waitFor( () => {
+				expect( expressHandlers.click ).toBeDefined();
+			} );
+
+			act( () => {
+				expressHandlers.click( { resolve } );
+			} );
+
+			expect( resolve ).toHaveBeenCalledWith(
+				expect.objectContaining( {
+					lineItems: [
+						{
+							name: 'Premium Plan (recurring) - Recurring total: $19.99 / month on 2026-03-19',
+							amount: 1999,
+						},
+					],
+				} )
+			);
+		} );
+	} );
+
+	it( 'keeps setupFutureUsage out of Elements updates when confirmation tokens are disabled', async () => {
+		baseExpressCheckoutParams.flags = {
+			isEceUsingConfirmationTokens: false,
+		};
+		baseExpressCheckoutParams.has_subscription = true;
+		apiFetch.mockResolvedValueOnce(
+			cartWithExpressMethods( [ 'payment_request' ] )
+		);
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+
+		const event = {
+			name: 'Ada Lovelace',
+			address: {
+				line1: '2 Wallet Way',
+				city: 'New York',
+				state: 'NY',
+				postal_code: '10001',
+				country: 'US',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( event );
+		} );
+
+		// Elements was created in manual payment-method mode, so the
+		// confirmation-token-only setupFutureUsage option must stay out of
+		// the update too, or Stripe rejects the shipping change.
+		expect( elements.update ).toHaveBeenCalled();
+		expect( elements.update.mock.calls[ 0 ][ 0 ] ).not.toHaveProperty(
+			'setupFutureUsage'
+		);
+		expect( event.resolve ).toHaveBeenCalled();
+		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
+	it( 'selects Store API shipping rates and updates Elements when the wallet shipping rate changes', async () => {
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			items: [
+				{
+					name: 'Wallet Tote',
+					quantity: 1,
+					totals: {
+						line_subtotal: '4000',
+						line_subtotal_tax: '0',
+						currency_minor_unit: 2,
+					},
+					prices: {
+						price: '4000',
+						currency_minor_unit: 2,
+					},
+					variation: [],
+					item_data: [],
+				},
+			],
+			totals: {
+				...blocksCart.totals,
+				total_price: '4300',
+				total_shipping: '0',
+				total_tax: '300',
+			},
+			shipping_rates: [
+				{
+					shipping_rates: [
+						{
+							rate_id: 'free_shipping:1',
+							name: 'Free shipping',
+							price: '0',
+							taxes: '0',
+							selected: true,
+							currency_minor_unit: 2,
+							meta_data: [],
+						},
+					],
+				},
+			],
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingratechange ).toBeDefined();
+		} );
+
+		const event = {
+			shippingRate: {
+				id: 'free_shipping:1',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingratechange( event );
+		} );
+
+		expect( apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
+				data: {
+					package_id: 0,
+					rate_id: 'free_shipping:1',
+				},
+			} )
+		);
+		expect( elements.update ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				amount: 4300,
+			} )
+		);
+		expect( event.resolve ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				lineItems: expect.arrayContaining( [
+					expect.objectContaining( { name: 'Wallet Tote' } ),
+				] ),
+			} )
+		);
+		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
+	it( 'selects the subscription package when a free trial defers its shipping rates to the subscription', async () => {
+		const subscriptionShippingRates = [
+			{
+				package_id: 'sub_month_0',
+				shipping_rates: [
+					{
+						rate_id: 'subscription_rate:1',
+						name: 'Subscription shipping',
+						price: '500',
+						taxes: '0',
+						selected: true,
+						currency_minor_unit: 2,
+						meta_data: [],
+					},
+				],
+			},
+		];
+		const subscriptionCart = cartWithExpressMethods(
+			[ 'payment_request' ],
+			{
+				items: [ trialSubscriptionItem ],
+				shipping_rates: [
+					{
+						package_id: 0,
+						shipping_rates: [],
+					},
+				],
+				extensions: {
+					subscriptions: [
+						{
+							...trialSubscriptionSchedule,
+							shipping_rates: subscriptionShippingRates,
+						},
+					],
+				},
+			}
+		);
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			shipping_rates: subscriptionShippingRates,
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart );
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			...getPaymentMethodInterfaceProps( subscriptionCart ),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.click ).toBeDefined();
+		} );
+		await waitFor( () => {
+			expect( expressHandlers.shippingratechange ).toBeDefined();
+		} );
+
+		const clickResolve = jest.fn();
+		act( () => {
+			expressHandlers.click( { resolve: clickResolve } );
+		} );
+		expect( clickResolve ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				shippingRates: expect.arrayContaining( [
+					expect.objectContaining( {
+						id: 'subscription_rate:1',
+						displayName: 'Subscription shipping',
+					} ),
+				] ),
+			} )
+		);
+
+		const event = {
+			shippingRate: {
+				id: 'subscription_rate:1',
+			},
+			resolve: jest.fn(),
+			reject: jest.fn(),
+		};
+
+		await act( async () => {
+			await expressHandlers.shippingratechange( event );
+		} );
+
+		expect( apiFetch ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				method: 'POST',
+				path: '/wc/store/v1/cart/select-shipping-rate?currency=USD',
+				data: {
+					package_id: 'sub_month_0',
+					rate_id: 'subscription_rate:1',
+				},
+			} )
+		);
+		expect( event.resolve ).toHaveBeenCalled();
+		expect( event.reject ).not.toHaveBeenCalled();
+	} );
+
+	it( 'surfaces unsuccessful Store API payment statuses to the Blocks error area', async () => {
+		const setExpressPaymentError = jest.fn();
+		const paymentFailed = jest.fn();
+		apiFetch.mockResolvedValueOnce( {
+			message: 'Payment failed.',
+			payment_result: {
+				payment_status: 'failure',
+				payment_details: [
+					{
+						key: 'errorMessage',
+						value: 'Card declined.',
+					},
+				],
+			},
+		} );
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			setExpressPaymentError,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				paymentFailed,
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( setExpressPaymentError ).toHaveBeenCalledWith(
+			'Card declined.'
+		);
+		expect( paymentFailed ).toHaveBeenCalledWith( {
+			reason: 'fail',
+			message: 'Card declined.',
+		} );
+	} );
+
+	describe( 'a wallet payment that needs 3DS', () => {
+		// jsdom implements only same-document navigation, so the order's
+		// return URL differs from the checkout page by its fragment.
+		const checkoutUrl = window.location.href;
+		const returnUrl = new URL(
+			'#order-received-77',
+			checkoutUrl
+		).toString();
+
+		// The Store API checkout response for a payment that needs a next
+		// action: PaymentResult::set_redirect_url() runs esc_url_raw(), which
+		// empties the bare hash, and StoreApi\Legacy::process_legacy_payment()
+		// keeps the raw gateway result in payment_details (src/StoreApi/Legacy.php:79-81).
+		const confirmationResponse = {
+			order_id: 77,
+			status: 'pending',
+			payment_result: {
+				payment_status: 'success',
+				payment_details: [
+					{ key: 'result', value: 'success' },
+					{
+						key: 'redirect',
+						value: '#wcpay-confirm-pi:77:pi_3ds_secret_abc:nonce-3ds',
+					},
+					{ key: 'payment_method', value: 'pm_3ds_card' },
+				],
+				redirect_url: '',
+			},
+		};
+
+		const getOrderStatusUpdateBody = () =>
+			window.fetch.mock.calls.find(
+				( [ , options ] ) =>
+					options?.body?.get?.( 'action' ) === 'update_order_status'
+			)?.[ 1 ].body;
+
+		const confirmGooglePay = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.confirm ).toBeDefined();
+			} );
+
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: props.paymentFailed,
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			apiFetch.mockResolvedValueOnce( confirmationResponse );
+			window.fetch = jest.fn( ( url, options ) =>
+				Promise.resolve(
+					options?.body?.get?.( 'action' ) === 'update_order_status'
+						? {
+								json: () =>
+									Promise.resolve( {
+										return_url: returnUrl,
+									} ),
+						  }
+						: { json: () => Promise.resolve( {} ) }
+				)
+			);
+		} );
+
+		afterEach( () => {
+			window.history.replaceState( null, '', checkoutUrl );
+		} );
+
+		it( 'confirms the intent from the Store API payment details and sends the shopper to the order', async () => {
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+			} );
+
+			await confirmGooglePay();
+
+			expect( stripe.handleNextAction ).toHaveBeenCalledWith( {
+				clientSecret: 'pi_3ds_secret_abc',
+			} );
+			const body = getOrderStatusUpdateBody();
+			expect( window.fetch ).toHaveBeenCalledWith(
+				'https://example.test/admin-ajax.php',
+				expect.objectContaining( { method: 'POST' } )
+			);
+			expect( body.get( 'order_id' ) ).toBe( '77' );
+			expect( body.get( '_ajax_nonce' ) ).toBe( 'nonce-3ds' );
+			expect( body.get( 'intent_id' ) ).toBe( 'pi_3ds' );
+			expect( window.location.href ).toBe( returnUrl );
+		} );
+
+		it( 'reports a failed authentication and shows Stripe’s error without leaving checkout', async () => {
+			const setExpressPaymentError = jest.fn();
+			const paymentFailed = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				error: {
+					message: 'Authentication failed.',
+					payment_intent: {
+						id: 'pi_3ds',
+						status: 'requires_payment_method',
+					},
+				},
+			} );
+
+			await confirmGooglePay( { setExpressPaymentError, paymentFailed } );
+
+			expect( getOrderStatusUpdateBody().get( 'intent_id' ) ).toBe(
+				'pi_3ds'
+			);
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Authentication failed.'
+			);
+			expect( paymentFailed ).toHaveBeenCalledWith( {
+				reason: 'fail',
+				message: 'Authentication failed.',
+			} );
+			expect( window.location.href ).toBe( checkoutUrl );
+		} );
+
+		// A payment that needs a SetupIntent confirmed (a $0 subscription sign-up): the gateway answers
+		// `#wcpay-confirm-si:<order>:<client secret>:<nonce>[:<confirmation token>]`
+		// (WooPaymentsIntentCodec::confirmation_redirect_for()). stripe.confirmSetup() and
+		// stripe.handleNextAction() resolve with `{ setupIntent }` (https://docs.stripe.com/js.md,
+		// "stripe.confirmSetup(options)", "stripe.handleNextAction(options)").
+		it.each( [
+			[
+				'with the confirmation token, through confirmSetup',
+				'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds:ctoken_si',
+				'confirmSetup',
+				{
+					clientSecret: 'seti_3ds_secret_abc',
+					confirmParams: { confirmation_token: 'ctoken_si' },
+					redirect: 'if_required',
+				},
+			],
+			[
+				'without a confirmation token, through handleNextAction',
+				'#wcpay-confirm-si:77:seti_3ds_secret_abc:nonce-3ds',
+				'handleNextAction',
+				{ clientSecret: 'seti_3ds_secret_abc' },
+			],
+		] )(
+			'confirms a setup intent %s and sends the shopper to the order',
+			async ( label, hash, stripeMethod, expectedArgs ) => {
+				apiFetch.mockReset();
+				apiFetch.mockResolvedValueOnce( {
+					...confirmationResponse,
+					payment_result: {
+						...confirmationResponse.payment_result,
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{ key: 'redirect', value: hash },
+						],
+					},
+				} );
+				stripe.confirmSetup = jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+				} );
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					setupIntent: { id: 'seti_3ds', status: 'succeeded' },
+				} );
+
+				await confirmGooglePay();
+
+				expect( stripe[ stripeMethod ] ).toHaveBeenCalledTimes( 1 );
+				expect( stripe[ stripeMethod ] ).toHaveBeenCalledWith(
+					expectedArgs
+				);
+				const otherMethod =
+					stripeMethod === 'confirmSetup'
+						? 'handleNextAction'
+						: 'confirmSetup';
+				expect( stripe[ otherMethod ] ).not.toHaveBeenCalled();
+				const body = getOrderStatusUpdateBody();
+				expect( body.get( 'order_id' ) ).toBe( '77' );
+				expect( body.get( '_ajax_nonce' ) ).toBe( 'nonce-3ds' );
+				expect( body.get( 'intent_id' ) ).toBe( 'seti_3ds' );
+				expect( window.location.href ).toBe( returnUrl );
+			}
+		);
+
+		it( 'treats a closed authentication sheet as a failed payment', async () => {
+			const setExpressPaymentError = jest.fn();
+			stripe.handleNextAction = jest.fn().mockResolvedValue( {
+				paymentIntent: { id: 'pi_3ds', status: 'requires_action' },
+			} );
+
+			await confirmGooglePay( { setExpressPaymentError } );
+
+			expect( getOrderStatusUpdateBody().get( 'intent_id' ) ).toBe(
+				'pi_3ds'
+			);
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Payment requires additional action.'
+			);
+			expect( window.location.href ).toBe( checkoutUrl );
+		} );
+	} );
+
+	// Client 11.1.0 locks the page with jQuery BlockUI when a wallet button is clicked and unlocks it when the sheet is
+	// canceled or the payment fails (block-buttons/hooks/use-express-checkout.js:47-63, :141-143; event-handlers.js:290-326).
+	describe( 'the page lock while a wallet sheet is open', () => {
+		let pageLock;
+
+		const openGooglePaySheet = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.click ).toBeDefined();
+			} );
+
+			// Express Checkout Element `click` event: `expressPaymentType` and `resolve( options )`
+			// (https://docs.stripe.com/js/elements_object/express_checkout_element_click_event).
+			act( () => {
+				expressHandlers.click( {
+					expressPaymentType: 'google_pay',
+					resolve: jest.fn(),
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			pageLock = createPageLock();
+			window.jQuery = {
+				blockUI: pageLock.blockUI,
+				unblockUI: pageLock.unblockUI,
+			};
+		} );
+
+		afterEach( () => {
+			delete window.jQuery;
+		} );
+
+		it( 'locks the page when a wallet button is clicked', async () => {
+			await openGooglePaySheet();
+
+			expect( pageLock.isLocked() ).toBe( true );
+			expect( pageLock.getOverlayOptions() ).toEqual( {
+				message: null,
+				overlayCSS: {
+					background: '#fff',
+					opacity: 0.6,
+				},
+			} );
+		} );
+
+		it( 'unlocks the page when the wallet sheet is canceled', async () => {
+			await openGooglePaySheet();
+			expect( pageLock.isLocked() ).toBe( true );
+
+			// Express Checkout Element `cancel` event (https://docs.stripe.com/js/elements_object/express_checkout_element_cancel_event).
+			act( () => {
+				expressHandlers.cancel();
+			} );
+
+			expect( pageLock.isLocked() ).toBe( false );
+		} );
+
+		it( 'unlocks the page and shows the error when the payment fails', async () => {
+			const setExpressPaymentError = jest.fn();
+			// Store API checkout error (AbstractRoute::error_to_response(): code, message, data.status), a declined
+			// payment (src/StoreApi/Utilities/CheckoutTrait.php:135).
+			apiFetch.mockRejectedValueOnce( {
+				code: 'woocommerce_rest_checkout_process_payment_error',
+				message: 'Your card was declined.',
+				data: { status: 400 },
+			} );
+			await openGooglePaySheet( { setExpressPaymentError } );
+			expect( pageLock.isLocked() ).toBe( true );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: jest.fn(),
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+
+			expect( pageLock.isLocked() ).toBe( false );
+			expect( setExpressPaymentError ).toHaveBeenCalledWith(
+				'Your card was declined.'
+			);
+		} );
+	} );
+
+	describe( 'leaving checkout after a successful wallet payment', () => {
+		const pageUrl = window.location.href;
+		let navigate;
+
+		const confirmGooglePay = async ( props = {} ) => {
+			registerExpressCheckout();
+			renderExpressPaymentMethod(
+				getRegistration(
+					'woocommerce_payments_express_checkout_googlePay'
+				),
+				props
+			);
+
+			await waitFor( () => {
+				expect( expressHandlers.confirm ).toBeDefined();
+			} );
+
+			// Express Checkout Element `confirm` event with billingDetails (https://docs.stripe.com/js.md,
+			// "expressCheckoutElement.on('confirm', handler)").
+			await act( async () => {
+				await expressHandlers.confirm( {
+					paymentFailed: props.paymentFailed,
+					billingDetails: {
+						email: 'shopper@example.test',
+						name: 'Ada Lovelace',
+					},
+				} );
+			} );
+		};
+
+		beforeEach( () => {
+			navigate = jest.fn();
+			setNavigate( navigate );
+		} );
+
+		afterEach( () => {
+			setNavigate( ( url ) => {
+				window.location.href = url;
+			} );
+			window.history.replaceState( null, '', pageUrl );
+		} );
+
+		// Client 11.1.0 completePayment() locks the page with jQuery BlockUI before it navigates
+		// (block-buttons/hooks/use-express-checkout.js:52-55, event-handlers.js:290-298, :316-318).
+		describe( 'with jQuery BlockUI on the page', () => {
+			let pageLock;
+
+			// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) naming the order page.
+			const answerWithOrderPage = () =>
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+						],
+						redirect_url:
+							'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+					},
+				} );
+
+			beforeEach( () => {
+				pageLock = createPageLock();
+				window.jQuery = {
+					blockUI: pageLock.blockUI,
+					unblockUI: pageLock.unblockUI,
+				};
+			} );
+
+			afterEach( () => {
+				delete window.jQuery;
+			} );
+
+			it( 'locks the page before it leaves for the order', async () => {
+				// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) naming the order page.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+						],
+						redirect_url:
+							'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+					},
+				} );
+
+				// Client 11.1.0 use-express-checkout.js:52-55 locks the page before it sets window.location.
+				let lockedWhenLeaving = false;
+				navigate.mockImplementationOnce( () => {
+					lockedWhenLeaving = pageLock.isLocked();
+				} );
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+				expect( lockedWhenLeaving ).toBe( true );
+				expect( pageLock.isLocked() ).toBe( true );
+			} );
+
+			// Client 11.1.0: a throw from `window.location = url` is inside onConfirmHandler()'s try, so abortPayment() shows
+			// it and unblocks (event-handlers.js:244-271, :312-314). Setting `location.href` to a URL the browser cannot
+			// parse throws a TypeError (https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-href).
+			it( 'unlocks the page and shows the error when leaving for the order throws', async () => {
+				const setExpressPaymentError = jest.fn();
+				navigate.mockImplementation( () => {
+					throw new TypeError(
+						"Failed to set the 'href' property on 'Location': 'http://[' is not a valid URL."
+					);
+				} );
+				answerWithOrderPage();
+
+				await confirmGooglePay( { setExpressPaymentError } );
+
+				expect( navigate ).toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( false );
+				expect( setExpressPaymentError ).toHaveBeenCalledWith(
+					"Failed to set the 'href' property on 'Location': 'http://[' is not a valid URL."
+				);
+			} );
+
+			// The back-forward cache restores the page as it was left, overlay included, when the shopper goes Back from
+			// the order page (`pageshow` with `persisted`, https://developer.mozilla.org/docs/Web/API/PageTransitionEvent).
+			it( 'unlocks the page when it comes back from the back-forward cache', async () => {
+				answerWithOrderPage();
+
+				await confirmGooglePay();
+				expect( navigate ).toHaveBeenCalled();
+				expect( pageLock.isLocked() ).toBe( true );
+
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: false,
+					} )
+				);
+				expect( pageLock.isLocked() ).toBe( true );
+
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: true,
+					} )
+				);
+				expect( pageLock.isLocked() ).toBe( false );
+
+				// Only the overlay these wallets put up is removed: once it is gone, a later restore leaves another
+				// script's page lock alone.
+				window.jQuery.blockUI( { message: 'Another script is busy' } );
+				window.dispatchEvent(
+					new window.PageTransitionEvent( 'pageshow', {
+						persisted: true,
+					} )
+				);
+				expect( pageLock.isLocked() ).toBe( true );
+			} );
+
+			it( 'leaves the page usable when the payment fails', async () => {
+				// Store API checkout error (AbstractRoute::error_to_response(): code, message, data.status), a declined
+				// payment (src/StoreApi/Utilities/CheckoutTrait.php:135).
+				apiFetch.mockRejectedValueOnce( {
+					code: 'woocommerce_rest_checkout_process_payment_error',
+					message: 'Your card was declined.',
+					data: { status: 400 },
+				} );
+
+				await confirmGooglePay();
+
+				expect( pageLock.isLocked() ).toBe( false );
+				expect( navigate ).not.toHaveBeenCalled();
+			} );
+		} );
+
+		// Client 11.1.0: with no redirect, `api.confirmIntent( '' )` returns true and `completePayment( '' )` sets
+		// `window.location = ''` (event-handlers.js:234-251, block-buttons/hooks/use-express-checkout.js:52-55), which
+		// resolves to the page URL without its fragment: the page reloads.
+		it( 'reloads the page when the payment succeeded but names no page to go to', async () => {
+			window.history.replaceState(
+				null,
+				'',
+				'/checkout/?step=pay#wallet'
+			);
+			// Store API checkout success (payment_result schema: src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193,
+			// payment_details as { key, value }) with no redirect.
+			apiFetch.mockResolvedValueOnce( {
+				order_id: 77,
+				payment_result: {
+					payment_status: 'success',
+					payment_details: [ { key: 'result', value: 'success' } ],
+					redirect_url: '',
+				},
+			} );
+
+			await confirmGooglePay();
+
+			expect( navigate ).toHaveBeenCalledTimes( 1 );
+			expect( navigate ).toHaveBeenCalledWith(
+				'http://localhost/checkout/?step=pay'
+			);
+		} );
+
+		// The `redirect` payment detail is the gateway's raw result (StoreApi\Legacy::process_legacy_payment(),
+		// src/StoreApi/Legacy.php:79-81), not run through esc_url_raw() as redirect_url is
+		// (PaymentResult::set_redirect_url()); only an http(s) page is followed.
+		it.each( [
+			[ 'a javascript: URL', 'javascript:alert(1)', 'http://localhost/' ],
+			[ 'an invalid URL', 'http://', 'http://localhost/' ],
+			[
+				'a page-relative URL',
+				'/checkout/order-received/77/?key=wc_order_abc',
+				'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+			],
+		] )(
+			'follows a fallback redirect that is %s only when it is an http(s) page',
+			async ( label, redirect, expected ) => {
+				// Store API checkout success (src/StoreApi/Schemas/V1/CheckoutSchema.php:160-193) whose redirect_url is
+				// empty and whose payment_details carry the raw redirect.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{ key: 'redirect', value: redirect },
+						],
+						redirect_url: '',
+					},
+				} );
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledTimes( 1 );
+				expect( navigate ).toHaveBeenCalledWith( expected );
+			}
+		);
+
+		describe( 'after confirming a payment that needs 3DS', () => {
+			// update_order_status answers `{ return_url }` on success (client checkout/api/index.js:283-297; native
+			// WooPaymentsCheckoutAjaxController).
+			const answerOrderStatusUpdate = ( answer ) => {
+				window.fetch = jest.fn( ( url, options ) =>
+					Promise.resolve( {
+						json: () =>
+							Promise.resolve(
+								options?.body?.get?.( 'action' ) ===
+									'update_order_status'
+									? answer
+									: {}
+							),
+					} )
+				);
+			};
+
+			beforeEach( () => {
+				// Store API checkout answer for a payment that needs a next action: esc_url_raw() empties the bare hash
+				// in redirect_url, the raw gateway result stays in payment_details.
+				apiFetch.mockResolvedValueOnce( {
+					order_id: 77,
+					status: 'pending',
+					payment_result: {
+						payment_status: 'success',
+						payment_details: [
+							{ key: 'result', value: 'success' },
+							{
+								key: 'redirect',
+								value: '#wcpay-confirm-pi:77:pi_3ds_secret_abc:nonce-3ds',
+							},
+						],
+						redirect_url: '',
+					},
+				} );
+				// stripe.handleNextAction() resolves with `{ paymentIntent }` (https://docs.stripe.com/js.md,
+				// "stripe.handleNextAction(options)").
+				stripe.handleNextAction = jest.fn().mockResolvedValue( {
+					paymentIntent: { id: 'pi_3ds', status: 'succeeded' },
+				} );
+			} );
+
+			it.each( [
+				[ 'empty', { return_url: '' } ],
+				[ 'missing', {} ],
+				[ 'blank', { return_url: ' \n ' } ],
+				[ 'a javascript: URL', { return_url: 'javascript:alert(1)' } ],
+			] )(
+				'shows the payment error and stays on the page when the return URL is %s',
+				async ( label, answer ) => {
+					const setExpressPaymentError = jest.fn();
+					answerOrderStatusUpdate( answer );
+
+					await confirmGooglePay( { setExpressPaymentError } );
+
+					expect( setExpressPaymentError ).toHaveBeenCalledWith(
+						'Unable to process this payment, please try again.'
+					);
+					expect( navigate ).not.toHaveBeenCalled();
+				}
+			);
+
+			it( 'leaves for the order with the page locked once the payment is confirmed', async () => {
+				const pageLock = createPageLock();
+				window.jQuery = {
+					blockUI: pageLock.blockUI,
+					unblockUI: pageLock.unblockUI,
+				};
+				answerOrderStatusUpdate( {
+					return_url:
+						'http://localhost/checkout/order-received/77/?key=wc_order_abc',
+				} );
+
+				try {
+					await confirmGooglePay();
+
+					expect( stripe.handleNextAction ).toHaveBeenCalled();
+					expect( navigate ).toHaveBeenCalledWith(
+						'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+					);
+					expect( pageLock.isLocked() ).toBe( true );
+				} finally {
+					delete window.jQuery;
+				}
+			} );
+
+			it( 'resolves a page-relative return URL against the page', async () => {
+				answerOrderStatusUpdate( {
+					return_url:
+						' /checkout/order-received/77/?key=wc_order_abc ',
+				} );
+
+				await confirmGooglePay();
+
+				expect( navigate ).toHaveBeenCalledWith(
+					'http://localhost/checkout/order-received/77/?key=wc_order_abc'
+				);
+			} );
+		} );
+	} );
+
+	it( 'refreshes Blocks cart data when a mutated wallet confirmation fails', async () => {
+		const setExpressPaymentError = jest.fn();
+		const updatedCart = cartWithExpressMethods( [ 'payment_request' ], {
+			totals: {
+				...blocksCart.totals,
+				total_price: '5700',
+			},
+		} );
+		apiFetch.mockResolvedValueOnce( updatedCart ).mockResolvedValueOnce( {
+			message: 'Payment failed.',
+			payment_result: {
+				payment_status: 'failure',
+				payment_details: [
+					{
+						key: 'errorMessage',
+						value: 'Card declined.',
+					},
+				],
+			},
+		} );
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request' ] )
+			),
+			setExpressPaymentError,
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.shippingaddresschange ).toBeDefined();
+		} );
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.shippingaddresschange( {
+				name: 'Ada Lovelace',
+				address: {
+					line1: '2 Wallet Way',
+					city: 'New York',
+					state: 'NY',
+					postal_code: '10001',
+					country: 'US',
+				},
+				resolve: jest.fn(),
+				reject: jest.fn(),
+			} );
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		expect( setExpressPaymentError ).toHaveBeenCalledWith(
+			'Card declined.'
+		);
+		expect( mockInvalidateResolutionForStore ).toHaveBeenCalled();
+	} );
+
+	it( 'places the Blocks Amazon Pay order with express payment method types', async () => {
+		baseExpressCheckoutParams.enabled_methods = [
+			'payment_request',
+			'amazon_pay',
+		];
+		baseExpressCheckoutParams.payment_method_types = [
+			'card',
+			'amazon_pay',
+		];
+		registerExpressCheckout();
+		const amazonPayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_amazonPay'
+		);
+
+		renderExpressPaymentMethod( amazonPayRegistration, {
+			...getPaymentMethodInterfaceProps(
+				cartWithExpressMethods( [ 'payment_request', 'amazon_pay' ] )
+			),
+		} );
+
+		await waitFor( () => {
+			expect( expressHandlers.confirm ).toBeDefined();
+		} );
+
+		await act( async () => {
+			await expressHandlers.confirm( {
+				billingDetails: {
+					email: 'shopper@example.test',
+					name: 'Ada Lovelace',
+				},
+			} );
+		} );
+
+		const checkoutRequest = apiFetch.mock.calls[ 0 ][ 0 ];
+
+		expect( checkoutRequest.data.payment_data ).toEqual(
+			expect.arrayContaining( [
+				{
+					key: 'wcpay-express-payment-method-types',
+					value: JSON.stringify( [ 'card', 'amazon_pay' ] ),
+				},
+				{
+					key: 'wcpay-express-checkout-context',
+					value: 'checkout',
+				},
+				{
+					key: 'wcpay-fraud-prevention-token',
+					value: '',
+				},
+			] )
+		);
+	} );
+
+	it( 'records only available method load tracking events', async () => {
+		window.fetch = jest.fn().mockResolvedValue( {} );
+		availablePaymentMethods = {
+			applePay: false,
+			googlePay: true,
+		};
+		registerExpressCheckout();
+		const applePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_applePay'
+		);
+
+		renderExpressPaymentMethod( applePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		expect( getTracksRequests() ).toHaveLength( 0 );
+	} );
+
+	it( 'records Google Pay load and click tracking events', async () => {
+		const onClick = jest.fn();
+		window.fetch = jest.fn().mockResolvedValue( {} );
+		availablePaymentMethods = {
+			googlePay: true,
+		};
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration, { onClick } );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		act( () => {
+			expressHandlers.click( { resolve: jest.fn() } );
+		} );
+
+		const requests = getTracksRequests();
+
+		expect( requests ).toHaveLength( 2 );
+		expect(
+			requests.map( ( [ , options ] ) =>
+				options.body.get( 'tracksEventName' )
+			)
+		).toEqual( [ 'gpay_button_load', 'gpay_button_click' ] );
+		expect(
+			requests.map( ( [ , options ] ) =>
+				JSON.parse( options.body.get( 'tracksEventProp' ) )
+			)
+		).toEqual( [ { source: 'checkout' }, { source: 'checkout' } ] );
+		// `getTrackingSettings` maps `tracks_url` and `nonce.tracks_rest` onto the shared recorder.
+		requests.forEach( ( [ , options ] ) => {
+			expect( options ).toEqual(
+				expect.objectContaining( {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': 'rest-nonce' },
+				} )
+			);
+			expect( options.body.get( 'tracksNonce' ) ).toBe( 'tracks-nonce' );
+			expect( options.body.has( 'action' ) ).toBe( false );
+		} );
+		expect( onClick ).toHaveBeenCalled();
+	} );
+
+	it( 'does not record Blocks express checkout tracking when shopper tracking is disabled', async () => {
+		window.fetch = jest.fn().mockResolvedValue( {} );
+		baseExpressCheckoutParams.is_shopper_tracking_enabled = false;
+		availablePaymentMethods = {
+			googlePay: true,
+		};
+		registerExpressCheckout();
+		const googlePayRegistration = getRegistration(
+			'woocommerce_payments_express_checkout_googlePay'
+		);
+
+		renderExpressPaymentMethod( googlePayRegistration );
+
+		await waitFor( () => {
+			expect( expressElement.mount ).toHaveBeenCalled();
+		} );
+
+		act( () => {
+			expressHandlers.click( { resolve: jest.fn() } );
+		} );
+
+		expect( getTracksRequests() ).toHaveLength( 0 );
+	} );
+} );

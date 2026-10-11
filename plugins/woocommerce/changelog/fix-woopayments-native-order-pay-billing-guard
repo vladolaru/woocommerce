@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Fix the native WooPayments classic pay-for-order and subscription change-payment forms submitting without a tokenized card when the store requires billing fields.

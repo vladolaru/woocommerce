@@ -1,0 +1,564 @@
+@import "../../_tokens.scss";
+
+.woopayments-express-checkout-settings {
+	// Client 11.1.0 express-checkout-settings/index.scss:25-39 and the `payment-method__icon` ring in client/style.scss.
+	&__icons {
+		display: flex;
+		flex-wrap: wrap;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 18px (between $gap and $gap-large).
+		gap: 18px;
+		margin-bottom: $gap-small;
+	}
+
+	&__icon {
+		display: inline-flex;
+		width: $woopayments-payment-method-logo-width;
+		height: $woopayments-payment-method-logo-height;
+
+		img {
+			display: block;
+			width: 100%;
+			height: 100%;
+			object-fit: contain;
+		}
+
+		&--badge img {
+			border-radius: 4.6875% / 7.5%;
+			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.07);
+		}
+	}
+
+	.woopayments-settings-section__controls .components-base-control {
+		margin-bottom: $gap;
+	}
+
+	&__locations .components-base-control {
+		margin-bottom: 0;
+	}
+
+	&__locations {
+		display: flex;
+		flex-direction: column;
+		gap: $gap-smaller;
+		margin-block: $gap-smaller 0;
+		margin-inline: $gap-large 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	&__notice.components-notice {
+		margin: 0 0 $gap;
+	}
+
+	&__appearance {
+		display: flex;
+		flex-direction: column;
+		gap: $gap;
+	}
+
+	&__border-radius {
+		display: flex;
+		align-items: center;
+		gap: $gap;
+
+		> :first-child {
+			flex: 0 0 80px;
+		}
+
+		> :last-child {
+			flex: 1;
+		}
+	}
+
+	&__help-text {
+		margin-bottom: $gap-small;
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+	}
+
+	&__preview {
+		padding: $gap-large;
+		border: 1px solid rgba(25, 23, 17, 0.3);
+		border-radius: $radius-medium;
+		background: $white;
+	}
+
+	&__preview-stack {
+		display: flex;
+		flex-direction: column;
+		gap: $gap-small;
+
+		// Like the client, which wraps each preview button in a div with a 4px margin and sets its notices 24px lower.
+		> .woopayments-express-checkout-settings__woopay-button-preview,
+		> .woopayments-express-checkout-settings__stripe-preview {
+			width: auto;
+			margin: $gap-smallest;
+		}
+
+		> .woopayments-express-checkout-settings__notice.components-notice {
+			margin: $gap-large 0 0;
+		}
+	}
+
+	// Like the client, the preview box darkens behind the light buttons so they stay visible.
+	&__preview[data-theme="light"] {
+		background: $gray-800;
+	}
+
+	&__preview[data-theme="light-outline"] {
+		background: $gray-100;
+	}
+
+	// Copy of the storefront `.woopay-express-button` rules in
+	// client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/style.scss; change both together.
+	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- storefront values, kept literal so the copy stays comparable.
+	&__woopay-button-preview {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		width: 100%;
+		overflow: hidden;
+		border: 0;
+		background: $white;
+		color: #000;
+		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Roboto, Arial, sans-serif;
+		font-size: 18px;
+		font-weight: 500;
+		letter-spacing: 0.8px;
+		line-height: 1;
+		white-space: nowrap;
+
+		&-content {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			max-width: 100%;
+			padding: 0 12px;
+			transform: scale(0.9);
+		}
+
+		// The shared light logo stands in for the storefront's inline icons: sized to the same wordmark, and pushed
+		// 2px down like the empty space at the top of their viewBox does.
+		img {
+			flex: 0 0 auto;
+			width: 98px;
+			height: auto;
+			margin-block-start: 4px;
+		}
+
+		&[data-type="buy"],
+		&[data-type="book"],
+		&[data-type="donate"] {
+			min-width: 150px;
+
+			img {
+				margin-inline-start: 5px;
+			}
+		}
+
+		&[data-theme="dark"] {
+			background: #873eff;
+			color: $white;
+
+			// The storefront's dark icon is the same wordmark in solid white.
+			img {
+				filter: brightness(0) invert(1);
+			}
+		}
+
+		&[data-theme="light-outline"] {
+			border: 1px solid #000;
+		}
+
+		&[data-size="medium"] &-content {
+			transform: scale(1);
+		}
+
+		&[data-size="large"] &-content {
+			transform: scale(1.1);
+		}
+	}
+	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
+
+	&__stripe-preview {
+		width: 100%;
+	}
+
+	// Like the client, the checkout preview scales to the column instead of scrolling sideways.
+	// stylelint-disable color-no-hex, declaration-property-value-disallowed-list -- a scaled-down replica of WooPay's checkout page: WooPay's own colours and miniature sizes, not admin UI.
+	&__woopay-preview {
+		.preview-layout {
+			padding: 0;
+			border: 1px solid #ddd;
+			border-radius: 4px;
+			box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.05);
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+				Arial, sans-serif;
+
+			&__v-spacer {
+				width: 100%;
+				background-color: transparent;
+			}
+
+			&__store-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				box-sizing: border-box;
+				width: 100%;
+				height: 32px;
+				padding: 0 3.797%;
+				border-radius: 4px 4px 0 0;
+				background-color: #fff;
+				box-shadow: 0 1px 0 #dcdcde;
+
+				.header-text {
+					overflow: hidden;
+					color: #404040;
+					font-size: 7px;
+					font-weight: 400;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+				}
+
+				img {
+					display: block;
+					width: auto;
+					max-height: 14px;
+				}
+			}
+
+			&__back-button {
+				display: flex;
+				flex-shrink: 0;
+				align-items: center;
+				gap: 1px;
+
+				svg {
+					width: 8px;
+					height: 8px;
+				}
+			}
+
+			&__back-button-label {
+				color: #646970;
+				font-size: 4px;
+				white-space: nowrap;
+			}
+
+			&__store-branding {
+				display: flex;
+				flex: 1;
+				align-items: center;
+				justify-content: center;
+				min-width: 0;
+			}
+
+			&__store-header-spacer {
+				flex-shrink: 0;
+				width: 32px;
+			}
+
+			&__container,
+			&__body {
+				width: 100%;
+			}
+
+			&__columns-container {
+				display: flex;
+				justify-content: center;
+				gap: 28px;
+				padding: 0 3.797%;
+			}
+
+			&__left-column {
+				width: 59.08%;
+				max-width: 242px;
+			}
+
+			&__right-column {
+				align-self: flex-start;
+				width: 35.59%;
+				max-width: 146px;
+				padding: 5px;
+				border: 1px solid rgba(17, 17, 17, 0.13);
+				border-radius: 4px;
+			}
+
+			&__contact-section {
+				border: 1px solid rgba(17, 17, 17, 0.13);
+				border-radius: 4px;
+			}
+
+			&__contact-field {
+				padding: 6px;
+
+				&:not(:last-child) {
+					border-bottom: 1px solid rgba(17, 17, 17, 0.13);
+				}
+			}
+
+			&__woopay-logo {
+				display: flex;
+				align-items: center;
+				width: auto;
+				height: 6px;
+			}
+
+			&__section-header {
+				display: flex;
+				justify-content: space-between;
+				color: #2c3338;
+				font-size: 7px;
+				font-weight: 500;
+				line-height: 10px;
+			}
+
+			&__field-value {
+				padding-top: 6px;
+				color: #2c3338;
+				font-size: 6px;
+				line-height: 1.4;
+			}
+
+			&__pay-with-value {
+				display: flex;
+				align-items: center;
+				gap: 3px;
+			}
+
+			&__visa-icon {
+				display: flex;
+				flex-shrink: 0;
+				width: 20px;
+				height: auto;
+			}
+
+			&__chevron-down {
+				display: inline-block;
+				color: #8c8f94;
+				font-size: 7px;
+				transform: rotate(90deg);
+			}
+
+			&__chevron-up {
+				display: inline-block;
+				font-size: 7px;
+				transform: rotate(-90deg);
+			}
+
+			&__cart-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				color: #2c3338;
+				font-size: 6px;
+			}
+
+			&__cart-header-toggle {
+				display: flex;
+				align-items: center;
+				gap: 1px;
+				color: $studio-woocommerce-purple-50;
+				font-size: 5px;
+				font-weight: 500;
+			}
+
+			&__order-item {
+				display: grid;
+				grid-template-rows: 1fr 1fr;
+				grid-template-columns: max-content 1fr max-content;
+				height: 20px;
+				column-gap: 6px;
+				color: #2c3338;
+				font-size: 6px;
+			}
+
+			&__order-item-image {
+				position: relative;
+				grid-row: 1 / 3;
+				flex-shrink: 0;
+				width: 20px;
+				height: 20px;
+			}
+
+			&__order-item-img {
+				display: block;
+				width: 100%;
+				height: 100%;
+				border-radius: 3px;
+				background-color: #f2e6d9;
+				object-fit: cover;
+			}
+
+			&__order-item-qty {
+				position: absolute;
+				top: -2px;
+				inset-inline-end: -2px;
+				z-index: 1;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-width: 7px;
+				min-height: 7px;
+				border-radius: 7px;
+				background: $studio-woocommerce-purple-90;
+				color: #fff;
+				font-size: 4px;
+				line-height: 1;
+			}
+
+			&__order-item-details {
+				display: contents;
+				min-width: 0;
+			}
+
+			&__order-item-name {
+				grid-row: 1;
+				grid-column: 2;
+				align-self: start;
+				overflow: hidden;
+				font-weight: 400;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			&__order-item-unit-price {
+				grid-row: 2;
+				grid-column: 2;
+				align-self: end;
+				color: #646970;
+				font-size: 5px;
+			}
+
+			&__order-item-price {
+				grid-row: 1 / 3;
+				text-align: end;
+				white-space: nowrap;
+			}
+
+			&__hr {
+				margin: 0;
+				border-bottom: 0;
+				color: #dcdcde;
+			}
+
+			&__hr--dotted {
+				border-color: #c3c4c7;
+				border-style: dotted;
+			}
+
+			&__add-coupon {
+				display: flex;
+				align-items: center;
+				gap: 1px;
+				color: $studio-woocommerce-purple-50;
+				font-size: 5px;
+				font-weight: 500;
+			}
+
+			&__add-coupon-icon {
+				width: 6px;
+				height: 6px;
+			}
+
+			&__order-row {
+				display: flex;
+				justify-content: space-between;
+				color: #2c3338;
+				font-size: 5px;
+				line-height: 1.8;
+			}
+
+			&__text-box {
+				overflow: hidden;
+				width: 100%;
+				max-height: 24px;
+				color: #646970;
+				font-size: 6px;
+				font-weight: 400;
+				line-height: 1.2;
+				text-align: center;
+			}
+
+			&__shortcode-link {
+				color: var(--preview-link-color, #{$studio-woocommerce-purple-60});
+			}
+
+			&__checkout-button {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				height: 24px;
+				border-radius: 4px;
+				// Client 11.1.0 `settings/express-checkout-settings/index.scss:514-515`.
+				background-color: $studio-woocommerce-purple-40;
+				color: #fff;
+				font-size: 8px;
+				font-weight: 600;
+				line-height: 8px;
+			}
+
+			&__footer {
+				padding: 3px 0;
+				border-radius: 0 0 4px 4px;
+				background-color: #fff;
+				box-shadow: 0 -1px 0 #dcdcde;
+			}
+
+			&__footer-inner {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 28px;
+				padding: 0 3.797%;
+			}
+
+			&__footer-links {
+				display: flex;
+				align-items: center;
+				gap: 2px;
+				width: 59.08%;
+				max-width: 242px;
+				color: #646970;
+				font-size: 4px;
+			}
+
+			&__footer-guest-text {
+				color: $studio-woocommerce-purple-40;
+				font-weight: 500;
+			}
+
+			&__footer-dot {
+				color: #72767c;
+				font-size: 3px;
+			}
+
+			&__footer-cards {
+				display: flex;
+				flex-shrink: 0;
+				align-items: center;
+				justify-content: flex-end;
+				width: 35.59%;
+				max-width: 146px;
+				height: 8px;
+			}
+		}
+	}
+	// stylelint-enable color-no-hex, declaration-property-value-disallowed-list
+
+	&__logo-upload {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: $gap;
+	}
+
+	&__global-theme-label {
+		display: inline-flex;
+		align-items: center;
+		gap: $gap-smallest;
+	}
+}

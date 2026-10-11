@@ -1,0 +1,405 @@
+<?php
+/**
+ * WooPaymentsExpressCheckoutController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+
+/**
+ * Native WooPayments Apple Pay and Google Pay express checkout frontend hooks.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
+
+	private const CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE = 'wc-woopayments-express-checkout';
+
+	private const CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE = 'wc-woopayments-express-checkout';
+
+	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter
+	 */
+	private WooPaymentsRuntimeArbiter $arbiter;
+
+	/**
+	 * Express checkout service.
+	 *
+	 * @var WooPaymentsExpressCheckoutService
+	 */
+	private WooPaymentsExpressCheckoutService $express_checkout_service;
+
+	/**
+	 * Fraud prevention service.
+	 *
+	 * @var WooPaymentsFraudPreventionService
+	 */
+	private WooPaymentsFraudPreventionService $fraud_prevention_service;
+
+	/**
+	 * WooPay controller, which supplies the WooPay button placeholder.
+	 *
+	 * @var WooPaymentsWooPaySessionController
+	 */
+	private WooPaymentsWooPaySessionController $woopay_controller;
+
+	/**
+	 * Whether express checkout buttons have already rendered in this request.
+	 *
+	 * @var bool
+	 */
+	private bool $has_rendered_express_checkout_buttons = false;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsRuntimeArbiter          $arbiter                  Runtime owner arbiter.
+	 * @param WooPaymentsExpressCheckoutService  $express_checkout_service Express checkout service.
+	 * @param WooPaymentsFraudPreventionService  $fraud_prevention_service Fraud prevention service.
+	 * @param WooPaymentsWooPaySessionController $woopay_controller        WooPay controller.
+	 */
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
+		$this->arbiter                  = $arbiter;
+		$this->express_checkout_service = $express_checkout_service;
+		$this->fraud_prevention_service = $fraud_prevention_service;
+		$this->woopay_controller        = $woopay_controller;
+	}
+
+	/**
+	 * Register express checkout frontend hooks.
+	 */
+	public function register() {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		foreach ( $this->get_frontend_hooks() as $hook => list( $callback, $priority ) ) {
+			if ( false === has_action( $hook, $callback ) ) {
+				add_action( $hook, $callback, $priority );
+			}
+		}
+
+		if ( false === has_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ) ) ) {
+			add_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ), 10, 2 );
+		}
+
+		if ( false === has_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) ) ) {
+			add_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) );
+		}
+
+		if ( false === has_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_login_redirect', array( $this, 'get_login_redirect_url' ) );
+		}
+
+		if ( false === has_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) ) ) {
+			add_filter( 'woocommerce_registration_redirect', array( $this, 'get_login_redirect_url' ) );
+		}
+	}
+
+	/**
+	 * Handle the express checkout login redirect when the login confirmation
+	 * dialog's "Continue" is clicked: stash the URL to return to after
+	 * authentication and send the shopper to the my-account page.
+	 */
+	public function handle_express_checkout_redirect(): void {
+		if (
+			! empty( $_GET['wcpay_express_checkout_redirect_url'] )
+			&& ! empty( $_GET['_wpnonce'] )
+			&& wp_verify_nonce( sanitize_key( wp_unslash( $_GET['_wpnonce'] ) ), 'wcpay-set-redirect-url' )
+		) {
+			$url = $this->validate_redirect_target( wp_unslash( $_GET['wcpay_express_checkout_redirect_url'] ), true ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The helper validates the unslashed target.
+			if ( ! empty( $url ) ) {
+				// Sets a redirect URL cookie for 10 minutes, which we will redirect to after authentication.
+				// Users have a 10 minute window to log in / create an account before the URL expires.
+				wc_setcookie( 'wcpay_express_checkout_redirect_url', $url, time() + MINUTE_IN_SECONDS * 10 );
+			}
+
+			$my_account_url = get_permalink( get_option( 'woocommerce_myaccount_page_id' ) );
+			if ( is_string( $my_account_url ) && wp_safe_redirect( $my_account_url ) ) {
+				exit;
+			}
+		}
+	}
+
+	/**
+	 * Return the stashed express checkout URL as the login redirect.
+	 *
+	 * @param string $redirect Default redirect URL.
+	 * @return string
+	 */
+	public function get_login_redirect_url( $redirect ) {
+		$has_cookie = array_key_exists( 'wcpay_express_checkout_redirect_url', $_COOKIE );
+		$url        = $has_cookie ? $this->validate_redirect_target( wp_unslash( $_COOKIE['wcpay_express_checkout_redirect_url'] ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- The helper validates the unslashed target.
+
+		if ( $has_cookie ) {
+			wc_setcookie( 'wcpay_express_checkout_redirect_url', '' );
+		}
+
+		if ( empty( $url ) ) {
+			return $redirect;
+		}
+
+		return $url;
+	}
+
+	/**
+	 * Validate an express checkout redirect target.
+	 *
+	 * @param mixed $candidate        Candidate redirect target.
+	 * @param bool  $raw_url_encoded  Whether the candidate is raw URL encoded.
+	 * @return string
+	 */
+	private function validate_redirect_target( $candidate, bool $raw_url_encoded = false ): string {
+		if ( ! is_string( $candidate ) ) {
+			return '';
+		}
+
+		if ( $raw_url_encoded ) {
+			$candidate = rawurldecode( $candidate );
+		}
+
+		$sanitized = esc_url_raw( $candidate );
+
+		return wp_validate_redirect( $sanitized, '' );
+	}
+
+	/**
+	 * Enqueue Core-owned express checkout frontend assets on supported shopper surfaces.
+	 */
+	public function enqueue_frontend_assets(): void {
+		if ( ! $this->is_supported_frontend_surface() ) {
+			return;
+		}
+
+		$context = $this->get_current_button_context();
+		if ( ! $this->express_checkout_service->should_show_payment_request_button( $context ) ) {
+			return;
+		}
+
+		$this->register_classic_express_checkout_assets();
+		wp_localize_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'wcpayExpressCheckoutParams', $this->express_checkout_service->get_express_checkout_params( $context ) );
+		wp_enqueue_style( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE );
+		wp_enqueue_script( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE );
+		// Wallet payments started from product and cart pages must carry the
+		// card-testing prevention token; only checkout surfaces exposed it
+		// before, so live stores with card-testing protection rejected every
+		// product- and cart-initiated wallet payment.
+		$this->fraud_prevention_service->maybe_enqueue_token_script();
+	}
+
+	/**
+	 * Display the express checkout buttons in one wrapper: the WooPay button, then the Stripe Express Checkout Element,
+	 * then one "OR" separator on checkout and order-pay (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:112-152).
+	 * The separator starts hidden without a WooPay button; the classic script shows it once the wallet is ready.
+	 */
+	public function display_express_checkout_buttons(): void {
+		if ( $this->has_rendered_express_checkout_buttons || ! $this->is_supported_frontend_surface() ) {
+			return;
+		}
+
+		$context       = $this->get_current_button_context();
+		$woopay_button = $this->woopay_controller->get_express_checkout_button_html();
+		$show_element  = $this->express_checkout_service->should_show_payment_request_button( $context );
+		if ( ! $show_element && '' === $woopay_button ) {
+			return;
+		}
+
+		$this->has_rendered_express_checkout_buttons = true;
+
+		echo '<div class="wcpay-express-checkout-wrapper">';
+		echo $woopay_button; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when WooPaymentsWooPaySessionController builds it.
+		if ( $show_element ) {
+			echo '<div id="wcpay-express-checkout-element"></div>';
+		}
+		// Client 11.1.0 renders it wherever is_checkout() holds, which includes the order-pay endpoint.
+		if ( in_array( $context, array( 'checkout', 'pay_for_order' ), true ) ) {
+			echo '<p id="wcpay-express-checkout-button-separator" style="margin-top:1.5em;text-align:center;"' . ( '' === $woopay_button ? ' hidden' : '' ) . '>&mdash; ' . esc_html__( 'OR', 'woocommerce' ) . ' &mdash;</p>';
+		}
+		echo '</div>';
+	}
+
+	/**
+	 * Add Tracks properties for Apple Pay and Google Pay button events.
+	 *
+	 * @param mixed $properties Event properties.
+	 * @param mixed $event_name Event name.
+	 * @return mixed
+	 */
+	public function add_tracking_event_properties( $properties, $event_name ) {
+		if ( ! is_array( $properties ) ) {
+			return $properties;
+		}
+
+		if (
+			in_array(
+				$event_name,
+				array(
+					'wcpay_applepay_button_load',
+					'wcpay_applepay_button_click',
+					'wcpay_gpay_button_load',
+					'wcpay_gpay_button_click',
+				),
+				true
+			)
+		) {
+			if ( ! isset( $properties['record_event_data'] ) || ! is_array( $properties['record_event_data'] ) ) {
+				$properties['record_event_data'] = array();
+			}
+			$properties['record_event_data']['track_on_all_stores'] = true;
+		}
+
+		return $properties;
+	}
+
+	/**
+	 * Get express checkout frontend hooks, callbacks and priorities. The button priorities are the client 11.1.0 ones
+	 * (class-wc-payments-express-checkout-button-display-handler.php:93-96): first on product, checkout and order-pay,
+	 * and below WooCommerce's "Proceed to checkout" button (priority 20) on the cart.
+	 *
+	 * @return array<string,array{0:callable,1:int}>
+	 */
+	private function get_frontend_hooks(): array {
+		return array(
+			'wp_enqueue_scripts'                           => array( array( $this, 'enqueue_frontend_assets' ), 10 ),
+			'woocommerce_after_add_to_cart_form'           => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
+			'woocommerce_checkout_before_customer_details' => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
+			'woocommerce_proceed_to_checkout'              => array( array( $this, 'display_express_checkout_buttons' ), 21 ),
+			'woocommerce_pay_order_before_payment'         => array( array( $this, 'display_express_checkout_buttons' ), 1 ),
+		);
+	}
+
+	/**
+	 * Register the classic express checkout assets; this controller is their only registrar.
+	 */
+	private function register_classic_express_checkout_assets(): void {
+		WooPaymentsFrontendAssets::register_stripe_script();
+
+		if ( ! wp_script_is( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'registered' ) ) {
+			$suffix = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
+			wp_register_script(
+				self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/frontend/woopayments-express-checkout' . $suffix . '.js',
+				// wp-hooks on every surface: the extension filters (WooCommerce Subscriptions, Deposits, Product Bundles) run
+				// through it, as the client 11.1.0 bundle that imports @wordpress/hooks does.
+				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ),
+				WC_VERSION,
+				true
+			);
+			wp_set_script_translations( self::CLASSIC_EXPRESS_CHECKOUT_SCRIPT_HANDLE, 'woocommerce' );
+		}
+
+		if ( ! wp_style_is( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/css/woopayments-express-checkout.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE, 'rtl', 'replace' );
+		}
+	}
+
+	/**
+	 * Tell whether the current request is a supported shopper frontend surface.
+	 *
+	 * @return bool
+	 */
+	private function is_supported_frontend_surface(): bool {
+		if ( $this->is_pay_for_order_surface() ) {
+			return true;
+		}
+
+		if ( $this->is_block_cart_or_checkout_surface() ) {
+			return false;
+		}
+
+		return $this->is_checkout_surface() ||
+			$this->is_product_surface() ||
+			is_cart();
+	}
+
+	/**
+	 * Tell whether the current request is a checkout page or checkout content page.
+	 *
+	 * @return bool
+	 */
+	private function is_checkout_surface(): bool {
+		return is_checkout() ||
+			WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) ||
+			WooPaymentsFrontendAssets::current_post_has_shortcode( 'woocommerce_checkout' );
+	}
+
+	/**
+	 * Tell whether the current request is a product page or product shortcode content page.
+	 *
+	 * @return bool
+	 */
+	private function is_product_surface(): bool {
+		if ( is_product() ) {
+			return true;
+		}
+
+		$main_query = $GLOBALS['wp_the_query'] ?? null;
+		if ( $main_query instanceof \WP_Query && $main_query->is_singular() ) {
+			$host = $main_query->get_queried_object();
+			if ( $host instanceof \WP_Post && has_shortcode( $host->post_content, 'product_page' ) ) {
+				return true;
+			}
+		}
+
+		return WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
+	}
+
+	/**
+	 * Tell whether the current request renders a Blocks cart or checkout page.
+	 *
+	 * @return bool
+	 */
+	private function is_block_cart_or_checkout_surface(): bool {
+		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+	}
+
+	/**
+	 * Get the current express checkout button context.
+	 *
+	 * @return string
+	 */
+	private function get_current_button_context(): string {
+		if ( $this->is_pay_for_order_surface() ) {
+			return 'pay_for_order';
+		}
+
+		if ( $this->is_product_surface() ) {
+			return 'product';
+		}
+
+		if ( $this->is_checkout_surface() ) {
+			return 'checkout';
+		}
+
+		if ( is_cart() ) {
+			return 'cart';
+		}
+
+		return 'checkout';
+	}
+
+	/**
+	 * Tell whether the current request renders the classic order-pay surface.
+	 *
+	 * @return bool
+	 */
+	private function is_pay_for_order_surface(): bool {
+		global $wp;
+
+		return is_object( $wp ) && ! empty( $wp->query_vars['order-pay'] );
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Use the WooPayments account country for payment-method fee links, and keep a general fees destination when no matching country section exists.

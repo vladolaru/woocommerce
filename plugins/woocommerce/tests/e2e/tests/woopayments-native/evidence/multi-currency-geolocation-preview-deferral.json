@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-geolocation-preview-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "a0fcaec9068f6be69b94e6ce543b18e37cf04bbd",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:174::Multi-currency on-boarding › Geolocation features › should preview currency switch by geolocation correctly with USD and GBP"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA cfc54ef413ff9135f850614f34a6941f21d9c45b677fc683ea09c87c43edae60 against ledger SHA a8dace6e117bc5e853571c5958af0a234eb4b7851a325c9f6584cfe764b40f4f with no findings. Exactly source line 174 changes only fields 37-40 to deferred/ambiguous-decision/ambiguous-decision:PILOT-MULTI-CURRENCY-GEOLOCATION-PREVIEW-AUTHORITY/evidence while the merchant role, pending onboarding target and contract, unresolved owner, line 165, and switcher rows 214 and 224 remain preserved. The evidence bindably captures the primary authority decision, frozen preview limitations, retained-preview zero-side-effect and accessibility, return, dismiss, and focus obligations, explicit legal disposition for shopper replacement or retirement, secondary readiness, and complete snapshot, journal, restoration, and quarantine requirements without claiming a gap or defect."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Product/UX and native ownership have not decided whether Core retains a merchant-facing geolocation preview, explicitly pairs or replaces it with a real isolated shopper geolocation contract, or retires the client-only preview after equivalent behavior coverage. Core implements enabled-currency-gated GB-to-GBP selection and the shopper notice but has no merchant Preview action or simulation surface; actual shopper behavior changes the role, mutations, and cleanup and is not an automatic adapter. Native readiness is secondary.",
+		"affected_scope": "Only the exact USD-default/GBP-enabled geolocation comprehension boundary: the frozen client creates a forced merchant preview whose visible notice explains that a UK visitor's prices change to Pound sterling, without proving real geolocation, converted prices, saved opt-in, shopper state, or provider behavior. If merchant preview is retained, it must use explicit deterministic GB identity, accessible preview semantics, clear GBP/Pound-sterling change and return-to-USD/dismissal paths, zero global/user/session/settings/provider mutation, and focus restoration. A shopper replacement or retirement requires an explicit legal disposition and separately approved oracle.",
+		"no_allowlisted_action_reason": "The run cannot invent a new merchant preview UX or simulation API, silently replace a merchant contract with a shopper journey, decide whether converted prices are required, or retire the preview. It also cannot resolve the pending target/owner or bypass native readiness. Lower-layer GB-to-GBP mapping and shopper-notice tests prove capability pieces but cannot choose the product surface or close merchant comprehension. No provider writer or listener can resolve this decision.",
+		"reference": "ambiguous-decision:PILOT-MULTI-CURRENCY-GEOLOCATION-PREVIEW-AUTHORITY",
+		"unlock_decision": "Product/UX and native ownership must choose retained merchant preview, explicit actual-shopper pairing/replacement, or legal retirement and approve the exact role, target, owner, simulation/geolocation mechanism, comprehension/accessibility semantics, converted-price boundary, and allowed side effects. Then satisfy native readiness; provide a deterministic USD-default/GBP-enabled fixture under ordered settings, catalog/rate, geolocation, and browser-identity ownership with complete raw/user/session snapshots and a pre-write restoration journal; implement the approved row-safe zero-retry oracle; restore every byte and run-owned browser artifact; and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, setting, user meta, shopper session, cookie, currency fixture, catalog/rate cache, geolocation fixture, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous setup, unexpected settings/user/session/provider traffic, wrong identity join, duplicate preview action, bundle drift, lost ownership, or incomplete restoration must preserve evidence and quarantine the exact store, ownership identity, multi-currency options, catalog/rates, geolocation fixture, merchant/shopper identity, session/cookie state, and journal; no financial or provider resource belongs to this contract."
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Issue refunds for payment inquiries directly from the transaction details page instead of using the transaction actions menu.

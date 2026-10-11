@@ -1,0 +1,1462 @@
+/**
+ * External dependencies
+ */
+import {
+	Button,
+	CheckboxControl,
+	ExternalLink,
+	Icon,
+	Modal,
+	Notice,
+	Popover,
+} from '@wordpress/components';
+import {
+	createInterpolateElement,
+	RawHTML,
+	useEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
+import { __, sprintf } from '@wordpress/i18n';
+import { info as infoIcon } from '@wordpress/icons';
+import type { ReactNode } from 'react';
+
+/**
+ * Internal dependencies
+ */
+import {
+	CARD_BRANDS,
+	getPaymentMethodDefinition,
+	WooPaymentsPaymentMethodDefinition,
+} from './payment-method-definitions';
+import type { PmPromotion } from '../promotions/types';
+import { getPromotionBadgeChipType } from '../promotions/badge';
+import {
+	getStatusChipClassName,
+	StatusChip,
+} from '../admin/overview/components/status-chip';
+import { getSettingsPaymentsProviderRouteUrl } from '../admin/utils';
+import { formatCurrency } from '../admin/currency-format';
+
+type PaymentMethodStatus = {
+	status?: string;
+	requirements?: unknown[];
+};
+
+type FeeAmount = {
+	percentage_rate?: number;
+	fixed_rate?: number;
+	currency?: string;
+	discount?: number;
+	end_time?: string | null;
+	volume_allowance?: number | null;
+	volume_currency?: string | null;
+	current_volume?: number | null;
+};
+
+type FeeStructure = {
+	base?: FeeAmount;
+	additional?: FeeAmount;
+	fx?: FeeAmount;
+	discount?: FeeAmount[];
+};
+
+type DuplicatePaymentMethodNotices = Record< string, string[] | undefined >;
+
+type PaymentMethodsListProps = {
+	methodIds: string[];
+	enabledMethodIds: string[];
+	statuses: Record< string, PaymentMethodStatus | undefined >;
+	accountFees?: Record< string, FeeStructure | undefined >;
+	pmPromotions?: PmPromotion[];
+	duplicatedPaymentMethodIds?: DuplicatePaymentMethodNotices;
+	dismissedDuplicatePaymentMethodNotices?: DuplicatePaymentMethodNotices;
+	isManualCaptureEnabled: boolean;
+	isMultiCurrencyEnabled?: boolean;
+	storeCurrency?: string;
+	accountCountry?: string;
+	onEnable: ( methodId: string ) => void;
+	onDisable: ( methodId: string ) => void;
+	onDismissDuplicateNotice?: ( notices: Record< string, string[] > ) => void;
+};
+
+type Availability = {
+	isActionable: boolean;
+	chip?: string;
+	chipType?: 'warning' | 'error';
+	notice?: React.ReactNode;
+	noticeSpokenMessage?: string;
+	noticeStatus?: 'info' | 'warning' | 'error';
+};
+
+type PaymentMethodAvailabilityOptions = {
+	enabledMethodIds?: string[];
+	isMultiCurrencyEnabled?: boolean;
+	overviewUrl?: string;
+	storeCurrency?: string;
+};
+
+const REQUIREMENTS_LABELS: Record< string, string > = {
+	'business_profile.mcc': __( 'Business category', 'woocommerce' ),
+	'business_profile.url': __( 'Business website', 'woocommerce' ),
+	'business_profile.product_description': __(
+		'Product description',
+		'woocommerce'
+	),
+	'business_profile.support_phone': __(
+		'Support phone number',
+		'woocommerce'
+	),
+	'business_profile.support_email': __(
+		'Support email address',
+		'woocommerce'
+	),
+	external_account: __( 'Bank account', 'woocommerce' ),
+};
+const ADDITIONAL_PAYMENT_METHODS_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#method-cant-be-enabled';
+const BNPL_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/#contact-support';
+const DELAYED_APPROVAL_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#approval-delays';
+const CONTACT_SUPPORT_URL =
+	'https://woocommerce.com/my-account/contact-support/';
+const FEES_DOCUMENTATION_URL =
+	'https://woocommerce.com/document/woopayments/fees/';
+const COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS: Record< string, string > = {
+	AE: 'united-arab-emirates',
+	AU: 'australia',
+	AT: 'austria',
+	BE: 'belgium',
+	BG: 'bulgaria',
+	CA: 'canada',
+	CY: 'cyprus',
+	CZ: 'czech-republic',
+	FR: 'france',
+	LU: 'luxembourg',
+	DE: 'germany',
+	DK: 'denmark',
+	EE: 'estonia',
+	FI: 'finland',
+	GR: 'greece',
+	HK: 'hong-kong',
+	HR: 'croatia',
+	HU: 'hungary',
+	IE: 'ireland',
+	IT: 'italy',
+	JP: 'japan',
+	LT: 'lithuania',
+	LV: 'latvia',
+	MT: 'malta',
+	NL: 'netherlands',
+	NO: 'norway',
+	NZ: 'new-zealand',
+	PL: 'poland',
+	PT: 'portugal',
+	SG: 'singapore',
+	SI: 'slovenia',
+	SK: 'slovakia',
+	SE: 'sweden',
+	ES: 'spain',
+	CH: 'switzerland',
+	GB: 'united-kingdom',
+	US: 'united-states',
+	RO: 'romania',
+};
+
+const getCountryFeeDocumentationSectionSlug = ( country?: string ) =>
+	country &&
+	Object.prototype.hasOwnProperty.call(
+		COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS,
+		country
+	)
+		? COUNTRY_FEE_DOCUMENTATION_SECTION_SLUGS[ country ]
+		: undefined;
+
+const getStatus = (
+	definition: WooPaymentsPaymentMethodDefinition,
+	statuses: Record< string, PaymentMethodStatus | undefined >
+): PaymentMethodStatus => statuses[ definition.stripeKey ] || {};
+
+const getRequirementLabels = ( requirements: unknown[] ) =>
+	requirements
+		.filter(
+			( requirement ): requirement is string =>
+				typeof requirement === 'string'
+		)
+		.map(
+			( requirement ) => REQUIREMENTS_LABELS[ requirement ] || requirement
+		);
+
+const joinWithOr = ( items: string[] ): string => {
+	if ( items.length <= 1 ) {
+		return items[ 0 ] ?? '';
+	}
+
+	if ( items.length === 2 ) {
+		return sprintf(
+			/* translators: %1$s: First item, %2$s: second item in a list of two alternatives. */
+			__( '%1$s or %2$s', 'woocommerce' ),
+			items[ 0 ],
+			items[ 1 ]
+		);
+	}
+
+	return sprintf(
+		/* translators: %1$s: Comma-separated list of items, %2$s: last item in a list of alternatives. */
+		__( '%1$s, or %2$s', 'woocommerce' ),
+		items.slice( 0, -1 ).join( ', ' ),
+		items[ items.length - 1 ]
+	);
+};
+
+const getMissingCurrenciesMessage = (
+	paymentMethodLabel: string,
+	requiredCurrencies: string[]
+) => {
+	if ( requiredCurrencies.length === 1 ) {
+		return sprintf(
+			/* translators: %1$s: Payment method label, %2$s: required currency code. */
+			__(
+				'%1$s requires the %2$s currency. Add %2$s to your store to offer this payment method.',
+				'woocommerce'
+			),
+			paymentMethodLabel,
+			requiredCurrencies[ 0 ]
+		);
+	}
+
+	return sprintf(
+		/* translators: %1$s: Payment method label, %2$s: list of required currency codes. */
+		__(
+			'%1$s requires at least one of the following currencies: %2$s. Add at least one of these currencies to your store to offer this payment method.',
+			'woocommerce'
+		),
+		paymentMethodLabel,
+		joinWithOr( requiredCurrencies )
+	);
+};
+
+const PaymentMethodIcon = ( {
+	definition,
+}: {
+	definition: WooPaymentsPaymentMethodDefinition;
+} ) => {
+	if ( definition.iconUrl ) {
+		return (
+			<img
+				className="woopayments-settings-payment-method-item__icon"
+				src={ definition.iconUrl }
+				alt={ sprintf(
+					/* translators: %s: Payment method label. */
+					__( '%s logo', 'woocommerce' ),
+					definition.label
+				) }
+			/>
+		);
+	}
+
+	return (
+		<span
+			className="woopayments-settings-payment-method-item__icon woopayments-settings-payment-method-item__icon--fallback"
+			aria-hidden="true"
+		>
+			{ definition.label.charAt( 0 ).toUpperCase() }
+		</span>
+	);
+};
+
+const CardBrandLogos = () => (
+	<div
+		className="woopayments-settings-payment-method-item__card-brands"
+		aria-label={ __( 'Supported card brands', 'woocommerce' ) }
+	>
+		{ CARD_BRANDS.map( ( brand ) => (
+			<img key={ brand.id } src={ brand.iconUrl } alt={ brand.label } />
+		) ) }
+	</div>
+);
+
+const formatFeePercentage = ( rate?: number, includeZero = false ) => {
+	if (
+		typeof rate !== 'number' ||
+		rate < 0 ||
+		( ! includeZero && rate === 0 )
+	) {
+		return '';
+	}
+
+	return Number( ( rate * 100 ).toFixed( 3 ) ).toLocaleString( undefined, {
+		maximumFractionDigits: 3,
+	} );
+};
+
+const formatFeeCurrency = (
+	amount?: number,
+	currency = 'USD',
+	includeZero = false
+) => {
+	if (
+		typeof amount !== 'number' ||
+		amount < 0 ||
+		( ! includeZero && amount === 0 )
+	) {
+		return '';
+	}
+
+	// Client 11.1.0 `utils/account-fees.tsx:273,297` formats fee amounts with formatCurrency() over the store currency data.
+	return formatCurrency( amount, currency.toUpperCase() );
+};
+
+const formatFeeAmount = ( fee?: FeeAmount, multiplier = 1 ) => {
+	if ( ! fee ) {
+		return '';
+	}
+
+	const percentage = formatFeePercentage(
+		typeof fee.percentage_rate === 'number'
+			? fee.percentage_rate * multiplier
+			: undefined
+	);
+	const fixed = formatFeeCurrency(
+		typeof fee.fixed_rate === 'number'
+			? fee.fixed_rate * multiplier
+			: undefined,
+		fee.currency
+	);
+
+	if ( percentage && fixed ) {
+		return sprintf(
+			/* translators: %1$s: Percentage fee, %2$s: fixed fee, %3$s: percent symbol. */
+			__( '%1$s%3$s + %2$s', 'woocommerce' ),
+			percentage,
+			fixed,
+			'%'
+		);
+	}
+
+	return percentage ? `${ percentage }%` : fixed;
+};
+
+const formatMethodPillFeeAmount = ( fee?: FeeAmount ) => {
+	if ( ! fee ) {
+		return '';
+	}
+
+	const percentage = formatFeePercentage( fee.percentage_rate, true );
+	const fixed = formatFeeCurrency( fee.fixed_rate, fee.currency, true );
+
+	if ( percentage && fixed ) {
+		return sprintf(
+			/* translators: %1$s: Percentage fee, %2$s: fixed fee, %3$s: percent symbol. */
+			__( '%1$s%3$s + %2$s', 'woocommerce' ),
+			percentage,
+			fixed,
+			'%'
+		);
+	}
+
+	return percentage ? `${ percentage }%` : fixed;
+};
+
+const getDiscountFee = ( feeStructure?: FeeStructure ) =>
+	feeStructure?.discount?.[ 0 ];
+
+const getDiscountMultiplier = ( feeStructure?: FeeStructure ) => {
+	const discount = getDiscountFee( feeStructure )?.discount;
+
+	return typeof discount === 'number' && discount > 0 ? 1 - discount : 1;
+};
+
+const getCurrentBaseFee = (
+	feeStructure?: FeeStructure
+): FeeAmount | undefined => {
+	const discount = getDiscountFee( feeStructure );
+
+	if ( ! discount ) {
+		return feeStructure?.base;
+	}
+
+	if ( typeof discount.discount === 'number' && discount.discount > 0 ) {
+		return {
+			percentage_rate:
+				typeof feeStructure?.base?.percentage_rate === 'number'
+					? feeStructure.base.percentage_rate *
+					  getDiscountMultiplier( feeStructure )
+					: undefined,
+			fixed_rate:
+				typeof feeStructure?.base?.fixed_rate === 'number'
+					? feeStructure.base.fixed_rate *
+					  getDiscountMultiplier( feeStructure )
+					: undefined,
+			currency: feeStructure?.base?.currency,
+		};
+	}
+
+	return discount;
+};
+
+const formatMethodFeesDescription = ( feeStructure?: FeeStructure ) => {
+	const currentBaseFee = getCurrentBaseFee( feeStructure );
+	const feeAmount = formatMethodPillFeeAmount( currentBaseFee );
+
+	if ( ! feeAmount ) {
+		return '';
+	}
+
+	return sprintf(
+		/* translators: %s: Payment method fee amount. */
+		__( 'From %s', 'woocommerce' ),
+		feeAmount
+	);
+};
+
+const formatDiscountDate = ( dateValue: string ) => {
+	const normalizedValue = dateValue.includes( 'T' )
+		? dateValue
+		: dateValue.replace( ' ', 'T' );
+	const date = new Date( normalizedValue );
+
+	if ( Number.isNaN( date.getTime() ) ) {
+		return dateValue;
+	}
+
+	return new Intl.DateTimeFormat( undefined, {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+	} ).format( date );
+};
+
+const getDiscountBadgeText = ( discountFee?: FeeAmount ) => {
+	if (
+		typeof discountFee?.discount !== 'number' ||
+		discountFee.discount <= 0
+	) {
+		return '';
+	}
+
+	if ( discountFee.end_time ) {
+		return sprintf(
+			/* translators: %1$s: Discount percentage, %2$s: percent symbol, %3$s: expiration date. */
+			__( '%1$s%2$s off fees through %3$s', 'woocommerce' ),
+			formatFeePercentage( discountFee.discount ),
+			'%',
+			formatDiscountDate( discountFee.end_time )
+		);
+	}
+
+	return sprintf(
+		/* translators: %1$s: Discount percentage, %2$s: percent symbol. */
+		__( '%1$s%2$s off fees', 'woocommerce' ),
+		formatFeePercentage( discountFee.discount ),
+		'%'
+	);
+};
+
+const getDiscountTooltipText = ( discountFee?: FeeAmount ) => {
+	if (
+		typeof discountFee?.discount !== 'number' ||
+		discountFee.discount <= 0
+	) {
+		return '';
+	}
+
+	const discountPercentage = formatFeePercentage( discountFee.discount );
+	const currency =
+		discountFee.volume_currency || discountFee.currency || 'USD';
+
+	if ( discountFee.volume_allowance && discountFee.end_time ) {
+		return sprintf(
+			/* translators: %1$s: Discount percentage, %2$s: percent symbol, %3$s: total payment volume, %4$s: expiration date. */
+			__(
+				'You are saving %1$s%2$s on processing fees for the first %3$s of total payment volume or through %4$s.',
+				'woocommerce'
+			),
+			discountPercentage,
+			'%',
+			formatFeeCurrency( discountFee.volume_allowance, currency ),
+			formatDiscountDate( discountFee.end_time )
+		);
+	}
+
+	if ( discountFee.volume_allowance ) {
+		return sprintf(
+			/* translators: %1$s: Discount percentage, %2$s: percent symbol, %3$s: total payment volume. */
+			__(
+				'You are saving %1$s%2$s on processing fees for the first %3$s of total payment volume.',
+				'woocommerce'
+			),
+			discountPercentage,
+			'%',
+			formatFeeCurrency( discountFee.volume_allowance, currency )
+		);
+	}
+
+	if ( discountFee.end_time ) {
+		return sprintf(
+			/* translators: %1$s: Discount percentage, %2$s: percent symbol, %3$s: expiration date. */
+			__(
+				'You are saving %1$s%2$s on processing fees through %3$s.',
+				'woocommerce'
+			),
+			discountPercentage,
+			'%',
+			formatDiscountDate( discountFee.end_time )
+		);
+	}
+
+	return sprintf(
+		/* translators: %1$s: Discount percentage, %2$s: percent symbol. */
+		__( 'You are saving %1$s%2$s on processing fees.', 'woocommerce' ),
+		discountPercentage,
+		'%'
+	);
+};
+
+/**
+ * A pill that opens its details above itself in a core Popover, on hover, focus or click, as the client's
+ * HoverTooltip does for fees. Escape closes it and returns focus to the pill.
+ */
+const PillDetailsPopover = ( {
+	id,
+	label,
+	wrapperClassName,
+	triggerClassName,
+	trigger,
+	children,
+}: {
+	id: string;
+	label: string;
+	wrapperClassName: string;
+	triggerClassName: string;
+	trigger: ReactNode;
+	children: ReactNode;
+} ) => {
+	const [ isOpen, setIsOpen ] = useState( false );
+	const [ triggerElement, setTriggerElement ] =
+		useState< HTMLButtonElement | null >( null );
+	const wrapperRef = useRef< HTMLSpanElement >( null );
+	const contentRef = useRef< HTMLDivElement >( null );
+	const shouldSuppressNextFocusOpenRef = useRef( false );
+	// The popover renders in a portal, so "inside" covers the pill and the popover content.
+	const isInside = ( node: EventTarget | null ) =>
+		node instanceof Node &&
+		( !! wrapperRef.current?.contains( node ) ||
+			!! contentRef.current?.contains( node ) );
+	const close = ( shouldRestoreFocus: boolean ) => {
+		setIsOpen( false );
+
+		if ( ! shouldRestoreFocus || ! triggerElement ) {
+			return;
+		}
+
+		shouldSuppressNextFocusOpenRef.current = true;
+		triggerElement.focus();
+		triggerElement.ownerDocument.defaultView?.setTimeout( () => {
+			shouldSuppressNextFocusOpenRef.current = false;
+		}, 0 );
+	};
+	useEffect( () => {
+		const ownerDocument = triggerElement?.ownerDocument;
+
+		if ( ! isOpen || ! ownerDocument ) {
+			return;
+		}
+
+		const handleEscape = ( event: KeyboardEvent ) => {
+			if (
+				event.key === 'Escape' &&
+				isInside( ownerDocument.activeElement )
+			) {
+				event.stopPropagation();
+				close( true );
+			}
+		};
+
+		ownerDocument.addEventListener( 'keydown', handleEscape, true );
+
+		return () => {
+			ownerDocument.removeEventListener( 'keydown', handleEscape, true );
+		};
+	} );
+	const closeUnlessInside = ( node: EventTarget | null ) => {
+		if ( ! isInside( node ) ) {
+			setIsOpen( false );
+		}
+	};
+
+	return (
+		<span
+			ref={ wrapperRef }
+			className={ wrapperClassName }
+			onMouseEnter={ () => setIsOpen( true ) }
+			onMouseLeave={ () =>
+				closeUnlessInside(
+					wrapperRef.current?.ownerDocument.activeElement ?? null
+				)
+			}
+		>
+			<button
+				ref={ setTriggerElement }
+				type="button"
+				className={ triggerClassName }
+				aria-label={ label }
+				aria-haspopup="dialog"
+				aria-expanded={ isOpen }
+				// Only reference the dialog while it is mounted; otherwise
+				// aria-controls points at a non-existent element.
+				aria-controls={ isOpen ? id : undefined }
+				onClick={ () => setIsOpen( true ) }
+				onFocus={ () => {
+					if ( ! shouldSuppressNextFocusOpenRef.current ) {
+						setIsOpen( true );
+					}
+				} }
+				onBlur={ ( event ) => closeUnlessInside( event.relatedTarget ) }
+			>
+				{ trigger }
+			</button>
+			{ isOpen && (
+				// The Popover also closes when focus leaves it.
+				// Placement, offset and a className-driven width follow core's status and official badges.
+				<Popover
+					className="woopayments-settings-payment-method-item__popover"
+					anchor={ triggerElement }
+					placement="top-start"
+					offset={ 4 }
+					focusOnMount={ false }
+					onClose={ () =>
+						close(
+							isInside(
+								triggerElement?.ownerDocument.activeElement ??
+									null
+							)
+						)
+					}
+				>
+					<div
+						ref={ contentRef }
+						id={ id }
+						role="dialog"
+						aria-label={ label }
+						className="woopayments-settings-payment-method-item__details-popover"
+					>
+						{ children }
+					</div>
+				</Popover>
+			) }
+		</span>
+	);
+};
+
+const FeeDetails = ( {
+	feeStructure,
+	tooltipId,
+	accountCountry,
+}: {
+	feeStructure?: FeeStructure;
+	tooltipId: string;
+	accountCountry?: string;
+} ) => {
+	const feeDescription = formatMethodFeesDescription( feeStructure );
+	const baseFee = feeStructure?.base;
+
+	if ( ! feeDescription || ! baseFee ) {
+		return null;
+	}
+
+	const discountMultiplier = getDiscountMultiplier( feeStructure );
+	const baseFeeDescription = formatFeeAmount( baseFee, discountMultiplier );
+	const additionalFee = formatFeeAmount(
+		feeStructure?.additional,
+		discountMultiplier
+	);
+	const fxFee = formatFeeAmount( feeStructure?.fx );
+	const feeDocumentationSectionSlug =
+		getCountryFeeDocumentationSectionSlug( accountCountry );
+	const feeDocumentationUrl = feeDocumentationSectionSlug
+		? `${ FEES_DOCUMENTATION_URL }#${ feeDocumentationSectionSlug }`
+		: FEES_DOCUMENTATION_URL;
+	const feeDetailsLabel = sprintf(
+		/* translators: %s: Payment method fee amount. */
+		__( '%s fee details', 'woocommerce' ),
+		feeDescription
+	);
+	// Client 11.1.0 utils/account-fees.tsx:224-246 links only "Learn more".
+	const feeDocumentationHint = createInterpolateElement(
+		feeDocumentationSectionSlug
+			? sprintf(
+					/* translators: %s: WooPayments */
+					__(
+						'<link>Learn more</link> about %s Fees in your country',
+						'woocommerce'
+					),
+					'WooPayments'
+			  )
+			: sprintf(
+					/* translators: %s: WooPayments */
+					__(
+						'<link>Learn more</link> about %s Fees',
+						'woocommerce'
+					),
+					'WooPayments'
+			  ),
+		{
+			// The interpolated "Learn more" becomes the link text.
+			link: (
+				<ExternalLink href={ feeDocumentationUrl }>{ '' }</ExternalLink>
+			),
+		}
+	);
+	const totalFee = {
+		percentage_rate:
+			( baseFee.percentage_rate || 0 ) * discountMultiplier +
+			( feeStructure?.additional?.percentage_rate || 0 ) *
+				discountMultiplier +
+			( feeStructure?.fx?.percentage_rate || 0 ),
+		fixed_rate:
+			( baseFee.fixed_rate || 0 ) * discountMultiplier +
+			( feeStructure?.additional?.fixed_rate || 0 ) * discountMultiplier +
+			( feeStructure?.fx?.fixed_rate || 0 ),
+		currency: baseFee.currency,
+	};
+
+	return (
+		<PillDetailsPopover
+			id={ tooltipId }
+			label={ feeDetailsLabel }
+			wrapperClassName="woopayments-settings-payment-method-item__fee-wrapper"
+			triggerClassName="woopayments-settings-payment-method-item__fee-pill"
+			trigger={ feeDescription }
+		>
+			<span>
+				<span>{ __( 'Base fee', 'woocommerce' ) }</span>
+				<span>{ baseFeeDescription }</span>
+			</span>
+			{ additionalFee && (
+				<span>
+					<span>
+						{ __(
+							'International payment method fee',
+							'woocommerce'
+						) }
+					</span>
+					<span>{ additionalFee }</span>
+				</span>
+			) }
+			{ fxFee && (
+				<span>
+					<span>
+						{ __( 'Currency conversion fee', 'woocommerce' ) }
+					</span>
+					<span>{ fxFee }</span>
+				</span>
+			) }
+			<span>
+				<span>{ __( 'Total per transaction', 'woocommerce' ) }</span>
+				<strong>{ formatFeeAmount( totalFee ) }</strong>
+			</span>
+			<p>{ feeDocumentationHint }</p>
+		</PillDetailsPopover>
+	);
+};
+
+const DiscountBadge = ( {
+	feeStructure,
+	descriptionId,
+}: {
+	feeStructure?: FeeStructure;
+	descriptionId: string;
+} ) => {
+	const discountFee = feeStructure?.discount?.[ 0 ];
+	const badgeText = getDiscountBadgeText( discountFee );
+
+	if ( ! badgeText ) {
+		return null;
+	}
+
+	const tooltipText = getDiscountTooltipText( discountFee );
+
+	return (
+		<>
+			<StatusChip
+				message={ badgeText }
+				type="success"
+				aria-describedby={ tooltipText ? descriptionId : undefined }
+			/>
+			{ tooltipText && (
+				<span id={ descriptionId } className="screen-reader-text">
+					{ tooltipText }
+				</span>
+			) }
+		</>
+	);
+};
+
+const PmPromotionBadge = ( {
+	promotion,
+	tooltipId,
+}: {
+	promotion?: PmPromotion;
+	tooltipId: string;
+} ) => {
+	if ( ! promotion ) {
+		return null;
+	}
+
+	const chipType = getPromotionBadgeChipType( promotion.badge_type );
+	const hasTooltip = Boolean( promotion.description || promotion.tc_url );
+	const label = sprintf(
+		/* translators: %s: Promotion title. */
+		__( '%s promotion details', 'woocommerce' ),
+		promotion.title
+	);
+
+	if ( ! hasTooltip ) {
+		return <StatusChip message={ promotion.title } type={ chipType } />;
+	}
+
+	return (
+		<PillDetailsPopover
+			id={ tooltipId }
+			label={ label }
+			wrapperClassName="woopayments-settings-payment-method-item__promotion-wrapper"
+			triggerClassName={ `${ getStatusChipClassName(
+				chipType
+			) } woopayments-settings-payment-method-item__promotion-badge` }
+			trigger={
+				<>
+					{ promotion.title }
+					<Icon
+						className="woopayments-settings-payment-method-item__promotion-icon"
+						icon={ infoIcon }
+						size={ 14 }
+					/>
+				</>
+			}
+		>
+			{ promotion.description && (
+				<RawHTML>{ promotion.description }</RawHTML>
+			) }
+			{ promotion.tc_url && (
+				<ExternalLink href={ promotion.tc_url }>
+					{ promotion.tc_label || __( 'See terms', 'woocommerce' ) }
+				</ExternalLink>
+			) }
+		</PillDetailsPopover>
+	);
+};
+
+/**
+ * Holds a payment method row's notices, stacked below the row like the client's row notices.
+ */
+export const PaymentMethodRowNotices = ( {
+	children,
+}: {
+	children: ReactNode;
+} ) => (
+	<div className="woopayments-settings-payment-method-item__notices">
+		{ children }
+	</div>
+);
+
+export const DuplicatePaymentMethodNotice = ( {
+	paymentMethodId,
+	gatewayIds,
+	dismissedNotices,
+	onDismiss,
+	onRestoreFocus,
+}: {
+	paymentMethodId: string;
+	gatewayIds: string[];
+	dismissedNotices: DuplicatePaymentMethodNotices;
+	onDismiss?: ( notices: Record< string, string[] > ) => void;
+	onRestoreFocus: () => void;
+} ) => {
+	const noticeRef = useRef< HTMLDivElement >( null );
+	const dismissedGatewayIds = dismissedNotices[ paymentMethodId ] || [];
+	const isDismissedForEveryGateway = gatewayIds.every( ( gatewayId ) =>
+		dismissedGatewayIds.includes( gatewayId )
+	);
+
+	if ( isDismissedForEveryGateway ) {
+		return null;
+	}
+
+	const dismissedNoticeEntries = Object.entries( dismissedNotices ).filter(
+		( entry ): entry is [ string, string[] ] => Array.isArray( entry[ 1 ] )
+	);
+
+	return (
+		<div ref={ noticeRef }>
+			<Notice
+				status="warning"
+				isDismissible={ Boolean( onDismiss ) }
+				onRemove={ () => {
+					if ( ! onDismiss ) {
+						return;
+					}
+
+					const activeElement =
+						noticeRef.current?.ownerDocument.activeElement;
+					const shouldRestoreFocus = activeElement
+						? noticeRef.current?.contains( activeElement )
+						: false;
+					onDismiss( {
+						...Object.fromEntries( dismissedNoticeEntries ),
+						[ paymentMethodId ]: Array.from(
+							new Set( [ ...dismissedGatewayIds, ...gatewayIds ] )
+						),
+					} );
+					if ( shouldRestoreFocus ) {
+						onRestoreFocus();
+					}
+				} }
+				className="woopayments-settings-payment-method-item__notice"
+			>
+				<span>
+					{ __(
+						'This payment method is enabled by other extensions.',
+						'woocommerce'
+					) }{ ' ' }
+					<a href="admin.php?page=wc-settings&tab=checkout">
+						{ __( 'Review extensions', 'woocommerce' ) }
+					</a>{ ' ' }
+					{ __(
+						'to improve the shopper experience.',
+						'woocommerce'
+					) }
+				</span>
+			</Notice>
+		</div>
+	);
+};
+
+export const getPaymentMethodAvailability = (
+	definition: WooPaymentsPaymentMethodDefinition,
+	status: PaymentMethodStatus,
+	isManualCaptureEnabled: boolean,
+	options: PaymentMethodAvailabilityOptions = {}
+): Availability => {
+	const overviewUrl =
+		options.overviewUrl ||
+		getSettingsPaymentsProviderRouteUrl( '/woopayments/overview' );
+	const needsDelayedApprovalGuidance =
+		definition.id === 'alipay' || definition.id === 'wechat_pay';
+	switch ( status.status ) {
+		case 'inactive':
+			return {
+				isActionable: false,
+				chip: __( 'More information needed', 'woocommerce' ),
+				notice: (
+					<>
+						{ __(
+							'More information is needed to finish setting up this payment method.',
+							'woocommerce'
+						) }{ ' ' }
+						<ExternalLink
+							href={
+								definition.allowsPayLater
+									? BNPL_DOCUMENTATION_URL
+									: ADDITIONAL_PAYMENT_METHODS_DOCUMENTATION_URL
+							}
+						>
+							{ __( 'Learn more', 'woocommerce' ) }
+						</ExternalLink>
+					</>
+				),
+				noticeSpokenMessage: __(
+					'More information is needed to finish setting up this payment method. Learn more',
+					'woocommerce'
+				),
+				noticeStatus: 'warning',
+			};
+		case 'pending': {
+			const pendingNotice = needsDelayedApprovalGuidance ? (
+				<>
+					{ __(
+						'Your store must be live and fully functional before this payment method can be offered. Approval typically takes 2–3 days.',
+						'woocommerce'
+					) }{ ' ' }
+					<ExternalLink href={ DELAYED_APPROVAL_DOCUMENTATION_URL }>
+						{ __( 'Learn more', 'woocommerce' ) }
+					</ExternalLink>
+				</>
+			) : (
+				__(
+					"This payment method is pending approval. It won't be available at checkout until it's approved.",
+					'woocommerce'
+				)
+			);
+			const pendingNoticeSpokenMessage = needsDelayedApprovalGuidance
+				? __(
+						'Your store must be live and fully functional before this payment method can be offered. Approval typically takes 2–3 days. Learn more',
+						'woocommerce'
+				  )
+				: undefined;
+
+			return {
+				isActionable: false,
+				chip: __( 'Approval pending', 'woocommerce' ),
+				notice: pendingNotice,
+				noticeSpokenMessage: pendingNoticeSpokenMessage,
+				noticeStatus: 'warning',
+			};
+		}
+		case 'pending_verification':
+			return {
+				isActionable: false,
+				chip: __( 'Pending verification', 'woocommerce' ),
+				notice: createInterpolateElement(
+					sprintf(
+						/* translators: %s: Payment method label. */
+						__(
+							"%s won't be available at checkout yet. To finish setting it up, review the required steps in <overviewLink>Payments overview</overviewLink>.",
+							'woocommerce'
+						),
+						definition.label
+					),
+					{
+						overviewLink: (
+							<a href={ overviewUrl }>
+								{ __( 'Payments overview', 'woocommerce' ) }
+							</a>
+						),
+					}
+				),
+				noticeSpokenMessage: sprintf(
+					/* translators: %s: Payment method label. */
+					__(
+						"%s won't be available at checkout yet. To finish setting it up, review the required steps in Payments overview.",
+						'woocommerce'
+					),
+					definition.label
+				),
+				noticeStatus: 'warning',
+			};
+		// The platform reports `disabled` for a method it no longer offers to this account. The client has no case for it and
+		// leaves the toggle working while checkout drops the method (client 11.1.0 .claude/docs/payment-method-lifecycle.md).
+		case 'disabled':
+			return {
+				isActionable: false,
+				chip: __( 'Unavailable', 'woocommerce' ),
+				notice: sprintf(
+					/* translators: %s: Payment method label. */
+					__(
+						"%s isn't available for your store, so it won't be shown at checkout.",
+						'woocommerce'
+					),
+					definition.label
+				),
+				noticeStatus: 'warning',
+			};
+		case 'rejected':
+			return {
+				isActionable: false,
+				chip: __( 'Rejected', 'woocommerce' ),
+				chipType: 'error',
+				notice: createInterpolateElement(
+					sprintf(
+						/* translators: %s: Payment method label. */
+						__(
+							'Your application to use %s has been rejected. Need help? <contactSupportLink>Contact support</contactSupportLink>',
+							'woocommerce'
+						),
+						definition.label
+					),
+					{
+						contactSupportLink: (
+							<ExternalLink href={ CONTACT_SUPPORT_URL }>
+								<></>
+							</ExternalLink>
+						),
+					}
+				),
+				noticeSpokenMessage: sprintf(
+					/* translators: %s: Payment method label. */
+					__(
+						'Your application to use %s has been rejected. Need help? Contact support',
+						'woocommerce'
+					),
+					definition.label
+				),
+				noticeStatus: 'error',
+			};
+	}
+
+	if ( isManualCaptureEnabled && ! definition.allowsManualCapture ) {
+		return {
+			isActionable: false,
+			chip: __( 'Unavailable with manual capture', 'woocommerce' ),
+		};
+	}
+
+	const storeCurrency = options.storeCurrency?.toUpperCase() || '';
+	const supportedCurrencies = definition.currencies.map( ( currency ) =>
+		currency.toUpperCase()
+	);
+
+	if (
+		options.isMultiCurrencyEnabled === false &&
+		definition.id !== 'card' &&
+		options.enabledMethodIds?.includes( definition.id ) &&
+		storeCurrency &&
+		supportedCurrencies.length > 0 &&
+		! supportedCurrencies.includes( storeCurrency )
+	) {
+		return {
+			isActionable: true,
+			notice: getMissingCurrenciesMessage(
+				definition.label,
+				supportedCurrencies
+			),
+			noticeStatus: 'warning',
+		};
+	}
+
+	return { isActionable: true };
+};
+
+const PaymentMethodActivationModal = ( {
+	definition,
+	requirements,
+	onClose,
+	onConfirm,
+}: {
+	definition: WooPaymentsPaymentMethodDefinition;
+	requirements: unknown[];
+	onClose: () => void;
+	onConfirm: () => void;
+} ) => {
+	const requirementLabels = getRequirementLabels( requirements );
+
+	return (
+		<Modal
+			title={ sprintf(
+				/* translators: %s: Payment method label. */
+				__( 'One more step to enable %s', 'woocommerce' ),
+				definition.label
+			) }
+			onRequestClose={ onClose }
+			shouldCloseOnClickOutside={ false }
+			className="woopayments-settings-payment-method-activation-modal"
+		>
+			<div className="woopayments-settings-payment-method-activation-modal__body">
+				<PaymentMethodIcon definition={ definition } />
+				{ requirementLabels.length > 0 ? (
+					<>
+						<p>
+							{ sprintf(
+								/* translators: %s: Payment method label. */
+								__(
+									'You need to provide more information to enable %s on your checkout:',
+									'woocommerce'
+								),
+								definition.label
+							) }
+						</p>
+						<ul>
+							{ requirementLabels.map( ( requirement ) => (
+								<li key={ requirement }>{ requirement }</li>
+							) ) }
+						</ul>
+					</>
+				) : (
+					<p>
+						{ sprintf(
+							/* translators: %s: Payment method label. */
+							__(
+								'You need to provide more information to enable %s on your checkout.',
+								'woocommerce'
+							),
+							definition.label
+						) }
+					</p>
+				) }
+				<p>
+					{ __(
+						'If you choose to continue, our payment partner Stripe will collect the required information.',
+						'woocommerce'
+					) }
+				</p>
+			</div>
+			<div className="woopayments-settings-modal__actions">
+				<Button variant="secondary" onClick={ onClose }>
+					{ __( 'Cancel', 'woocommerce' ) }
+				</Button>
+				<Button variant="primary" onClick={ onConfirm }>
+					{ __( 'Continue', 'woocommerce' ) }
+				</Button>
+			</div>
+		</Modal>
+	);
+};
+
+const PaymentMethodRow = ( {
+	definition,
+	enabledMethodIds,
+	statuses,
+	accountFees,
+	pmPromotions,
+	duplicatedPaymentMethodIds,
+	dismissedDuplicatePaymentMethodNotices,
+	isManualCaptureEnabled,
+	isMultiCurrencyEnabled,
+	storeCurrency,
+	accountCountry,
+	onEnable,
+	onDisable,
+	onDismissDuplicateNotice,
+}: {
+	definition: WooPaymentsPaymentMethodDefinition;
+	enabledMethodIds: string[];
+	statuses: Record< string, PaymentMethodStatus | undefined >;
+	accountFees?: Record< string, FeeStructure | undefined >;
+	pmPromotions?: PmPromotion[];
+	duplicatedPaymentMethodIds?: DuplicatePaymentMethodNotices;
+	dismissedDuplicatePaymentMethodNotices?: DuplicatePaymentMethodNotices;
+	isManualCaptureEnabled: boolean;
+	isMultiCurrencyEnabled?: boolean;
+	storeCurrency?: string;
+	accountCountry?: string;
+	onEnable: ( methodId: string ) => void;
+	onDisable: ( methodId: string ) => void;
+	onDismissDuplicateNotice?: ( notices: Record< string, string[] > ) => void;
+} ) => {
+	const [ activationMethodId, setActivationMethodId ] = useState<
+		string | null
+	>( null );
+	const rowRef = useRef< HTMLLIElement >( null );
+	const isEnabled = enabledMethodIds.includes( definition.id );
+	const isLocked = definition.id === 'card' && isEnabled;
+	const status = getStatus( definition, statuses );
+	const availability = getPaymentMethodAvailability(
+		definition,
+		status,
+		isManualCaptureEnabled,
+		{
+			enabledMethodIds,
+			isMultiCurrencyEnabled,
+			storeCurrency,
+		}
+	);
+	const requirements = Array.isArray( status.requirements )
+		? status.requirements
+		: [];
+	const statusId = `woopayments-settings-payment-method-${ definition.id }-status`;
+	const descriptionId = `woopayments-settings-payment-method-${ definition.id }-description`;
+	const noticeId = `woopayments-settings-payment-method-${ definition.id }-notice`;
+	const feeTooltipId = `woopayments-settings-payment-method-${ definition.id }-fees`;
+	const describedBy = [
+		descriptionId,
+		availability.chip ? statusId : '',
+		availability.notice ? noticeId : '',
+	]
+		.filter( Boolean )
+		.join( ' ' );
+	const feeStructure = accountFees?.[ definition.id ];
+	const duplicateGatewayIds =
+		duplicatedPaymentMethodIds?.[ definition.id ] || [];
+	const discountDescriptionId = `woopayments-settings-payment-method-${ definition.id }-discount-description`;
+	const promotionTooltipId = `woopayments-settings-payment-method-${ definition.id }-promotion-description`;
+	const discountBadgeText = getDiscountBadgeText(
+		feeStructure?.discount?.[ 0 ]
+	);
+	const badgePromotion = discountBadgeText
+		? undefined
+		: pmPromotions?.find(
+				( promotion ) =>
+					promotion.payment_method === definition.id &&
+					promotion.type === 'badge'
+		  );
+	const restoreFocusToRow = () => {
+		const checkbox = rowRef.current?.querySelector< HTMLInputElement >(
+			'input[type="checkbox"]:not(:disabled)'
+		);
+		if ( checkbox ) {
+			checkbox.focus();
+			return;
+		}
+
+		rowRef.current?.focus();
+	};
+
+	const onChange = ( shouldEnable: boolean ) => {
+		if ( isLocked || ! availability.isActionable ) {
+			return;
+		}
+
+		if ( shouldEnable ) {
+			if ( status.status === 'unrequested' && requirements.length > 0 ) {
+				setActivationMethodId( definition.id );
+				return;
+			}
+
+			onEnable( definition.id );
+			return;
+		}
+
+		onDisable( definition.id );
+	};
+
+	return (
+		<li
+			ref={ rowRef }
+			className="woopayments-settings-payment-method-item"
+			tabIndex={ -1 }
+		>
+			<div className="woopayments-settings-payment-method-item__main">
+				<CheckboxControl
+					checked={ isEnabled }
+					disabled={ isLocked || ! availability.isActionable }
+					aria-describedby={ describedBy }
+					label={ definition.label }
+					onChange={ ( value ) => onChange( Boolean( value ) ) }
+					__nextHasNoMarginBottom
+				/>
+				<PaymentMethodIcon definition={ definition } />
+				<div className="woopayments-settings-payment-method-item__body">
+					<div className="woopayments-settings-payment-method-item__heading">
+						<span className="woopayments-settings-payment-method-item__label">
+							{ definition.label }
+						</span>
+						{ isLocked && (
+							<span className="woopayments-settings-payment-method-item__required">
+								{ __( '(Required)', 'woocommerce' ) }
+							</span>
+						) }
+						{ availability.chip && (
+							<StatusChip
+								id={ statusId }
+								message={ availability.chip }
+								type={
+									availability.chipType === 'error'
+										? 'error'
+										: 'warning'
+								}
+							/>
+						) }
+						<DiscountBadge
+							feeStructure={ feeStructure }
+							descriptionId={ discountDescriptionId }
+						/>
+						<PmPromotionBadge
+							promotion={ badgePromotion }
+							tooltipId={ promotionTooltipId }
+						/>
+					</div>
+					<p id={ descriptionId }>{ definition.description }</p>
+					{ definition.id === 'card' && <CardBrandLogos /> }
+				</div>
+				<div className="woopayments-settings-payment-method-item__actions">
+					<FeeDetails
+						feeStructure={ feeStructure }
+						tooltipId={ feeTooltipId }
+						accountCountry={ accountCountry }
+					/>
+				</div>
+			</div>
+			<PaymentMethodRowNotices>
+				{ availability.notice && (
+					<Notice
+						status={ availability.noticeStatus || 'warning' }
+						isDismissible={ false }
+						className="woopayments-settings-payment-method-item__notice"
+						spokenMessage={ availability.noticeSpokenMessage }
+					>
+						<span id={ noticeId }>{ availability.notice }</span>
+					</Notice>
+				) }
+				{ duplicateGatewayIds.length > 0 && ! availability.notice && (
+					<DuplicatePaymentMethodNotice
+						paymentMethodId={ definition.id }
+						gatewayIds={ duplicateGatewayIds }
+						dismissedNotices={
+							dismissedDuplicatePaymentMethodNotices || {}
+						}
+						onDismiss={ onDismissDuplicateNotice }
+						onRestoreFocus={ restoreFocusToRow }
+					/>
+				) }
+			</PaymentMethodRowNotices>
+			{ activationMethodId === definition.id && (
+				<PaymentMethodActivationModal
+					definition={ definition }
+					requirements={ requirements }
+					onClose={ () => setActivationMethodId( null ) }
+					onConfirm={ () => {
+						onEnable( definition.id );
+						setActivationMethodId( null );
+					} }
+				/>
+			) }
+		</li>
+	);
+};
+
+export const WooPaymentsPaymentMethodsList = ( {
+	methodIds,
+	enabledMethodIds,
+	statuses,
+	accountFees,
+	pmPromotions,
+	duplicatedPaymentMethodIds,
+	dismissedDuplicatePaymentMethodNotices,
+	isManualCaptureEnabled,
+	isMultiCurrencyEnabled,
+	storeCurrency,
+	accountCountry,
+	onEnable,
+	onDisable,
+	onDismissDuplicateNotice,
+}: PaymentMethodsListProps ) => {
+	const definitions = methodIds
+		.map( ( methodId ) =>
+			getPaymentMethodDefinition( methodId, accountCountry )
+		)
+		.filter(
+			( definition ): definition is WooPaymentsPaymentMethodDefinition =>
+				Boolean( definition )
+		)
+		.sort( ( first, second ) => {
+			if ( first.id === 'card' ) {
+				return -1;
+			}
+			if ( second.id === 'card' ) {
+				return 1;
+			}
+			return 0;
+		} );
+
+	// Like the client, an empty list (for example after a failed settings read) shows nothing.
+	if ( definitions.length === 0 ) {
+		return null;
+	}
+
+	return (
+		<ul className="woopayments-settings-payment-methods-list">
+			{ definitions.map( ( definition ) => (
+				<PaymentMethodRow
+					key={ definition.id }
+					definition={ definition }
+					enabledMethodIds={ enabledMethodIds }
+					statuses={ statuses }
+					accountFees={ accountFees }
+					pmPromotions={ pmPromotions }
+					duplicatedPaymentMethodIds={ duplicatedPaymentMethodIds }
+					dismissedDuplicatePaymentMethodNotices={
+						dismissedDuplicatePaymentMethodNotices
+					}
+					isManualCaptureEnabled={ isManualCaptureEnabled }
+					isMultiCurrencyEnabled={ isMultiCurrencyEnabled }
+					storeCurrency={ storeCurrency }
+					accountCountry={ accountCountry }
+					onEnable={ onEnable }
+					onDisable={ onDisable }
+					onDismissDuplicateNotice={ onDismissDuplicateNotice }
+				/>
+			) ) }
+		</ul>
+	);
+};

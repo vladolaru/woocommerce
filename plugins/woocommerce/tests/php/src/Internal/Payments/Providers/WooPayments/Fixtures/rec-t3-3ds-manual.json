@@ -1,0 +1,1179 @@
+{
+	"_meta": {
+		"recording": "REC-3DS-2, REC-3DS-3a, REC-3DS-3b, REC-3DS-5 (failed, succeeded)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 94738aeaf0, WooPayments plugin inactive, test mode, store currency USD)",
+		"produced_by": "one run per spec file through run-provider-families.sh, unmodified, with provider fixture approval orientation-2026-09-26-families-3ds (V333); ids read from the store orders and the platform request log; see each entry",
+		"captured_via": "API-only GET of each resulting PaymentIntent or SetupIntent through native WooPaymentsApiClient, raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt each, Idempotent-Replayed header empty, no retries",
+		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; bodies JSON-decoded and otherwise verbatim (billing name, address and phone are e2e fixture test data)",
+		"notes": "data/rec-t3-manual-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "classic_checkout_challenge_completed",
+			"recording": "REC-3DS-2",
+			"test_card": "4000000000003220 (3DS2 required), entered in the Stripe card element by the spec",
+			"produced_by": "classic-card-authentication.spec.ts:272 (data/runs/t3-task-4-rec-3ds-2)",
+			"recorded_at": "2026-09-26T00:19:39+00:00",
+			"context": "guest classic checkout 10.99 USD, hosted 3DS challenge completed; PaymentIntent succeeded with one captured charge (three_d_secure challenge, authenticated)",
+			"store_observation": {
+				"id": 4864,
+				"status": "processing",
+				"pm": "woocommerce_payments",
+				"total": "10.99",
+				"currency": "USD",
+				"customer_id": 0,
+				"intent": "pi_3UJjK4BzWlxcwgpP0xWpBE77",
+				"charge": "ch_3UJjK4BzWlxcwgpP0EgZv2kl",
+				"intention_status": "succeeded",
+				"pmid": "pm_1UJjK1BzWlxcwgpPXk1gmCc5",
+				"order_tokens": 0,
+				"user_tokens": null,
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/intentions/pi_3UJjK4BzWlxcwgpP0xWpBE77 (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJjK4BzWlxcwgpP0xWpBE77",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 1099,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 78,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "ch_3UJjK4BzWlxcwgpP0EgZv2kl",
+								"object": "charge",
+								"amount": 1099,
+								"amount_captured": 1099,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": "fee_1UJjK9BzWlxcwgpPFgVVPrHP",
+								"application_fee_amount": 78,
+								"balance_transaction": {
+									"id": "txn_3UJjK4BzWlxcwgpP02qImWxf",
+									"object": "balance_transaction",
+									"amount": 1099,
+									"available_on": 1790726400,
+									"balance_type": "payments",
+									"created": 1790381920,
+									"currency": "usd",
+									"description": "Online Payment for Order #4864 for store8889.localhost:8889 blog_id 4",
+									"exchange_rate": null,
+									"fee": 78,
+									"fee_details": [
+										{
+											"amount": 78,
+											"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+											"currency": "usd",
+											"description": "DEV Shared Account WCPay application fee",
+											"type": "application_fee"
+										}
+									],
+									"net": 1021,
+									"reporting_category": "charge",
+									"source": "ch_3UJjK4BzWlxcwgpP0EgZv2kl",
+									"status": "pending",
+									"type": "charge"
+								},
+								"billing_details": {
+									"address": {
+										"city": "San Francisco",
+										"country": "US",
+										"line1": "123 Test Street",
+										"line2": "",
+										"postal_code": "94107",
+										"state": "CA"
+									},
+									"email": "REDACTED",
+									"name": "E2E WooPayments",
+									"phone": "5555550100",
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": "WOOCOMMERCE",
+								"captured": true,
+								"created": 1790381920,
+								"currency": "usd",
+								"customer": "cus_VKO6MZ0aINsMEl",
+								"description": "Online Payment for Order #4864 for store8889.localhost:8889 blog_id 4",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": null,
+								"failure_message": null,
+								"fraud_details": [],
+								"invoice": null,
+								"level3": {
+									"customer_reference": "4864",
+									"line_items": [
+										{
+											"discount_amount": 0,
+											"product_code": "4863",
+											"product_description": "WooPayments native E2E woo",
+											"quantity": 1,
+											"tax_amount": 0,
+											"unit_cost": 1099
+										}
+									],
+									"merchant_reference": "4864",
+									"shipping_amount": 0,
+									"shipping_from_zip": "94107"
+								},
+								"livemode": false,
+								"metadata": {
+									"checkout_type": "checkout",
+									"client_version": "11.1.0",
+									"customer_email": "REDACTED",
+									"customer_name": "E2E WooPayments",
+									"fraud_outcome": "allow",
+									"fraud_prevention_data_available": "1",
+									"fraud_prevention_data_cart_contents": "1",
+									"fraud_prevention_data_ip_country": "REDACTED",
+									"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+									"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+									"order_id": "4864",
+									"order_key": "REDACTED",
+									"order_number": "4864",
+									"payment_type": "single",
+									"site_url": "http://store8889.localhost:8889",
+									"subscription_payment": "no"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": null,
+									"network_advice_code": null,
+									"network_decline_code": null,
+									"network_status": "approved_by_network",
+									"reason": null,
+									"risk_level": "normal",
+									"risk_score": 18,
+									"seller_message": "Payment complete.",
+									"type": "authorized"
+								},
+								"paid": true,
+								"payment_intent": "pi_3UJjK4BzWlxcwgpP0xWpBE77",
+								"payment_method": "pm_1UJjK1BzWlxcwgpPXk1gmCc5",
+								"payment_method_details": {
+									"card": {
+										"amount_authorized": 1099,
+										"authorization_code": "963374",
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": "pass",
+											"address_postal_code_check": "pass",
+											"cvc_check": "pass"
+										},
+										"country": "IE",
+										"description": null,
+										"electronic_commerce_indicator": "05",
+										"exp_month": 4,
+										"exp_year": 2045,
+										"extended_authorization": {
+											"status": "disabled"
+										},
+										"fingerprint": "lyxRgoucuJd8vUR2",
+										"funding": "credit",
+										"iin": "400000",
+										"incremental_authorization": {
+											"status": "unavailable"
+										},
+										"installments": null,
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "3220",
+										"mandate": null,
+										"moto": null,
+										"multicapture": {
+											"status": "unavailable"
+										},
+										"network": "visa",
+										"network_token": {
+											"used": false
+										},
+										"network_transaction_id": "841028455991031",
+										"overcapture": {
+											"maximum_amount_capturable": 1099,
+											"status": "unavailable"
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure": {
+											"authentication_flow": "challenge",
+											"electronic_commerce_indicator": "05",
+											"exemption_indicator": null,
+											"result": "authenticated",
+											"result_reason": null,
+											"transaction_id": "bae2a5b6-5c15-4493-8edd-12e4d9303acf",
+											"version": "2.1.0"
+										},
+										"transaction_link_id": null,
+										"wallet": null
+									},
+									"type": "card"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": "REDACTED",
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/ch_3UJjK4BzWlxcwgpP0EgZv2kl/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "succeeded",
+								"transfer_data": null,
+								"transfer_group": null,
+								"fee_breakdown_v1": {
+									"rows": [
+										{
+											"key": "base",
+											"kind": "fee",
+											"label": null,
+											"amount": 78,
+											"display_amount": -78,
+											"currency": "usd",
+											"rate": null,
+											"meta": null
+										}
+									],
+									"totals": {
+										"fee": {
+											"key": null,
+											"amount": 78,
+											"display_amount": -78,
+											"currency": "usd",
+											"rate": null
+										},
+										"tax": {
+											"amount": 0,
+											"display_amount": 0,
+											"currency": "usd"
+										},
+										"net": {
+											"amount": 1021,
+											"currency": "usd"
+										},
+										"capture_net": {
+											"amount": 1021,
+											"currency": "usd"
+										},
+										"gross": {
+											"amount": 1099,
+											"currency": "usd"
+										},
+										"fee_plus_tax": {
+											"amount": 78,
+											"currency": "usd"
+										}
+									},
+									"notes": [],
+									"sources": {
+										"balance_transaction_exchange_rate": 0,
+										"refunded_fee_amount_store": 0
+									}
+								}
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3UJjK4BzWlxcwgpP0xWpBE77"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790381916,
+					"currency": "usd",
+					"customer": "cus_VKO6MZ0aINsMEl",
+					"customer_account": null,
+					"description": "Online Payment for Order #4864 for store8889.localhost:8889 blog_id 4",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": "ch_3UJjK4BzWlxcwgpP0EgZv2kl",
+					"level3": {
+						"customer_reference": "4864",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "4863",
+								"product_description": "WooPayments native E2E woo",
+								"quantity": 1,
+								"tax_amount": 0,
+								"unit_cost": 1099
+							}
+						],
+						"merchant_reference": "4864",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"checkout_type": "checkout",
+						"client_version": "11.1.0",
+						"customer_email": "REDACTED",
+						"customer_name": "E2E WooPayments",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "1",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+						"order_id": "4864",
+						"order_key": "REDACTED",
+						"order_number": "4864",
+						"payment_type": "single",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "no"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJjK1BzWlxcwgpPXk1gmCc5",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null
+				}
+			}
+		},
+		{
+			"pair": "blocks_challenge_failed",
+			"recording": "REC-3DS-3a",
+			"test_card": "4000000000003220 (3DS2 required), entered in the Stripe card element by the spec",
+			"produced_by": "card-authentication.spec.ts:711 (data/runs/t3-task-4-rec-3ds-3-approved)",
+			"recorded_at": "2026-09-26T00:18:00+00:00",
+			"context": "Blocks checkout 10.99 USD, hosted 3DS challenge failed by the shopper; PaymentIntent requires_payment_method, last_payment_error payment_intent_authentication_failure, 0 charges",
+			"store_observation": {
+				"id": 4861,
+				"status": "failed",
+				"pm": "woocommerce_payments",
+				"total": "10.99",
+				"currency": "USD",
+				"customer_id": 62,
+				"intent": "pi_3UJjIkBzWlxcwgpP0bKa5m3p",
+				"charge": "",
+				"intention_status": "requires_payment_method",
+				"pmid": "pm_1UJjIhBzWlxcwgpPzzWwa70c",
+				"order_tokens": 0,
+				"user_tokens": 0,
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/intentions/pi_3UJjIkBzWlxcwgpP0bKa5m3p (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJjIkBzWlxcwgpP0bKa5m3p",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 78,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [],
+						"has_more": false,
+						"total_count": 0,
+						"url": "/v1/charges?payment_intent=pi_3UJjIkBzWlxcwgpP0bKa5m3p"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790381834,
+					"currency": "usd",
+					"customer": "cus_V303bS2wC2v6p0",
+					"customer_account": null,
+					"description": "Online Payment for Order #4861 for store8889.localhost:8889 blog_id 4",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": {
+						"code": "payment_intent_authentication_failure",
+						"doc_url": "https://stripe.com/docs/error-codes/payment-intent-authentication-failure",
+						"message": "The provided PaymentMethod has failed authentication. You can provide payment_method_data or a new PaymentMethod to attempt to fulfill this PaymentIntent again.",
+						"payment_method": {
+							"id": "pm_1UJjIhBzWlxcwgpPzzWwa70c",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": "San Francisco",
+									"country": "US",
+									"line1": "123 Test Street",
+									"line2": "",
+									"postal_code": "94107",
+									"state": "CA"
+								},
+								"email": "REDACTED",
+								"name": "E2E WooPayments",
+								"phone": "5555550100",
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": "unchecked",
+									"address_postal_code_check": "unchecked",
+									"cvc_check": "unchecked"
+								},
+								"country": "IE",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 4,
+								"exp_year": 2045,
+								"fingerprint": "lyxRgoucuJd8vUR2",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "3220",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790381831,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"radar_options": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"payment_method_type": "card",
+						"type": "invalid_request_error"
+					},
+					"latest_charge": null,
+					"level3": {
+						"customer_reference": "4861",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "4860",
+								"product_description": "WooPayments native E2E woo",
+								"quantity": 1,
+								"tax_amount": 0,
+								"unit_cost": 1099
+							}
+						],
+						"merchant_reference": "4861",
+						"shipping_address_zip": "94107",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"checkout_type": "store-api",
+						"client_version": "11.1.0",
+						"customer_email": "REDACTED",
+						"customer_name": "E2E WooPayments",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "1",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+						"order_id": "4861",
+						"order_key": "REDACTED",
+						"order_number": "4861",
+						"payment_type": "single",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "no"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": null,
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "requires_payment_method",
+					"transfer_data": null,
+					"transfer_group": null
+				}
+			}
+		},
+		{
+			"pair": "blocks_post_authentication_decline",
+			"recording": "REC-3DS-3b",
+			"test_card": "4000008400001629 per the spec (3DS2 required, declined after authentication), entered in the Stripe card element",
+			"produced_by": "card-authentication.spec.ts:550 (data/runs/t3-task-4-rec-3ds-3-approved)",
+			"recorded_at": "2026-09-26T00:17:58+00:00",
+			"context": "Blocks checkout 10.99 USD, hosted 3DS challenge completed then declined; PaymentIntent requires_payment_method, last_payment_error card_declined / generic_decline, one failed charge",
+			"store_observation": {
+				"id": 4859,
+				"status": "failed",
+				"pm": "woocommerce_payments",
+				"total": "10.99",
+				"currency": "USD",
+				"customer_id": 62,
+				"intent": "pi_3UJjIPBzWlxcwgpP0c8sklMo",
+				"charge": "",
+				"intention_status": "requires_payment_method",
+				"pmid": "pm_1UJjILBzWlxcwgpPtlcWeidH",
+				"order_tokens": 0,
+				"user_tokens": 0,
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/intentions/pi_3UJjIPBzWlxcwgpP0c8sklMo (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJjIPBzWlxcwgpP0c8sklMo",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 62,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "ch_3UJjIPBzWlxcwgpP0KWwmy3j",
+								"object": "charge",
+								"amount": 1099,
+								"amount_captured": 0,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": null,
+								"application_fee_amount": 62,
+								"balance_transaction": null,
+								"billing_details": {
+									"address": {
+										"city": "San Francisco",
+										"country": "US",
+										"line1": "123 Test Street",
+										"line2": "",
+										"postal_code": "94107",
+										"state": "CA"
+									},
+									"email": "REDACTED",
+									"name": "E2E WooPayments",
+									"phone": "5555550100",
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": "WOOCOMMERCE",
+								"captured": false,
+								"created": 1790381816,
+								"currency": "usd",
+								"customer": "cus_V303bS2wC2v6p0",
+								"description": "Online Payment for Order #4859 for store8889.localhost:8889 blog_id 4",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": "card_declined",
+								"failure_message": "Your card was declined.",
+								"fraud_details": [],
+								"invoice": null,
+								"level3": {
+									"customer_reference": "4859",
+									"line_items": [
+										{
+											"discount_amount": 0,
+											"product_code": "4858",
+											"product_description": "WooPayments native E2E woo",
+											"quantity": 1,
+											"tax_amount": 0,
+											"unit_cost": 1099
+										}
+									],
+									"merchant_reference": "4859",
+									"shipping_address_zip": "94107",
+									"shipping_amount": 0,
+									"shipping_from_zip": "94107"
+								},
+								"livemode": false,
+								"metadata": {
+									"checkout_type": "store-api",
+									"client_version": "11.1.0",
+									"customer_email": "REDACTED",
+									"customer_name": "E2E WooPayments",
+									"fraud_outcome": "allow",
+									"fraud_prevention_data_available": "1",
+									"fraud_prevention_data_cart_contents": "1",
+									"fraud_prevention_data_ip_country": "REDACTED",
+									"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+									"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+									"order_id": "4859",
+									"order_key": "REDACTED",
+									"order_number": "4859",
+									"payment_type": "single",
+									"site_url": "http://store8889.localhost:8889",
+									"subscription_payment": "no"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": "try_again_later",
+									"network_advice_code": null,
+									"network_decline_code": "01",
+									"network_status": "declined_by_network",
+									"reason": "generic_decline",
+									"risk_level": "normal",
+									"risk_score": 44,
+									"seller_message": "The bank did not return any further details with this decline.",
+									"type": "issuer_declined"
+								},
+								"paid": false,
+								"payment_intent": "pi_3UJjIPBzWlxcwgpP0c8sklMo",
+								"payment_method": "pm_1UJjILBzWlxcwgpPtlcWeidH",
+								"payment_method_details": {
+									"card": {
+										"amount_authorized": null,
+										"authorization_code": "369400",
+										"brand": "visa",
+										"checks": {
+											"address_line1_check": "pass",
+											"address_postal_code_check": "pass",
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": null,
+										"electronic_commerce_indicator": "05",
+										"exp_month": 6,
+										"exp_year": 2045,
+										"extended_authorization": {
+											"status": "disabled"
+										},
+										"fingerprint": "3jRk7od7WB9XatO1",
+										"funding": "credit",
+										"iin": "400000",
+										"incremental_authorization": {
+											"status": "unavailable"
+										},
+										"installments": null,
+										"issuer": "Stripe Test (multi-country)",
+										"last4": "1629",
+										"mandate": null,
+										"moto": null,
+										"multicapture": {
+											"status": "unavailable"
+										},
+										"network": "visa",
+										"network_token": {
+											"used": false
+										},
+										"network_transaction_id": "108107847070578",
+										"overcapture": {
+											"maximum_amount_capturable": 1099,
+											"status": "unavailable"
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure": {
+											"authentication_flow": "challenge",
+											"electronic_commerce_indicator": "05",
+											"exemption_indicator": null,
+											"result": "authenticated",
+											"result_reason": null,
+											"transaction_id": "dc25d38d-9a01-4257-ae0e-e98d87325557",
+											"version": "2.1.0"
+										},
+										"transaction_link_id": null,
+										"wallet": null
+									},
+									"type": "card"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": null,
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/ch_3UJjIPBzWlxcwgpP0KWwmy3j/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "failed",
+								"transfer_data": null,
+								"transfer_group": null
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3UJjIPBzWlxcwgpP0c8sklMo"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790381813,
+					"currency": "usd",
+					"customer": "cus_V303bS2wC2v6p0",
+					"customer_account": null,
+					"description": "Online Payment for Order #4859 for store8889.localhost:8889 blog_id 4",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": {
+						"advice_code": "try_again_later",
+						"charge": "ch_3UJjIPBzWlxcwgpP0KWwmy3j",
+						"code": "card_declined",
+						"decline_code": "generic_decline",
+						"doc_url": "https://stripe.com/docs/error-codes/card-declined",
+						"message": "Your card was declined.",
+						"network_decline_code": "01",
+						"payment_method": {
+							"id": "pm_1UJjILBzWlxcwgpPtlcWeidH",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": "San Francisco",
+									"country": "US",
+									"line1": "123 Test Street",
+									"line2": "",
+									"postal_code": "94107",
+									"state": "CA"
+								},
+								"email": "REDACTED",
+								"name": "E2E WooPayments",
+								"phone": "5555550100",
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": "pass",
+									"address_postal_code_check": "pass",
+									"cvc_check": "pass"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 6,
+								"exp_year": 2045,
+								"fingerprint": "3jRk7od7WB9XatO1",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "1629",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790381810,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"radar_options": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"payment_method_type": "card",
+						"type": "card_error"
+					},
+					"latest_charge": "ch_3UJjIPBzWlxcwgpP0KWwmy3j",
+					"level3": {
+						"customer_reference": "4859",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "4858",
+								"product_description": "WooPayments native E2E woo",
+								"quantity": 1,
+								"tax_amount": 0,
+								"unit_cost": 1099
+							}
+						],
+						"merchant_reference": "4859",
+						"shipping_address_zip": "94107",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"checkout_type": "store-api",
+						"client_version": "11.1.0",
+						"customer_email": "REDACTED",
+						"customer_name": "E2E WooPayments",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "1",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+						"order_id": "4859",
+						"order_key": "REDACTED",
+						"order_number": "4859",
+						"payment_type": "single",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "no"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": null,
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "requires_payment_method",
+					"transfer_data": null,
+					"transfer_group": null
+				}
+			}
+		},
+		{
+			"pair": "my_account_setup_intent_challenge_failed",
+			"recording": "REC-3DS-5 failed",
+			"test_card": "4000000000003220 (3DS2 required), entered in the Stripe card element by the spec",
+			"produced_by": "saved-method-authentication.spec.ts:121 (data/runs/t3-task-4-rec-3ds-5)",
+			"recorded_at": "2026-09-26T00:21:43+00:00",
+			"context": "My Account add payment method by a run-owned shopper, hosted 3DS challenge failed; SetupIntent requires_payment_method, last_setup_error setup_intent_authentication_failure, payment_method null, usage off_session",
+			"store_observation": {
+				"order": null,
+				"woo_token_rows_for_failed_pm": 0,
+				"shopper": "run-owned user deleted by the spec after the case; its platform customer cus_VKO7tn7YUsE035 no longer maps to a WP user",
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_setup_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/setup_intents/seti_1UJjLgBzWlxcwgpPWgcKyT4H (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "seti_1UJjLgBzWlxcwgpPWgcKyT4H",
+					"object": "setup_intent",
+					"allowed_payment_method_types": null,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"automatic_payment_methods": null,
+					"cancellation_reason": null,
+					"client_secret": "REDACTED",
+					"created": 1790382016,
+					"customer": "cus_VKO7tn7YUsE035",
+					"customer_account": null,
+					"description": null,
+					"excluded_payment_method_types": null,
+					"flow_directions": null,
+					"last_setup_error": {
+						"code": "setup_intent_authentication_failure",
+						"doc_url": "https://stripe.com/docs/error-codes/setup-intent-authentication-failure",
+						"message": "The latest attempt to set up the payment method has failed because authentication failed.",
+						"payment_method": {
+							"id": "pm_1UJjLdBzWlxcwgpPTBWW3h7F",
+							"object": "payment_method",
+							"allow_redisplay": "unspecified",
+							"billing_details": {
+								"address": {
+									"city": null,
+									"country": "US",
+									"line1": null,
+									"line2": null,
+									"postal_code": "94107",
+									"state": null
+								},
+								"email": "REDACTED",
+								"name": "E2E WooPayments",
+								"phone": null,
+								"tax_id": null
+							},
+							"card": {
+								"brand": "visa",
+								"checks": {
+									"address_line1_check": null,
+									"address_postal_code_check": "unchecked",
+									"cvc_check": "unchecked"
+								},
+								"country": "US",
+								"description": null,
+								"display_brand": "visa",
+								"exp_month": 6,
+								"exp_year": 2045,
+								"fingerprint": "3jRk7od7WB9XatO1",
+								"funding": "credit",
+								"generated_from": null,
+								"iin": "400000",
+								"issuer": "Stripe Test (multi-country)",
+								"last4": "1629",
+								"networks": {
+									"available": [
+										"visa"
+									],
+									"preferred": null
+								},
+								"regulated_status": "unregulated",
+								"three_d_secure_usage": {
+									"supported": true
+								},
+								"wallet": null
+							},
+							"created": 1790382014,
+							"customer": null,
+							"customer_account": null,
+							"livemode": false,
+							"metadata": [],
+							"radar_options": [],
+							"shared_payment_granted_token": null,
+							"type": "card"
+						},
+						"type": "invalid_request_error"
+					},
+					"latest_attempt": "setatt_1UJjLhBzWlxcwgpPz0SZsLMK",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"mandate": null,
+					"metadata": {
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "0",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": null,
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"single_use_mandate": null,
+					"status": "requires_payment_method",
+					"usage": "off_session"
+				}
+			}
+		},
+		{
+			"pair": "my_account_setup_intent_challenge_completed",
+			"recording": "REC-3DS-5 succeeded",
+			"test_card": "4000000000003220 (3DS2 required), entered in the Stripe card element by the spec",
+			"produced_by": "saved-method-authentication.spec.ts:270 (data/runs/t3-task-4-rec-3ds-5)",
+			"recorded_at": "2026-09-26T00:21:46+00:00",
+			"context": "My Account add payment method by a run-owned shopper, hosted 3DS challenge completed; SetupIntent succeeded, usage off_session, payment_method attached",
+			"store_observation": {
+				"order": null,
+				"shopper": "run-owned user; the spec later pays one classic order with the saved token and then deletes the credential and the user (cleanup), so the Woo token row no longer exists",
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_setup_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/setup_intents/seti_1UJjM6BzWlxcwgpPI7LOeDzi (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "seti_1UJjM6BzWlxcwgpPI7LOeDzi",
+					"object": "setup_intent",
+					"allowed_payment_method_types": null,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"automatic_payment_methods": null,
+					"cancellation_reason": null,
+					"client_secret": "REDACTED",
+					"created": 1790382042,
+					"customer": "cus_VKO8L9MyRuqNfb",
+					"customer_account": null,
+					"description": null,
+					"excluded_payment_method_types": null,
+					"flow_directions": null,
+					"last_setup_error": null,
+					"latest_attempt": "setatt_1UJjM6BzWlxcwgpPAzysnf8d",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"mandate": null,
+					"metadata": {
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "0",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJjM3BzWlxcwgpPFSKcDIVZ",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"single_use_mandate": null,
+					"status": "succeeded",
+					"usage": "off_session"
+				}
+			}
+		}
+	]
+}

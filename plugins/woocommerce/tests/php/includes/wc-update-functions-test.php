@@ -16,6 +16,11 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\OrderTaxLookupMigrator;
 use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\VariationGallery\Package as VariationGalleryPackage;
 
 /**
@@ -29,6 +34,18 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	public function tearDown(): void {
 		Constants::clear_single_constant( 'WOOCOMMERCE_BIS_ALPHA_ENABLED' );
 		delete_option( 'woocommerce_feature_customer_stock_notifications_enabled' );
+		delete_option( 'woocommerce_woopayments_builtin_enabled' );
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		delete_option( 'wcpay_multi_currency_setup_completed' );
+		delete_option( 'woocommerce_woopayments_setup_tier' );
+		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'active_plugins' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		parent::tearDown();
 	}
 
@@ -618,5 +635,200 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		$this->assertNull( $get_marker( $refund->get_id() ), 'The refund row marker should be reset to NULL.' );
 		$this->assertSame( '0', $get_marker( $order->get_id() ), 'The order row marker should be left unchanged.' );
+	}
+
+	/**
+	 * @testdox Migration registers and creates the autoloaded native payments option without overwriting an existing value.
+	 */
+	public function test_wc_update_11203_enable_builtin_woopayments(): void {
+		global $wpdb;
+
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.2.0-3', $db_updates );
+		$this->assertContains( 'wc_update_11203_enable_builtin_woopayments', $db_updates['11.2.0-3'] );
+
+		wc_update_11203_enable_builtin_woopayments();
+
+		$this->assertSame( 'yes', get_option( 'woocommerce_woopayments_builtin_enabled' ), 'The migration should enable native payments for upgraded stores.' );
+		$this->assertContains(
+			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_woopayments_builtin_enabled' ) ),
+			wp_autoload_values_to_autoload(),
+			'The option should be autoloaded because the arbiter resolves it in the request hot path.'
+		);
+
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'no' );
+		wc_update_11203_enable_builtin_woopayments();
+
+		$this->assertSame( 'no', get_option( 'woocommerce_woopayments_builtin_enabled' ), 'The migration should preserve an existing native payments setting.' );
+	}
+
+	/**
+	 * @testdox Migration registers the multi-currency seed, which turns the feature on after prior WooPayments use and otherwise leaves it unset.
+	 */
+	public function test_wc_update_11204_seed_multi_currency_feature(): void {
+		global $wpdb;
+
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.2.0-4', $db_updates );
+		$this->assertContains( 'wc_update_11204_seed_multi_currency_feature', $db_updates['11.2.0-4'] );
+
+		$cases = array(
+			'implicit legacy default plus enabled currencies' => array( null, array( 'EUR' ), null, 'yes' ),
+			'explicit legacy flag plus completed setup' => array( '1', array(), '1', 'yes' ),
+			'legacy flag without merchant use'          => array( '1', array(), null, false ),
+			'disabled legacy flag with merchant use'    => array( '0', array( 'EUR' ), '1', false ),
+		);
+
+		foreach ( $cases as $case => list( $legacy_flag, $enabled_currencies, $setup_completed, $expected ) ) {
+			delete_option( 'woocommerce_feature_multi_currency_enabled' );
+			delete_option( '_wcpay_feature_customer_multi_currency' );
+			delete_option( 'wcpay_multi_currency_enabled_currencies' );
+			delete_option( 'wcpay_multi_currency_setup_completed' );
+
+			if ( null !== $legacy_flag ) {
+				update_option( '_wcpay_feature_customer_multi_currency', $legacy_flag );
+			}
+			if ( array() !== $enabled_currencies ) {
+				update_option( 'wcpay_multi_currency_enabled_currencies', $enabled_currencies );
+			}
+			if ( null !== $setup_completed ) {
+				update_option( 'wcpay_multi_currency_setup_completed', $setup_completed );
+			}
+
+			wc_update_11204_seed_multi_currency_feature();
+
+			$this->assertSame( $expected, get_option( 'woocommerce_feature_multi_currency_enabled' ), $case );
+		}
+
+		delete_option( 'woocommerce_feature_multi_currency_enabled' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		wc_update_11204_seed_multi_currency_feature();
+		$this->assertContains(
+			$wpdb->get_var( $wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", 'woocommerce_feature_multi_currency_enabled' ) ),
+			wp_autoload_values_to_autoload(),
+			'The feature option should be autoloaded because the runtime arbiter reads it in the request hot path.'
+		);
+
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'woocommerce_feature_multi_currency_enabled', 'no' );
+
+		wc_update_11204_seed_multi_currency_feature();
+
+		$this->assertSame( 'no', get_option( 'woocommerce_feature_multi_currency_enabled' ), 'The migration should preserve an existing feature decision.' );
+		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+	}
+
+	/**
+	 * @testdox Migration moves a plugin-active upgraded store off the never-written disabled tier so the switch controller loads on admin requests.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (install/update repair is an authoritative writer; an active standalone plugin derives available).
+	 */
+	public function test_wc_update_11205_seed_woopayments_setup_tier(): void {
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		$db_updates = WC_Install::get_db_update_callbacks();
+		$this->assertArrayHasKey( '11.2.0-5', $db_updates );
+		$this->assertContains( 'wc_update_11205_seed_woopayments_setup_tier', $db_updates['11.2.0-5'] );
+
+		$container = wc_get_container();
+		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
+		$state     = $container->get( WooPaymentsSetupTier::class );
+		$matrix    = WooPaymentsProvider::get_classes_by_setup_tier();
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id' => 'acct_upgraded_store',
+					'is_live'    => true,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		// WC_Install::create_options() seeds the disabled default before the update callbacks run.
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
+		$arbiter->invalidate();
+		$state->invalidate();
+
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $state->get_effective_tier() );
+		$this->assertArrayNotHasKey( WooPaymentsSetupTier::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
+
+		wc_update_11205_seed_woopayments_setup_tier();
+		$state->invalidate();
+
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_effective_tier() ]['admin'] );
+
+		delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		update_option( 'active_plugins', array() );
+		$arbiter->invalidate();
+		$state->invalidate();
+
+		wc_update_11205_seed_woopayments_setup_tier();
+
+		$this->assertFalse( get_option( WooPaymentsSetupTier::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
+	}
+
+	/**
+	 * @testdox Migration writes the disabled tier for a plugin-active store that native payments cannot serve: $_dataName.
+	 *
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (disabled when native is off or the account is not eligible, ahead of the plugin check).
+	 *
+	 * @dataProvider provider_wc_update_11205_disabled_stores
+	 *
+	 * @param bool $eligible    Whether the account allows native payments.
+	 * @param bool $kill_switch Whether the native runtime kill switch is on.
+	 */
+	public function test_wc_update_11205_repair_writes_disabled_for_stores_native_cannot_serve( bool $eligible, bool $kill_switch ): void {
+		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
+
+		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
+		if ( $kill_switch ) {
+			update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
+		}
+		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'      => 'acct_upgraded_store',
+					'is_live'         => true,
+					'native_payments' => array( 'eligible' => $eligible ),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			),
+			false
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+
+		wc_update_11205_seed_woopayments_setup_tier();
+
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+	}
+
+	/**
+	 * Plugin-active stores the repair must leave on the disabled tier.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function provider_wc_update_11205_disabled_stores(): array {
+		return array(
+			'account not eligible for native payments' => array( false, false ),
+			'native runtime kill switch on'            => array( true, true ),
+		);
 	}
 }

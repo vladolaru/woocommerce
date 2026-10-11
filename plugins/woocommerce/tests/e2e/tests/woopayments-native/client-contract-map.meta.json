@@ -1,0 +1,8 @@
+{
+	"schema_version": 1,
+	"source_repository": "woocommerce/woocommerce-payments",
+	"source_branch": "develop",
+	"source_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"frozen_contract_count": 181,
+	"frozen_source_sha256": "aa458aae69abbf938418776a7dd1c0b42e4450e625d71ac61ea341f5da2485e3"
+}

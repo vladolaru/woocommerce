@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments settings now report card-present (in-person payments) eligibility when the account is eligible and Cash on delivery is available.

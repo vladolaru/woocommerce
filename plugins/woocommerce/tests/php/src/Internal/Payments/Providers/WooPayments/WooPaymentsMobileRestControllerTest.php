@@ -1,0 +1,2672 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use WC_Helper_Order;
+use WC_REST_Unit_Test_Case;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+
+/**
+ * Tests for the native WooPayments mobile and IPP REST controller.
+ */
+class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
+
+	/**
+	 * The System Under Test.
+	 *
+	 * @var WooPaymentsMobileRestController
+	 */
+	private $sut;
+
+	/**
+	 * Recording API client.
+	 *
+	 * @var RecordingTerminalApiClient
+	 */
+	private RecordingTerminalApiClient $api_client;
+
+	/**
+	 * Mocked WooPayments gateway settings.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $gateway_settings = array();
+
+	/**
+	 * Number of account-data refreshes requested from the account service.
+	 *
+	 * @var int
+	 */
+	private int $account_refresh_calls = 0;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->api_client            = new RecordingTerminalApiClient();
+		$this->gateway_settings      = array();
+		$this->account_refresh_calls = 0;
+		$this->sut                   = $this->create_controller( true );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		delete_transient( 'wcpay_store_terminal_readers' );
+		delete_transient( 'wcpay_store_terminal_locations' );
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		delete_transient( 'wcpay_store_terminal_readers' );
+		delete_transient( 'wcpay_store_terminal_locations' );
+		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
+		// Guest customer creation stores the customer in the shared session; leave none for later classes.
+		if ( WC()->session ) {
+			WC()->session->set( 'wcpay_customer_id', null );
+		}
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox The mobile and IPP routes are registered under wc/v3 when native owns runtime.
+	 */
+	public function test_registers_mobile_ipp_routes_when_native_owns_runtime(): void {
+		$this->sut->register();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'rest_api_init' );
+
+		$routes = $this->server->get_routes();
+
+		foreach ( $this->get_expected_routes() as $route => $methods ) {
+			$this->assertArrayHasKey( $route, $routes );
+			foreach ( $methods as $method ) {
+				$this->assertRouteHasMethod( $routes[ $route ], $method );
+			}
+		}
+	}
+
+	/**
+	 * @testdox Mobile and IPP routes are not registered when native does not own runtime.
+	 */
+	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
+		$this->sut = $this->create_controller( false );
+		$this->sut->register();
+
+		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+	}
+
+	/**
+	 * @testdox Every mobile and IPP route refuses visitors and customers before reaching the platform.
+	 *
+	 * @dataProvider provide_mobile_route_requests
+	 *
+	 * @param string              $method HTTP method.
+	 * @param string              $path   Route path.
+	 * @param array<string,mixed> $params Required route arguments, which WordPress validates before the permission check.
+	 */
+	public function test_routes_require_manage_woocommerce( string $method, string $path, array $params = array() ): void {
+		$this->sut->register_routes();
+		$order = $this->create_order( 12.34, 'USD' );
+		$path  = str_replace( '{order_id}', (string) $order->get_id(), $path );
+
+		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'customer' ) ) ) as $user_id ) {
+			wp_set_current_user( $user_id );
+			$request = new WP_REST_Request( $method, $path );
+			$request->set_body_params( $params );
+			$response = $this->server->dispatch( $request );
+
+			$this->assertSame( rest_authorization_required_code(), $response->get_status(), "User {$user_id} on {$method} {$path}." );
+		}
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	}
+
+	/**
+	 * One request per mobile and IPP route and method.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provide_mobile_route_requests(): array {
+		$intent   = array( 'payment_intent_id' => 'pi_terminal' );
+		$reader   = array(
+			'location'          => 'tml_1',
+			'registration_code' => 'simulated-wpe',
+		);
+		$location = array(
+			'display_name' => 'Store',
+			'address'      => array( 'country' => 'US' ),
+		);
+
+		return array(
+			'connection token' => array( 'POST', '/wc/v3/payments/connection_tokens' ),
+			'capture'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/capture_terminal_payment', $intent ),
+			'prepare'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/prepare_terminal_payment', $intent ),
+			'terminal intent'  => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_terminal_intent' ),
+			'customer'         => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_customer' ),
+			'readers list'     => array( 'GET', '/wc/v3/payments/readers' ),
+			'reader register'  => array( 'POST', '/wc/v3/payments/readers', $reader ),
+			'reader charges'   => array( 'GET', '/wc/v3/payments/readers/charges/txn_1' ),
+			'receipt preview'  => array( 'POST', '/wc/v3/payments/readers/receipts/preview' ),
+			'receipt'          => array( 'GET', '/wc/v3/payments/readers/receipts/pi_terminal' ),
+			'store location'   => array( 'GET', '/wc/v3/payments/terminal/locations/store' ),
+			'locations list'   => array( 'GET', '/wc/v3/payments/terminal/locations' ),
+			'location create'  => array( 'POST', '/wc/v3/payments/terminal/locations', $location ),
+			'location read'    => array( 'GET', '/wc/v3/payments/terminal/locations/tml_1' ),
+			'location update'  => array( 'POST', '/wc/v3/payments/terminal/locations/tml_1' ),
+			'location delete'  => array( 'DELETE', '/wc/v3/payments/terminal/locations/tml_1' ),
+		);
+	}
+
+	/**
+	 * @testdox Connection-token responses include the WooPayments test-mode flag for mobile clients.
+	 */
+	public function test_connection_token_response_appends_test_mode(): void {
+		$this->api_client->connection_token_response = array( 'secret' => 'cnctok_test_secret' );
+
+		$response = $this->sut->create_connection_token( new WP_REST_Request( 'POST', '/wc/v3/payments/connection_tokens' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame(
+			array(
+				'secret'    => 'cnctok_test_secret',
+				'test_mode' => true,
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * @testdox Terminal intent creation sends the order amount, lower-case currency, metadata, and card-present defaults.
+	 */
+	public function test_create_terminal_intent_builds_reference_payload(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'customer_id', 'cus_terminal' );
+		$request->set_param( 'metadata', array( 'channel' => 'mobile' ) );
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'pi_terminal' ), $response->get_data() );
+		$this->assertSame( 1234, $this->api_client->last_terminal_intent_payload['amount'] );
+		$this->assertSame( 'usd', $this->api_client->last_terminal_intent_payload['currency'] );
+		$this->assertSame( 'cus_terminal', $this->api_client->last_terminal_intent_payload['customer'] );
+		$this->assertSame( 'mobile', $this->api_client->last_terminal_intent_payload['metadata']['channel'] );
+		$this->assertSame( (string) $order->get_id(), $this->api_client->last_terminal_intent_payload['metadata']['order_id'] );
+		$this->assertSame( $order->get_order_number(), $this->api_client->last_terminal_intent_payload['metadata']['order_number'] );
+		$this->assertSame(
+			\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
+			$this->api_client->last_terminal_intent_payload['description']
+		);
+		$this->assertStringContainsString( 'Online Payment for Order #' . $order->get_order_number(), $this->api_client->last_terminal_intent_payload['description'] );
+		$this->assertSame( array( 'card_present' ), $this->api_client->last_terminal_intent_payload['payment_method_types'] );
+		$this->assertSame( 'manual', $this->api_client->last_terminal_intent_payload['capture_method'] );
+	}
+
+	/**
+	 * @testdox Terminal intent creation forwards app-supplied metadata verbatim like the reference mobile route.
+	 */
+	public function test_create_terminal_intent_forwards_metadata_verbatim(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param(
+			'metadata',
+			array(
+				'readerID'    => 'rdr_ABC',
+				'pos.session' => 'session-42',
+				'channel'     => 'mobile',
+			)
+		);
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$metadata = $this->api_client->last_terminal_intent_payload['metadata'];
+
+		// Mixed-case and dotted keys must reach the provider unrenamed - the apps
+		// reconcile on the exact metadata names, and the platform is the boundary.
+		$this->assertSame( 'rdr_ABC', $metadata['readerID'] );
+		$this->assertSame( 'session-42', $metadata['pos.session'] );
+		$this->assertSame( 'mobile', $metadata['channel'] );
+
+		// Internal order metadata is still appended.
+		$this->assertSame( (string) $order->get_id(), $metadata['order_id'] );
+		$this->assertSame( $order->get_order_number(), $metadata['order_number'] );
+	}
+
+	/**
+	 * @testdox Reader registration forwards app-supplied metadata verbatim like the reference client.
+	 */
+	public function test_register_reader_forwards_metadata_verbatim(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_store' );
+		$request->set_param( 'registration_code', 'puppies-plug-could' );
+		$request->set_param(
+			'metadata',
+			array(
+				'readerID'    => 'rdr_ABC',
+				'pos.session' => 'session-42',
+			)
+		);
+
+		$this->api_client->terminal_reader_response = array( 'id' => 'tmr_registered' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$metadata = $this->api_client->last_registered_reader['metadata'];
+
+		$this->assertSame( 'rdr_ABC', $metadata['readerID'] );
+		$this->assertSame( 'session-42', $metadata['pos.session'] );
+	}
+
+	/**
+	 * @testdox Terminal location creation does not forward metadata, like the reference client.
+	 */
+	public function test_create_terminal_location_does_not_forward_metadata(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' );
+		$request->set_param( 'display_name', 'Warehouse' );
+		$request->set_param( 'address', array( 'country' => 'US' ) );
+		$request->set_param( 'metadata', array( 'ignored' => 'yes' ) );
+
+		$response = $this->sut->create_terminal_location( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array(), $this->api_client->last_created_location['metadata'] );
+	}
+
+	/**
+	 * @testdox Registering a reader refreshes the cached account data like the reference client.
+	 */
+	public function test_register_reader_refreshes_account_data(): void {
+		$this->api_client->terminal_reader_response = array(
+			'id'          => 'tmr_registered',
+			'livemode'    => false,
+			'device_type' => 'bbpos_wisepos_e',
+			'label'       => 'Front desk',
+			'location'    => 'tml_1',
+			'metadata'    => array(),
+			'status'      => 'online',
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_1' );
+		$request->set_param( 'registration_code', 'puppies-plug-could' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 1, $this->account_refresh_calls, 'A successful reader registration must refresh the cached account data.' );
+	}
+
+	/**
+	 * @testdox A failed reader registration does not refresh the cached account data.
+	 */
+	public function test_failed_reader_registration_does_not_refresh_account_data(): void {
+		$this->api_client->register_reader_exception = new WooPaymentsApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', 'tml_1' );
+		$request->set_param( 'registration_code', 'bad-code' );
+
+		$response = $this->sut->register_reader( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 0, $this->account_refresh_calls );
+	}
+
+	/**
+	 * @testdox Terminal intent creation rejects invalid payment method payloads like the reference mobile route.
+	 */
+	public function test_create_terminal_intent_rejects_invalid_payment_method_payload(): void {
+		$order   = $this->create_order();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_methods', 'card_present' );
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	}
+
+	/**
+	 * @testdox Terminal intent creation rejects unsupported payment methods instead of silently defaulting.
+	 */
+	public function test_create_terminal_intent_rejects_unsupported_payment_method(): void {
+		$order   = $this->create_order();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_methods', array( 'card' ) );
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	}
+
+	/**
+	 * @testdox Terminal intent creation rejects unsupported capture methods instead of silently defaulting.
+	 */
+	public function test_create_terminal_intent_rejects_invalid_capture_method(): void {
+		$order   = $this->create_order();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'capture_method', 'later' );
+
+		$response = $this->sut->create_terminal_intent( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	}
+
+	/**
+	 * @testdox Order-scoped terminal routes match numeric order IDs and reject non-numeric ones.
+	 */
+	public function test_order_scoped_terminal_routes_match_the_reference_route_split(): void {
+		$this->sut->register_routes();
+
+		$order = $this->create_order( 12.34, 'USD' );
+
+		// A valid numeric order ID still routes to the handler.
+		$numeric_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' )
+		);
+		$this->assertSame( 200, $numeric_response->get_status() );
+
+		// The reference client uses \w+ on the terminal order routes, so a
+		// non-numeric ID reaches the handler and yields wcpay_missing_order.
+		$non_numeric_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/notnumeric/create_terminal_intent' )
+		);
+		$this->assertSame( 404, $non_numeric_response->get_status() );
+		$this->assertSame( 'wcpay_missing_order', $non_numeric_response->get_data()['code'] );
+
+		// create_customer is the one route the reference client pins to \d+.
+		$customer_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/notnumeric/create_customer' )
+		);
+		$this->assertSame( 404, $customer_response->get_status() );
+		$this->assertSame( 'rest_no_route', $customer_response->get_data()['code'] );
+	}
+
+	/**
+	 * @testdox Missing required params fail with the WordPress args-schema code like the reference client.
+	 */
+	public function test_terminal_routes_require_params_via_args_schemas(): void {
+		$this->sut->register_routes();
+
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$capture_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' )
+		);
+		$this->assertSame( 400, $capture_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $capture_response->get_data()['code'] );
+
+		$prepare_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' )
+		);
+		$this->assertSame( 400, $prepare_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $prepare_response->get_data()['code'] );
+
+		$reader_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/readers' )
+		);
+		$this->assertSame( 400, $reader_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $reader_response->get_data()['code'] );
+
+		$location_response = $this->server->dispatch(
+			new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' )
+		);
+		$this->assertSame( 400, $location_response->get_status() );
+		$this->assertSame( 'rest_missing_callback_param', $location_response->get_data()['code'] );
+	}
+
+	/**
+	 * @testdox Terminal preparation rejects invalid intent IDs before forwarding to WPCOM.
+	 */
+	public function test_prepare_terminal_payment_rejects_invalid_intent_id(): void {
+		$order   = $this->create_order();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', '../pi_bad' );
+
+		$response = $this->sut->prepare_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_invalid_payment_intent_id', $response->get_error_code() );
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+	}
+
+	/**
+	 * @testdox Reader listing uses the preserved transient and annotates the active reader.
+	 */
+	public function test_get_readers_uses_preserved_transient_and_active_status(): void {
+		$this->api_client->terminal_readers_response      = array(
+			'data' => array(
+				array(
+					'id'          => 'tmr_active',
+					'livemode'    => false,
+					'device_type' => 'bbpos_wisepos_e',
+					'label'       => 'Counter',
+					'location'    => 'tml_store',
+					'metadata'    => array(),
+					'status'      => 'online',
+				),
+			),
+		);
+		$this->api_client->reader_charge_summary_response = array(
+			array(
+				'reader_id' => 'tmr_active',
+				'status'    => 'active',
+			),
+		);
+
+		$response = $this->sut->get_readers( new WP_REST_Request( 'GET', '/wc/v3/payments/readers' ) );
+		$cached   = get_transient( 'wcpay_store_terminal_readers' );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$data = $response->get_data();
+		$this->assertSame( 'tmr_active', $data[0]['id'] );
+		$this->assertTrue( $data[0]['is_active'] );
+		$this->assertSame( $data, $cached );
+	}
+
+	/**
+	 * @testdox An empty cached reader list is treated as a miss and re-fetched, like the reference client.
+	 */
+	public function test_get_readers_refetches_when_cached_list_is_empty(): void {
+		set_transient( 'wcpay_store_terminal_readers', array() );
+		$this->api_client->terminal_readers_response = array(
+			'data' => array(
+				array(
+					'id'          => 'tmr_new',
+					'livemode'    => false,
+					'device_type' => 'bbpos_wisepos_e',
+					'label'       => 'Front desk',
+					'location'    => 'tml_1',
+					'metadata'    => array(),
+					'status'      => 'online',
+				),
+			),
+		);
+
+		$response = $this->sut->get_readers( new WP_REST_Request( 'GET', '/wc/v3/payments/readers' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertCount( 1, $response->get_data(), 'A reader registered elsewhere must appear despite the cached empty list.' );
+		$this->assertSame( 'tmr_new', $response->get_data()[0]['id'] );
+	}
+
+	/**
+	 * @testdox An empty cached location list is treated as a miss and re-fetched, like the reference client.
+	 */
+	public function test_get_terminal_locations_refetches_when_cached_list_is_empty(): void {
+		set_transient( 'wcpay_store_terminal_locations', array() );
+		$this->api_client->terminal_locations_response = array(
+			'data' => array(
+				array(
+					'id'           => 'tml_new',
+					'display_name' => 'Warehouse',
+					'address'      => array( 'country' => 'US' ),
+					'livemode'     => false,
+				),
+			),
+		);
+
+		$response = $this->sut->get_terminal_locations( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertCount( 1, $response->get_data() );
+		$this->assertSame( 'tml_new', $response->get_data()[0]['id'] );
+	}
+
+	/**
+	 * @testdox Reader charge summary uses the source transaction creation date.
+	 */
+	public function test_get_reader_charge_summary_uses_transaction_created_date(): void {
+		$this->api_client->transaction_response           = array(
+			'id'      => 'txn_test',
+			'created' => strtotime( '2026-06-01 12:00:00 UTC' ),
+		);
+		$this->api_client->reader_charge_summary_response = array(
+			array(
+				'reader_id' => 'tmr_active',
+				'status'    => 'active',
+			),
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/charges/txn_test' );
+		$request->set_param( 'transaction_id', 'txn_test' );
+
+		$response = $this->sut->get_reader_charge_summary( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( $this->api_client->reader_charge_summary_response, $response->get_data() );
+		$this->assertSame(
+			array(
+				array(
+					'charge_date'    => '2026-06-01',
+					'transaction_id' => 'txn_test',
+				),
+			),
+			$this->api_client->reader_charge_summary_calls
+		);
+	}
+
+	/**
+	 * @testdox Reader charge summary returns an empty response when the source transaction is missing.
+	 */
+	public function test_get_reader_charge_summary_returns_empty_when_transaction_is_missing(): void {
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/charges/txn_missing' );
+		$request->set_param( 'transaction_id', 'txn_missing' );
+
+		$response = $this->sut->get_reader_charge_summary( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array(), $response->get_data() );
+		$this->assertSame( array(), $this->api_client->reader_charge_summary_calls );
+	}
+
+	/**
+	 * @testdox Receipt preview accepts the preserved camelCase settings payload.
+	 */
+	public function test_preview_print_receipt_uses_preserved_settings_payload(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
+		$request->set_body_params(
+			array(
+				'accountBusinessName'           => 'Receipt Lab',
+				'accountBusinessSupportAddress' => array(
+					'line1'       => '1 Support Way',
+					'line2'       => 'Suite 2',
+					'city'        => 'San Francisco',
+					'state'       => 'CA',
+					'postal_code' => '94107',
+					'country'     => 'US',
+				),
+				'accountBusinessSupportPhone'   => '+1 555 0100',
+				'accountBusinessSupportEmail'   => 'support@example.com',
+			)
+		);
+
+		$response = $this->sut->preview_print_receipt( $request );
+		$html     = $response->get_data()['html_content'];
+
+		$this->assertStringContainsString( '<!DOCTYPE html>', $html );
+		$this->assertStringContainsString( 'Receipt Lab', $html );
+		$this->assertStringContainsString( '1 Support Way', $html );
+		$this->assertStringContainsString( '+1 555 0100 support@example.com', $html );
+		$this->assertStringContainsString( 'Sample', $html );
+		$this->assertStringContainsString( 'Application name', $html );
+		$this->assertStringContainsString( 'AID', $html );
+		$this->assertStringContainsString( 'Powered by WooCommerce', $html );
+	}
+
+	/**
+	 * @testdox Generated receipts include order lines and terminal receipt fields.
+	 */
+	public function test_generate_print_receipt_uses_order_and_charge_receipt_data(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$this->gateway_settings                       = array(
+			'account_business_name'            => 'Generated Receipt Lab',
+			'account_business_support_address' => array(
+				'line1'       => '123 Support St',
+				'city'        => 'San Francisco',
+				'state'       => 'CA',
+				'postal_code' => '94107',
+				'country'     => 'US',
+			),
+			'account_business_support_phone'   => '+1 555 0200',
+			'account_business_support_email'   => 'generated@example.com',
+		);
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_receipt',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array( 'id' => 'ch_receipt' ),
+				),
+			),
+		);
+		$this->api_client->charge_response            = array(
+			'id'                     => 'ch_receipt',
+			'amount_captured'        => 1234,
+			'currency'               => 'usd',
+			'order'                  => array(
+				'number' => $order->get_id(),
+			),
+			'payment_method_details' => array(
+				'card_present' => array(
+					'brand'   => 'visa',
+					'network' => 'eftpos_au',
+					'last4'   => '0978',
+					'receipt' => array(
+						'application_preferred_name' => 'visa credit',
+						'dedicated_file_name'        => 'a0000000031010',
+						'account_type'               => 'credit',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$response = $this->sut->generate_print_receipt( $request );
+		$html     = $response->get_data()['html_content'];
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertStringContainsString( '<!DOCTYPE html>', $html );
+		$this->assertStringContainsString( 'Generated Receipt Lab', $html );
+		$this->assertStringContainsString( '123 Support St', $html );
+		$this->assertStringContainsString( '+1 555 0200 generated@example.com', $html );
+		$this->assertStringContainsString( 'Order ' . $order->get_id(), $html );
+		$this->assertStringContainsString( 'AMOUNT PAID', $html );
+		$this->assertStringContainsString( 'eftpos - 0978', $html );
+		$this->assertStringNotContainsString( 'Visa - 0978', $html );
+		$this->assertStringContainsString( 'Visa credit', $html );
+		$this->assertStringContainsString( 'A0000000031010', $html );
+		$this->assertStringContainsString( 'Credit', $html );
+	}
+
+	/**
+	 * @testdox Generated receipts embed the account branding logo like the reference client.
+	 */
+	public function test_generate_print_receipt_embeds_account_branding_logo(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$this->gateway_settings                       = array(
+			'account_business_name' => 'Logo Receipt Lab',
+			'account_branding_logo' => 'file_logo_123',
+		);
+		$this->api_client->file_contents_response     = array(
+			'content_type' => 'image/png',
+			'file_content' => base64_encode( 'logo-bytes' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
+		);
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_receipt',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array( 'id' => 'ch_receipt' ),
+				),
+			),
+		);
+		$this->api_client->charge_response            = array(
+			'id'                     => 'ch_receipt',
+			'amount_captured'        => 1234,
+			'currency'               => 'usd',
+			'order'                  => array(
+				'number' => $order->get_id(),
+			),
+			'payment_method_details' => array(
+				'card_present' => array(
+					'brand'   => 'visa',
+					'last4'   => '0978',
+					'receipt' => array(
+						'application_preferred_name' => 'visa credit',
+						'dedicated_file_name'        => 'a0000000031010',
+						'account_type'               => 'credit',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$response = $this->sut->generate_print_receipt( $request );
+		$html     = $response->get_data()['html_content'];
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'file_logo_123', false ), $this->api_client->last_file_contents_request, 'The logo must be fetched platform-side (as_account false) like the reference client.' );
+		$this->assertStringContainsString( 'class="branding-logo"', $html );
+		$this->assertStringContainsString( 'data:image/png;base64,' . base64_encode( 'logo-bytes' ), $html ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
+	}
+
+	/**
+	 * @testdox Print receipts render through the theme-overridable WooCommerce template.
+	 */
+	public function test_print_receipt_renders_through_the_overridable_template(): void {
+		$override = get_temp_dir() . 'wcpay-receipt-override-' . wp_generate_password( 8, false ) . '.php';
+		file_put_contents( $override, '<?php echo "THEME-OVERRIDE-RECEIPT"; ?>' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture file.
+
+		$locate = static function ( $template, $template_name ) use ( $override ) {
+			return 'html-in-person-payment-receipt.php' === $template_name ? $override : $template;
+		};
+		add_filter( 'woocommerce_locate_template', $locate, 10, 2 );
+
+		try {
+			$response = $this->sut->preview_print_receipt( new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' ) );
+		} finally {
+			remove_filter( 'woocommerce_locate_template', $locate, 10 );
+			unlink( $override ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Test fixture cleanup.
+		}
+
+		$this->assertSame( 'THEME-OVERRIDE-RECEIPT', $response->get_data()['html_content'] );
+	}
+
+	/**
+	 * @testdox Generated receipts keep the preserved error envelope when the payment intent is invalid.
+	 */
+	public function test_generate_print_receipt_wraps_invalid_intent_in_preserved_error(): void {
+		$this->api_client->payment_intention_response = array(
+			'id'     => 'pi_receipt',
+			'status' => 'requires_payment_method',
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$response = $this->sut->generate_print_receipt( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'generate_print_receipt_error', $response->get_error_code() );
+		$this->assertSame( 'Invalid payment intent', $response->get_error_message() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * @testdox Store-location lookup creates a terminal location from the WooCommerce base address when none exists.
+	 */
+	public function test_get_store_location_creates_location_from_store_address(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_store_address', '123 Main St' );
+		update_option( 'woocommerce_store_city', 'San Francisco' );
+		update_option( 'woocommerce_store_postcode', '94107' );
+		update_option( 'woocommerce_store_address_2', '' );
+
+		$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$data = $response->get_data();
+		$this->assertSame( 'tml_created', $data['id'] );
+		$this->assertSame( $this->get_site_location_name(), $this->api_client->last_created_location['display_name'] );
+		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] );
+		$this->assertSame( 'CA', $this->api_client->last_created_location['address']['state'] );
+		$this->assertSame( '123 Main St', $this->api_client->last_created_location['address']['line1'] );
+		$this->assertSame( array(), $this->api_client->last_created_location['metadata'], 'The auto-created store location must carry no metadata, like the reference client.' );
+	}
+
+	/**
+	 * @testdox Store-location address honors the woocommerce_countries_base_* filters like the reference client.
+	 */
+	public function test_get_store_location_address_honors_base_address_filters(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_store_address', '123 Main St' );
+		update_option( 'woocommerce_store_address_2', 'Floor 2' );
+		update_option( 'woocommerce_store_city', 'San Francisco' );
+		update_option( 'woocommerce_store_postcode', '94107' );
+
+		add_filter( 'woocommerce_countries_base_address', fn() => '456 Warehouse Rd' );
+		add_filter( 'woocommerce_countries_base_address_2', fn() => 'Dock 9' );
+		add_filter( 'woocommerce_countries_base_city', fn() => 'Oakland' );
+		add_filter( 'woocommerce_countries_base_postcode', fn() => '94607' );
+
+		try {
+			$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+		} finally {
+			remove_all_filters( 'woocommerce_countries_base_address' );
+			remove_all_filters( 'woocommerce_countries_base_address_2' );
+			remove_all_filters( 'woocommerce_countries_base_city' );
+			remove_all_filters( 'woocommerce_countries_base_postcode' );
+		}
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$created_address = $this->api_client->last_created_location['address'];
+		$this->assertSame( '456 Warehouse Rd', $created_address['line1'] );
+		$this->assertSame( 'Dock 9', $created_address['line2'] );
+		$this->assertSame( 'Oakland', $created_address['city'] );
+		$this->assertSame( '94607', $created_address['postal_code'] );
+	}
+
+	/**
+	 * @testdox Store-location lookup reuses hostname-named locations created by the reference client.
+	 */
+	public function test_get_store_location_reuses_matching_hostname_location(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_store_address', '123 Main St' );
+		update_option( 'woocommerce_store_city', 'San Francisco' );
+		update_option( 'woocommerce_store_postcode', '94107' );
+		update_option( 'woocommerce_store_address_2', '' );
+
+		$this->api_client->terminal_locations_response = array(
+			'data' => array(
+				array(
+					'id'           => 'tml_existing',
+					'display_name' => $this->get_site_location_name(),
+					'address'      => array(
+						'country'     => 'US',
+						'state'       => 'CA',
+						'city'        => 'San Francisco',
+						'postal_code' => '94107',
+						'line1'       => '123 Main St',
+					),
+					'livemode'     => false,
+				),
+			),
+		);
+
+		$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'tml_existing', $response->get_data()['id'] );
+		$this->assertSame( array(), $this->api_client->last_created_location );
+	}
+
+	/**
+	 * @testdox Terminal location lookup falls back to the direct location endpoint on cache misses.
+	 */
+	public function test_get_terminal_location_falls_back_to_direct_lookup_on_cache_miss(): void {
+		$this->api_client->terminal_locations_response = array( 'data' => array() );
+		$this->api_client->terminal_location_response  = array(
+			'id'           => 'tml_direct',
+			'display_name' => 'Direct',
+			'address'      => array(
+				'country' => 'US',
+				'line1'   => '456 Market',
+			),
+			'livemode'     => false,
+		);
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/tml_direct' );
+		$request->set_param( 'location_id', 'tml_direct' );
+
+		$response = $this->sut->get_terminal_location( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'tml_direct', $response->get_data()['id'] );
+		$this->assertSame( array( 'tml_direct' ), $this->api_client->terminal_location_calls );
+	}
+
+	/**
+	 * @testdox Customer creation updates an existing Stripe customer stored on the order.
+	 */
+	public function test_create_customer_updates_existing_order_customer(): void {
+		$order = $this->create_order();
+		$order->set_billing_email( 'ada@example.com' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_existing' );
+		$order->save();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_existing' ), $response->get_data() );
+		$this->assertSame( 'cus_existing', $this->api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'ada@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
+	}
+
+	/**
+	 * @testdox Customer creation recreates a missing Stripe customer stored on the order.
+	 */
+	public function test_create_customer_recreates_missing_existing_order_customer(): void {
+		$order = $this->create_order();
+		$order->set_billing_email( 'missing@example.com' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_missing' );
+		$order->save();
+
+		$this->api_client->created_customer_id       = 'cus_recreated';
+		$this->api_client->update_customer_exception = new WooPaymentsApiException( 'No such customer', 'resource_missing', 404 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_recreated' ), $response->get_data() );
+		$this->assertSame( 'cus_recreated', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cus_missing', $this->api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'missing@example.com', $this->api_client->created_customers[0]['email'] );
+	}
+
+	/**
+	 * @testdox Customer creation updates a cached user customer with the order billing data.
+	 */
+	public function test_create_customer_updates_cached_user_customer_with_order_data(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( 'order@example.com' );
+		$order->save();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_user' ), $response->get_data() );
+		$this->assertSame( 'cus_user', $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( 'cus_user', $this->api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'order@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
+		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * @testdox Customer creation should update a cached user customer despite an unrelated subscription request value.
+	 */
+	public function test_create_customer_updates_cached_user_customer_with_an_unrelated_subscription_request_value(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_billing_email( 'ordinary-order@example.com' );
+		$order->save();
+
+		$this->fake_wcs_is_subscription();
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() + 1 );
+		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_user' ), $response->get_data() );
+		$this->assertCount( 1, $this->api_client->updated_customers );
+		$this->assertSame( 'ordinary-order@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
+	}
+
+	/**
+	 * Define a test-only wcs_is_subscription() backed by $GLOBALS['wcpay_test_subscription_ids'].
+	 */
+	private function fake_wcs_is_subscription(): void {
+		if ( function_exists( 'wcs_is_subscription' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
+		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ) || in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
+	}
+
+	/**
+	 * @testdox Capturing a terminal payment preserves WooPayments order meta and receipt URL.
+	 */
+	public function test_capture_terminal_payment_updates_order_state_and_receipt_url(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_terminal',
+						'payment_method'         => 'pm_terminal',
+						'payment_method_details' => array(
+							'type'         => 'card_present',
+							'card_present' => array(
+								'brand' => 'visa',
+								'last4' => '4242',
+							),
+						),
+					),
+				),
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'             => 'ch_terminal',
+						'payment_method' => 'pm_terminal',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame(
+			array(
+				'status' => 'succeeded',
+				'id'     => 'pi_terminal',
+			),
+			$response->get_data()
+		);
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'WooCommerce In-Person Payments', $order->get_payment_method_title() );
+		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'ch_terminal', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $order->get_meta( '_wcpay_payment_method_details', true ), $order->get_meta( '_wcpay_raw_payment_method_details', true ) );
+		$this->assertStringContainsString( '/wc/v3/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url', true ) );
+		$this->assertSame( 'test', $order->get_meta( '_wcpay_mode', true ) );
+		// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
+		$this->assertSame( 'USD', $order->get_meta( '_wcpay_intent_currency', true ) );
+	}
+
+	/**
+	 * @testdox Terminal capture on a live account stores the client's live order mode.
+	 *
+	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
+	 */
+	public function test_capture_terminal_payment_on_live_account_stores_prod_order_mode(): void {
+		$this->sut                                    = $this->create_controller( true, false );
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal_live',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_live' ) ) ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal_live',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_live' ) ) ),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_live' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'prod', $order->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * A card-reader capture writes the client's authorized and capture notes and schedules the Fee details job; an
+	 * intent the reader already captured (Interac) writes the payment note and schedules it too
+	 * (class-wc-rest-payments-orders-controller.php:217, :228; class-wc-payments-order-service.php:1582, :1612-1628, :1659-1685).
+	 *
+	 * @dataProvider terminal_capture_paths
+	 *
+	 * @param string   $intent_status Status of the intent the app sends.
+	 * @param string[] $note_kinds    Notes the client writes, in order.
+	 */
+	public function test_capture_terminal_payment_writes_client_notes_and_schedules_fee_details_job( string $intent_status, array $note_kinds ): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$intent                                       = array(
+			'id'       => 'pi_terminal_notes',
+			'status'   => $intent_status,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( array( 'id' => 'ch_terminal_notes' ) ) ),
+		);
+		$this->api_client->payment_intention_response = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_notes' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order        = wc_get_order( $order->get_id() );
+		$note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$expected     = array(
+			'authorized' => $note_service->format_payment_authorized_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes' )[0],
+			'captured'   => $note_service->format_capture_success_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes' )[0],
+			// The client never sets `_wcpay_mode` on a terminal order before this note, so it reads as a live payment.
+			'paid'       => $note_service->format_payment_success_note_candidates( $order, 'pi_terminal_notes', 'ch_terminal_notes', '', '' )[0],
+		);
+		$contents     = array_reverse( wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
+		$written      = array_values( array_intersect( $contents, $expected ) );
+		$this->assertSame( array_map( static fn( string $kind ): string => $expected[ $kind ], $note_kinds ), $written );
+		$this->assertTrue(
+			as_has_scheduled_action(
+				WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				array(
+					'order_id'     => $order->get_id(),
+					'intent_id'    => 'pi_terminal_notes',
+					'is_test_mode' => false,
+				),
+				'woocommerce_payments'
+			)
+		);
+	}
+
+	/**
+	 * A card-reader capture stores the fee its capture response carries, alone, as the client's capture does; an
+	 * intent the reader already captured stores none (class-wc-rest-payments-orders-controller.php:228,
+	 * class-wc-payments-order-service.php:1681, :1775-1781).
+	 *
+	 * @dataProvider terminal_capture_fee_cases
+	 *
+	 * @param string      $intent_status Status of the intent the app sends.
+	 * @param string|null $expected_fee  Fee meta the client stores, or null for none.
+	 */
+	public function test_capture_terminal_payment_stores_the_client_fee_meta( string $intent_status, ?string $expected_fee ): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$charge                                       = array(
+			'id'                     => 'ch_terminal_fee',
+			'captured'               => true,
+			'currency'               => 'usd',
+			'amount'                 => 1234,
+			'application_fee_amount' => 61,
+		);
+		$intent                                       = array(
+			'id'       => 'pi_terminal_fee',
+			'status'   => $intent_status,
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+			'charges'  => array( 'data' => array( $charge ) ),
+		);
+		$this->api_client->payment_intention_response = $intent;
+		$this->api_client->captured_intention_response = array_merge( $intent, array( 'status' => 'succeeded' ) );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal_fee' );
+		$this->assertInstanceOf( WP_REST_Response::class, $this->sut->capture_terminal_payment( $request ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( null !== $expected_fee, $order->meta_exists( '_wcpay_transaction_fee' ) );
+		if ( null !== $expected_fee ) {
+			$this->assertSame( $expected_fee, $order->get_meta( '_wcpay_transaction_fee', true ) );
+		}
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+	}
+
+	/**
+	 * Terminal capture paths and the fee meta the client stores on each.
+	 *
+	 * @return array<string,array{string,string|null}>
+	 */
+	public function terminal_capture_fee_cases(): array {
+		return array(
+			'card reader authorization, captured by the store' => array( 'requires_capture', '0.61' ),
+			'Interac, captured by the reader' => array( 'succeeded', null ),
+		);
+	}
+
+	/**
+	 * Terminal capture paths and the notes the client writes on each.
+	 *
+	 * @return array<string,array{string,string[]}>
+	 */
+	public function terminal_capture_paths(): array {
+		return array(
+			'card reader authorization, captured by the store' => array( 'requires_capture', array( 'authorized', 'captured' ) ),
+			'Interac, captured by the reader' => array( 'succeeded', array( 'paid' ) ),
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture persists the IPP channel before the order completes, so POS email suppression sees it.
+	 */
+	public function test_capture_terminal_payment_writes_ipp_channel_before_completion(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'mobile_pos',
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'mobile_pos',
+			),
+		);
+
+		$channel_at_completion = null;
+		$capture_channel       = function ( $order_id, $completed_order ) use ( &$channel_at_completion ) {
+			unset( $order_id );
+			$channel_at_completion = $completed_order->get_meta( '_wcpay_ipp_channel', true );
+		};
+		add_action( 'woocommerce_order_status_completed', $capture_channel, 10, 2 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		remove_action( 'woocommerce_order_status_completed', $capture_channel, 10 );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'mobile_pos', $channel_at_completion, 'The IPP channel must be on the order when the completion transition fires.' );
+		$this->assertSame( 'mobile_pos', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox Terminal capture merges order-derived metadata under the intent's own, like the reference client.
+	 */
+	public function test_capture_terminal_payment_merges_order_metadata_with_intent_metadata(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->set_billing_email( 'ada@example.com' );
+		$order->save();
+
+		$intent_metadata                               = array(
+			'order_id'      => (string) $order->get_id(),
+			'ipp_channel'   => 'mobile_pos',
+			'reader_ID'     => 'rdr_123',
+			'customer_name' => 'App Override',
+		);
+		$this->api_client->payment_intention_response  = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => $intent_metadata,
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => $intent_metadata,
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$sent = $this->api_client->last_capture_metadata;
+		$this->assertSame( 'ada@example.com', $sent['customer_email'] );
+		$this->assertSame( $order->get_order_key(), $sent['order_key'] );
+		$this->assertSame( esc_url( get_site_url() ), $sent['site_url'] );
+		$this->assertSame( 'single', (string) $sent['payment_type'] );
+		$this->assertSame( 'rdr_123', $sent['reader_ID'] );
+		$this->assertSame( 'mobile_pos', $sent['ipp_channel'] );
+		$this->assertSame( 'App Override', $sent['customer_name'], 'Intent metadata must override order-derived keys (mobile app priority).' );
+	}
+
+	/**
+	 * @testdox Terminal capture does not write an IPP channel the plugin does not recognize.
+	 */
+	public function test_capture_terminal_payment_ignores_unrecognized_ipp_channel(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'carrier_pigeon',
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id'    => (string) $order->get_id(),
+				'ipp_channel' => 'carrier_pigeon',
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( '', $order->get_meta( '_wcpay_ipp_channel', true ) );
+	}
+
+	/**
+	 * @testdox An amount-too-small capture failure in $currency notes the provider minimum like the reference client.
+	 *
+	 * Client 11.1.0 appends the minimum with WC_Payments_Utils::format_explicit_currency( interpret_stripe_amount( ... ) )
+	 * (includes/class-wc-payment-gateway-wcpay.php:4003-4009): wc_price() in the currency's locale-info format, then the code
+	 * when the result lacks it. For EUR that is a comma decimal and the symbol on the right after a space
+	 * (WC_Payments_Utils::get_woocommerce_price_format() 'right_space', includes/class-wc-payments-utils.php:1147-1148).
+	 *
+	 * @dataProvider provide_amount_too_small_minimums
+	 *
+	 * @param string $currency          Order and intent currency.
+	 * @param string $provider_message  Platform error message.
+	 * @param string $expected_sentence The minimum sentence the note carries.
+	 */
+	public function test_capture_failure_note_carries_the_amount_too_small_minimum( string $currency, string $provider_message, string $expected_sentence ): void {
+		$order = $this->create_order( 0.30, $currency );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => strtolower( $currency ),
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException(
+			$provider_message,
+			'amount_too_small',
+			400,
+			'',
+			'',
+			array(
+				'minimum_amount' => 50,
+				'currency'       => strtolower( $currency ),
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$note = $this->get_order_note_containing( $order, 'The minimum amount to capture is' );
+		$this->assertNotEmpty( $note, 'The failure note must carry the appended minimum-amount sentence.' );
+		$this->assertStringContainsString( $provider_message . ' ' . $expected_sentence, wp_strip_all_tags( $note ) );
+	}
+
+	/**
+	 * Minimum-amount refusals and the sentence the client writes for each.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provide_amount_too_small_minimums(): array {
+		return array(
+			'USD' => array( 'USD', 'Amount must be at least $0.50 usd', 'The minimum amount to capture is $0.50 USD.' ),
+			'EUR' => array( 'EUR', 'Amount must be at least €0.50 eur', 'The minimum amount to capture is 0,50 € EUR.' ),
+		);
+	}
+
+	/**
+	 * @testdox Provider error markup arrives inert in the capture-failure note.
+	 */
+	public function test_capture_failure_note_escapes_provider_markup(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Declined <a href="https://evil.example">verify</a>.', 'wcpay_capture_error', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$note = $this->get_order_note_containing( $order, 'Declined' );
+		$this->assertNotEmpty( $note );
+		$this->assertStringContainsString( '&lt;a href=', $note, 'Provider markup must be encoded inert, matching the reference esc_html().' );
+		$this->assertStringNotContainsString( '<a href="https://evil.example">', $note );
+		$this->assertStringNotContainsString( '<a href=', $response->get_error_message(), 'The answer escapes the provider message as the client does.' );
+	}
+
+	/**
+	 * @testdox A pre-check intent fetch failure returns the error without marking the order.
+	 */
+	public function test_precheck_fetch_failure_does_not_mark_the_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_exception = new WooPaymentsApiException( 'Connection lost.', 'wcpay_fetch_error', 500 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		// Client 11.1.0 lets the intent read's exception reach its Throwable catch (class-wc-rest-payments-orders-controller.php:289-291).
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A pre-check failure must not stamp capture-failure state on the order.' );
+		$this->assertSame( '', $this->get_order_note_containing( $order, 'capture' ), 'A pre-check failure must not leave a capture note on the order.' );
+	}
+
+	/**
+	 * @testdox Terminal capture rejects intents without matching order metadata.
+	 */
+	public function test_capture_terminal_payment_rejects_intent_without_order_metadata(): void {
+		$logger = RecordingWcLogger::install();
+		$this->enable_terminal_debug_logging();
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_error_code() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		// Client 11.1.0 logs the rejection (class-wc-rest-payments-orders-controller.php:204-205).
+		$this->assertSame( array( array( 'error', 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertNotSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+	}
+
+	/**
+	 * @testdox Terminal capture rejects a capture request for an intent that does not match the order's already-stored intent.
+	 *
+	 * Client parity: `class-wc-rest-payments-orders-controller.php:187-193`
+	 * (`WC_Payments_Order_Service::INTENT_ID_META_KEY` on the order not matching the requested
+	 * `payment_intent_id` returns `wcpay_payment_uncapturable`, 409) before ever calling the API.
+	 */
+	public function test_capture_terminal_payment_rejects_a_different_stored_intent(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_intent_id', 'pi_stored' );
+		$order->save();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_requested' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->last_capture_metadata, 'No capture must be attempted once the stored intent mismatch is found.' );
+	}
+
+	/**
+	 * @testdox capture_terminal_payment reaches the handler through the registered REST route with the client's payment_intent_id argument name.
+	 *
+	 * Dispatches through `WP_REST_Server` (not by calling the controller method directly), so the
+	 * route's `args` schema is exercised too: a `payment_intent_id` rename in that schema would fail
+	 * this request with 400 `rest_missing_callback_param` before the handler ever runs, the way the
+	 * reference client requires `payment_intent_id` for the same endpoint
+	 * (`class-wc-rest-payments-orders-controller.php:80-83`).
+	 */
+	public function test_capture_terminal_payment_dispatches_through_the_rest_server_with_payment_intent_id(): void {
+		$this->sut->register_routes();
+
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                     => 'ch_terminal',
+						'payment_method'         => 'pm_terminal',
+						'payment_method_details' => array(
+							'type'         => 'card_present',
+							'card_present' => array(
+								'brand' => 'visa',
+								'last4' => '4242',
+							),
+						),
+					),
+				),
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'             => 'ch_terminal',
+						'payment_method' => 'pm_terminal',
+					),
+				),
+			),
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'status' => 'succeeded',
+				'id'     => 'pi_terminal',
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture returns an error when the capture result does not succeed.
+	 */
+	public function test_capture_terminal_payment_returns_error_when_capture_result_is_not_succeeded(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'        => 'pi_terminal',
+			'status'    => 'requires_capture',
+			'message'   => 'Capture failed.',
+			'http_code' => 400,
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+		$this->assertStringContainsString( 'Capture failed.', $response->get_error_message() );
+		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'A failed capture must record the still-capturable authorization like the plugin.' );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'failed' ), 'A failed capture must leave a failure note on the order.' );
+	}
+
+	/**
+	 * @testdox A terminal capture attempted against an expired authorization fails the order with the expired note.
+	 */
+	public function test_capture_terminal_payment_expired_authorization_fails_the_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'canceled',
+			),
+		);
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Capture failed.', 'wcpay_capture_error', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'failed', $order->get_status(), 'An expired authorization must fail the order like the charge.expired webhook.' );
+		$this->assertSame( 'canceled', $order->get_meta( '_intention_status', true ) );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'expired' ) );
+	}
+
+	/**
+	 * @testdox A terminal capture exception with a still-live authorization keeps the order status and adds the failure note.
+	 */
+	public function test_capture_terminal_payment_exception_with_live_intent_adds_failure_note(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$this->api_client->payment_intention_response_queue = array(
+			array(
+				'id'       => 'pi_terminal',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'metadata' => array(
+					'order_id' => (string) $order->get_id(),
+				),
+			),
+			array(
+				'id'     => 'pi_terminal',
+				'status' => 'requires_capture',
+			),
+		);
+		// The platform's capture error envelope: code, message and HTTP status (client class-wc-payments-api-client.php:2852-2871, :2906-2909).
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		// Client 11.1.0 answers every failed capture with its own code and prefixed message (class-wc-rest-payments-orders-controller.php:228-252).
+		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+		$this->assertSame( 'Payment capture failed to complete with the following message: The card was declined at capture.', $response->get_error_message() );
+		$this->assertSame( 402, $response->get_error_data()['status'] );
+		$this->assertSame( 'on-hold', $order->get_status(), 'A plain capture failure must leave the original authorization active.' );
+		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'The card was declined at capture.' ) );
+	}
+
+	/**
+	 * @testdox Terminal capture preserves the amount-too-small machine-readable error code.
+	 */
+	public function test_capture_terminal_payment_returns_amount_too_small_error_details(): void {
+		$order                                        = $this->create_order( 12.34, 'USD' );
+		$error_details                                = array(
+			'minimum_amount'          => 50,
+			'minimum_amount_currency' => 'USD',
+		);
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'            => 'pi_terminal',
+			'status'        => 'requires_capture',
+			'http_code'     => 400,
+			'error_code'    => 'amount_too_small',
+			'extra_details' => $error_details,
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error_amount_too_small', $response->get_error_code() );
+		$this->assertSame( esc_html( wp_json_encode( $error_details ) ), $response->get_error_message() );
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * @testdox Terminal capture converts a thrown amount-too-small API error into the machine-readable payload.
+	 */
+	public function test_capture_terminal_payment_converts_amount_too_small_exception_to_error_details(): void {
+		$order                                        = $this->create_order( 0.30, 'USD' );
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+		);
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException(
+			'Amount must be at least $0.50 usd',
+			'amount_too_small',
+			400,
+			'',
+			'',
+			array(
+				'minimum_amount' => 50,
+				'currency'       => 'usd',
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		$response = $this->sut->capture_terminal_payment( $request );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error_amount_too_small', $response->get_error_code() );
+		$this->assertSame(
+			esc_html(
+				(string) wp_json_encode(
+					array(
+						'minimum_amount'          => 50,
+						'minimum_amount_currency' => 'USD',
+					)
+				)
+			),
+			$response->get_error_message()
+		);
+		$this->assertSame( 400, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * @testdox A failure after the platform captured a terminal payment is logged even with logging off, and the app gets the client's generic error.
+	 *
+	 * Client 11.1.0 logs every throwable before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:289-290).
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_after_the_capture(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		add_filter(
+			'wcpay_terminal_payment_completed_order_status',
+			static function () {
+				throw new \RuntimeException( 'status filter failed' );
+			}
+		);
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( array( 'error', 'Terminal payment captured, but recording it on the order failed.', 'woopayments' ), $errors[0] );
+		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
+		$this->assertSame( $order->get_id(), $context['order_id'] );
+		$this->assertSame( 'pi_terminal', $context['intent_id'] );
+		$this->assertSame( 'RuntimeException', $context['exception'] );
+		$this->assertNotNull( wc_get_container()->get( OrderPaymentLock::class )->claim( $order, new WooPaymentsPersistenceVocabulary(), 'pi_terminal', 'payment status update' ), 'A failed capture releases the lock.' );
+	}
+
+	/**
+	 * @testdox A failure recording a payment the reader already captured is logged as a captured payment.
+	 *
+	 * Client 11.1.0 links an intent the app captured itself, such as Interac (class-wc-rest-payments-orders-controller.php:219-228).
+	 * WC_Order::save() turns an Exception from its hooks into an order note, so only a PHP Error escapes this first save.
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_recording_a_reader_captured_payment(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'succeeded';
+		add_action(
+			'woocommerce_before_order_object_save',
+			static function () {
+				throw new \Error( 'save failed' );
+			}
+		);
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', 'Terminal payment captured, but recording it on the order failed.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox A failure before a terminal capture reaches the platform is logged when logging is on.
+	 *
+	 * Client 11.1.0 logs it through its gated Logger::error (class-wc-rest-payments-orders-controller.php:289-290).
+	 */
+	public function test_capture_terminal_payment_logs_a_failure_before_the_capture(): void {
+		$logger = RecordingWcLogger::install();
+		$this->enable_terminal_debug_logging();
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->api_client->payment_intention_exception = new \RuntimeException( 'intent read failed' );
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', 'Failed to capture a terminal payment via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertSame( array(), $this->api_client->last_capture_metadata, 'No capture was requested.' );
+	}
+
+	/**
+	 * @testdox Customer creation and terminal intent creation log an unexpected PHP error before the client's generic answer.
+	 *
+	 * Client 11.1.0 logs both before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:502-503, :544-545).
+	 *
+	 * @dataProvider provide_mobile_routes_with_unexpected_errors
+	 *
+	 * @param string $route   Controller method under test.
+	 * @param string $message Expected log line.
+	 */
+	public function test_mobile_routes_log_an_unexpected_error( string $route, string $message ): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_existing' );
+		$order->save();
+		$throw = static function () {
+			throw new \Error( 'unexpected' );
+		};
+		// The customer update reads the order's billing name and the intent request its order number; both go through these filters.
+		add_filter( 'woocommerce_order_get_billing_first_name', $throw );
+		add_filter( 'woocommerce_order_number', $throw );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() );
+		$request->set_param( 'order_id', $order->get_id() );
+		$response = $this->sut->$route( $request );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * @testdox Terminal capture waits for a short-lived order payment lock holder and then captures once.
+	 *
+	 * The likely holder is the webhook applying an event for the same intent; client 11.1.0 takes no lock here at all.
+	 */
+	public function test_capture_terminal_payment_waits_for_the_order_payment_lock(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$this->assertNotNull( $holder_token );
+		$sut = $this->create_lock_waiting_controller(
+			static function ( int $wait ) use ( $store, $order, $vocabulary, $holder_token ): void {
+				if ( 2 === $wait ) {
+					$store->release( $order, $vocabulary, $holder_token );
+				}
+			}
+		);
+
+		$claims_during_capture        = array();
+		$claim                        = static function () use ( $store, $order, $vocabulary, &$claims_during_capture ): void {
+			$claims_during_capture[] = $store->claim( $order, $vocabulary, 'pi_other', 'competing operation' );
+		};
+		$this->api_client->on_capture = $claim;
+		add_action( 'woocommerce_order_status_completed', $claim );
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 'succeeded', $response->get_data()['status'] );
+		$this->assertSame( array( null, null ), $claims_during_capture, 'The lock is held through the platform capture and the completion.' );
+		$this->assertSame( array( 'pi_terminal' ), $this->api_client->payment_intention_requests );
+		$this->assertSame( 2, $sut->waits );
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'amount'    => 1234,
+				),
+			),
+			$this->api_client->captures
+		);
+		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertNotNull( $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' ), 'The capture released the lock.' );
+	}
+
+	/**
+	 * @testdox Terminal capture refuses with a retryable capture error, and captures nothing, when the order payment lock stays held.
+	 *
+	 * The Android app treats wcpay_payment_uncapturable as already captured and reports a sale (woocommerce-android
+	 * PaymentManager.kt:277), so the refusal uses wcpay_capture_error, which it retries on the same intent.
+	 */
+	public function test_capture_terminal_payment_refuses_while_the_order_payment_lock_stays_held(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$sut          = $this->create_lock_waiting_controller();
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+		$store->release( $order, $vocabulary, (string) $holder_token );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+		$this->assertSame( 'The payment is still being processed. Try again.', $response->get_error_message() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( 3, $sut->waits );
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
+		$refusals = array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && false !== strpos( $line[1], 'refused terminal capture' ) );
+		$this->assertCount( 1, $refusals );
+	}
+
+	/**
+	 * @testdox Terminal capture reads the order again under the lock and does not capture a payment another request completed while it waited.
+	 */
+	public function test_capture_terminal_payment_rechecks_the_order_under_the_lock(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$store        = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary   = new WooPaymentsPersistenceVocabulary();
+		$holder_token = $store->claim( $order, $vocabulary, 'pi_terminal', 'payment status update' );
+		$order_id     = $order->get_id();
+		$sut          = $this->create_lock_waiting_controller(
+			static function () use ( $store, $order, $vocabulary, $holder_token, $order_id ): void {
+				$completed = wc_get_order( $order_id );
+				$completed->update_meta_data( '_intention_status', 'succeeded' );
+				$completed->save();
+				$store->release( $order, $vocabulary, $holder_token );
+			}
+		);
+
+		$response = $sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal preparation logs an unexpected PHP error and answers the client's generic error.
+	 *
+	 * Client 11.1.0 logs it before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:355-356).
+	 */
+	public function test_prepare_terminal_payment_logs_an_unexpected_error(): void {
+		$logger = RecordingWcLogger::install();
+		$order  = $this->create_order( 12.34, 'USD' );
+		$this->api_client->prepare_terminal_payment_exception = new \Error( 'unexpected' );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+		$this->assertSame( array( array( 'error', 'Failed to prepare a terminal payment via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * @testdox Terminal preparation answers the client's fallback code and status for a platform error that carries neither.
+	 */
+	public function test_prepare_terminal_payment_falls_back_to_the_client_error_code(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		// A platform error envelope without a code or HTTP status (client class-wc-rest-payments-orders-controller.php:346-353).
+		$this->api_client->prepare_terminal_payment_exception = new WooPaymentsApiException( 'Prepare failed.', '', 0 );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_prepare_terminal_payment_failed', $response->get_error_code() );
+		$this->assertSame( 500, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * @testdox Terminal capture refuses an order whose stored payment is already processed, with the client's answer and no capture.
+	 *
+	 * Client 11.1.0 checks the stored intent status before reading the intent (class-wc-rest-payments-orders-controller.php:181-194).
+	 *
+	 * @dataProvider provide_processed_intent_statuses
+	 *
+	 * @param string $stored_status Stored intent status.
+	 */
+	public function test_capture_terminal_payment_refuses_a_processed_order( string $stored_status ): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_meta_data( '_intention_status', $stored_status );
+		$order->save();
+		$this->set_capturable_terminal_intent( $order );
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 'The payment cannot be captured for completed or processed orders.', $response->get_error_message() );
+		$this->assertSame( 409, $response->get_error_data()['status'] );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * Stored intent statuses the client treats as already processed.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_processed_intent_statuses(): array {
+		return array(
+			'succeeded'  => array( 'succeeded' ),
+			'canceled'   => array( 'canceled' ),
+			'processing' => array( 'processing' ),
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture refuses an intent that is not authorized, with the client's answer and no capture.
+	 */
+	public function test_capture_terminal_payment_refuses_an_intent_that_is_not_authorized(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'requires_payment_method';
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		// Client 11.1.0 class-wc-rest-payments-orders-controller.php:208-210.
+		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
+		$this->assertSame( 'The payment cannot be captured', $response->get_error_message() );
+		$this->assertSame( array(), $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal capture sends a processing intent to the capture call, as the client's authorized check does.
+	 */
+	public function test_capture_terminal_payment_sends_a_processing_intent_to_the_capture_call(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->payment_intention_response['status'] = 'processing';
+
+		$this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertCount( 1, $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal capture and preparation refuse a partially refunded order with the client's answers and no platform call.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:172-179 and :321-327.
+	 */
+	public function test_terminal_routes_refuse_a_refunded_order(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 1.00,
+			)
+		);
+
+		$capture = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+		$prepare = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame( 'wcpay_refunded_order_uncapturable', $capture->get_error_code() );
+		$this->assertSame( 'Payment cannot be captured for partially or fully refunded orders.', $capture->get_error_message() );
+		$this->assertSame( 400, $capture->get_error_data()['status'] );
+		$this->assertSame( 'wcpay_refunded_order_unpreparable', $prepare->get_error_code() );
+		$this->assertSame( 'Terminal payments cannot be prepared for partially or fully refunded orders.', $prepare->get_error_message() );
+		$this->assertSame( array(), $this->api_client->captures );
+		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
+	}
+
+	/**
+	 * @testdox A zero-amount refund row does not stop terminal capture or preparation, as the client checks the refunded total.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:173 and :322 read get_total_refunded().
+	 */
+	public function test_terminal_routes_ignore_a_zero_amount_refund(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		wc_create_refund(
+			array(
+				'order_id' => $order->get_id(),
+				'amount'   => 0,
+			)
+		);
+		$this->assertCount( 1, wc_get_order( $order->get_id() )->get_refunds() );
+
+		$prepare = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+		$capture = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $prepare );
+		$this->assertInstanceOf( WP_REST_Response::class, $capture );
+		$this->assertCount( 1, $this->api_client->captures );
+	}
+
+	/**
+	 * @testdox Terminal preparation forwards the intent and order ids and answers the platform response.
+	 */
+	public function test_prepare_terminal_payment_forwards_the_ids(): void {
+		$order = $this->create_order( 12.34, 'USD' );
+
+		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
+
+		$this->assertSame(
+			array(
+				'id'     => 'pi_terminal',
+				'object' => 'payment_intent',
+				'status' => 'requires_confirmation',
+			),
+			$response->get_data()
+		);
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'order_id'  => $order->get_id(),
+				),
+			),
+			$this->api_client->prepared_terminal_payments
+		);
+	}
+
+	/**
+	 * @testdox Terminal capture sends the platform the intent and the order total in the currency's minor units.
+	 *
+	 * @dataProvider provide_capture_amounts
+	 *
+	 * @param float  $total    Order total.
+	 * @param string $currency Order currency.
+	 * @param int    $amount   Expected amount in minor units.
+	 */
+	public function test_capture_terminal_payment_captures_the_order_total( float $total, string $currency, int $amount ): void {
+		$order = $this->create_order( $total, $currency );
+		$this->set_capturable_terminal_intent( $order );
+
+		$this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertSame(
+			array(
+				array(
+					'intent_id' => 'pi_terminal',
+					'amount'    => $amount,
+				),
+			),
+			$this->api_client->captures
+		);
+	}
+
+	/**
+	 * Order totals and their minor-unit amounts.
+	 *
+	 * @return array<string,array{0:float,1:string,2:int}>
+	 */
+	public function provide_capture_amounts(): array {
+		return array(
+			'USD, two decimals' => array( 12.34, 'USD', 1234 ),
+			'JPY, zero decimal' => array( 1234.0, 'JPY', 1234 ),
+		);
+	}
+
+	/**
+	 * @testdox An in-person subscription purchase saves the reader's generated card and turns automatic renewal on unless the store requires manual renewal.
+	 *
+	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:256-280.
+	 *
+	 * @dataProvider provide_manual_renewal_settings
+	 *
+	 * @param bool $manual_renewal_required Whether the store turns off automatic payments.
+	 * @param bool $expected_manual         Whether the subscription still renews manually.
+	 */
+	public function test_capture_terminal_payment_saves_the_generated_card_for_subscriptions( bool $manual_renewal_required, bool $expected_manual ): void {
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::MANUAL_RENEWAL_REQUIRED ] = $manual_renewal_required;
+		list( $order, $subscription_id, $user_id )                           = $this->set_up_in_person_subscription_purchase();
+		$token = $this->create_card_token( $user_id );
+		$this->replace_token_service( $this->once(), $token );
+		$renewal_at_capture           = array();
+		$this->api_client->on_capture = static function () use ( $subscription_id, &$renewal_at_capture ): void {
+			$subscription       = wc_get_order( $subscription_id );
+			$renewal_at_capture = array( $subscription->get_payment_method(), $subscription->is_manual() );
+		};
+
+		try {
+			$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+			$this->assertInstanceOf( WP_REST_Response::class, $response );
+			$this->assertSame( array( 'cod', true ), $renewal_at_capture, 'Nothing changes before the capture succeeds.' );
+			$this->assertContains( $token->get_id(), wc_get_order( $order->get_id() )->get_payment_tokens() );
+			$subscription = wc_get_order( $subscription_id );
+			$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+			$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
+			$this->assertSame( $expected_manual, $subscription->is_manual() );
+		} finally {
+			$this->reset_subscription_doubles();
+		}
+	}
+
+	/**
+	 * Store renewal settings and whether the subscription keeps renewing manually.
+	 *
+	 * @return array<string,array{0:bool,1:bool}>
+	 */
+	public function provide_manual_renewal_settings(): array {
+		return array(
+			'automatic payments allowed' => array( false, false ),
+			'manual renewal required'    => array( true, true ),
+		);
+	}
+
+	/**
+	 * @testdox A failed in-person capture leaves the subscription's card and renewal setting alone.
+	 *
+	 * Client 11.1.0 returns on a failed capture (class-wc-rest-payments-orders-controller.php:230-252) before the card step.
+	 */
+	public function test_capture_terminal_payment_saves_no_card_when_the_capture_fails(): void {
+		list( $order, $subscription_id ) = $this->set_up_in_person_subscription_purchase();
+		$this->replace_token_service( $this->never(), null );
+		// The platform's capture error envelope (client class-wc-payments-api-client.php:2852-2871, :2906-2909).
+		$this->api_client->captured_intention_exception = new WooPaymentsApiException( 'The card was declined at capture.', 'card_declined', 402 );
+
+		try {
+			$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+			$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
+			$subscription = wc_get_order( $subscription_id );
+			$this->assertSame( 'cod', $subscription->get_payment_method() );
+			$this->assertTrue( $subscription->is_manual() );
+		} finally {
+			$this->reset_subscription_doubles();
+		}
+	}
+
+	/**
+	 * @testdox A generated card that cannot be saved for a registered customer fails the request and is logged, as on the client.
+	 *
+	 * Client 11.1.0 fetches the payment method without a catch (class-wc-payments-token-service.php:135-138), so the
+	 * failure reaches the route's catch and answers wcpay_server_error (class-wc-rest-payments-orders-controller.php:289-291).
+	 */
+	public function test_capture_terminal_payment_fails_when_the_generated_card_cannot_be_saved(): void {
+		$logger                          = RecordingWcLogger::install();
+		list( $order, $subscription_id ) = $this->set_up_in_person_subscription_purchase();
+		// The token service answers null when it cannot read the payment method's details.
+		$this->replace_token_service( $this->once(), null );
+
+		try {
+			$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+			$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
+			$this->assertSame( array( array( 'error', 'Terminal payment captured, but recording it on the order failed.', 'woopayments' ) ), $logger->get_errors() );
+			$this->assertTrue( wc_get_order( $subscription_id )->is_manual() );
+		} finally {
+			$this->reset_subscription_doubles();
+		}
+	}
+
+	/**
+	 * @testdox An in-person purchase without subscriptions saves no generated card.
+	 */
+	public function test_capture_terminal_payment_saves_no_card_without_subscriptions(): void {
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->replace_token_service( $this->never(), null );
+		$this->set_capturable_terminal_intent( $order );
+		$this->set_generated_card_charge();
+
+		$response = $this->sut->capture_terminal_payment( $this->make_capture_request( $order ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array(), wc_get_order( $order->get_id() )->get_payment_tokens() );
+	}
+
+	/**
+	 * Set up a customer's order holding a manually renewing subscription, with a capturable intent whose charge generated a card.
+	 *
+	 * @return array{0:\WC_Order,1:int,2:int} Order, subscription ID and customer user ID.
+	 */
+	private function set_up_in_person_subscription_purchase(): array {
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		$order   = $this->create_order( 12.34, 'USD' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'cod' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_requires_manual_renewal( true );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                      = $subscription->get_id();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ] = array( 'parent' => array( $subscription->get_id() ) );
+		$this->set_capturable_terminal_intent( $order );
+		$this->set_generated_card_charge();
+
+		return array( $order, $subscription->get_id(), $user_id );
+	}
+
+	/**
+	 * Give the fake intent a card_present charge that generated a reusable card.
+	 *
+	 * The client reads the last entry of the intent's charges.data (class-wc-payments-api-client.php:2403) and its
+	 * payment_method_details.card_present.generated_card (class-wc-rest-payments-orders-controller.php:258).
+	 */
+	private function set_generated_card_charge(): void {
+		$this->api_client->payment_intention_response['charges'] = array(
+			'total_count' => 1,
+			'data'        => array(
+				array(
+					'id'                     => 'ch_terminal',
+					'payment_method_details' => array(
+						'type'         => 'card_present',
+						'card_present' => array( 'generated_card' => 'pm_generated' ),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Create a saved card token for a customer.
+	 *
+	 * @param int $user_id Customer user ID.
+	 * @return \WC_Payment_Token_CC
+	 */
+	private function create_card_token( int $user_id ): \WC_Payment_Token_CC {
+		$token = new \WC_Payment_Token_CC();
+		$token->set_token( 'pm_generated' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_user_id( $user_id );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+
+		return $token;
+	}
+
+	/**
+	 * Replace the container's token service with one whose token lookup is expected as given.
+	 *
+	 * @param \PHPUnit\Framework\MockObject\Rule\InvocationOrder $expected_calls Expected lookups.
+	 * @param \WC_Payment_Token|null                             $token          Token the lookup answers.
+	 */
+	private function replace_token_service( $expected_calls, ?\WC_Payment_Token $token ): void {
+		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_token_for_user' ) )
+			->getMock();
+		$token_service->expects( $expected_calls )->method( 'get_or_create_token_for_user' )->with( 'pm_generated' )->willReturn( $token );
+		wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
+	}
+
+	/**
+	 * Clear the Subscriptions doubles' registries.
+	 */
+	private function reset_subscription_doubles(): void {
+		unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::MANUAL_RENEWAL_REQUIRED ], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+	}
+
+	/**
+	 * Mobile routes whose unexpected errors are logged, with the expected log line.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_mobile_routes_with_unexpected_errors(): array {
+		return array(
+			'customer'        => array( 'create_customer', 'Failed to create or update the customer from the order via the REST API.' ),
+			'terminal intent' => array( 'create_terminal_intent', 'Failed to create a terminal payment intent via the REST API.' ),
+		);
+	}
+
+	/**
+	 * Turn WooPayments logging on, so gated lines are written.
+	 */
+	private function enable_terminal_debug_logging(): void {
+		$this->gateway_settings['enable_logging'] = 'yes';
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+	}
+
+	/**
+	 * Make the fake platform return a capturable terminal intent for an order and a succeeded capture.
+	 *
+	 * Shapes follow the PaymentIntent the client reads in capture_terminal_payment() (class-wc-rest-payments-orders-controller.php:195-213).
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	private function set_capturable_terminal_intent( \WC_Order $order ): void {
+		$this->api_client->payment_intention_response  = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+		);
+	}
+
+	/**
+	 * Build a prepare request for an order and the pi_terminal intent.
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return WP_REST_Request
+	 */
+	private function make_prepare_request( \WC_Order $order ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		return $request;
+	}
+
+	/**
+	 * Build a capture request for an order and the pi_terminal intent.
+	 *
+	 * @param \WC_Order $order Order.
+	 * @return WP_REST_Request
+	 */
+	private function make_capture_request( \WC_Order $order ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_param( 'order_id', $order->get_id() );
+		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		return $request;
+	}
+
+	/**
+	 * Create a controller whose lock waits are counted instead of slept, with a callback run on each wait.
+	 *
+	 * @param callable|null $on_wait Called with the wait number.
+	 * @return WooPaymentsMobileRestController&object{waits:int}
+	 */
+	private function create_lock_waiting_controller( ?callable $on_wait = null ): WooPaymentsMobileRestController {
+		$controller = new class( $on_wait ) extends WooPaymentsMobileRestController {
+			/**
+			 * Number of waits.
+			 *
+			 * @var int
+			 */
+			public int $waits = 0;
+
+			/**
+			 * Callback run on each wait.
+			 *
+			 * @var callable|null
+			 */
+			private $on_wait;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param callable|null $on_wait Callback run on each wait.
+			 */
+			public function __construct( ?callable $on_wait ) {
+				$this->on_wait = $on_wait;
+			}
+
+			/**
+			 * Count the wait instead of sleeping.
+			 */
+			protected function wait_before_lock_retry(): void {
+				++$this->waits;
+				if ( null !== $this->on_wait ) {
+					( $this->on_wait )( $this->waits );
+				}
+			}
+		};
+
+		return $this->create_controller( true, true, $controller );
+	}
+
+	/**
+	 * Create a native mobile REST controller.
+	 *
+	 * @param bool                                 $native_register Whether native should own route registration.
+	 * @param bool                                 $test_mode       Whether the account runs in test mode.
+	 * @param WooPaymentsMobileRestController|null $controller      Controller instance to initialize, a new one when null.
+	 * @return WooPaymentsMobileRestController
+	 */
+	private function create_controller( bool $native_register, bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'refresh_account_data' )->willReturnCallback(
+			function (): array {
+				++$this->account_refresh_calls;
+
+				return array();
+			}
+		);
+		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			function ( string $key, $fallback = null ) {
+				return array_key_exists( $key, $this->gateway_settings ) ? $this->gateway_settings[ $key ] : $fallback;
+			}
+		);
+
+		$customer_service = new WooPaymentsCustomerService();
+		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
+
+		$controller = $controller ?? new WooPaymentsMobileRestController();
+		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService() );
+
+		return $controller;
+	}
+
+	/**
+	 * Get the first order note containing a string.
+	 *
+	 * @param \WC_Order $order    Order.
+	 * @param string    $needle   Needle to search for (case-insensitive, tags stripped).
+	 * @return string
+	 */
+	private function get_order_note_containing( \WC_Order $order, string $needle ): string {
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			if ( false !== stripos( wp_strip_all_tags( (string) $note->content ), $needle ) ) {
+				return (string) $note->content;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Create a minimal order for terminal-route tests.
+	 *
+	 * @param float  $total    Order total.
+	 * @param string $currency Order currency.
+	 * @return \WC_Order
+	 */
+	private function create_order( float $total = 10.0, string $currency = 'USD' ): \WC_Order {
+		$order = WC_Helper_Order::create_order();
+		$order->set_total( $total );
+		$order->set_currency( $currency );
+		$order->set_status( 'pending' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Expected route map and HTTP methods.
+	 *
+	 * @return array<string,string[]>
+	 */
+	private function get_expected_routes(): array {
+		return array(
+			'/wc/v3/payments/connection_tokens'        => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\w+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_customer' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/readers'                  => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/readers/charges/(?P<transaction_id>\\w+)' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/readers/receipts/preview' => array( WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/readers/receipts/(?P<payment_intent_id>\\w+)' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/terminal/locations/store' => array( WP_REST_Server::READABLE ),
+			'/wc/v3/payments/terminal/locations'       => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
+			'/wc/v3/payments/terminal/locations/(?P<location_id>\\w+)' => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE, WP_REST_Server::DELETABLE ),
+		);
+	}
+
+	/**
+	 * Assert a route handler supports a method.
+	 *
+	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
+	 * @param string                         $method         Method constant.
+	 */
+	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
+		foreach ( $route_handlers as $handler ) {
+			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
+				return;
+			}
+		}
+
+		$this->fail( 'Route does not accept method ' . $method . '.' );
+	}
+
+	/**
+	 * Get the current test site's hostname.
+	 *
+	 * @return string
+	 */
+	private function get_site_location_name(): string {
+		return str_replace( array( 'https://', 'http://' ), '', get_site_url() );
+	}
+}

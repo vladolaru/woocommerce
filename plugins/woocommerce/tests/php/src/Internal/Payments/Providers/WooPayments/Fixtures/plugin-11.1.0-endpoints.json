@@ -1,0 +1,981 @@
+{
+  "schema": "woopayments-plugin-inventory.v1",
+  "inventory": "endpoints",
+  "source": {
+    "plugin": "woocommerce-payments",
+    "tag": "11.1.0",
+    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+  },
+  "rest_route_count": 96,
+  "rest_routes": [
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/accounts/session",
+      "sample_path": "/wc/v3/payments/accounts/session",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-accounts-controller.php:36"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/accounts",
+      "sample_path": "/wc/v3/payments/accounts",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-accounts-controller.php:26"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/authorizations/(?P<payment_intent_id>\\w+)",
+      "sample_path": "/wc/v3/payments/authorizations/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/authorizations/summary",
+      "sample_path": "/wc/v3/payments/authorizations/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/authorizations",
+      "sample_path": "/wc/v3/payments/authorizations",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-authorizations-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/capital/active_loan_summary",
+      "sample_path": "/wc/v3/payments/capital/active_loan_summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-capital-controller.php:28"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/capital/loans",
+      "sample_path": "/wc/v3/payments/capital/loans",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-capital-controller.php:37"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/charges/(?P<charge_id>\\w+)",
+      "sample_path": "/wc/v3/payments/charges/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-charges-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/charges/order/(?P<order_id>\\w+)",
+      "sample_path": "/wc/v3/payments/charges/order/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-charges-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/connection_tokens",
+      "sample_path": "/wc/v3/payments/connection_tokens",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-connection-tokens-controller.php:26"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/customers/(?P<customer_id>\\w+)/payment_methods",
+      "sample_path": "/wc/v3/payments/customers/sample1/payment_methods",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-customer-controller.php:50"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits/(?P<deposit_id>\\w+)",
+      "sample_path": "/wc/v3/payments/deposits/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:65"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits/download/(?P<export_id>.*)",
+      "sample_path": "/wc/v3/payments/deposits/download/sample",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:56"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits/download",
+      "sample_path": "/wc/v3/payments/deposits/download",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits/overview-all",
+      "sample_path": "/wc/v3/payments/deposits/overview-all",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:75"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits/summary",
+      "sample_path": "/wc/v3/payments/deposits/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/deposits",
+      "sample_path": "/wc/v3/payments/deposits",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-deposits-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/dispute-readiness/dismiss",
+      "sample_path": "/wc/v3/payments/dispute-readiness/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-dispute-readiness-controller.php:56"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/dispute-readiness/statement-descriptor/confirm",
+      "sample_path": "/wc/v3/payments/dispute-readiness/statement-descriptor/confirm",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-dispute-readiness-controller.php:66"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/dispute-readiness",
+      "sample_path": "/wc/v3/payments/dispute-readiness",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-dispute-readiness-controller.php:46"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes/(?P<dispute_id>\\w+)/close",
+      "sample_path": "/wc/v3/payments/disputes/sample1/close",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:82"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes/(?P<dispute_id>\\w+)",
+      "sample_path": "/wc/v3/payments/disputes/sample1",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:64"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes/download/(?P<export_id>[^/\\\\%]+)",
+      "sample_path": "/wc/v3/payments/disputes/download/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:37"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes/download",
+      "sample_path": "/wc/v3/payments/disputes/download",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:55"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes/summary",
+      "sample_path": "/wc/v3/payments/disputes/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:46"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/disputes",
+      "sample_path": "/wc/v3/payments/disputes",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-disputes-controller.php:28"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/documents/(?P<document_id>[\\w-]+)",
+      "sample_path": "/wc/v3/payments/documents/sample-1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-documents-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/documents/summary",
+      "sample_path": "/wc/v3/payments/documents/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-documents-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/documents",
+      "sample_path": "/wc/v3/payments/documents",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-documents-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/file/(?P<file_id>\\w+)/content",
+      "sample_path": "/wc/v3/payments/file/sample1/content",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-files-controller.php:46"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/file/(?P<file_id>\\w+)/details",
+      "sample_path": "/wc/v3/payments/file/sample1/details",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-files-controller.php:36"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/file/(?P<file_id>\\w+)",
+      "sample_path": "/wc/v3/payments/file/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-files-controller.php:56"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/file",
+      "sample_path": "/wc/v3/payments/file",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-files-controller.php:26"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/fraud_outcomes/(?P<id>\\w+)/latest",
+      "sample_path": "/wc/v3/payments/fraud_outcomes/sample1/latest",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-fraud-outcomes-controller.php:26"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/currencies/(?P<currency_code>[A-Za-z]{3})",
+      "sample_path": "/wc/v3/payments/multi-currency/currencies/abc",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:98"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/currencies",
+      "sample_path": "/wc/v3/payments/multi-currency/currencies",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:72"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/get-settings",
+      "sample_path": "/wc/v3/payments/multi-currency/get-settings",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:115"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/public/config",
+      "sample_path": "/wc/v3/payments/multi-currency/public/config",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:61"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/update-enabled-currencies",
+      "sample_path": "/wc/v3/payments/multi-currency/update-enabled-currencies",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:82"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/multi-currency/update-settings",
+      "sample_path": "/wc/v3/payments/multi-currency/update-settings",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/multi-currency/RestController.php:159"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/business_types",
+      "sample_path": "/wc/v3/payments/onboarding/business_types",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:158"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/fields",
+      "sample_path": "/wc/v3/payments/onboarding/fields",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:148"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/kyc/finalize",
+      "sample_path": "/wc/v3/payments/onboarding/kyc/finalize",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:104"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/kyc/session",
+      "sample_path": "/wc/v3/payments/onboarding/kyc/session",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:52"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/reset",
+      "sample_path": "/wc/v3/payments/onboarding/reset",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:126"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/test_drive_account/disable",
+      "sample_path": "/wc/v3/payments/onboarding/test_drive_account/disable",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:206"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/onboarding/test_drive_account/init",
+      "sample_path": "/wc/v3/payments/onboarding/test_drive_account/init",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-onboarding-controller.php:168"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\d+)/create_customer",
+      "sample_path": "/wc/v3/payments/orders/123/create_customer",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:143"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\w+)/cancel_authorization",
+      "sample_path": "/wc/v3/payments/orders/sample1/cancel_authorization",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:120"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\w+)/capture_authorization",
+      "sample_path": "/wc/v3/payments/orders/sample1/capture_authorization",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:106"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\w+)/capture_terminal_payment",
+      "sample_path": "/wc/v3/payments/orders/sample1/capture_terminal_payment",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:73"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\w+)/create_terminal_intent",
+      "sample_path": "/wc/v3/payments/orders/sample1/create_terminal_intent",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:134"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/orders/(?P<order_id>\\w+)/prepare_terminal_payment",
+      "sample_path": "/wc/v3/payments/orders/sample1/prepare_terminal_payment",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-orders-controller.php:87"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/payment_intents/(?P<payment_intent_id>\\w+)",
+      "sample_path": "/wc/v3/payments/payment_intents/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-payment-intents-controller.php:75"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/payment_intents",
+      "sample_path": "/wc/v3/payments/payment_intents",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-payment-intents-controller.php:85"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/pm-promotions/(?P<id>[a-zA-Z0-9_-]+)/activate",
+      "sample_path": "/wc/v3/payments/pm-promotions/sample-1/activate",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-pm-promotions-controller.php:56"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/pm-promotions/(?P<id>[a-zA-Z0-9_-]+)/dismiss",
+      "sample_path": "/wc/v3/payments/pm-promotions/sample-1/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-pm-promotions-controller.php:74"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/pm-promotions",
+      "sample_path": "/wc/v3/payments/pm-promotions",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-pm-promotions-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/readers/charges/(?P<transaction_id>\\w+)",
+      "sample_path": "/wc/v3/payments/readers/charges/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-reader-controller.php:115"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/readers/receipts/(?P<payment_intent_id>\\w+)",
+      "sample_path": "/wc/v3/payments/readers/receipts/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-reader-controller.php:133"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/readers/receipts/preview",
+      "sample_path": "/wc/v3/payments/readers/receipts/preview",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-reader-controller.php:124"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/readers",
+      "sample_path": "/wc/v3/payments/readers",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-reader-controller.php:79"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/refund",
+      "sample_path": "/wc/v3/payments/refund",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-refunds-controller.php:28"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/authorizations/(?P<id>\\w+)",
+      "sample_path": "/wc/v3/payments/reports/authorizations/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-authorizations-controller.php:41"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/authorizations",
+      "sample_path": "/wc/v3/payments/reports/authorizations",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-authorizations-controller.php:28"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/balance",
+      "sample_path": "/wc/v3/payments/reports/balance",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-balance-controller.php:31"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)",
+      "sample_path": "/wc/v3/payments/reports/fees/download/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-fees-controller.php:90"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/fees/download",
+      "sample_path": "/wc/v3/payments/reports/fees/download",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-fees-controller.php:78"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/fees/summary",
+      "sample_path": "/wc/v3/payments/reports/fees/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-fees-controller.php:65"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/fees",
+      "sample_path": "/wc/v3/payments/reports/fees",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-fees-controller.php:51"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/transactions/(?P<id>\\w+)",
+      "sample_path": "/wc/v3/payments/reports/transactions/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-transactions-controller.php:40"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/reports/transactions",
+      "sample_path": "/wc/v3/payments/reports/transactions",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/reports/class-wc-rest-payments-reports-transactions-controller.php:27"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/settings/(?P<option_name>[a-zA-Z0-9_-]+)",
+      "sample_path": "/wc/v3/payments/settings/sample-1",
+      "methods": [
+        "PATCH",
+        "POST",
+        "PUT"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-settings-option-controller.php:46"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/settings/schedule-stripe-billing-migration",
+      "sample_path": "/wc/v3/payments/settings/schedule-stripe-billing-migration",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-settings-controller.php:352"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/settings",
+      "sample_path": "/wc/v3/payments/settings",
+      "methods": [
+        "GET",
+        "PATCH",
+        "POST",
+        "PUT"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-settings-controller.php:95"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/survey/reports-feedback",
+      "sample_path": "/wc/v3/payments/survey/reports-feedback",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-survey-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/terminal/locations/(?P<location_id>\\w+)",
+      "sample_path": "/wc/v3/payments/terminal/locations/sample1",
+      "methods": [
+        "DELETE",
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:39"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/terminal/locations/store",
+      "sample_path": "/wc/v3/payments/terminal/locations/store",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:30"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/terminal/locations",
+      "sample_path": "/wc/v3/payments/terminal/locations",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-terminal-locations-controller.php:76"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/timeline/(?P<intention_id>\\w+)",
+      "sample_path": "/wc/v3/payments/timeline/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-timeline-controller.php:25"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/tos/reactivate",
+      "sample_path": "/wc/v3/payments/tos/reactivate",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-tos-controller.php:75"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/tos/stripe_track_connected",
+      "sample_path": "/wc/v3/payments/tos/stripe_track_connected",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-tos-controller.php:85"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/tos",
+      "sample_path": "/wc/v3/payments/tos",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-tos-controller.php:65"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/download/(?P<export_id>[^/\\\\%]+)",
+      "sample_path": "/wc/v3/payments/transactions/download/sample1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:47"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/download",
+      "sample_path": "/wc/v3/payments/transactions/download",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/fraud-outcomes/download",
+      "sample_path": "/wc/v3/payments/transactions/fraud-outcomes/download",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:101"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/fraud-outcomes/search",
+      "sample_path": "/wc/v3/payments/transactions/fraud-outcomes/search",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:92"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/fraud-outcomes/summary",
+      "sample_path": "/wc/v3/payments/transactions/fraud-outcomes/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:83"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/fraud-outcomes",
+      "sample_path": "/wc/v3/payments/transactions/fraud-outcomes",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:74"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/search",
+      "sample_path": "/wc/v3/payments/transactions/search",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:65"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions/summary",
+      "sample_path": "/wc/v3/payments/transactions/summary",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:56"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/transactions",
+      "sample_path": "/wc/v3/payments/transactions",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-transactions-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/vat/(?P<vat_number>[\\w\\.\\%]+)",
+      "sample_path": "/wc/v3/payments/vat/sample.1",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-vat-controller.php:29"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/vat",
+      "sample_path": "/wc/v3/payments/vat",
+      "methods": [
+        "PATCH",
+        "POST",
+        "PUT"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-vat-controller.php:38"
+    },
+    {
+      "namespace": "wc/v3",
+      "route": "/payments/webhook",
+      "sample_path": "/wc/v3/payments/webhook",
+      "methods": [
+        "POST"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-payments-webhook-controller.php:58"
+    },
+    {
+      "namespace": "payments/woopay",
+      "route": "/session",
+      "sample_path": "/payments/woopay/session",
+      "methods": [
+        "GET"
+      ],
+      "plugin_site": "includes/admin/class-wc-rest-woopay-session-controller.php:37"
+    }
+  ],
+  "ajax_action_count": 22,
+  "ajax_actions": [
+    {
+      "action": "wc_ajax_wcpay_add_to_cart",
+      "plugin_site": "includes/express-checkout/class-wc-payments-express-checkout-button-display-handler.php:89"
+    },
+    {
+      "action": "wc_ajax_wcpay_check_bnpl_availability",
+      "plugin_site": "includes/class-wc-payments.php:726"
+    },
+    {
+      "action": "wc_ajax_wcpay_get_cart_total",
+      "plugin_site": "includes/class-wc-payments.php:725"
+    },
+    {
+      "action": "wc_ajax_wcpay_get_woopay_minimum_session_data",
+      "plugin_site": "includes/class-wc-payments.php:1720"
+    },
+    {
+      "action": "wc_ajax_wcpay_get_woopay_session",
+      "plugin_site": "includes/class-wc-payments.php:1717"
+    },
+    {
+      "action": "wc_ajax_wcpay_get_woopay_signature",
+      "plugin_site": "includes/class-wc-payments.php:1719"
+    },
+    {
+      "action": "wc_ajax_wcpay_init_woopay",
+      "plugin_site": "includes/class-wc-payments.php:1716"
+    },
+    {
+      "action": "wc_ajax_wcpay_set_woopay_phone_number",
+      "plugin_site": "includes/class-wc-payments.php:1718"
+    },
+    {
+      "action": "wc_ajax_wcpay_shopper_set_woopay_appearance",
+      "plugin_site": "includes/class-wc-payments.php:1724"
+    },
+    {
+      "action": "wp_ajax_create_setup_intent",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:570"
+    },
+    {
+      "action": "wp_ajax_get_identity",
+      "plugin_site": "includes/class-woopay-tracker.php:69"
+    },
+    {
+      "action": "wp_ajax_nopriv_get_identity",
+      "plugin_site": "includes/class-woopay-tracker.php:70"
+    },
+    {
+      "action": "wp_ajax_nopriv_platform_tracks",
+      "plugin_site": "includes/class-woopay-tracker.php:68"
+    },
+    {
+      "action": "wp_ajax_nopriv_update_order_status",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:568"
+    },
+    {
+      "action": "wp_ajax_nopriv_wc_bookings_calculate_costs",
+      "plugin_site": "includes/multi-currency/Compatibility/WooCommerceBookings.php:59"
+    },
+    {
+      "action": "wp_ajax_nopriv_woopay_express_checkout_button_show_error_notice",
+      "plugin_site": "includes/class-wc-payments-woopay-button-handler.php:134"
+    },
+    {
+      "action": "wp_ajax_platform_tracks",
+      "plugin_site": "includes/class-woopay-tracker.php:67"
+    },
+    {
+      "action": "wp_ajax_update_order_status",
+      "plugin_site": "includes/class-wc-payment-gateway-wcpay.php:567"
+    },
+    {
+      "action": "wp_ajax_wc_bookings_calculate_costs",
+      "plugin_site": "includes/multi-currency/Compatibility/WooCommerceBookings.php:58"
+    },
+    {
+      "action": "wp_ajax_wcpay_admin_set_woopay_appearance",
+      "plugin_site": "includes/class-wc-payments.php:1722"
+    },
+    {
+      "action": "wp_ajax_wcpay_get_user_payment_tokens",
+      "plugin_site": "includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:340"
+    },
+    {
+      "action": "wp_ajax_woopay_express_checkout_button_show_error_notice",
+      "plugin_site": "includes/class-wc-payments-woopay-button-handler.php:133"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import sanitizeHTML from '~/lib/sanitize-html';
 import { EllipsisMenuWrapper as EllipsisMenu } from '~/settings-payments/components/ellipsis-menu-content';
 import {
 	isWooPayments,
+	isCoreNativeWooPayments,
 	hasIncentive,
 	isWooPayEligible,
 	recordPaymentsProviderEvent,
@@ -25,6 +26,7 @@ import { DefaultDragHandle } from '~/settings-payments/components/sortable';
 import { StatusBadge } from '~/settings-payments/components/status-badge';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
 import { OfficialBadge } from '~/settings-payments/components/official-badge';
+import { NativeBadge } from '~/settings-payments/components/native-badge';
 
 type PaymentExtensionSuggestionListItemProps = {
 	/**
@@ -78,10 +80,13 @@ export const PaymentExtensionSuggestionListItem = ( {
 	...props
 }: PaymentExtensionSuggestionListItemProps ) => {
 	const incentive = hasIncentive( suggestion ) ? suggestion._incentive : null;
+	const isCoreNative = isCoreNativeWooPayments( suggestion );
 
 	// Determine the CTA button label based on the extension state.
 	let ctaButtonLabel = __< string >( 'Install', 'woocommerce' );
-	if ( pluginInstalled ) {
+	if ( isCoreNative ) {
+		ctaButtonLabel = __( 'Set up', 'woocommerce' );
+	} else if ( pluginInstalled ) {
 		ctaButtonLabel = __( 'Enable', 'woocommerce' );
 	} else if ( installingPlugin === suggestion.id ) {
 		ctaButtonLabel = __( 'Installing', 'woocommerce' );
@@ -118,11 +123,15 @@ export const PaymentExtensionSuggestionListItem = ( {
 						{ incentive && (
 							<IncentiveStatusBadge incentive={ incentive } />
 						) }
-						{ /* All payment extension suggestions are official. */ }
-						<OfficialBadge
-							variant="expanded"
-							suggestionId={ suggestion.id }
-						/>
+						{ /* All payment extension suggestions are official, except the one built into WooCommerce. */ }
+						{ suggestion._native ? (
+							<NativeBadge suggestionId={ suggestion.id } />
+						) : (
+							<OfficialBadge
+								variant="expanded"
+								suggestionId={ suggestion.id }
+							/>
+						) }
 					</span>
 					<span
 						className="woocommerce-list__item-content"

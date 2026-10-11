@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Tell the shopper when the WooPayments classic payment form fails to load instead of leaving the place-order button silently unresponsive.

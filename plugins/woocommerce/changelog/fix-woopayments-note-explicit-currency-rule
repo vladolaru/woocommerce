@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Add currency codes to WooPayments order note amounts only when Multi-Currency is on with a second currency, as WooPayments does.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Fire the WooPayments extension's wcpay_prepare_fraud_config filter for each fraud service config, under its own name, as the extension does.
+

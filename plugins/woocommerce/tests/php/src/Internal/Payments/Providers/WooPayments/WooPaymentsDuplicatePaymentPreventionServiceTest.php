@@ -1,0 +1,1079 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use WC_Order;
+use WC_Payment_Gateway;
+use WC_Unit_Test_Case;
+use WP_Error;
+
+/**
+ * Tests for the WooPaymentsDuplicatePaymentPreventionService class.
+ */
+class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
+
+	/**
+	 * @testdox Should redirect duplicate pending orders to a paid session order with matching cart content.
+	 */
+	public function test_check_against_session_processing_order_redirects_to_paid_matching_session_order(): void {
+		$session        = $this->create_session();
+		$sut            = $this->create_service( $session );
+		$same_cart_hash = 'same-cart-hash';
+		$customer_id    = self::factory()->user->create();
+		$session_order  = $this->create_order( $same_cart_hash, 'completed', $customer_id );
+		$current_order  = $this->create_order( $same_cart_hash, 'pending', $customer_id );
+		$current_id     = $current_order->get_id();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+
+		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_paid_for_previous_order=yes', $result['redirect'] );
+		$this->assertStringContainsString( (string) $session_order->get_id(), $result['redirect'] );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $session_order->get_id() ) );
+		$this->assertStringContainsString( 'detected and deleted order ID ' . $current_id, (string) $notes[0]->content );
+
+		$deleted_order = wc_get_order( $current_id );
+		$this->assertInstanceOf( WC_Order::class, $deleted_order );
+		$this->assertSame( 'trash', $deleted_order->get_status() );
+	}
+
+	/**
+	 * @testdox Landing on the order-received page of $page decides whether a later same-cart order is still treated as a duplicate.
+	 *
+	 * Client 11.1.0 src/Internal/Service/DuplicatePaymentPreventionService.php:100-107 clears the session's processing order
+	 * when the shopper reaches that order's order-received page, so a later legitimate repeat order is not deleted.
+	 *
+	 * @testWith ["the processing order", true]
+	 *           ["another order", false]
+	 *
+	 * @param string $page           Whose order-received page the shopper lands on.
+	 * @param bool   $repeat_is_kept Whether the later repeat order goes ahead.
+	 */
+	public function test_landing_on_order_received_page_clears_the_processing_order( string $page, bool $repeat_is_kept ): void {
+		global $wp;
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$session_order = $this->create_order( 'same-cart-hash', 'completed', $customer_id );
+		$other_order   = $this->create_order( 'other-cart-hash', 'completed', $customer_id );
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
+		$wp->query_vars['order-received'] = (string) ( 'the processing order' === $page ? $session_order->get_id() : $other_order->get_id() );
+
+		try {
+			$sut->clear_session_processing_order_after_landing_order_received_page();
+		} finally {
+			unset( $wp->query_vars['order-received'] );
+		}
+		$repeat_order = $this->create_order( 'same-cart-hash', 'pending', $customer_id );
+		$result       = $sut->check_against_session_processing_order( $repeat_order, $this->create_gateway() );
+
+		// A non-null result is the redirect to the earlier order after deleting the repeat one.
+		$this->assertSame( $repeat_is_kept, null === $result );
+	}
+
+	/**
+	 * @testdox Should continue processing when the session order is not a paid matching duplicate.
+	 *
+	 * @dataProvider session_processing_order_mismatch_data
+	 *
+	 * @param string $session_cart_hash Session order cart hash.
+	 * @param string $session_status    Session order status.
+	 * @param string $current_cart_hash Current order cart hash.
+	 * @param string $current_status    Current order status.
+	 * @param bool   $same_customer     Whether both orders belong to the same customer.
+	 */
+	public function test_check_against_session_processing_order_returns_null_for_mismatches( string $session_cart_hash, string $session_status, string $current_cart_hash, string $current_status = 'pending', bool $same_customer = true ): void {
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$session_order = $this->create_order( $session_cart_hash, $session_status, $customer_id );
+		$current_order = $this->create_order( $current_cart_hash, $current_status, $same_customer ? $customer_id : self::factory()->user->create() );
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $session_order->get_id() );
+
+		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+
+		$this->assertNull( $result );
+		$this->assertSame( $current_status, wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );
+	}
+
+	/**
+	 * @testdox Should continue processing when the session order is the current order, paid since the checkout loaded it.
+	 *
+	 * Client 11.1.0 includes/class-duplicate-payment-prevention-service.php:183-185.
+	 */
+	public function test_check_against_session_processing_order_returns_null_for_the_current_order(): void {
+		$session       = $this->create_session();
+		$sut           = $this->create_service( $session );
+		$customer_id   = self::factory()->user->create();
+		$current_order = $this->create_order( 'same-hash', 'pending', $customer_id );
+		$paid_copy     = wc_get_order( $current_order->get_id() );
+		$paid_copy->set_status( 'processing' );
+		$paid_copy->save();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $current_order->get_id() );
+
+		$result = $sut->check_against_session_processing_order( $current_order, $this->create_gateway() );
+
+		$this->assertNull( $result );
+		$this->assertSame( 'processing', wc_get_order( $current_order->get_id() )->get_status(), 'The current order must not be deleted.' );
+	}
+
+	/**
+	 * Data provider for session-order mismatch cases.
+	 *
+	 * @return array<string,array<int,string|bool>>
+	 */
+	public function session_processing_order_mismatch_data(): array {
+		return array(
+			'different cart hash with completed session order' => array( 'session-hash', 'completed', 'current-hash' ),
+			'different cart hash with processing session order' => array( 'session-hash', 'processing', 'current-hash' ),
+			'same cart hash with pending session order'   => array( 'same-hash', 'pending', 'same-hash' ),
+			'same cart hash with cancelled session order' => array( 'same-hash', 'cancelled', 'same-hash' ),
+			// Client `class-duplicate-payment-prevention-service.php:175` (11.1.0):
+			// a failed session order is not a paid status, so a same-cart retry must not
+			// be redirected to it; the retry proceeds to charge normally.
+			'same cart hash with failed session order'    => array( 'same-hash', 'failed', 'same-hash' ),
+			// Client 11.1.0 includes/class-duplicate-payment-prevention-service.php:179-181 and :187-189.
+			'same cart hash with paid session order and a current order that is not pending' => array( 'same-hash', 'completed', 'same-hash', 'failed' ),
+			'same cart hash with paid session order of another customer' => array( 'same-hash', 'completed', 'same-hash', 'pending', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should store and remove the processing order ID in the extension-compatible session key.
+	 */
+	public function test_session_processing_order_roundtrip_uses_extension_session_key(): void {
+		$session = $this->create_session();
+		$sut     = $this->create_service( $session );
+
+		$sut->maybe_update_session_processing_order( 123 );
+		$this->assertSame( 123, $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$sut->remove_session_processing_order( 456 );
+		$this->assertSame( 123, $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$sut->remove_session_processing_order( 123 );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+	}
+
+	/**
+	 * @testdox Should clear the processing order when WooCommerce completes its payment lifecycle.
+	 */
+	public function test_payment_complete_hook_clears_the_matching_processing_order(): void {
+		$session = $this->create_session();
+		$sut     = $this->create_service( $session );
+		$order   = $this->create_order();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+		$enable_native = static fn(): bool => true;
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $enable_native );
+
+		$this->assertTrue( method_exists( $sut, 'register' ), 'The duplicate-payment service should own its completion hook.' );
+
+		try {
+			$sut->register();
+			$this->assertNotFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
+
+			do_action( 'woocommerce_payment_complete', $order->get_id() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercise the registered completion callback.
+
+			$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $enable_native );
+		}
+	}
+
+	/**
+	 * @testdox Should not register session cleanup when native does not own the payments runtime.
+	 */
+	public function test_register_skips_payment_complete_hook_when_native_does_not_own_runtime(): void {
+		$sut            = $this->create_service();
+		$disable_native = static fn(): bool => false;
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $disable_native );
+
+		try {
+			$sut->register();
+
+			$this->assertFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
+		} finally {
+			remove_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $disable_native );
+		}
+	}
+
+	/**
+	 * @testdox Should ignore orders without an attached PaymentIntent ID.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_ignores_missing_or_setup_intents(): void {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->never() )
+			->method( 'get_payment_intention' );
+
+		$sut   = $this->create_service( $this->create_session(), $api_client );
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'seti_existing' );
+		$order->save();
+
+		$this->assertNull( $sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() ) );
+	}
+
+	/**
+	 * @testdox A platform error fetching the attached PaymentIntent is logged with its status and code, never its message.
+	 */
+	public function test_attached_intent_fetch_failure_log_leaves_out_platform_text(): void {
+		self::enable_woopayments_debug_logging();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willThrowException( self::make_provider_error() );
+		$sut   = $this->create_service( $this->create_session(), $api_client );
+		$order = $this->create_order();
+		$order->update_meta_data( '_intent_id', 'pi_attached' );
+		$order->save();
+		$logger = RecordingWcLogger::install();
+
+		$sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$context = $this->get_logged_context( $logger, 'Failed to fetch attached native WooPayments payment intent.' );
+		$this->assertSame( array( 404, 'resource_missing', 'pi_attached' ), array( $context['http_status'], $context['error_code'], $context['intent_id'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox Should apply a successful attached PaymentIntent and redirect without creating another charge.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_returns_redirect_and_applies_lifecycle(): void {
+		$session = $this->create_session();
+		$order   = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '12.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+
+		$sut = $this->create_service( $session, $api_client );
+
+		$result = $sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertSame( 'ch_existing', $order->get_meta( '_charge_id', true ) );
+		$this->assertSame( 'pm_existing', $order->get_meta( '_payment_method_id', true ) );
+		$this->assertStringContainsString(
+			'successfully charged',
+			implode( ' ', array_map( static fn( object $note ): string => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ) )
+		);
+	}
+
+	/**
+	 * @testdox Recovering an already-succeeded attached intent writes no fee or net, as the client's duplicate prevention writes none (class-duplicate-payment-prevention-service.php:95-143).
+	 */
+	public function test_attached_succeeded_intent_writes_no_fee_meta(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '12.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$intent                                   = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$intent['charges']['data'][0]['captured'] = true;
+		$intent['charges']['data'][0]['application_fee_amount'] = 65;
+		$intent['charges']['data'][0]['fee_breakdown_v1']       = array(
+			'totals' => array(
+				'fee' => array(
+					'amount'   => 65,
+					'currency' => 'usd',
+				),
+				'net' => array(
+					'amount'   => 1135,
+					'currency' => 'usd',
+				),
+			),
+		);
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $intent );
+
+		$this->create_service( $this->create_session(), $api_client )->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertContains( $order->get_status(), wc_get_is_paid_statuses() );
+		$this->assertFalse( $order->meta_exists( '_wcpay_transaction_fee' ) );
+		$this->assertFalse( $order->meta_exists( '_wcpay_net' ) );
+	}
+
+	/**
+	 * @testdox A succeeded attached PaymentIntent schedules the Fee details job once, and the same check again schedules none.
+	 *
+	 * Client 11.1.0 applies the attached intent through update_order_status_from_intent()
+	 * (class-duplicate-payment-prevention-service.php:143), whose mark_payment_completed() schedules the job when it first
+	 * writes the payment note and returns once the note exists (class-wc-payments-order-service.php:1565-1599).
+	 */
+	public function test_attached_succeeded_intent_schedules_the_fee_details_job_once(): void {
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+		$sut = $this->create_service( $this->create_session(), $api_client );
+
+		$sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$this->assertSame( array( $this->fee_details_job_args( $order ) ), $this->get_pending_fee_details_job_args() );
+
+		as_unschedule_all_actions( WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION );
+		$sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$this->assertSame( array(), $this->get_pending_fee_details_job_args() );
+	}
+
+	/**
+	 * The Fee details job's arguments for the attached intent, as the client schedules it.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<string,mixed>
+	 */
+	private function fee_details_job_args( WC_Order $order ): array {
+		return array(
+			'order_id'     => $order->get_id(),
+			'intent_id'    => 'pi_existing',
+			'is_test_mode' => false,
+		);
+	}
+
+	/**
+	 * Get the arguments of every pending Fee details job.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_pending_fee_details_job_args(): array {
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'group'    => 'woocommerce_payments',
+				'per_page' => -1,
+			)
+		);
+
+		return array_values( array_map( static fn( $action ): array => $action->get_args(), $actions ) );
+	}
+
+	/**
+	 * @testdox Attached intent recovery does not persist effects when lifecycle ownership is unavailable.
+	 */
+	public function test_attached_intent_does_not_persist_effects_before_lifecycle_application(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_payment_method_title( 'Card' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )
+			->willReturn( $this->create_intent_response( $order, 'succeeded', 1200 ) );
+		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
+			->getMock();
+		$fee_details_note_controller->expects( $this->once() )->method( 'apply_and_schedule_fee_details_with_lock' );
+
+		$result   = $this->create_service( $this->create_session(), $api_client, $fee_details_note_controller )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$reloaded = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+	}
+
+	/**
+	 * @testdox Authorized attached PaymentIntent statuses redirect without creating another charge.
+	 *
+	 * @dataProvider authorized_attached_intent_statuses
+	 *
+	 * @param string $intent_status Provider intent status.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_redirects_for_every_authorized_status( string $intent_status ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $this->create_intent_response( $order, $intent_status, 1200 ) );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+		$this->assertSame( $intent_status, $order->get_meta( '_intention_status', true ) );
+	}
+
+	/**
+	 * Authorized attached intent statuses not already covered by the succeeded-specific test.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function authorized_attached_intent_statuses(): array {
+		return array(
+			'processing'       => array( 'processing' ),
+			'requires capture' => array( 'requires_capture' ),
+		);
+	}
+
+	/**
+	 * @testdox Non-authorized or wrong-order attached PaymentIntents continue normal processing.
+	 *
+	 * @dataProvider invalid_attached_intent_data
+	 *
+	 * @param string $intent_status        Provider intent status.
+	 * @param bool   $use_current_order_id Whether intent metadata owns the current order.
+	 * @param string $order_status         Order status to start the current order at.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_rejects_invalid_status_or_order_ownership( string $intent_status, bool $use_current_order_id, string $order_status = 'pending' ): void {
+		$order = $this->create_order( 'hash', $order_status );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$intent                         = $this->create_intent_response( $order, $intent_status, 1200 );
+		$intent['metadata']['order_id'] = $use_current_order_id ? (string) $order->get_id() : (string) ( $order->get_id() + 1 );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $intent );
+
+		$result = $this->create_service( $this->create_session(), $api_client )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertNull( $result );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( $order_status, $order->get_status() );
+	}
+
+	/**
+	 * Invalid attached intent status and ownership fixtures from the extension contract.
+	 *
+	 * @return array<string,array{0:string,1:bool,2?:string}>
+	 */
+	public function invalid_attached_intent_data(): array {
+		return array(
+			'requires action for current order'         => array( 'requires_action', true ),
+			'requires action for another order'         => array( 'requires_action', false ),
+			'succeeded for another order'               => array( 'succeeded', false ),
+			// Client `class-duplicate-payment-prevention-service.php:105-107` (11.1.0): a declined
+			// intent attached to the current order must not block a retry. Modeled on a `failed`
+			// order, the real status a checkout carries after a decline.
+			'requires payment method for current order' => array( 'requires_payment_method', true, 'failed' ),
+		);
+	}
+
+	/**
+	 * @testdox An attached succeeded PaymentIntent that is $_dataName $expected.
+	 *
+	 * A refunded or disputed intent keeps `succeeded`; client 11.1.0 reads only the status
+	 * (class-duplicate-payment-prevention-service.php:105-107) and would complete the order from it.
+	 *
+	 * @dataProvider attached_intent_charges
+	 *
+	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.
+	 * @param string              $expected      What the guard does: "charges again", "refuses the submit" or "pays the order".
+	 */
+	public function test_attached_intent_with_money_given_back_or_disputed( array $charge_fields, string $expected ): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$result = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, $charge_fields ) ) )
+			->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+		$order  = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		if ( 'pays the order' === $expected ) {
+			$this->assertIsArray( $result );
+			$this->assertSame( 'pi_existing', $order->get_transaction_id() );
+			return;
+		}
+
+		if ( 'refuses the submit' === $expected ) {
+			$this->assertInstanceOf( WP_Error::class, $result );
+			$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $result->get_error_code() );
+			$this->assertNotSame( '', $result->get_error_message() );
+		} else {
+			$this->assertNull( $result );
+		}
+		$this->assertSame( '', $order->get_transaction_id() );
+		$this->assertSame( 'pending', $order->get_status() );
+	}
+
+	/**
+	 * Charges of an attached succeeded intent.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 */
+	public function attached_intent_charges(): array {
+		return array(
+			'fully refunded'            => array(
+				array(
+					'refunded'        => true,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again',
+			),
+			'refunded up to its amount' => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 1200,
+					'disputed'        => false,
+				),
+				'charges again',
+			),
+			'disputed'                  => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 0,
+					'disputed'        => true,
+				),
+				'refuses the submit',
+			),
+			'partly refunded'           => array(
+				array(
+					'refunded'        => false,
+					'amount_refunded' => 500,
+					'disputed'        => false,
+				),
+				'pays the order',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A disputed attached payment refuses every submit and notes the order once, naming the intent.
+	 */
+	public function test_disputed_attached_intent_notes_the_order_once_across_retries(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+		$sut = $this->create_service(
+			$this->create_session(),
+			$this->create_api_client_answering(
+				$this->create_charged_intent(
+					$order,
+					array(
+						'amount_refunded' => 0,
+						'disputed'        => true,
+					)
+				)
+			)
+		);
+
+		foreach ( array( 1, 2, 3 ) as $attempt ) {
+			$result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+			$this->assertInstanceOf( WP_Error::class, $result, "Attempt $attempt" );
+		}
+
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
+		);
+		$this->assertCount( 1, $notes );
+	}
+
+	/**
+	 * @testdox Two submits that loaded the order before either noted the dispute write the dispute note once.
+	 *
+	 * Both requests read the order before the guard runs; the second one's instance holds no marker even after the first
+	 * saved it, so the marker is read again from storage while the note is written.
+	 */
+	public function test_disputed_note_is_written_once_for_order_instances_loaded_before_either_submit(): void {
+		$order  = $this->create_order_with_disputed_attached_intent();
+		$sut    = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$first  = wc_get_order( $order->get_id() );
+		$second = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $first );
+		$this->assertInstanceOf( WC_Order::class, $second );
+
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( $first, $this->create_gateway() ) );
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( $second, $this->create_gateway() ) );
+
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+		// The second submit found the note already written; it must still release the lock it took.
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$token      = $store->claim( $order, $vocabulary, 'refund_key', 'refund' );
+		$this->assertIsString( $token, 'The already-noted submit must release the order payment lock.' );
+		$store->release( $order, $vocabulary, $token );
+	}
+
+	/**
+	 * @testdox The dispute note waits for the next submit while another operation holds the order payment lock, and the submit is still refused.
+	 */
+	public function test_disputed_note_is_not_written_while_another_operation_holds_the_order(): void {
+		$order      = $this->create_order_with_disputed_attached_intent();
+		$sut        = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		$store      = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		$token      = $store->claim( $order, $vocabulary, 'dispute_webhook_dp_held', 'dispute webhook' );
+		$this->assertIsString( $token );
+		$logger = RecordingWcLogger::install();
+
+		$held_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		$held_notes  = $this->get_disputed_intent_notes( $order );
+		$store->release( $order, $vocabulary, $token );
+		$free_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+
+		$this->assertInstanceOf( WP_Error::class, $held_result );
+		$this->assertSame( WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT, $held_result->get_error_code() );
+		$this->assertSame( array(), $held_notes, 'No note may be written while another operation holds the order.' );
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_starts_with( $line[1], 'order payment lock refused: order ' . $order->get_id() . ', refused disputed intent note, held by dispute webhook' ) ) );
+		$this->assertCount( 1, $refusals, 'The refused note is logged like every other lock refusal.' );
+		$this->assertInstanceOf( WP_Error::class, $free_result );
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+		$next_token = $store->claim( $order, $vocabulary, 'refund_key', 'refund' );
+		$this->assertIsString( $next_token, 'The guard must release the lock it took.' );
+		$store->release( $order, $vocabulary, $next_token );
+	}
+
+	/**
+	 * @testdox A dispute note that could not be stored is not marked as written, so the next submit writes it.
+	 */
+	public function test_disputed_note_that_was_not_stored_is_written_by_the_next_submit(): void {
+		global $wpdb;
+
+		$order = $this->create_order_with_disputed_attached_intent();
+		$sut   = $this->create_service( $this->create_session(), $this->create_api_client_answering( $this->create_charged_intent( $order, array( 'disputed' => true ) ) ) );
+		// An empty query makes wpdb::query() return false, so wp_insert_comment() and add_order_note() store nothing.
+		$fail_note_inserts = static fn( $query ) => str_starts_with( ltrim( (string) $query ), "INSERT INTO `{$wpdb->comments}`" ) ? '' : $query;
+		add_filter( 'query', $fail_note_inserts );
+
+		try {
+			$failed_result = $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() );
+		} finally {
+			remove_filter( 'query', $fail_note_inserts );
+		}
+		$after_failure = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $after_failure );
+		$this->assertInstanceOf( WP_Error::class, $failed_result );
+		$this->assertSame( array(), $this->get_disputed_intent_notes( $order ) );
+		$this->assertSame( '', (string) $after_failure->get_meta( '_wcpay_disputed_intent_noted', true ), 'A note that was not stored must not be marked as written.' );
+
+		$this->assertInstanceOf( WP_Error::class, $sut->check_payment_intent_attached_to_order_succeeded( wc_get_order( $order->get_id() ), $this->create_gateway() ) );
+		$this->assertCount( 1, $this->get_disputed_intent_notes( $order ) );
+	}
+
+	/**
+	 * Create a pending order whose `_intent_id` names the attached intent.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_order_with_disputed_attached_intent(): WC_Order {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Get the order's notes that name the attached intent as disputed.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return array<int,object>
+	 */
+	private function get_disputed_intent_notes( WC_Order $order ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( object $note ): bool => false !== strpos( (string) $note->content, 'pi_existing' ) && false !== strpos( (string) $note->content, 'disputed' )
+			)
+		);
+	}
+
+	/**
+	 * A succeeded attached PaymentIntent whose charge carries the given fields.
+	 *
+	 * The platform's GET intentions/{id} answer carries the intent's charges with `amount`, `amount_refunded`, `refunded`
+	 * and `disputed` (recorded in Fixtures/rec-t3-3ds-manual.json; Stripe "The Charge object").
+	 *
+	 * @param WC_Order            $order         Order the intent belongs to.
+	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.
+	 * @return array<string,mixed>
+	 */
+	private function create_charged_intent( WC_Order $order, array $charge_fields ): array {
+		$intent                       = $this->create_intent_response( $order, 'succeeded', 1200 );
+		$intent['charges']['data'][0] = array_merge( $intent['charges']['data'][0], array( 'amount' => 1200 ), $charge_fields );
+
+		return $intent;
+	}
+
+	/**
+	 * An API client answering the attached-intent fetch, which must never charge.
+	 *
+	 * @param array<string,mixed> $intent Intent the fetch returns.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_api_client_answering( array $intent ): WooPaymentsApiClient {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention', 'create_and_confirm_payment_intention' ) )
+			->getMock();
+		$api_client->method( 'get_payment_intention' )->with( 'pi_existing' )->willReturn( $intent );
+		$api_client->expects( $this->never() )->method( 'create_and_confirm_payment_intention' );
+
+		return $api_client;
+	}
+
+	/**
+	 * @testdox Should return an amount-mismatch error when the attached PaymentIntent total differs from the order total.
+	 */
+	public function test_check_payment_intent_attached_to_order_succeeded_returns_amount_mismatch_error(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$order->set_total( '15.00' );
+		$order->update_meta_data( '_intent_id', 'pi_existing' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_payment_intention' ) )
+			->getMock();
+		$api_client
+			->method( 'get_payment_intention' )
+			->with( 'pi_existing' )
+			->willReturn( $this->create_intent_response( $order, 'succeeded', 1000 ) );
+
+		$sut = $this->create_service( $this->create_session(), $api_client );
+
+		$result = $sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'duplicate_payment_amount_mismatch', $result->get_error_code() );
+		$this->assertStringContainsString( 'This order was already paid for', $result->get_error_message() );
+	}
+
+	/**
+	 * @testdox Should stop a second payment when the order's stored status is already paid.
+	 */
+	public function test_check_order_already_paid_blocks_paid_order(): void {
+		$session = $this->create_session();
+		$sut     = $this->create_service( $session );
+		$order   = $this->create_order( 'hash', 'processing' );
+		$session->set( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER, $order->get_id() );
+
+		$result = $sut->check_order_already_paid( $order, $this->create_gateway() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
+		$this->assertNull( $session->get( WooPaymentsDuplicatePaymentPreventionService::SESSION_KEY_PROCESSING_ORDER ) );
+
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		$this->assertStringContainsString( 'detected and prevented a second payment', (string) $notes[0]->content );
+	}
+
+	/**
+	 * @testdox Should read the stored status fresh so a stale in-memory instance cannot slip a second payment through.
+	 */
+	public function test_check_order_already_paid_reads_the_stored_status_past_a_stale_instance(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		$stale = wc_get_order( $order->get_id() );
+		$order->set_status( 'processing' );
+		$order->save();
+
+		$result = $this->create_service()->check_order_already_paid( $stale, $this->create_gateway() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'success', $result['result'] );
+	}
+
+	/**
+	 * @testdox Should let the payment proceed when only the in-memory status looks paid.
+	 */
+	public function test_check_order_already_paid_lets_unpaid_stored_status_through(): void {
+		$order = $this->create_order( 'hash', 'pending' );
+		// In-memory only; the stored status stays pending.
+		$order->set_status( 'processing' );
+
+		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should exempt subscription payment-method changes from the already-paid guard.
+	 */
+	public function test_check_order_already_paid_exempts_subscription_payment_method_change(): void {
+		$order = $this->create_order( 'hash', 'processing' );
+
+		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway(), true );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should defer to a store that declares a paid status still payable.
+	 */
+	public function test_check_order_already_paid_defers_to_store_declared_payable_statuses(): void {
+		$order  = $this->create_order( 'hash', 'processing' );
+		$filter = static function ( $statuses ) {
+			$statuses[] = 'processing';
+			return $statuses;
+		};
+		add_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+
+		try {
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+		} finally {
+			remove_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+		}
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * @testdox Should let a recognised flow re-run payment through the escape-hatch filter.
+	 */
+	public function test_check_order_already_paid_honors_escape_hatch_filter(): void {
+		$order  = $this->create_order( 'hash', 'completed' );
+		$filter = static fn(): bool => false;
+		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+
+		try {
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+		} finally {
+			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
+		}
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * Create a duplicate-payment prevention service.
+	 *
+	 * @param \WC_Session|null                         $session                     Optional WooCommerce session.
+	 * @param WooPaymentsApiClient|null                $api_client                  Optional API client.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Optional Fee details note controller, which applies the lifecycle event.
+	 * @return WooPaymentsDuplicatePaymentPreventionService
+	 */
+	private function create_service( ?\WC_Session $session = null, ?WooPaymentsApiClient $api_client = null, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): WooPaymentsDuplicatePaymentPreventionService {
+		$service = new WooPaymentsDuplicatePaymentPreventionService( $session ?? $this->create_session() );
+		$service->init(
+			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
+			wc_get_container()->get( OrderPaymentLifecycleService::class ),
+			new WooPaymentsOrderDataService(),
+			null,
+			$this->create_intent_confirmation_service( $fee_details_note_controller )
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create the intent confirmation service that applies the attached intent, from the container's services.
+	 *
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, or the container's.
+	 * @return WooPaymentsIntentConfirmationService
+	 */
+	private function create_intent_confirmation_service( ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): WooPaymentsIntentConfirmationService {
+		$service = new WooPaymentsIntentConfirmationService();
+		$service->init(
+			wc_get_container()->get( WooPaymentsApiClient::class ),
+			$fee_details_note_controller ?? wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			wc_get_container()->get( WooPaymentsTokenService::class ),
+			wc_get_container()->get( WooPaymentsAccountService::class ),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsIntentRequestBuilder::class )
+		);
+
+		return $service;
+	}
+
+	/**
+	 * Create an order for duplicate-payment tests.
+	 *
+	 * @param string $cart_hash   Cart hash.
+	 * @param string $status      Order status.
+	 * @param int    $customer_id Customer ID.
+	 * @return WC_Order
+	 */
+	private function create_order( string $cart_hash = 'cart-hash', string $status = 'pending', int $customer_id = 0 ): WC_Order {
+		$order = wc_create_order();
+		$order->set_cart_hash( $cart_hash );
+		$order->set_customer_id( $customer_id );
+		$order->set_total( '12.00' );
+		$order->set_status( $status );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Create a PaymentIntent response.
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $status Intent status.
+	 * @param int      $amount Intent amount in minor units.
+	 * @return array<string,mixed>
+	 */
+	private function create_intent_response( WC_Order $order, string $status, int $amount ): array {
+		return array(
+			'id'       => 'pi_existing',
+			'status'   => $status,
+			'amount'   => $amount,
+			'currency' => strtolower( $order->get_currency() ),
+			'customer' => 'cus_existing',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'             => 'ch_existing',
+						'payment_method' => 'pm_existing',
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Create a gateway test double.
+	 *
+	 * @return WC_Payment_Gateway
+	 */
+	private function create_gateway(): WC_Payment_Gateway {
+		return new class() extends WC_Payment_Gateway {
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id = 'woocommerce_payments';
+			}
+
+			/**
+			 * Get return URL.
+			 *
+			 * @param WC_Order|null $order Order.
+			 * @return string
+			 */
+			public function get_return_url( $order = null ) {
+				return 'https://example.test/order-received/' . ( $order instanceof WC_Order ? $order->get_id() : '0' );
+			}
+		};
+	}
+
+	/**
+	 * Create a WooCommerce session test double.
+	 *
+	 * @return \WC_Session
+	 */
+	private function create_session(): \WC_Session {
+		return new class() extends \WC_Session {
+			/**
+			 * Session data.
+			 *
+			 * @var array<string,mixed>
+			 */
+			protected $_data = array(); // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
+
+			/**
+			 * Get a session value.
+			 *
+			 * @param string $key           Session key.
+			 * @param mixed  $default_value Default value.
+			 * @return mixed
+			 */
+			public function get( $key, $default_value = null ) {
+				return $this->_data[ $key ] ?? $default_value;
+			}
+
+			/**
+			 * Set a session value.
+			 *
+			 * @param string $key   Session key.
+			 * @param mixed  $value Session value.
+			 */
+			public function set( $key, $value ) {
+				if ( null === $value ) {
+					unset( $this->_data[ $key ] );
+					return;
+				}
+
+				$this->_data[ $key ] = $value;
+			}
+
+			/**
+			 * Set the customer session cookie.
+			 *
+			 * @param bool $set Whether to set the cookie.
+			 */
+			public function set_customer_session_cookie( bool $set ): void {}
+		};
+	}
+}

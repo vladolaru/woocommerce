@@ -1,0 +1,39 @@
+.woopayments-settings-account-mode-notice.components-notice {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 20px (between $gap and $gap-large).
+	margin: 0 0 20px;
+
+	p {
+		margin: 0 0 $gap-small;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+
+		&:last-child {
+			margin-bottom: 0;
+		}
+	}
+
+	.components-notice__content {
+		margin: 0;
+	}
+}
+
+.woopayments-settings-notifications-email-warning.components-notice {
+	margin: $gap-small 0 $gap;
+}
+
+.woopayments-settings-payout-bank-account {
+	margin: 0;
+	color: $gray-700;
+	font-size: $font-size-medium;
+	line-height: $font-line-height-small;
+}
+
+.woopayments-settings-payout-bank-account__notice {
+	margin: 0;
+	padding: $gap-small;
+	border-inline-start: 4px solid $alert-red;
+	background: $studio-red-0;
+	color: $gray-900;
+	font-size: $font-size-medium;
+	line-height: $font-line-height-small;
+}

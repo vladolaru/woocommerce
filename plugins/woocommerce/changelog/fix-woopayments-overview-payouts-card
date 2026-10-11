@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview payouts card now matches WooPayments: no repeated balance tiles or header amount, the schedule guide behind a help icon, site-format dispatch dates and borderless status chips.

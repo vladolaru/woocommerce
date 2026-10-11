@@ -271,8 +271,6 @@ class Features {
 			\Automattic\WooCommerce\Internal\Admin\ShippingLabelBanner::class,
 			\Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\Init::class,
 			\Automattic\WooCommerce\Admin\Features\TransientNotices::class,
-			\Automattic\WooCommerce\Internal\Admin\WCPayPromotion\Init::class,
-			\Automattic\WooCommerce\Internal\Admin\WcPayWelcomePage::class,
 			\Automattic\WooCommerce\Admin\Features\LaunchYourStore::class,
 		);
 

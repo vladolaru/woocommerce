@@ -1,0 +1,4 @@
+// The wc-admin layout the client's FilterPicker sits in is border-box; the Settings page is not, so the 48px toggle grew to 64px.
+.woocommerce-woopayments-filter-picker .woocommerce-dropdown-button__labels {
+	box-sizing: border-box;
+}

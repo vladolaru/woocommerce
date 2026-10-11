@@ -1,0 +1,43 @@
+{
+	"_meta": {
+		"recording": "GET wp-json/wc/v3/payments/deposits?per_page=25&page=1&sort=date&direction=desc on the native :8889 store (Transact platform via wpcom-local, Stripe test mode), 2026-09-29",
+		"sanitized": "no customer data present; rows verbatim (Stripe test bank account)",
+		"rows": "the two most recent automatic payouts, both paid"
+	},
+	"response": {
+		"data": [
+			{
+				"id": "po_1UKTF6BzWlxcwgpPTSVZ57gl",
+				"date": 1790553600000,
+				"type": "deposit",
+				"amount": 5962,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": true,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1790553600,
+				"bank_reference_key": "7UF6L35gB5by3c28997Ds6ch6t65Lg5Y660T3gl1k",
+				"failure_code": null,
+				"failure_message": null
+			},
+			{
+				"id": "po_1UIerDBzWlxcwgpPBmQcV3Po",
+				"date": 1790121600000,
+				"type": "deposit",
+				"amount": 3547,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": true,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1790121600,
+				"bank_reference_key": "7UF6L35g96ks4Xq8997Ds6ch6t65LO7HN6cA3Ps1n",
+				"failure_code": null,
+				"failure_message": null
+			}
+		]
+	}
+}

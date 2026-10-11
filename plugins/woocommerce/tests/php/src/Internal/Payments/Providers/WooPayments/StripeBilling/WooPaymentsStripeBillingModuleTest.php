@@ -1,0 +1,405 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use WC_Order;
+use WC_Unit_Test_Case;
+
+/**
+ * Load condition of the Stripe Billing module (client 11.1.0 `includes/class-wc-payments-features.php:306-318`).
+ *
+ * WooCommerce Subscriptions is made active through the legacy proxy's `class_exists`, which every test resets, so no
+ * class is defined for later tests.
+ */
+class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Clear the registries the subscription doubles read, the staging flag and the admin screen.
+	 */
+	public function tearDown(): void {
+		try {
+			unset(
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ],
+				$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ],
+				$GLOBALS['current_screen']
+			);
+			$GLOBALS['wp_rest_server'] = null;
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
+	 * @testdox Should not load without WooCommerce Subscriptions, even with the toggle on.
+	 */
+	public function test_does_not_load_without_subscriptions(): void {
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
+
+		$sut = $this->register_module( true );
+
+		$this->assertFalse( $sut->is_loaded() );
+		$this->assertFalse( $sut->is_stripe_billing_enabled() );
+	}
+
+	/**
+	 * @testdox Should load with WooCommerce Subscriptions while the toggle is off, without enabling Stripe Billing.
+	 */
+	public function test_loads_with_subscriptions_while_the_toggle_is_off(): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+
+		$sut = $this->register_module( true );
+
+		$this->assertTrue( $sut->is_loaded() );
+		$this->assertFalse( $sut->is_stripe_billing_enabled() );
+	}
+
+	/**
+	 * @testdox Should enable Stripe Billing when WooCommerce Subscriptions is active and the toggle is on.
+	 */
+	public function test_enables_stripe_billing_with_subscriptions_and_the_toggle_on(): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
+
+		$sut = $this->register_module( true );
+
+		$this->assertTrue( $sut->is_loaded() );
+		$this->assertTrue( $sut->is_stripe_billing_enabled() );
+
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->assertFalse( $sut->is_stripe_billing_enabled(), 'Turning the toggle off must stop new Stripe Billing subscriptions in the same request.' );
+	}
+
+	/**
+	 * @testdox Should not load while the WooPayments plugin owns payments.
+	 */
+	public function test_does_not_load_while_the_plugin_owns_payments(): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '1' );
+
+		$sut = $this->register_module( false );
+
+		$this->assertFalse( $sut->is_loaded() );
+		$this->assertFalse( $sut->is_stripe_billing_enabled() );
+	}
+
+	/**
+	 * @testdox Should leave the Stripe product IDs, legacy price IDs and hashes off a duplicated product, whatever the toggle (client `class-wc-payments-product-service.php:125`, `:312-324`).
+	 */
+	public function test_duplicating_a_product_leaves_out_its_stripe_ids_and_hashes(): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->register_module( true );
+
+		$stripe_meta = array(
+			'_wcpay_product_hash'          => '157edb40778acb45ff5dce71451e7ff1',
+			'_wcpay_product_id_live'       => 'prod_VMl1fRBycUk6wP',
+			'_wcpay_product_id_test'       => 'prod_VMl10VL0VK371N',
+			'_wcpay_product_price_hash'    => 'c1f0e9b4d2a7c3e8f5b6a9d0e1f2a3b4',
+			'_wcpay_product_price_id_live' => 'price_1UM1WdBzWlxcwgpPTdu1MSjd',
+			'_wcpay_product_price_id_test' => 'price_1UM1VFBzWlxcwgpPfqFOGkZ2',
+		);
+		$product     = \WC_Helper_Product::create_simple_product();
+		foreach ( $stripe_meta as $key => $value ) {
+			$product->update_meta_data( $key, $value );
+		}
+		$product->update_meta_data( '_rec_t63_other_meta', 'copied' );
+		$product->save();
+
+		$duplicate = ( new \WC_Admin_Duplicate_Product() )->product_duplicate( wc_get_product( $product->get_id() ) );
+		$duplicate = wc_get_product( $duplicate->get_id() );
+
+		$this->assertSame( 'copied', $duplicate->get_meta( '_rec_t63_other_meta' ), 'Other meta is still copied.' );
+		foreach ( array_keys( $stripe_meta ) as $key ) {
+			$this->assertFalse( $duplicate->meta_exists( $key ), "$key must not be copied." );
+		}
+	}
+
+	/**
+	 * @testdox Should tell an order of a Stripe-billed subscription once loaded (client `class-wc-payments-subscription-service.php:312-324`).
+	 */
+	public function test_tells_stripe_billed_orders_once_loaded(): void {
+		$this->load_subscriptions();
+		$sut             = $this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		$this->assertTrue( $sut->is_stripe_billed_order( $order ) );
+	}
+
+	/**
+	 * @testdox Should call nothing Stripe-billed while the module is not loaded.
+	 */
+	public function test_calls_nothing_stripe_billed_while_not_loaded(): void {
+		$sut             = $this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		try {
+			$this->assertFalse( $sut->is_stripe_billed_order( $order ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+	}
+
+	/**
+	 * @testdox A recurring payment carries the Stripe Billing fee context only when the order's subscription is Stripe-billed, toggle off included (client OrderServiceTest provider_subscription_details, `src/Internal/Service/OrderService.php:104-121`).
+	 * @testWith ["initial", "parent", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
+	 *           ["renewal", "renewal", "sub_1UM1VrBzWlxcwgpP6A3GwGLe", "wcpay_subscription"]
+	 *           ["initial", "parent", "", "regular_subscription"]
+	 *           ["renewal", "renewal", "", "regular_subscription"]
+	 *
+	 * @param string $subscription_payment  Subscription payment type.
+	 * @param string $relation              How the order relates to its subscription.
+	 * @param string $wcpay_subscription_id Stripe subscription ID of the subscription, empty when it is tokenized.
+	 * @param string $expected              Payment context sent to the platform.
+	 */
+	public function test_sends_the_stripe_billing_fee_context_only_for_stripe_billed_orders( string $subscription_payment, string $relation, string $wcpay_subscription_id, string $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
+		$this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->update_meta_data( '_wcpay_subscription_id', $wcpay_subscription_id );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ] = array( $relation => array( $subscription->get_id() ) );
+
+		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'recurring', $subscription_payment );
+
+		$this->assertSame( $subscription_payment, $metadata['subscription_payment'] );
+		$this->assertSame( $expected, $metadata['payment_context'] );
+	}
+
+	/**
+	 * @testdox A recurring payment keeps the regular context while the module is not loaded (client test_get_payment_metadata_marks_subscription_as_regular_when_stripe_billing_not_loaded).
+	 */
+	public function test_sends_the_regular_context_while_not_loaded(): void {
+		$this->register_module( true );
+		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
+
+		try {
+			$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'recurring', 'renewal' );
+
+			$this->assertSame( 'regular_subscription', $metadata['payment_context'] );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+	}
+
+	/**
+	 * @testdox WooCommerce Subscriptions gets the platform's minimum recurring amount only while the toggle is on (client `class-wc-payments-subscription-minimum-amount-handler.php:48-50`).
+	 * @testWith ["1", 1.0]
+	 *           ["0", false]
+	 *
+	 * @param string     $toggle   Toggle value.
+	 * @param float|bool $expected Minimum amount WooCommerce Subscriptions gets.
+	 */
+	public function test_gives_the_minimum_recurring_amount_only_while_the_toggle_is_on( string $toggle, $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		set_transient( 'WCPAY_SUBSCRIPTION_MINIMUM_RECURRING_AMOUNTS_USD', 100 );
+		$this->register_module( true );
+
+		$this->assertSame( $expected, apply_filters( 'woocommerce_subscriptions_minimum_processable_recurring_amount', false, 'USD' ) );
+	}
+
+	/**
+	 * @testdox The update payment method flow for a failed renewal runs only while the toggle is on (client `class-wc-payments-subscription-change-payment-method-handler.php:25-27`).
+	 * @testWith ["1", "Update payment details"]
+	 *           ["0", "Change payment method"]
+	 *
+	 * @param string $toggle   Toggle value.
+	 * @param string $expected Change payment method page title.
+	 */
+	public function test_runs_the_update_payment_method_flow_only_while_the_toggle_is_on( string $toggle, string $expected ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		$this->register_module( true );
+		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->set_status( 'on-hold' );
+		$subscription->update_meta_data( '_wcpay_pending_invoice_id', 'in_1UM1Y0BzWlxcwgpPefRU4SSy' );
+		$subscription->save();
+		$order->set_status( 'failed' );
+		$order->save();
+
+		$this->assertSame( $expected, apply_filters( 'woocommerce_subscriptions_change_payment_method_page_title', 'Change payment method', $subscription ) );
+	}
+
+	/**
+	 * @testdox The migration route starts the migration off Stripe Billing for a store manager while Stripe-billed subscriptions remain, and does nothing on a staging copy ($role, staging: $is_staging, Stripe-billed: $has_stripe_billed).
+	 * @testWith ["administrator", false, true, 200, true]
+	 *           ["administrator", false, false, 200, false]
+	 *           ["administrator", true, true, 200, false]
+	 *           ["subscriber", false, true, 403, false]
+	 *
+	 * @param string $role                Role of the user calling the route.
+	 * @param bool   $is_staging          Whether the site is a staging copy.
+	 * @param bool   $has_stripe_billed   Whether a Stripe-billed subscription remains.
+	 * @param int    $expected_status     Response status.
+	 * @param bool   $expected_scheduled  Whether the migration is scheduled.
+	 */
+	public function test_migration_route_starts_the_migration( string $role, bool $is_staging, bool $has_stripe_billed, int $expected_status, bool $expected_scheduled ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_background_repairer();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
+		if ( $has_stripe_billed ) {
+			$this->create_stripe_billed_subscription_and_renewal();
+		}
+		$this->register_module( true );
+		// A fresh server fires rest_api_init, so only this test's module serves the route.
+		$GLOBALS['wp_rest_server'] = null;
+		rest_get_server();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+
+		$response = rest_do_request( new \WP_REST_Request( 'POST', '/wc/v3/payments/settings/schedule-stripe-billing-migration' ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $expected_scheduled, (bool) as_next_scheduled_action( 'wcpay_schedule_subscription_migrations' ) );
+	}
+
+	/**
+	 * @testdox Turning Stripe Billing off saves the toggle and starts the migration of the remaining subscriptions; turning it on starts nothing (client `class-wc-rest-payments-settings-controller.php:1314-1327`, `:530-600`).
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $enabled Whether Stripe Billing is turned on.
+	 */
+	public function test_turning_stripe_billing_off_starts_the_migration( bool $enabled ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load_background_repairer();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $enabled ? '0' : '1' );
+		$this->create_stripe_billed_subscription_and_renewal();
+		$sut = $this->register_module( true );
+
+		$sut->set_stripe_billing_enabled( $enabled );
+
+		$this->assertSame( $enabled ? '1' : '0', get_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION ) );
+		$this->assertSame(
+			array(
+				'is_stripe_billing_enabled'         => $enabled,
+				'is_migrating_stripe_billing'       => ! $enabled,
+				'stripe_billing_subscription_count' => 1,
+				'stripe_billing_migrated_count'     => 0,
+			),
+			$sut->get_settings_fields()
+		);
+	}
+
+	/**
+	 * @testdox The settings page learns whether the store may use Stripe Billing, staging copy included ($country, staging: $is_staging) (client `class-wc-payments-admin.php:1057-1058`, `class-wc-payments-features.php:290-297`).
+	 * @testWith ["US:CA", false, true]
+	 *           ["CA:ON", false, false]
+	 *           ["US:NY", true, true]
+	 *
+	 * @param string $country           Store base location.
+	 * @param bool   $is_staging        Whether the site is a staging copy.
+	 * @param bool   $expected_eligible Whether the store may use Stripe Billing.
+	 */
+	public function test_tells_the_settings_page_about_stripe_billing( string $country, bool $is_staging, bool $expected_eligible ): void {
+		$this->load_subscriptions();
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
+		update_option( 'woocommerce_default_country', $country );
+		$this->register_module( true );
+
+		$settings = apply_filters( 'woocommerce_admin_shared_settings', array( 'woopaymentsSettings' => array( 'isSubscriptionsActive' => true ) ) );
+
+		$this->assertTrue( $settings['woopaymentsSettings']['isSubscriptionsActive'], 'Other values are kept.' );
+		$this->assertSame( $expected_eligible, $settings['woopaymentsSettings']['isStripeBillingEligible'] );
+	}
+
+	/**
+	 * @testdox The Plugins screen warns that Stripe-billed subscriptions keep renewing after deactivating WooCommerce Subscriptions only when it applies: $label (client `class-wc-payments-subscriptions-plugin-notice-manager.php:31-84`).
+	 * @testWith ["shown", true, false, "active", "plugins", "administrator", true]
+	 *           ["no WooCommerce Subscriptions", false, false, "active", "plugins", "administrator", false]
+	 *           ["staging copy", true, true, "active", "plugins", "administrator", false]
+	 *           ["no active Stripe-billed subscription", true, false, "on-hold", "plugins", "administrator", false]
+	 *           ["another screen", true, false, "active", "dashboard", "administrator", false]
+	 *           ["user who cannot deactivate plugins", true, false, "active", "plugins", "shop_manager", false]
+	 *
+	 * @param string $label               Case name.
+	 * @param bool   $has_subscriptions   Whether WooCommerce Subscriptions is active.
+	 * @param bool   $is_staging          Whether the site is a staging copy.
+	 * @param string $subscription_status Status of the Stripe-billed subscription.
+	 * @param string $screen              Admin screen.
+	 * @param string $role                Role of the current user.
+	 * @param bool   $expected_shown      Whether the warning is shown.
+	 */
+	public function test_warns_on_the_plugins_screen_only_when_it_applies( string $label, bool $has_subscriptions, bool $is_staging, string $subscription_status, string $screen, string $role, bool $expected_shown ): void {
+		unset( $label );
+		if ( $has_subscriptions ) {
+			$this->load_subscriptions();
+		}
+		WooCommerceSubscriptionsDoubles::load();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
+		list( $subscription )                                       = $this->create_stripe_billed_subscription_and_renewal();
+		$subscription->set_status( $subscription_status );
+		$subscription->save();
+		$this->register_module( true );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+		set_current_screen( $screen );
+
+		ob_start();
+		do_action( 'admin_notices' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$output = (string) ob_get_clean();
+
+		$warning = 'Your store has subscriptions using WooPayments Stripe Billing functionality for payment processing. Due to the <a href="https://woocommerce.com/document/woopayments/subscriptions/stripe-billing/#faq" target="_blank">off-site billing engine</a> these subscriptions use,<strong> they will continue to renew even after you deactivate Woo Subscriptions</strong>.';
+		$this->assertSame( $expected_shown, is_int( strpos( $output, $warning ) ) );
+		$this->assertSame( $expected_shown, is_int( strpos( $output, 'If you do not want these subscriptions to continue to be billed, you should <a href="https://woocommerce.com/document/subscriptions/customers-view/suspend-cancel-or-remove-an-item/#how-to-cancel-a-subscription-as-a-store-manager" target="_blank" rel="noreferrer noopener">cancel these subscriptions</a> prior to deactivating Woo Subscriptions.' ) ) );
+	}
+
+	/**
+	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
+	 *
+	 * @return array{0:WC_Order,1:WC_Order}
+	 */
+	private function create_stripe_billed_subscription_and_renewal(): array {
+		WooCommerceSubscriptionsDoubles::load();
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( 'woocommerce_payments' );
+		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		$subscription->save();
+		$order = \WC_Helper_Order::create_order();
+
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ][]                                   = $subscription->get_id();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ][ $order->get_id() ]['renewal'][] = $subscription->get_id();
+
+		return array( wc_get_order( $subscription->get_id() ), $order );
+	}
+
+	/**
+	 * Build and register the module with the given ownership decision.
+	 *
+	 * @param bool $native_owns Whether native owns payments.
+	 * @return WooPaymentsStripeBillingModule
+	 */
+	private function register_module( bool $native_owns ): WooPaymentsStripeBillingModule {
+		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
+
+		$sut = new WooPaymentsStripeBillingModule();
+		$sut->init( $arbiter );
+		$sut->register();
+
+		return $sut;
+	}
+
+	/**
+	 * Make WooCommerce Subscriptions active for this test.
+	 */
+	private function load_subscriptions(): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions' === $class_name || class_exists( $class_name, ...$args ),
+			)
+		);
+	}
+}

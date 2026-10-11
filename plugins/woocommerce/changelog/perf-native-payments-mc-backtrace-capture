@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Reduce the cost of multi-currency compatibility backtrace checks on the price/cart hot path.

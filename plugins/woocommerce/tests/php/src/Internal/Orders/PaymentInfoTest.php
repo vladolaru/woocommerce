@@ -3,7 +3,12 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**
@@ -14,6 +19,14 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 	 *
 	 */
 	const ENCODED_VISA_CARD_ICON = 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+Cjxzdmcgdmlld0JveD0iMCAwIDc1MCA0NzEiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeG1sbnM6c2tldGNoPSJodHRwOi8vd3d3LmJvaGVtaWFuY29kaW5nLmNvbS9za2V0Y2gvbnMiIHByZXNlcnZlQXNwZWN0UmF0aW89InhNaWRZTWlkIG1lZXQiPgogICAgPCEtLSBHZW5lcmF0b3I6IFNrZXRjaCAzLjMuMSAoMTIwMDUpIC0gaHR0cDovL3d3dy5ib2hlbWlhbmNvZGluZy5jb20vc2tldGNoIC0tPgogICAgPHRpdGxlPlNsaWNlIDE8L3RpdGxlPgogICAgPGRlc2M+Q3JlYXRlZCB3aXRoIFNrZXRjaC48L2Rlc2M+CiAgICA8ZGVmcz48L2RlZnM+CiAgICA8ZyBpZD0iUGFnZS0xIiBzdHJva2U9Im5vbmUiIHN0cm9rZS13aWR0aD0iMSIgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBza2V0Y2g6dHlwZT0iTVNQYWdlIj4KICAgICAgICA8ZyBpZD0idmlzYSIgc2tldGNoOnR5cGU9Ik1TTGF5ZXJHcm91cCI+CiAgICAgICAgICAgIDxyZWN0IGlkPSJSZWN0YW5nbGUtMSIgZmlsbD0iIzBFNDU5NSIgc2tldGNoOnR5cGU9Ik1TU2hhcGVHcm91cCIgeD0iMCIgeT0iMCIgd2lkdGg9Ijc1MCIgaGVpZ2h0PSI0NzEiIHJ4PSI0MCI+PC9yZWN0PgogICAgICAgICAgICA8cGF0aCBkPSJNMjc4LjE5NzUsMzM0LjIyNzUgTDMxMS41NTg1LDEzOC40NjU1IEwzNjQuOTE3NSwxMzguNDY1NSBMMzMxLjUzMzUsMzM0LjIyNzUgTDI3OC4xOTc1LDMzNC4yMjc1IEwyNzguMTk3NSwzMzQuMjI3NSBaIiBpZD0iU2hhcGUiIGZpbGw9IiNGRkZGRkYiIHNrZXRjaDp0eXBlPSJNU1NoYXBlR3JvdXAiPjwvcGF0aD4KICAgICAgICAgICAgPHBhdGggZD0iTTUyNC4zMDc1LDE0Mi42ODc1IEM1MTMuNzM1NSwxMzguNzIxNSA0OTcuMTcxNSwxMzQuNDY1NSA0NzYuNDg0NSwxMzQuNDY1NSBDNDIzLjc2MDUsMTM0LjQ2NTUgMzg2LjYyMDUsMTYxLjAxNjUgMzg2LjMwNDUsMTk5LjA2OTUgQzM4Ni4wMDc1LDIyNy4xOTg1IDQxMi44MTg1LDI0Mi44OTA1IDQzMy4wNTg1LDI1Mi4yNTQ1IEM0NTMuODI3NSwyNjEuODQ5NSA0NjAuODEwNSwyNjcuOTY5NSA0NjAuNzExNSwyNzYuNTM3NSBDNDYwLjU3OTUsMjg5LjY1OTUgNDQ0LjEyNTUsMjk1LjY1NDUgNDI4Ljc4ODUsMjk1LjY1NDUgQzQwNy40MzE1LDI5NS42NTQ1IDM5Ni4wODU1LDI5Mi42ODc1IDM3OC41NjI1LDI4NS4zNzg1IEwzNzEuNjg2NSwyODIuMjY2NSBMMzY0LjE5NzUsMzI2LjA5MDUgQzM3Ni42NjA1LDMzMS41NTQ1IDM5OS43MDY1LDMzNi4yODk1IDQyMy42MzU1LDMzNi41MzQ1IEM0NzkuNzI0NSwzMzYuNTM0NSA1MTYuMTM2NSwzMTAuMjg3NSA1MTYuNTUwNSwyNjkuNjUyNSBDNTE2Ljc1MTUsMjQ3LjM4MzUgNTAyLjUzNTUsMjMwLjQzNTUgNDcxLjc1MTUsMjE2LjQ2NDUgQzQ1My4xMDA1LDIwNy40MDg1IDQ0MS42Nzg1LDIwMS4zNjU1IDQ0MS43OTk1LDE5Mi4xOTU1IEM0NDEuNzk5NSwxODQuMDU4NSA0NTEuNDY3NSwxNzUuMzU3NSA0NzIuMzU2NSwxNzUuMzU3NSBDNDg5LjgwNTUsMTc1LjA4NjUgNTAyLjQ0NDUsMTc4Ljg5MTUgNTEyLjI5MjUsMTgyLjg1NzUgTDUxNy4wNzQ1LDE4NS4xMTY1IEw1MjQuMzA3NSwxNDIuNjg3NSIgaWQ9InBhdGgxMyIgZmlsbD0iI0ZGRkZGRiIgc2tldGNoOnR5cGU9Ik1TU2hhcGVHcm91cCI+PC9wYXRoPgogICAgICAgICAgICA8cGF0aCBkPSJNNjYxLjYxNDUsMTM4LjQ2NTUgTDYyMC4zODM1LDEzOC40NjU1IEM2MDcuNjEwNSwxMzguNDY1NSA1OTguMDUyNSwxNDEuOTUxNSA1OTIuNDQyNSwxNTQuNjk5NSBMNTEzLjE5NzUsMzM0LjEwMjUgTDU2OS4yMjg1LDMzNC4xMDI1IEM1NjkuMjI4NSwzMzQuMTAyNSA1NzguMzkwNSwzMDkuOTgwNSA1ODAuNDYyNSwzMDQuNjg0NSBDNTg2LjU4NTUsMzA0LjY4NDUgNjQxLjAxNjUsMzA0Ljc2ODUgNjQ4Ljc5ODUsMzA0Ljc2ODUgQzY1MC4zOTQ1LDMxMS42MjE1IDY1NS4yOTA1LDMzNC4xMDI1IDY1NS4yOTA1LDMzNC4xMDI1IEw3MDQuODAyNSwzMzQuMTAyNSBMNjYxLjYxNDUsMTM4LjQ2NTUgTDY2MS42MTQ1LDEzOC40NjU1IFogTTU5Ni4xOTc1LDI2NC44NzI1IEM2MDAuNjEwNSwyNTMuNTkzNSA2MTcuNDU2NSwyMTAuMTQ5NSA2MTcuNDU2NSwyMTAuMTQ5NSBDNjE3LjE0MTUsMjEwLjY3MDUgNjIxLjgzNjUsMTk4LjgxNTUgNjI0LjUzMTUsMTkxLjQ2NTUgTDYyOC4xMzg1LDIwOC4zNDM1IEM2MjguMTM4NSwyMDguMzQzNSA2MzguMzU1NSwyNTUuMDcyNSA2NDAuNDkwNSwyNjQuODcxNSBMNTk2LjE5NzUsMjY0Ljg3MTUgTDU5Ni4xOTc1LDI2NC44NzI1IEw1OTYuMTk3NSwyNjQuODcyNSBaIiBpZD0iUGF0aCIgZmlsbD0iI0ZGRkZGRiIgc2tldGNoOnR5cGU9Ik1TU2hhcGVHcm91cCI+PC9wYXRoPgogICAgICAgICAgICA8cGF0aCBkPSJNMjMyLjkwMjUsMTM4LjQ2NTUgTDE4MC42NjI1LDI3MS45NjA1IEwxNzUuMDk2NSwyNDQuODMxNSBDMTY1LjM3MTUsMjEzLjU1NzUgMTM1LjA3MTUsMTc5LjY3NTUgMTAxLjE5NzUsMTYyLjcxMjUgTDE0OC45NjQ1LDMzMy45MTU1IEwyMDUuNDE5NSwzMzMuODUwNSBMMjg5LjQyMzUsMTM4LjQ2NTUgTDIzMi45MDI1LDEzOC40NjU1IiBpZD0icGF0aDE2IiBmaWxsPSIjRkZGRkZGIiBza2V0Y2g6dHlwZT0iTVNTaGFwZUdyb3VwIj48L3BhdGg+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik0xMzEuOTE5NSwxMzguNDY1NSBMNDUuODc4NSwxMzguNDY1NSBMNDUuMTk3NSwxNDIuNTM4NSBDMTEyLjEzNjUsMTU4Ljc0MjUgMTU2LjQyOTUsMTk3LjkwMTUgMTc0LjgxNTUsMjQ0Ljk1MjUgTDE1Ni4xMDY1LDE1NC45OTI1IEMxNTIuODc2NSwxNDIuNTk2NSAxNDMuNTA4NSwxMzguODk3NSAxMzEuOTE5NSwxMzguNDY1NSIgaWQ9InBhdGgxOCIgZmlsbD0iI0YyQUUxNCIgc2tldGNoOnR5cGU9Ik1TU2hhcGVHcm91cCI+PC9wYXRoPgogICAgICAgIDwvZz4KICAgIDwvZz4KPC9zdmc+';
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		$this->reset_legacy_proxy_mocks();
+		parent::tearDown();
+	}
 
 	/**
 	 * @testdox The `get_card_info` method should return an associative array with specific keys when an order has
@@ -67,5 +80,247 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 		$this->assertEquals( 'foo', $result['payment_method'] );
 
 		remove_filter( 'wc_order_payment_card_info', $filter_callback );
+	}
+
+	/**
+	 * @testdox The WooPayments fallback can fetch and cache payment method details through the native service.
+	 */
+	public function test_get_card_info_wcpay_fetches_and_caches_details_through_native_service(): void {
+		$order = OrderHelper::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->add_meta_data( '_payment_method_id', 'pm_123', true );
+		$order->save();
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => function ( $class_name, $autoload = true ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return true;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
+			)
+		);
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'get_payments_api_client' => function () {
+						return new class() {
+							/**
+							 * Get a payment method.
+							 *
+							 * @param string $payment_method_id Payment method ID.
+							 * @return array<string,mixed>
+							 */
+							public function get_payment_method( string $payment_method_id ): array {
+								return array(
+									'type'         => 'card',
+									'requested_id' => $payment_method_id,
+									'card'         => array(
+										'brand' => 'visa',
+										'last4' => '4242',
+									),
+								);
+							}
+						};
+					},
+				),
+			)
+		);
+
+		$result = $order->get_payment_card_info();
+
+		$this->assertSame( 'visa', $result['brand'] );
+		$this->assertSame( '4242', $result['last4'] );
+
+		$cached = json_decode( (string) wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ), true );
+
+		$this->assertIsArray( $cached );
+		$this->assertSame( 'pm_123', $cached['requested_id'] );
+	}
+
+	/**
+	 * @testdox A failed WooPayments payment-method fetch ($failure) leaves the order totals without card info and logs trunk's payment-info line.
+	 * @dataProvider fetch_failures
+	 *
+	 * Trunk catches every throwable around the fetch, logs it under `payment-info` whatever the WooPayments logging
+	 * setting and returns no card info, so the order-received page, My Account and order emails still render their
+	 * totals. An API failure is an Exception (the client's `API_Exception`); review 37 F4 found it logged only behind the
+	 * WooPayments logging setting.
+	 *
+	 * @param string $failure         Case label.
+	 * @param string $throwable_class Class the API client throws.
+	 * @param string $message         Message it throws with.
+	 */
+	public function test_get_card_info_wcpay_failed_fetch_returns_no_card_info_and_logs( string $failure, string $throwable_class, string $message ): void {
+		unset( $failure );
+		add_filter( 'wcpay_dev_mode', '__return_false' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		$order = OrderHelper::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Credit card / debit card' );
+		$order->add_meta_data( '_payment_method_id', 'pm_fetch_error', true );
+		$order->save();
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => function ( $class_name, $autoload = true ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return true;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+				'get_option'   => function ( $option, $default_value = false ) {
+					if ( 'active_plugins' === $option ) {
+						return array( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
+					}
+
+					return get_option( $option, $default_value );
+				},
+			)
+		);
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'get_payments_api_client' => function () use ( $throwable_class, $message ) {
+						return new class( $throwable_class, $message ) {
+							/** @var string */
+							private string $throwable_class;
+							/** @var string */
+							private string $message;
+
+							/**
+							 * @param string $throwable_class Class to throw.
+							 * @param string $message         Message to throw with.
+							 */
+							public function __construct( string $throwable_class, string $message ) {
+								$this->throwable_class = $throwable_class;
+								$this->message         = $message;
+							}
+
+							// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+							/**
+							 * Fail the fetch.
+							 *
+							 * @param string $payment_method_id Payment method ID.
+							 * @return array<string,mixed>
+							 * @throws \Throwable Always.
+							 */
+							public function get_payment_method( string $payment_method_id ): array {
+								unset( $payment_method_id );
+								throw new $this->throwable_class( $this->message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double; the message is never output.
+							}
+							// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+						};
+					},
+				),
+			)
+		);
+		$logger = RecordingWcLogger::install();
+
+		$totals    = $order->get_order_item_totals();
+		$card_info = $order->get_payment_card_info();
+
+		$this->assertSame( 'Credit card / debit card', $totals['payment_method']['value'] ?? null, 'The totals render the payment method without card details.' );
+		$this->assertSame( '', $card_info['brand'] );
+		$this->assertSame( '', $card_info['last4'] );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ), 'Nothing is cached after a failed fetch.' );
+		$expected = sprintf( 'PaymentInfo - retrieving info for payment method pm_fetch_error for order %d: %s', $order->get_id(), $message );
+		$this->assertContains( array( 'error', $expected, 'payment-info' ), $logger->lines );
+	}
+
+	/**
+	 * @testdox A WooPayments order on a store running neither the WooPayments plugin nor native fetches nothing, logs nothing and has no card info.
+	 *
+	 * Trunk returned early when the plugin was not loaded; a store that deactivated WooPayments and never enabled native
+	 * must not call the platform or write a `payment-info` error on every render of an old order (review 39 F1). The
+	 * transport double fails the way the native client does on a store without a WordPress.com connection.
+	 */
+	public function test_get_card_info_wcpay_without_any_runtime_fetches_and_logs_nothing(): void {
+		$order = OrderHelper::create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Credit card / debit card' );
+		$order->add_meta_data( '_payment_method_id', 'pm_no_runtime', true );
+		$order->save();
+
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => function ( $class_name, $autoload = true ) {
+					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
+						return false;
+					}
+					return class_exists( $class_name, $autoload );
+				},
+			)
+		);
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		$container = wc_get_container();
+		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $arbiter->get_runtime_owner() );
+
+		$api_client      = new class() extends WooPaymentsApiClient {
+			/**
+			 * Payment method IDs the transport was asked for.
+			 *
+			 * @var string[]
+			 */
+			public array $requested = array();
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Record the fetch and fail as an unconnected site does.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return array<string,mixed>
+			 * @throws \Exception Always.
+			 */
+			public function get_payment_method( string $payment_method_id ): array {
+				$this->requested[] = $payment_method_id;
+				throw new \Exception( 'Site is not connected to WordPress.com.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+		};
+		$details_service = new WooPaymentsPaymentMethodDetailsService();
+		$details_service->init( $container->get( WooPaymentsLegacyRuntime::class ), $api_client, $arbiter );
+		$container->replace( WooPaymentsPaymentMethodDetailsService::class, $details_service );
+		$logger = RecordingWcLogger::install();
+
+		try {
+			$totals    = $order->get_order_item_totals();
+			$card_info = $order->get_payment_card_info();
+		} finally {
+			$container->reset_all_replacements();
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+			$arbiter->invalidate();
+		}
+
+		$this->assertSame( 'Credit card / debit card', $totals['payment_method']['value'] ?? null );
+		$this->assertSame( '', $card_info['brand'] );
+		$this->assertSame( '', $card_info['last4'] );
+		$this->assertSame( array(), $api_client->requested, 'The platform is not asked.' );
+		$this->assertSame( array(), $logger->lines, 'Nothing is logged.' );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_raw_payment_method_details', true ) );
+	}
+
+	/**
+	 * Failures of the payment-method fetch.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public static function fetch_failures(): array {
+		return array(
+			'PHP error'     => array( 'PHP error', \TypeError::class, 'Return value must be of type array, null returned' ),
+			'API exception' => array( 'API exception', \Exception::class, 'Error: No such PaymentMethod: pm_fetch_error' ),
+		);
 	}
 }

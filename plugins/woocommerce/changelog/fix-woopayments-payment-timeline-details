@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show payout, fee, dispute, failure reason, fraud rule and loan details in the WooPayments payment timeline.

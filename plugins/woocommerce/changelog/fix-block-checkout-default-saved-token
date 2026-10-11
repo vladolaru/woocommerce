@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Preselect the default saved payment method in block checkout.

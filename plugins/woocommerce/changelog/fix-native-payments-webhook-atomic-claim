@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Make native WooPayments webhook event claiming atomic to block concurrent duplicate processing.

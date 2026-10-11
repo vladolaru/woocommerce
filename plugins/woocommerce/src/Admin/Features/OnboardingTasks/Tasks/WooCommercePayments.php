@@ -1,218 +1,225 @@
 <?php
 
+declare( strict_types=1 );
+
 namespace Automattic\WooCommerce\Admin\Features\OnboardingTasks\Tasks;
 
-use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
-use Automattic\WooCommerce\Admin\PluginsHelper;
-use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\Init as Suggestions;
-use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
-use Automattic\WooCommerce\Internal\Admin\WcPayWelcomePage;
-use WC_Gateway_BACS;
-use WC_Gateway_Cheque;
-use WC_Gateway_COD;
 
 /**
  * WooCommercePayments Task.
  *
- * @deprecated 9.9.0 The WooPayments onboarding task is deprecated and will be removed in a future version of WooCommerce.
+ * Kept only so third-party references keep resolving; every method is an inert no-op and
+ * WooCommerce never registers this task.
+ *
+ * @deprecated 9.9.0 The WooPayments onboarding task no longer exists; use the Payments task. Scheduled for removal in WooCommerce 12.0.0.
  */
 class WooCommercePayments extends Task {
-	/**
-	 * Used to cache is_complete() method result.
-	 *
-	 * @var null
-	 */
-	private $is_complete_result = null;
 
 	/**
 	 * ID.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string The task ID.
 	 */
 	public function get_id() {
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
 		return 'woocommerce-payments';
 	}
 
 	/**
 	 * Contextual image URL.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_image_url() {
-		return WC()->plugin_url() . '/assets/images/task_list/payment-illustration.svg';
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Alt text for the contextual image.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_image_alt() {
-		return __( 'Payment illustration', 'woocommerce' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Title.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_title() {
-		/* translators: %s: Payment provider name. */
-		return sprintf( __( 'Get paid with %s', 'woocommerce' ), 'WooPayments' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Badge.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_badge() {
-		/**
-		 * Filter WooPayments onboarding task badge.
-		 *
-		 * @param string     $badge    Badge content.
-		 * @since 8.2.0
-		 */
-		return apply_filters( 'woocommerce_admin_woopayments_onboarding_task_badge', '' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Content.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_content() {
-		return __(
-			"You're only one step away from getting paid. Verify your business details to start managing transactions with WooPayments.",
-			'woocommerce'
-		);
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Additional data.
 	 *
-	 * @return mixed
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return mixed Always null.
 	 */
 	public function get_additional_data() {
-		/**
-		 * Filter WooPayments onboarding task additional data.
-		 *
-		 * @since 9.4.0
-		 *
-		 * @param ?array $additional_data The task additional data.
-		 */
-		return apply_filters( 'woocommerce_admin_woopayments_onboarding_task_additional_data', null );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return null;
 	}
 
 	/**
 	 * Time.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_time() {
-		return __( '2 minutes', 'woocommerce' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Action label.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_action_label() {
-		return __( 'Finish setup', 'woocommerce' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return '';
 	}
 
 	/**
 	 * Task completion.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public function is_complete() {
-		if ( null === $this->is_complete_result ) {
-			// This task is complete if there are other ecommerce gateways enabled (offline payment methods are excluded),
-			// or if WooPayments is active and has a connected, fully onboarded account.
-			$this->is_complete_result = self::has_other_ecommerce_gateways() || ( self::is_connected() && ! self::is_account_partially_onboarded() );
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-		return $this->is_complete_result;
+		return false;
 	}
 
 	/**
-	 * Task visibility.
+	 * Task visibility: the task is never shown.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public function can_view() {
-		return self::is_supported();
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return false;
 	}
 
 	/**
 	 * Check if the WooPayments plugin was requested during onboarding.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public static function is_requested() {
-		$profiler_data       = get_option( OnboardingProfile::DATA_OPTION, array() );
-		$product_types       = isset( $profiler_data['product_types'] ) ? $profiler_data['product_types'] : array();
-		$business_extensions = isset( $profiler_data['business_extensions'] ) ? $profiler_data['business_extensions'] : array();
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-		$subscriptions_and_us = in_array( 'subscriptions', $product_types, true ) && 'US' === WC()->countries->get_base_country();
-		return in_array( 'woocommerce-payments', $business_extensions, true ) || $subscriptions_and_us;
+		return false;
 	}
 
 	/**
 	 * Check if the WooPayments plugin is installed.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public static function is_installed() {
-		$installed_plugins = PluginsHelper::get_installed_plugin_slugs();
-		return in_array( 'woocommerce-payments', $installed_plugins, true );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return false;
 	}
 
 	/**
 	 * Check if the WooPayments plugin is active.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public static function is_wcpay_active() {
-		return class_exists( '\WC_Payments' );
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
+
+		return false;
 	}
 
 	/**
 	 * Check if WooPayments is connected.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public static function is_connected() {
-		if ( ! self::is_wcpay_active() ) {
-			return false;
-		}
-
-		$wc_payments_gateway = self::get_gateway();
-		if ( $wc_payments_gateway && method_exists( $wc_payments_gateway, 'is_connected' ) ) {
-			return $wc_payments_gateway->is_connected();
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
 		return false;
 	}
 
 	/**
 	 * Check if WooPayments needs setup.
-	 * Errored data or payments not enabled.
 	 *
-	 * @return bool
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return bool Always false.
 	 */
 	public static function is_account_partially_onboarded() {
-		if ( ! self::is_wcpay_active() ) {
-			return false;
-		}
-
-		$wc_payments_gateway = self::get_gateway();
-		if ( $wc_payments_gateway && method_exists( $wc_payments_gateway, 'is_account_partially_onboarded' ) ) {
-			return $wc_payments_gateway->is_account_partially_onboarded();
-		}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
 		return false;
 	}
@@ -220,113 +227,52 @@ class WooCommercePayments extends Task {
 	/**
 	 * Get the WooPayments payment gateway suggestion.
 	 *
-	 * @return object|null The WooPayments suggestion, or null if none found.
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return object|null Always null.
 	 */
 	public static function get_suggestion() {
-		$suggestions       = Suggestions::get_suggestions( DefaultPaymentGateways::get_all() );
-		$wcpay_suggestions = array_filter(
-			$suggestions,
-			function ( $suggestion ) {
-				if ( empty( $suggestion->plugins ) || ! is_array( $suggestion->plugins ) ) {
-					return false;
-				}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-				return in_array( 'woocommerce-payments', $suggestion->plugins, true );
-			}
-		);
-
-		if ( empty( $wcpay_suggestions ) ) {
-			return null;
-		}
-
-		return reset( $wcpay_suggestions );
+		return null;
 	}
 
 	/**
 	 * Check if the store location is in a WooPayments supported country.
 	 *
-	 * We infer this from the availability of a WooPayments payment gateways suggestion.
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
 	 *
-	 * @return bool True if the store location is in a WooPayments supported country, false otherwise.
+	 * @return bool Always false.
 	 */
 	public static function is_supported() {
-		return ! empty( self::get_suggestion() );
-	}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-	/**
-	 * Get the WooPayments gateway.
-	 *
-	 * @return \WC_Payments|null
-	 */
-	private static function get_gateway() {
-		$payment_gateways = WC()->payment_gateways()->payment_gateways();
-		if ( isset( $payment_gateways['woocommerce_payments'] ) ) {
-			return $payment_gateways['woocommerce_payments'];
-		}
-		return null;
+		return false;
 	}
 
 	/**
 	 * Check if the store has any enabled ecommerce gateways, other than WooPayments.
 	 *
-	 * We exclude offline payment methods from this check.
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
 	 *
-	 * @return bool
+	 * @return bool Always false.
 	 */
 	public static function has_other_ecommerce_gateways(): bool {
-		$gateways         = WC()->payment_gateways()->payment_gateways;
-		$enabled_gateways = array_filter(
-			$gateways,
-			function ( $gateway ) {
-				// Filter out any WooPayments-related or offline gateways.
-				return 'yes' === $gateway->enabled
-					&& 0 !== strpos( $gateway->id, 'woocommerce_payments' )
-					&& ! in_array( $gateway->id, array( WC_Gateway_BACS::ID, WC_Gateway_Cheque::ID, WC_Gateway_COD::ID ), true );
-			}
-		);
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-		return ! empty( $enabled_gateways );
+		return false;
 	}
 
 	/**
 	 * The task action URL.
 	 *
-	 * @return string
+	 * @deprecated 9.9.0 The WooPayments onboarding task no longer exists.
+	 *
+	 * @return string Always empty.
 	 */
 	public function get_action_url() {
-		if ( self::is_supported() ) {
-			// If WooPayments is active, point to the WooPayments client surfaces/flows.
-			if ( self::is_wcpay_active() ) {
-				// Point to a WooPayments connect link to let the WooPayments client figure out the proper
-				// place to redirect the user to.
-				return add_query_arg(
-					array(
-						'wcpay-connect' => '1',
-						'from'          => 'WCADMIN_PAYMENT_TASK',
-						'_wpnonce'      => wp_create_nonce( 'wcpay-connect' ),
-					),
-					admin_url( 'admin.php' )
-				);
-			}
+		wc_deprecated_function( __METHOD__, '9.9.0', Payments::class );
 
-			// Check if there is an active WooPayments incentive via the welcome page.
-			if ( WcPayWelcomePage::instance()->has_incentive() ) {
-				// Point to the WooPayments welcome page.
-				return add_query_arg( 'from', 'WCADMIN_PAYMENT_TASK', admin_url( 'admin.php?page=wc-admin&path=/wc-pay-welcome-page' ) );
-			}
-
-			// WooPayments is not active.
-			// Trigger the WooPayments plugin installation and/or activation by pointing to the task suggestion URL.
-			return add_query_arg(
-				array(
-					'task' => $this->get_id(),
-					'id'   => self::get_suggestion()->id,
-				),
-				admin_url( 'admin.php?page=wc-admin' )
-			);
-		}
-
-		// Fall back to the WooPayments task page URL.
-		return add_query_arg( 'task', $this->get_id(), admin_url( 'admin.php?page=wc-admin' ) );
+		return '';
 	}
 }

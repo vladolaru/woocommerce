@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Add partial capture amounts to the native WooPayments authorization API and clarify provider extension contracts.

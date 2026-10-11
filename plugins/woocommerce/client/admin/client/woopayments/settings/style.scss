@@ -1,0 +1,634 @@
+@import "../_tokens.scss";
+
+// The page sits under core's offline payments header (settings-payments/index.tsx), so it takes that header's inset.
+.woopayments-settings-page {
+	max-width: $woopayments-wide-page-max-width;
+	margin: $gap-large $grid-unit-60 $gap;
+	color: $gray-900;
+
+	.woopayments-settings-loadable-placeholder-group {
+		display: grid;
+		gap: $gap-small;
+	}
+
+	.woopayments-settings-loadable-placeholder {
+		display: block;
+		width: 100%;
+		height: $grid-unit-20;
+		border-radius: $radius-small;
+		background-color: $gray-100;
+		animation: loading-fade 1.6s ease-in-out infinite;
+
+		&:nth-child(4n + 1) {
+			width: 88%;
+		}
+
+		&:nth-child(4n + 2) {
+			width: 72%;
+		}
+
+		&:nth-child(4n + 3) {
+			width: 54%;
+		}
+
+		&:nth-child(4n) {
+			width: 36%;
+		}
+	}
+
+	@media screen and (prefers-reduced-motion: reduce) {
+		.woopayments-settings-loadable-placeholder {
+			animation: none;
+		}
+	}
+}
+
+.woopayments-settings-section {
+	display: grid;
+	grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+	gap: $gap-large;
+	padding: $gap-large 0;
+
+	@include breakpoint("<782px") {
+		grid-template-columns: minmax(0, 1fr);
+		gap: $gap-small;
+	}
+
+	&__details {
+		h2 {
+			margin: 0;
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- base-styles' type scale has no 16px (15px → 20px).
+			font-size: 16px;
+			line-height: $font-line-height-medium;
+			font-weight: 600;
+		}
+	}
+
+	&__description {
+		margin-top: $gap-smaller;
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+
+		&:first-child {
+			margin-top: 0;
+		}
+
+		p {
+			margin: 0 0 $gap-smaller;
+		}
+	}
+
+	&__controls.components-card {
+		box-sizing: border-box;
+		width: 100%;
+		padding: $gap-large;
+	}
+
+	// Controls that bring their own cards stack them.
+	&__controls:not(.components-card) {
+		display: grid;
+		gap: $gap;
+		align-content: start;
+	}
+}
+
+.woopayments-settings-field-group {
+	& + & {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 28px (between $gap-large and $gap-larger).
+		margin-top: 28px;
+		padding-top: $gap-large;
+		border-top: 1px solid $gray-100;
+	}
+
+	h3 {
+		margin: 0 0 $gap;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
+		font-weight: 600;
+	}
+
+	.components-base-control {
+		margin-bottom: $gap;
+	}
+
+	> .components-notice {
+		margin: 0 0 $gap;
+	}
+}
+
+.woopayments-settings-payment-methods-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid $gray-100;
+
+	// The card edge closes the list, like the client's cards, so the last row has no rule of its own.
+	> .woopayments-settings-payment-method-item:last-child {
+		padding-bottom: 0;
+		border-bottom: 0;
+	}
+}
+
+// A list that opens its card has no heading above it, so it also drops the top rule.
+.woopayments-settings-payment-methods-list:first-child {
+	border-top: 0;
+
+	> .woopayments-settings-payment-method-item:first-child {
+		padding-top: 0;
+	}
+}
+
+.woopayments-settings-payment-method-item {
+	margin: 0;
+	padding: $gap-large 0;
+	border-bottom: 1px solid $gray-100;
+
+	&__main {
+		display: grid;
+		grid-template-columns: 32px $woopayments-payment-method-logo-width minmax(0, 1fr) auto;
+		gap: $gap;
+		align-items: center;
+	}
+
+	// Apple Pay and Google Pay share one checkbox and one action, like the client's grouped express checkout row.
+	&--grouped {
+		.components-checkbox-control {
+			grid-row: 1 / span 2;
+		}
+
+		.woopayments-settings-payment-method-item__icon {
+			grid-column: 2;
+			grid-row: auto;
+		}
+
+		.woopayments-settings-payment-method-item__actions {
+			grid-column: 4;
+			grid-row: 1 / span 2;
+		}
+	}
+
+	.components-base-control {
+		margin-bottom: 0;
+	}
+
+	.components-base-control__field {
+		margin: 0;
+	}
+
+	.components-checkbox-control__label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		border: 0;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	&__icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: $woopayments-payment-method-logo-width;
+		height: $woopayments-payment-method-logo-height;
+		border: 1px solid $gray-200;
+		border-radius: $radius-medium;
+		object-fit: contain;
+		background: $white;
+	}
+
+	&__icon--fallback {
+		color: $gray-700;
+		font-size: $font-size-medium;
+		font-weight: 600;
+		line-height: 1;
+	}
+
+	&__body {
+		min-width: 0;
+
+		p {
+			margin: $gap-smallest 0 0;
+			color: $gray-700;
+			font-size: $font-size-medium;
+			line-height: $font-line-height-small;
+		}
+	}
+
+	&__actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		min-width: max-content;
+		margin-inline-start: $gap;
+	}
+
+	&__heading {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- no token at 6px (between $gap-smallest and $gap-smaller).
+		gap: 6px;
+	}
+
+	&__label {
+		color: $gray-900;
+		font-size: $woopayments-font-size-subheading;
+		line-height: $font-line-height-small;
+		font-weight: 600;
+	}
+
+	&__required {
+		color: $gray-700;
+		font-size: $font-size-small;
+		line-height: $woopayments-line-height-small;
+	}
+
+	&__fee-wrapper,
+	&__promotion-wrapper {
+		display: inline-flex;
+	}
+
+	&__fee-pill {
+		display: inline-flex;
+		align-items: center;
+		min-height: $woopayments-badge-min-height;
+		padding: 1px $gap-smaller;
+		border: 1px solid $gray-300;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- a pill; $radius-full is 9999px, not 999px.
+		border-radius: 999px;
+		appearance: none;
+		background: $white;
+		color: $gray-900;
+		cursor: help;
+		font-family: inherit;
+		font-size: $font-size-small;
+		line-height: $woopayments-line-height-small;
+		white-space: nowrap;
+	}
+
+	// The promotion details trigger is a button with core's status badge classes, sized like core's Pill.
+	&__promotion-badge {
+		gap: $gap-smallest;
+		padding: $gap-smallest $gap-smaller;
+		appearance: none;
+		cursor: help;
+		font-family: inherit;
+		font-size: $font-size-small;
+		line-height: $font-line-height-x-small;
+	}
+
+	&__promotion-icon {
+		fill: currentColor;
+		flex: 0 0 auto;
+	}
+
+	&__card-brands {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: $gap-smaller;
+		margin-top: $gap-small;
+
+		img {
+			// stylelint-disable declaration-property-value-disallowed-list -- sized by the asset.
+			width: 32px;
+			height: 20px;
+			// stylelint-enable declaration-property-value-disallowed-list
+			object-fit: contain;
+		}
+	}
+
+	// One slot for every row notice (availability, exclusion, duplicate), placed like the client's: full row
+	// width, 24px below the row, stacked when more than one applies.
+	&__notices {
+		display: flex;
+		flex-direction: column;
+		gap: $gap-small;
+		margin-top: $gap-large;
+
+		&:empty {
+			display: none;
+		}
+	}
+
+	&__notice.components-notice {
+		margin: 0;
+	}
+
+	// Below 660px the client restacks each row: the checkbox, then the logo and name on one line, with the
+	// description, card brands and fee pill underneath. core's breakpoint() mixin has no 660px size, so this
+	// uses the client's width directly.
+	@media (max-width: 660px) {
+		&__main {
+			grid-template-columns: 24px auto minmax(0, 1fr);
+			gap: $gap-smaller $gap-small;
+		}
+
+		// The client's logos drop to 30px high on narrow screens.
+		&__icon {
+			// stylelint-disable declaration-property-value-disallowed-list -- narrow-screen logo box, sized by the asset.
+			width: 48px;
+			height: 30px;
+			// stylelint-enable declaration-property-value-disallowed-list
+		}
+
+		&__body {
+			display: contents;
+		}
+
+		&__body > p,
+		&__card-brands,
+		&__actions {
+			grid-column: 2 / -1;
+		}
+
+		&__card-brands {
+			margin-top: $gap-smallest;
+		}
+
+		&__actions {
+			justify-content: flex-start;
+			margin-inline-start: 0;
+		}
+
+		&--grouped &__actions {
+			grid-column: 2 / -1;
+			grid-row: auto;
+		}
+
+		&--grouped .components-checkbox-control {
+			grid-row: auto;
+		}
+	}
+}
+
+.woopayments-settings-payment-methods__manual-capture-notice.components-notice {
+	margin: 0 0 $gap;
+}
+
+.woopayments-settings-payment-method-activation-modal {
+	&__body {
+		display: flex;
+		flex-direction: column;
+		gap: $gap-small;
+
+		p,
+		ul {
+			margin: 0;
+		}
+
+		ul {
+			padding-inline-start: $woopayments-list-indent;
+		}
+	}
+
+	.woopayments-settings-payment-method-item__icon {
+		width: $woopayments-payment-method-logo-width;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the modal logo box is 2px taller than the row's.
+		height: 42px;
+	}
+}
+
+.woopayments-settings-control-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: $gap;
+
+	.wcpay-component-phone-number-input {
+		display: block;
+		width: 100%;
+	}
+
+	.wcpay-component-phone-number-input__input {
+		box-sizing: border-box;
+		width: 100%;
+		min-height: $grid-unit-50;
+	}
+
+	@include breakpoint("<782px") {
+		grid-template-columns: 1fr;
+	}
+
+	&--stacked {
+		grid-template-columns: 1fr;
+		max-width: $woopayments-field-max-width;
+	}
+
+	&--inline {
+		display: flex;
+		flex-wrap: wrap;
+	}
+}
+
+.woopayments-settings-advanced-option {
+	margin-bottom: $gap;
+}
+
+.components-checkbox-control + .woopayments-settings-field-group {
+	margin-top: $gap-large;
+}
+
+.woopayments-settings-field-narrow {
+	max-width: $woopayments-field-max-width;
+}
+
+.woopayments-settings-modal {
+	display: flex;
+	flex-direction: column;
+	gap: $gap;
+
+	h2,
+	p {
+		margin: 0;
+	}
+
+	&__actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: $gap-smaller;
+		margin-top: $gap-smaller;
+	}
+}
+
+.woopayments-settings-disable-modal {
+	&__payment-methods-list {
+		display: flex;
+		flex-direction: column;
+		gap: $gap-small;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+
+		li {
+			display: flex;
+			align-items: center;
+			gap: $gap-smaller;
+			min-width: 0;
+			margin: 0;
+			color: $gray-900;
+			font-size: $font-size-medium;
+			line-height: $font-line-height-small;
+		}
+	}
+
+	&__method-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 auto;
+		// stylelint-disable declaration-property-value-disallowed-list -- small logo box, sized by the asset.
+		width: 32px;
+		height: 24px;
+		// stylelint-enable declaration-property-value-disallowed-list
+		border: 1px solid $gray-200;
+		border-radius: $radius-small;
+		background: $white;
+		object-fit: contain;
+	}
+
+	&__method-icon--fallback {
+		color: $gray-700;
+		font-size: $font-size-small;
+		font-weight: 600;
+		line-height: 1;
+	}
+
+	&__help {
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+	}
+}
+
+.woopayments-woopay-disable-feedback {
+	@media (min-width: $break-large) {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- modal inset for the hosted feedback form; no upstream token.
+		max-height: calc(100% - 120px);
+	}
+
+	.components-modal__content {
+		padding: $gap-large;
+	}
+
+	&__body {
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- modal width for the hosted feedback form; no upstream token.
+		width: min(600px, calc(100vw - 96px));
+	}
+
+	&__logo {
+		display: block;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the WooPay logo asset.
+		height: 31px;
+	}
+
+	&__status {
+		display: flex;
+		align-items: center;
+		gap: $gap-smaller;
+		margin: 0 0 $gap-small;
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+	}
+
+	&__iframe {
+		display: block;
+		width: 100%;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the hosted form's content.
+		min-height: 650px;
+		border: 0;
+
+		@include breakpoint("<782px") {
+			// stylelint-disable-next-line declaration-property-value-disallowed-list -- sized by the hosted form's content.
+			min-height: 560px;
+		}
+	}
+}
+
+.woopayments-settings-character-count,
+.woopayments-settings-muted {
+	margin: $gap-smaller 0 0;
+	color: $gray-700;
+	font-size: $font-size-small;
+	line-height: $woopayments-line-height-small;
+}
+
+.woopayments-settings-field-group > .woopayments-settings-muted {
+	margin: 0 0 $gap;
+}
+
+.woopayments-settings-save-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: $gap;
+	margin-top: $gap-large;
+	padding: $gap 0;
+	border-top: 1px solid $gray-200;
+	background: $white;
+
+	@include breakpoint("<782px") {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	&__status {
+		margin: 0;
+		color: $gray-700;
+		font-size: $font-size-medium;
+		line-height: $font-line-height-small;
+
+		&.is-error {
+			color: $alert-red;
+		}
+	}
+}
+
+.woopayments-settings-busy-state {
+	&__status {
+		display: block;
+	}
+
+	&__content {
+		transition: opacity 120ms ease;
+	}
+
+	&.is-busy &__content {
+		cursor: progress;
+		opacity: 0.55;
+	}
+}
+
+// The fee and promotion details open in a core Popover, outside the payment method row; like core's badge
+// popovers (settings-payments-main.scss), the Popover's class sets the width, wide enough for one line per fee row.
+.woopayments-settings-payment-method-item__popover .woopayments-settings-payment-method-item__details-popover {
+	box-sizing: border-box;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- wide enough for one line per fee row; no upstream popover width.
+	width: 320px;
+}
+
+.woopayments-settings-payment-method-item__details-popover {
+	display: grid;
+	gap: $gap-smaller;
+	padding: $gap-small;
+	font-size: $font-size-small;
+	line-height: $woopayments-line-height-small;
+
+	> span {
+		display: flex;
+		justify-content: space-between;
+		gap: $gap;
+		white-space: nowrap;
+	}
+
+	p {
+		margin: 0;
+	}
+}

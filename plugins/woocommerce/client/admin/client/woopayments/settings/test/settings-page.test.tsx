@@ -1,0 +1,5984 @@
+/**
+ * External dependencies
+ */
+import fs from 'fs';
+import nodePath from 'path';
+import { speak } from '@wordpress/a11y';
+import apiFetch from '@wordpress/api-fetch';
+import {
+	act,
+	fireEvent,
+	render,
+	renderHook,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from '@wordpress/element';
+import { recordEvent } from '@woocommerce/tracks';
+import type { ReactNode } from 'react';
+
+/**
+ * Internal dependencies
+ */
+import { WooPaymentsSettingsPage } from '../settings-page';
+
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
+jest.mock( '@wordpress/a11y', () => ( {
+	speak: jest.fn(),
+} ) );
+jest.mock( '@woocommerce/tracks', () => ( {
+	recordEvent: jest.fn(),
+} ) );
+
+type TourStep = {
+	focusElement?: {
+		desktop?: string;
+	};
+	meta?: {
+		heading?: string;
+		descriptions?: {
+			desktop?: ReactNode;
+		};
+	};
+};
+
+type TourConfig = {
+	steps: TourStep[];
+	options?: {
+		callbacks?: {
+			onMinimize?: ( currentStepIndex: number ) => void;
+		};
+		effects?: {
+			autoScroll?:
+				| boolean
+				| {
+						behavior?: ScrollBehavior;
+						block?: ScrollLogicalPosition;
+				  };
+		};
+	};
+	closeHandler: (
+		steps: TourStep[],
+		currentIndex: number,
+		element: string
+	) => void;
+};
+
+const mockTourKitConfigs: TourConfig[] = [];
+
+jest.mock( '@woocommerce/components', () => {
+	const actualComponents = jest.requireActual( '@woocommerce/components' );
+
+	return {
+		...actualComponents,
+		TourKit: ( { config }: { config: TourConfig } ) => {
+			mockTourKitConfigs.push( config );
+
+			return (
+				<div data-testid="fraud-protection-tour">
+					{ config.steps.map( ( step ) => (
+						<div key={ step.meta?.heading }>
+							{ step.meta?.heading }
+							{ step.meta?.descriptions?.desktop && (
+								<div>{ step.meta.descriptions.desktop }</div>
+							) }
+						</div>
+					) ) }
+					<button
+						type="button"
+						onClick={ () =>
+							config.closeHandler(
+								config.steps,
+								config.steps.length - 1,
+								'done-btn'
+							)
+						}
+					>
+						Finish fraud tour
+					</button>
+					<button
+						type="button"
+						onClick={ () =>
+							config.closeHandler( config.steps, 0, 'close-btn' )
+						}
+					>
+						Dismiss fraud tour
+					</button>
+				</div>
+			);
+		},
+	};
+} );
+
+const mockCreateErrorNotice = jest.fn();
+const mockCreateInfoNotice = jest.fn();
+
+jest.mock( '@wordpress/data', () => {
+	const actualData = jest.requireActual( '@wordpress/data' );
+
+	return {
+		...actualData,
+		dispatch: jest.fn( ( storeName, ...args ) =>
+			storeName === 'core/notices'
+				? {
+						createErrorNotice: mockCreateErrorNotice,
+						createInfoNotice: mockCreateInfoNotice,
+				  }
+				: actualData.dispatch( storeName, ...args )
+		),
+	};
+} );
+
+jest.mock( '../../promotions/spotlight', () => ( {
+	SpotlightPromotion: () => <div>Spotlight promotion</div>,
+} ) );
+
+const mockApiFetch = apiFetch as jest.MockedFunction< typeof apiFetch >;
+const mockSpeak = speak as jest.MockedFunction< typeof speak >;
+
+// The recorded native :8889 Overview shell (see its `_meta`), with the dashboard login link an account that is not a test drive gets.
+const RECORDED_SHELL = JSON.parse(
+	fs.readFileSync(
+		nodePath.join(
+			__dirname,
+			'../../admin/test/fixtures/recorded-overview-shell.json'
+		),
+		'utf8'
+	)
+).response;
+const ACCOUNT_LINK =
+	'https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview&wcpay-login=1&_wpnonce=abc123';
+const createShellWithAccountLink = () => ( {
+	...RECORDED_SHELL,
+	account_status: {
+		...RECORDED_SHELL.account_status,
+		account_link: ACCOUNT_LINK,
+	},
+} );
+const mockRecordEvent = recordEvent as jest.MockedFunction<
+	typeof recordEvent
+>;
+const FRAUD_TOUR_DISMISSAL_PATH =
+	'/wc/v3/payments/settings/wcpay_fraud_protection_welcome_tour_dismissed';
+
+const mockSaveSettings = jest.fn();
+const mockUseSettings = jest.fn();
+const mockUseGetSavedSettings = jest.fn();
+const mockUseGetSettings = jest.fn();
+const mockUseSavedCards = jest.fn();
+const mockUseCardPresentEligible = jest.fn();
+const mockUseEnabledPaymentMethodIds = jest.fn();
+const mockUseDebugLog = jest.fn();
+const mockUseTestMode = jest.fn();
+const mockUseMultiCurrency = jest.fn();
+const mockUseAccountStatementDescriptor = jest.fn();
+const mockUseAccountStatementDescriptorKanji = jest.fn();
+const mockUseAccountStatementDescriptorKana = jest.fn();
+const mockUseAccountBusinessSupportEmail = jest.fn();
+const mockUseAccountBusinessSupportPhone = jest.fn();
+const mockUseDepositScheduleInterval = jest.fn();
+const mockUseDepositScheduleWeeklyAnchor = jest.fn();
+const mockUseDepositScheduleMonthlyAnchor = jest.fn();
+const mockUseManualCapture = jest.fn();
+const mockUseIsWCPayEnabled = jest.fn();
+const mockUsePaymentRequestEnabledSettings = jest.fn();
+const mockUseExpressCheckoutInPaymentMethodsEnabledSettings = jest.fn();
+const mockUsePaymentRequestButtonType = jest.fn();
+const mockUsePaymentRequestButtonSize = jest.fn();
+const mockUsePaymentRequestButtonTheme = jest.fn();
+const mockUsePaymentRequestButtonBorderRadius = jest.fn();
+const mockUseWooPayEnabledSettings = jest.fn();
+const mockUseWooPayGlobalThemeSupportEnabledSettings = jest.fn();
+const mockUseWooPayCustomMessage = jest.fn();
+const mockUseWooPayStoreLogo = jest.fn();
+const mockUseCurrentProtectionLevel = jest.fn();
+const mockUseAdvancedFraudProtectionSettings = jest.fn();
+const mockUseAccountCommunicationsEmail = jest.fn();
+const mockUseSelectedPaymentMethod = jest.fn();
+const mockUseUnselectedPaymentMethod = jest.fn();
+const mockUseTestModeOnboarding = jest.fn();
+const mockUseDevMode = jest.fn();
+const mockUseStripeBilling = jest.fn();
+const mockUseStripeBillingMigration = jest.fn();
+const mockUseDepositDelayDays = jest.fn();
+const mockUseCompletedWaitingPeriod = jest.fn();
+const mockUseDepositStatus = jest.fn();
+const mockUseDepositRestrictions = jest.fn();
+const mockUseGetAvailablePaymentMethodIds = jest.fn();
+const mockUseGetPaymentMethodStatuses = jest.fn();
+const mockUseGetDuplicatedPaymentMethodIds = jest.fn();
+const mockUseGetAccountFees = jest.fn();
+const mockUseDismissedDuplicatePaymentMethodNotices = jest.fn();
+const mockUsePaymentRequestLocations = jest.fn();
+const mockUseWooPayLocations = jest.fn();
+const mockUseAmazonPayLocations = jest.fn();
+const mockUseAmazonPayEnabledSettings = jest.fn();
+const mockUseLinkEnabledSettings = jest.fn();
+const mockUseWooPayShowIncompatibilityNotice = jest.fn();
+const mockUseGetSavingError = jest.fn();
+
+jest.mock( '../data/hooks', () => ( {
+	useSettings: () => mockUseSettings(),
+	useGetSettings: () => mockUseGetSettings(),
+	useGetSavedSettings: () => mockUseGetSavedSettings(),
+	useSavedCards: () => mockUseSavedCards(),
+	useCardPresentEligible: () => mockUseCardPresentEligible(),
+	useEnabledPaymentMethodIds: () => mockUseEnabledPaymentMethodIds(),
+	useDebugLog: () => mockUseDebugLog(),
+	useTestMode: () => mockUseTestMode(),
+	useMultiCurrency: () => mockUseMultiCurrency(),
+	useAccountStatementDescriptor: () => mockUseAccountStatementDescriptor(),
+	useAccountStatementDescriptorKanji: () =>
+		mockUseAccountStatementDescriptorKanji(),
+	useAccountStatementDescriptorKana: () =>
+		mockUseAccountStatementDescriptorKana(),
+	useAccountBusinessSupportEmail: () => mockUseAccountBusinessSupportEmail(),
+	useAccountBusinessSupportPhone: () => mockUseAccountBusinessSupportPhone(),
+	useDepositScheduleInterval: () => mockUseDepositScheduleInterval(),
+	useDepositScheduleWeeklyAnchor: () => mockUseDepositScheduleWeeklyAnchor(),
+	useDepositScheduleMonthlyAnchor: () =>
+		mockUseDepositScheduleMonthlyAnchor(),
+	useManualCapture: () => mockUseManualCapture(),
+	useIsWCPayEnabled: () => mockUseIsWCPayEnabled(),
+	usePaymentRequestEnabledSettings: () =>
+		mockUsePaymentRequestEnabledSettings(),
+	useExpressCheckoutInPaymentMethodsEnabledSettings: () =>
+		mockUseExpressCheckoutInPaymentMethodsEnabledSettings(),
+	usePaymentRequestButtonType: () => mockUsePaymentRequestButtonType(),
+	usePaymentRequestButtonSize: () => mockUsePaymentRequestButtonSize(),
+	usePaymentRequestButtonTheme: () => mockUsePaymentRequestButtonTheme(),
+	usePaymentRequestButtonBorderRadius: () =>
+		mockUsePaymentRequestButtonBorderRadius(),
+	useWooPayEnabledSettings: () => mockUseWooPayEnabledSettings(),
+	useWooPayGlobalThemeSupportEnabledSettings: () =>
+		mockUseWooPayGlobalThemeSupportEnabledSettings(),
+	useWooPayCustomMessage: () => mockUseWooPayCustomMessage(),
+	useWooPayStoreLogo: () => mockUseWooPayStoreLogo(),
+	useCurrentProtectionLevel: () => mockUseCurrentProtectionLevel(),
+	useAdvancedFraudProtectionSettings: () =>
+		mockUseAdvancedFraudProtectionSettings(),
+	useAccountCommunicationsEmail: () => mockUseAccountCommunicationsEmail(),
+	useSelectedPaymentMethod: () => mockUseSelectedPaymentMethod(),
+	useUnselectedPaymentMethod: () => mockUseUnselectedPaymentMethod(),
+	useTestModeOnboarding: () => mockUseTestModeOnboarding(),
+	useDevMode: () => mockUseDevMode(),
+	useStripeBilling: () => mockUseStripeBilling(),
+	useStripeBillingMigration: () => mockUseStripeBillingMigration(),
+	useDepositDelayDays: () => mockUseDepositDelayDays(),
+	useCompletedWaitingPeriod: () => mockUseCompletedWaitingPeriod(),
+	useDepositStatus: () => mockUseDepositStatus(),
+	useDepositRestrictions: () => mockUseDepositRestrictions(),
+	useGetAvailablePaymentMethodIds: () =>
+		mockUseGetAvailablePaymentMethodIds(),
+	useGetPaymentMethodStatuses: () => mockUseGetPaymentMethodStatuses(),
+	useGetDuplicatedPaymentMethodIds: () =>
+		mockUseGetDuplicatedPaymentMethodIds(),
+	useGetAccountFees: () => mockUseGetAccountFees(),
+	useDismissedDuplicatePaymentMethodNotices: () =>
+		mockUseDismissedDuplicatePaymentMethodNotices(),
+	usePaymentRequestLocations: () => mockUsePaymentRequestLocations(),
+	useWooPayLocations: () => mockUseWooPayLocations(),
+	useAmazonPayLocations: () => mockUseAmazonPayLocations(),
+	useAmazonPayEnabledSettings: () => mockUseAmazonPayEnabledSettings(),
+	useLinkEnabledSettings: ( isWooPayBlockingLink?: boolean ) =>
+		mockUseLinkEnabledSettings( isWooPayBlockingLink ),
+	useWooPayShowIncompatibilityNotice: () =>
+		mockUseWooPayShowIncompatibilityNotice(),
+	useGetSavingError: () => mockUseGetSavingError(),
+} ) );
+
+const noop = jest.fn();
+const DEFAULT_FEATURE_FLAGS = {
+	woopay: true,
+	woopayExpressCheckout: true,
+	isDynamicCheckoutPlaceOrderButtonEnabled: true,
+	amazonPay: true,
+};
+
+const getDefaultAccountResponse = ( {
+	documentsEnabled = true,
+	hasSubmittedVatData = true,
+	country = 'US',
+}: {
+	documentsEnabled?: boolean;
+	hasSubmittedVatData?: boolean;
+	country?: string;
+} = {} ) => ( {
+	account: {
+		id: 'acct_live',
+		mode: 'live',
+		default_currency: 'usd',
+		connected: true,
+		working: true,
+		can_process_payments: true,
+		test_mode: false,
+		test_drive: false,
+		sandbox: false,
+		live: true,
+	},
+	documents: {
+		enabled: documentsEnabled,
+		has_submitted_vat_data: hasSubmittedVatData,
+		country,
+	},
+	urls: {
+		setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+	},
+} );
+
+const setSettingsPageUrl = ( query = '' ) => {
+	const suffix = query ? `&${ query }` : '';
+
+	window.history.replaceState(
+		null,
+		'',
+		`/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings${ suffix }`
+	);
+};
+
+type MockIntersectionObserverInstance = IntersectionObserver & {
+	observe: jest.Mock;
+	unobserve: jest.Mock;
+	disconnect: jest.Mock;
+};
+
+let mockIntersectionObserverCallbacks: IntersectionObserverCallback[] = [];
+let mockIntersectionObserverInstances: MockIntersectionObserverInstance[] = [];
+
+const installMockIntersectionObserver = () => {
+	mockIntersectionObserverCallbacks = [];
+	mockIntersectionObserverInstances = [];
+
+	window.IntersectionObserver = jest.fn(
+		( callback: IntersectionObserverCallback ) => {
+			const instance = {
+				root: null,
+				rootMargin: '',
+				thresholds: [ 1 ],
+				observe: jest.fn(),
+				unobserve: jest.fn(),
+				disconnect: jest.fn(),
+				takeRecords: jest.fn( () => [] ),
+			} as MockIntersectionObserverInstance;
+
+			mockIntersectionObserverCallbacks.push( callback );
+			mockIntersectionObserverInstances.push( instance );
+
+			return instance;
+		}
+	);
+};
+
+const intersectObservedElement = ( target: Element ) => {
+	act( () => {
+		mockIntersectionObserverCallbacks[ 0 ](
+			[
+				{
+					isIntersecting: true,
+					target,
+				} as IntersectionObserverEntry,
+			],
+			mockIntersectionObserverInstances[ 0 ]
+		);
+	} );
+};
+
+const getFraudTourDismissalCalls = () =>
+	mockApiFetch.mock.calls.filter( ( [ options ] ) => {
+		const path = typeof options === 'string' ? options : options?.path;
+
+		return path === FRAUD_TOUR_DISMISSAL_PATH;
+	} );
+
+const getFraudTourEventNames = () =>
+	mockRecordEvent.mock.calls
+		.map( ( [ eventName ] ) => eventName )
+		.filter(
+			( eventName ): eventName is string =>
+				typeof eventName === 'string' &&
+				eventName.startsWith( 'wcpay_fraud_protection_tour_' )
+		);
+
+const getRecordedEventCalls = ( expectedEventName: string ) =>
+	mockRecordEvent.mock.calls.filter(
+		( [ eventName ] ) => eventName === expectedEventName
+	);
+
+const getGatewayToggleEventCalls = ( expectedAction: string ) =>
+	getRecordedEventCalls( 'wcpay_gateway_toggle' ).filter(
+		( [ , properties ] ) =>
+			properties &&
+			typeof properties === 'object' &&
+			'action' in properties &&
+			properties.action === expectedAction
+	);
+
+// Each settings section renders as a labeled `region` landmark whose accessible
+// name is its title heading (see SettingsSection in settings-page.tsx, which
+// wires `aria-labelledby` to its <h2>). Scope assertions by role + accessible
+// name rather than the `.woopayments-settings-section` class so a CSS rename
+// with no behavior change does not break these queries.
+const getSettingsSectionByName = ( name: string | RegExp ) =>
+	screen.getByRole( 'region', { name } );
+
+const getGeneralSettingsSection = () => getSettingsSectionByName( 'General' );
+
+const getSectionLinkByHref = ( section: HTMLElement, href: string ) =>
+	within( section )
+		.getAllByRole( 'link' )
+		.find( ( link ) => link.getAttribute( 'href' ) === href );
+
+const queryWooPayTermsLink = () =>
+	screen.queryByRole( 'link', { name: 'WooCommerce Terms of Service' } );
+
+const setHookDefaults = () => {
+	// The saved snapshot starts as the first value each enabled hook reports.
+	mockUseGetSavedSettings.mockImplementation( () => ( {
+		is_woopay_enabled: mockUseWooPayEnabledSettings()[ 0 ],
+		is_payment_request_enabled: mockUsePaymentRequestEnabledSettings()[ 0 ],
+		enabled_payment_method_ids: [
+			...( mockUseLinkEnabledSettings()[ 0 ] ? [ 'link' ] : [] ),
+			...( mockUseAmazonPayEnabledSettings()[ 0 ]
+				? [ 'amazon_pay' ]
+				: [] ),
+		],
+		advanced_fraud_protection_settings:
+			mockUseAdvancedFraudProtectionSettings()[ 0 ],
+	} ) );
+	mockUseSettings.mockReturnValue( {
+		isLoading: false,
+		isSaving: false,
+		isDirty: true,
+		saveSettings: mockSaveSettings,
+	} );
+	mockUseGetSettings.mockReturnValue( {
+		account_country: 'US',
+		store_currency: 'USD',
+		is_multi_currency_enabled: true,
+		feature_flags: DEFAULT_FEATURE_FLAGS,
+		available_payment_method_ids: [
+			'card',
+			'link',
+			'affirm',
+			'amazon_pay',
+			'apple_pay',
+			'google_pay',
+		],
+	} );
+	mockUseSavedCards.mockReturnValue( [ true, noop ] );
+	mockUseCardPresentEligible.mockReturnValue( [ true, noop ] );
+	mockUseEnabledPaymentMethodIds.mockReturnValue( [
+		[ 'card', 'link', 'amazon_pay', 'affirm' ],
+		noop,
+	] );
+	mockUseDebugLog.mockReturnValue( [ false, noop ] );
+	mockUseTestMode.mockReturnValue( [ false, noop ] );
+	mockUseMultiCurrency.mockReturnValue( [ true, noop ] );
+	mockUseAccountStatementDescriptor.mockReturnValue( [ 'MY STORE', noop ] );
+	mockUseAccountStatementDescriptorKanji.mockReturnValue( [ '', noop ] );
+	mockUseAccountStatementDescriptorKana.mockReturnValue( [ '', noop ] );
+	mockUseAccountBusinessSupportEmail.mockReturnValue( [
+		'support@example.com',
+		noop,
+	] );
+	mockUseAccountBusinessSupportPhone.mockReturnValue( [
+		'+12015555555',
+		noop,
+	] );
+	mockUseDepositScheduleInterval.mockReturnValue( [ 'weekly', noop ] );
+	mockUseDepositScheduleWeeklyAnchor.mockReturnValue( [ 'monday', noop ] );
+	mockUseDepositScheduleMonthlyAnchor.mockReturnValue( [ '1', noop ] );
+	mockUseManualCapture.mockReturnValue( [ false, noop ] );
+	mockUseIsWCPayEnabled.mockReturnValue( [ true, noop ] );
+	mockUsePaymentRequestEnabledSettings.mockReturnValue( [ true, noop ] );
+	mockUseExpressCheckoutInPaymentMethodsEnabledSettings.mockReturnValue( [
+		true,
+		noop,
+	] );
+	mockUsePaymentRequestButtonType.mockReturnValue( [ 'default', noop ] );
+	mockUsePaymentRequestButtonSize.mockReturnValue( [ 'default', noop ] );
+	mockUsePaymentRequestButtonTheme.mockReturnValue( [ 'dark', noop ] );
+	mockUsePaymentRequestButtonBorderRadius.mockReturnValue( [ 4, noop ] );
+	mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
+	mockUseWooPayGlobalThemeSupportEnabledSettings.mockReturnValue( [
+		false,
+		noop,
+	] );
+	mockUseWooPayCustomMessage.mockReturnValue( [
+		'Fast checkout with WooPay',
+		noop,
+	] );
+	mockUseWooPayStoreLogo.mockReturnValue( [ 'file_123', noop ] );
+	mockUseCurrentProtectionLevel.mockReturnValue( [ 'standard', noop ] );
+	mockUseAdvancedFraudProtectionSettings.mockReturnValue( [ [], noop ] );
+	mockUseAccountCommunicationsEmail.mockReturnValue( [
+		'owner@example.com',
+		noop,
+	] );
+	mockUseSelectedPaymentMethod.mockReturnValue( [
+		[ 'card', 'link', 'amazon_pay', 'affirm' ],
+		noop,
+	] );
+	mockUseUnselectedPaymentMethod.mockReturnValue( [
+		[ 'card', 'link', 'amazon_pay', 'affirm' ],
+		noop,
+	] );
+	mockUseTestModeOnboarding.mockReturnValue( false );
+	mockUseDevMode.mockReturnValue( false );
+	mockUseStripeBilling.mockReturnValue( [ false, noop ] );
+	mockUseStripeBillingMigration.mockReturnValue( [
+		false,
+		0,
+		0,
+		noop,
+		false,
+		false,
+	] );
+	mockUseDepositDelayDays.mockReturnValue( 2 );
+	mockUseCompletedWaitingPeriod.mockReturnValue( true );
+	mockUseDepositStatus.mockReturnValue( 'enabled' );
+	mockUseDepositRestrictions.mockReturnValue( '' );
+	mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+		'card',
+		'link',
+		'affirm',
+		'amazon_pay',
+		'apple_pay',
+		'google_pay',
+	] );
+	mockUseGetPaymentMethodStatuses.mockReturnValue( {
+		card_payments: { status: 'active' },
+		link_payments: { status: 'active' },
+		affirm_payments: { status: 'active' },
+		amazon_pay_payments: { status: 'active' },
+	} );
+	mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( [] );
+	mockUseGetAccountFees.mockReturnValue( {} );
+	mockUseDismissedDuplicatePaymentMethodNotices.mockReturnValue( [
+		{},
+		noop,
+	] );
+	mockUsePaymentRequestLocations.mockReturnValue( [
+		[ 'product', 'cart', 'checkout' ],
+		noop,
+	] );
+	mockUseWooPayLocations.mockReturnValue( [
+		[ 'product', 'cart', 'checkout' ],
+		noop,
+	] );
+	mockUseAmazonPayLocations.mockReturnValue( [ [ 'checkout' ], noop ] );
+	mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
+	mockUseLinkEnabledSettings.mockReturnValue( [ false, noop, true ] );
+	mockUseWooPayShowIncompatibilityNotice.mockReturnValue( false );
+	mockUseGetSavingError.mockReturnValue( null );
+};
+
+const expectPlainLinks = ( hrefs: string[], target?: '_blank' ) => {
+	hrefs.forEach( ( href ) => {
+		const links = Array.from(
+			document.querySelectorAll( `a[href="${ href }"]` )
+		);
+
+		expect( links.length ).toBeGreaterThan( 0 );
+		links.forEach( ( link ) => {
+			expect( link ).not.toHaveClass( 'components-external-link' );
+			if ( target ) {
+				expect( link ).toHaveAttribute( 'target', target );
+			} else {
+				expect( link ).not.toHaveAttribute( 'target' );
+			}
+		} );
+	} );
+};
+
+describe( 'WooPaymentsSettingsPage', () => {
+	const settingsWindow = window as typeof window & {
+		wcSettings?: Record< string, unknown >;
+	};
+	let initialWcSettings: Record< string, unknown > | undefined;
+
+	beforeEach( () => {
+		initialWcSettings = settingsWindow.wcSettings;
+		jest.clearAllMocks();
+		mockTourKitConfigs.length = 0;
+		delete (
+			window as typeof window & {
+				IntersectionObserver?: typeof IntersectionObserver;
+			}
+		 ).IntersectionObserver;
+		setSettingsPageUrl();
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( getDefaultAccountResponse() );
+			}
+
+			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
+				return new Promise( () => {} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+		setHookDefaults();
+	} );
+
+	afterEach( () => {
+		// Redundant safety net: beforeEach already guarantees a clean slate
+		// before each test. Clearing here too releases the captured configs
+		// promptly and keeps the module-scoped array from holding references
+		// between tests.
+		mockTourKitConfigs.length = 0;
+		settingsWindow.wcSettings = initialWcSettings;
+		jest.useRealTimers();
+	} );
+
+	it( 'renders the native settings manager sections', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		expect( screen.getByText( 'Spotlight promotion' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'General' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'Payments accepted on checkout',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Buy now, pay later' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Express checkouts' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'WooPay', {
+				selector: '.woopayments-settings-payment-method-item__label',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Transactions' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Payouts' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Account notifications' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Fraud protection' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Advanced settings' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toBeInTheDocument();
+	} );
+
+	describe( 'Apple Pay domain error notice', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
+
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setBootstrap = (
+			woopaymentsSettings: Record< string, unknown >
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: { ...previousWcSettings?.admin, woopaymentsSettings },
+			};
+		};
+
+		it( 'shows the stored domain error when the page opens through in-app navigation', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified, see <a href="https://example.com/help">https://example.com/help</a>',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen
+					.getByText( 'Express checkouts:' )
+					.closest( '.woopayments-settings-apple-pay-domain-notice' )
+			).toHaveClass( 'is-error' );
+			expect(
+				screen.getByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).toBeInTheDocument();
+			const detailLink = screen.getByRole( 'link', {
+				name: 'https://example.com/help',
+			} );
+			expect( detailLink ).toHaveAttribute(
+				'href',
+				'https://example.com/help'
+			);
+			// The detail renders as inline markup directly inside <i>, matching the
+			// client's <p><i>{error}</i></p>. A <div> wrapper here (from RawHTML)
+			// would be invalid nesting inside <p> and <i>.
+			expect( detailLink.parentElement?.tagName ).toBe( 'I' );
+			expect( detailLink.parentElement?.parentElement?.tagName ).toBe(
+				'P'
+			);
+			// Client 11.1.0 class-wc-payments-apple-pay-registration.php:303-308: a plain new-tab link.
+			const learnMoreLink = document.querySelector(
+				'.woopayments-settings-apple-pay-domain-notice a[href="https://woocommerce.com/document/woopayments/payment-methods/apple-pay/#button-does-not-appear"]'
+			);
+			expect( learnMoreLink ).toHaveTextContent( /^Learn more$/ );
+			expect( learnMoreLink ).not.toHaveClass(
+				'components-external-link'
+			);
+			expect( learnMoreLink ).toHaveAttribute( 'target', '_blank' );
+			expect(
+				screen.getByRole( 'link', { name: 'logs' } )
+			).toHaveAttribute(
+				'href',
+				'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs'
+			);
+		} );
+
+		it( 'reports the displayed detail once per page load, even when the page opens again', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified',
+					errorId:
+						'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			const { unmount } = render( <WooPaymentsSettingsPage /> );
+			unmount();
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				mockApiFetch.mock.calls.filter(
+					( [ options ] ) =>
+						typeof options === 'object' &&
+						options.path ===
+							'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				)
+			).toEqual( [
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+						},
+					},
+				],
+			] );
+		} );
+
+		it( 'keeps the domain error displayed and retries reporting it shown after the report fails', async () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: 'Domain not verified',
+					errorId:
+						'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+			mockApiFetch.mockImplementation( ( options ) => {
+				const path =
+					typeof options === 'string' ? options : options?.path;
+
+				if (
+					path ===
+					'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				) {
+					return Promise.reject( new Error( 'Network error' ) );
+				}
+
+				if (
+					path === '/wc-admin/settings/payments/woopayments/account'
+				) {
+					return Promise.resolve( getDefaultAccountResponse() );
+				}
+
+				return Promise.resolve( {} );
+			} );
+
+			const shownCalls = () =>
+				mockApiFetch.mock.calls.filter(
+					( [ callOptions ] ) =>
+						typeof callOptions === 'object' &&
+						callOptions.path ===
+							'/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown'
+				);
+
+			const { unmount } = render( <WooPaymentsSettingsPage /> );
+
+			// Let the rejected "shown" report settle.
+			await waitFor( () => expect( shownCalls() ).toHaveLength( 1 ) );
+
+			// The server never received a successful report, so the notice must
+			// stay displayed rather than being treated as acknowledged.
+			expect(
+				screen.getByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).toBeInTheDocument();
+
+			unmount();
+			render( <WooPaymentsSettingsPage /> );
+
+			// The failed report is not remembered as shown, so a later mount in
+			// the same page session reports it again rather than staying silent.
+			await waitFor( () => expect( shownCalls() ).toHaveLength( 2 ) );
+			expect( shownCalls() ).toEqual( [
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+						},
+					},
+				],
+				[
+					{
+						path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+						method: 'POST',
+						data: {
+							error_id:
+								'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+						},
+					},
+				],
+			] );
+		} );
+
+		it( 'shows the generic domain failure when no detailed error is stored', () => {
+			setBootstrap( {
+				applePayDomainError: {
+					error: '',
+					logsUrl:
+						'https://example.com/wp-admin/admin.php?page=wc-status&tab=logs',
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'Apple Pay domain verification failed.' )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByText(
+					'Apple Pay domain verification failed with the following error:'
+				)
+			).not.toBeInTheDocument();
+			expect( mockApiFetch ).not.toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+				} )
+			);
+		} );
+
+		it( 'shows no domain notice when the bootstrap carries no error', () => {
+			setBootstrap( {} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.queryByText( 'Express checkouts:' )
+			).not.toBeInTheDocument();
+			expect( mockApiFetch ).not.toHaveBeenCalledWith(
+				expect.objectContaining( {
+					path: '/wc-admin/settings/payments/woopayments/admin-notices/apple_pay_domain_error/shown',
+				} )
+			);
+		} );
+	} );
+
+	it( 'keeps settings sections visible with non-interactive placeholders while initial settings load', () => {
+		mockUseSettings.mockReturnValue( {
+			isLoading: true,
+			isSaving: false,
+			isDirty: false,
+			saveSettings: mockSaveSettings,
+		} );
+		mockUseGetSettings.mockReturnValue( {} );
+
+		const { container } = render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.queryByText( 'Loading WooPayments settings…' )
+		).not.toBeInTheDocument();
+		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
+			'WooPayments settings are loading.'
+		);
+		expect(
+			container.querySelector(
+				'.woopayments-settings-loading-state__content'
+			)
+		).toHaveAttribute( 'aria-busy', 'true' );
+		expect(
+			screen.getByRole( 'heading', { name: 'General' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'Payments accepted on checkout',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Buy now, pay later' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Transactions' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Payouts' } )
+		).toBeInTheDocument();
+		const loadingPayoutsSection = getSettingsSectionByName( 'Payouts' );
+		expect(
+			getSectionLinkByHref(
+				loadingPayoutsSection,
+				'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
+			)
+		).toHaveTextContent( /Learn more about payout schedules/ );
+		expect(
+			within( loadingPayoutsSection ).queryByRole( 'link', {
+				name: /^Learn more about pending schedules/,
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Account notifications' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'Advanced settings' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Save changes' } )
+		).not.toBeInTheDocument();
+		// Loading placeholders are intentionally `aria-hidden` decorative skeletons
+		// with no role or accessible name, so there is no ARIA anchor to scope by.
+		// This assertion depends on the `.woopayments-settings-loadable-placeholder`
+		// class name; update it if that styling hook is renamed.
+		expect(
+			container.querySelectorAll(
+				'.woopayments-settings-loadable-placeholder[aria-hidden="true"]'
+			).length
+		).toBeGreaterThan( 8 );
+	} );
+
+	// Client 11.1.0 settings/settings-manager/index.js:40-64 and
+	// settings/payment-methods-section/index.js:26-38 render the same
+	// descriptions while the settings load and after they load.
+	it.each( [
+		[ 'loaded', false ],
+		[ 'loading', true ],
+	] )(
+		'renders the client section descriptions when settings are %s',
+		( _state, isLoading ) => {
+			if ( isLoading ) {
+				mockUseSettings.mockReturnValue( {
+					isLoading: true,
+					isSaving: false,
+					isDirty: false,
+					saveSettings: mockSaveSettings,
+				} );
+				mockUseGetSettings.mockReturnValue( {} );
+			}
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				within( getSettingsSectionByName( 'General' ) ).getByText(
+					'Enable or disable WooPayments on your store.'
+				)
+			).toBeInTheDocument();
+			expect(
+				within(
+					getSettingsSectionByName( 'Payments accepted on checkout' )
+				).getByText(
+					'Add and edit payments available to customers at checkout. Based on their device type, location, and purchase history, your customers will only see the most relevant payment methods.'
+				)
+			).toBeInTheDocument();
+			expect(
+				within(
+					getSettingsSectionByName( 'Express checkouts' )
+				).getByText(
+					'Let your customers use their favorite express payment methods and digital wallets for faster, more secure checkouts across different parts of your store.'
+				)
+			).toBeInTheDocument();
+			expect(
+				getSectionLinkByHref(
+					getSettingsSectionByName( 'Fraud protection' ),
+					'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/'
+				)
+			).toHaveTextContent( /Learn more about fraud protection/ );
+		}
+	);
+
+	it( 'renders reference section descriptions and documentation links', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		const paymentMethodsSection = getSettingsSectionByName(
+			'Payments accepted on checkout'
+		);
+		expect(
+			within( paymentMethodsSection ).getByText(
+				/Based on their device type, location, and purchase history/
+			)
+		).toBeInTheDocument();
+
+		const bnplSection = getSettingsSectionByName( 'Buy now, pay later' );
+		expect(
+			within( bnplSection ).getByText(
+				/Boost sales by offering customers additional buying power and flexible payment options./
+			)
+		).toBeInTheDocument();
+		expect(
+			getSectionLinkByHref(
+				bnplSection,
+				'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/'
+			)
+		).toHaveTextContent( /Learn more/ );
+
+		const transactionsSection = getSettingsSectionByName( 'Transactions' );
+		expect(
+			within( transactionsSection ).getByText(
+				"Update your store's configuration to ensure smooth transactions."
+			)
+		).toBeInTheDocument();
+		expect(
+			getSectionLinkByHref(
+				transactionsSection,
+				'https://woocommerce.com/document/woopayments/'
+			)
+		).toHaveTextContent( /View our documentation/ );
+		expect(
+			getSectionLinkByHref(
+				transactionsSection,
+				'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/'
+			)
+		).toHaveTextContent( /Learn more/ );
+		expect(
+			getSectionLinkByHref(
+				transactionsSection,
+				'https://woocommerce.com/in-person-payments/'
+			)
+		).toHaveTextContent( /In-Person Payments/ );
+
+		const notificationsSection = getSettingsSectionByName(
+			'Account notifications'
+		);
+		expect(
+			getSectionLinkByHref(
+				notificationsSection,
+				'https://woocommerce.com/document/woopayments/settings-guide/#account-notifications'
+			)
+		).toHaveTextContent( /Learn more/ );
+
+		const advancedSection = getSettingsSectionByName( 'Advanced settings' );
+		expect(
+			within( advancedSection ).getByText(
+				'More options for specific payment needs.'
+			)
+		).toBeInTheDocument();
+		expect(
+			getSectionLinkByHref(
+				advancedSection,
+				'https://woocommerce.com/document/woopayments/settings-guide/#advanced-settings'
+			)
+		).toHaveTextContent( /View our documentation/ );
+	} );
+
+	it( 'opens the tax details modal from the VAT settings deep link when tax details are missing', async () => {
+		setSettingsPageUrl( 'woopayments-vat-details-modal=true' );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve(
+					getDefaultAccountResponse( {
+						documentsEnabled: true,
+						hasSubmittedVatData: false,
+						country: 'DE',
+					} )
+				);
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Set your tax details',
+		} );
+
+		expect(
+			within( dialog ).getByRole( 'checkbox', {
+				name: 'I have a valid VAT Number',
+			} )
+		).toBeInTheDocument();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalled();
+		expect( mockCreateInfoNotice ).not.toHaveBeenCalled();
+	} );
+
+	it( 'shows the unavailable tax details notice from the VAT settings deep link when documents are disabled', async () => {
+		setSettingsPageUrl( 'woopayments-vat-details-modal=true' );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve(
+					getDefaultAccountResponse( {
+						documentsEnabled: false,
+						hasSubmittedVatData: false,
+					} )
+				);
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Tax details collection is not available for your account.'
+			)
+		);
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'shows the unavailable tax details notice from the VAT settings deep link when account data fails to load', async () => {
+		setSettingsPageUrl( 'woopayments-vat-details-modal=true' );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.reject( new Error( 'Account unavailable' ) );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await waitFor( () =>
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Tax details collection is not available for your account.'
+			)
+		);
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'shows the already-submitted tax details notice from the VAT settings deep link', async () => {
+		setSettingsPageUrl( 'woopayments-vat-details-modal=true' );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve(
+					getDefaultAccountResponse( {
+						documentsEnabled: true,
+						hasSubmittedVatData: true,
+					} )
+				);
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await waitFor( () =>
+			expect( mockCreateInfoNotice ).toHaveBeenCalledWith(
+				'Tax details are already submitted.'
+			)
+		);
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'removes only the VAT modal query arg when the tax details modal closes', async () => {
+		setSettingsPageUrl(
+			'woopayments-vat-details-modal=true&source=platform-email'
+		);
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve(
+					getDefaultAccountResponse( {
+						documentsEnabled: true,
+						hasSubmittedVatData: false,
+					} )
+				);
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await screen.findByRole( 'dialog', { name: 'Set your tax details' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Cancel' } )
+		);
+		const query = new URLSearchParams( window.location.search );
+
+		expect( query.get( 'path' ) ).toBe( '/woopayments/settings' );
+		expect( query.get( 'source' ) ).toBe( 'platform-email' );
+		expect( query.has( 'woopayments-vat-details-modal' ) ).toBe( false );
+	} );
+
+	it( 'saves tax details from the deep-linked modal and clears the URL state', async () => {
+		setSettingsPageUrl( 'woopayments-vat-details-modal=true' );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve(
+					getDefaultAccountResponse( {
+						documentsEnabled: true,
+						hasSubmittedVatData: false,
+					} )
+				);
+			}
+
+			if ( path === '/wc/v3/payments/vat' ) {
+				return Promise.resolve( {
+					vat_number: null,
+					name: 'Example GmbH',
+					address: 'Alexanderplatz 1, Berlin',
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await screen.findByRole( 'dialog', { name: 'Set your tax details' } );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Continue' } )
+		);
+		await userEvent.type(
+			await screen.findByRole( 'textbox', { name: 'Business name' } ),
+			'Example GmbH'
+		);
+		await userEvent.type(
+			screen.getByRole( 'textbox', { name: 'Address' } ),
+			'Alexanderplatz 1, Berlin'
+		);
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Confirm' } )
+			);
+		} );
+
+		await waitFor( () =>
+			expect( mockCreateInfoNotice ).toHaveBeenCalledWith(
+				'Tax details updated'
+			)
+		);
+		const getVatRequest = () =>
+			mockApiFetch.mock.calls
+				.map( ( [ options ] ) => options )
+				.find(
+					( options ) =>
+						typeof options !== 'string' &&
+						options?.path === '/wc/v3/payments/vat'
+				);
+		await waitFor( () =>
+			expect( getVatRequest() ).toMatchObject( { method: 'POST' } )
+		);
+		// Without a VAT number the client sends only the business details; the route takes no null VAT number.
+		expect(
+			typeof getVatRequest() === 'string' ? null : getVatRequest()?.data
+		).toEqual( {
+			name: 'Example GmbH',
+			address: 'Alexanderplatz 1, Berlin',
+		} );
+		await waitFor( () =>
+			expect(
+				screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+			).not.toBeInTheDocument()
+		);
+		expect(
+			new URLSearchParams( window.location.search ).has(
+				'woopayments-vat-details-modal'
+			)
+		).toBe( false );
+	} );
+
+	it( 'does not open or announce VAT details without the VAT settings deep link', async () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		await waitFor( () =>
+			expect(
+				mockApiFetch.mock.calls.some( ( [ options ] ) => {
+					const path =
+						typeof options === 'string' ? options : options?.path;
+
+					return (
+						path ===
+						'/wc-admin/settings/payments/woopayments/account'
+					);
+				} )
+			).toBe( true )
+		);
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Set your tax details' } )
+		).not.toBeInTheDocument();
+		expect( mockCreateErrorNotice ).not.toHaveBeenCalledWith(
+			'Tax details collection is not available for your account.'
+		);
+		expect( mockCreateInfoNotice ).not.toHaveBeenCalledWith(
+			'Tax details are already submitted.'
+		);
+	} );
+
+	it( 'keeps express payment methods out of the standard payment methods list', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		// Field groups are labelled `group` landmarks (named by their heading),
+		// so scope by role + accessible name rather than a CSS class.
+		const paymentMethodsGroup = screen.getByRole( 'group', {
+			name: 'Payment methods',
+		} );
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( paymentMethodsGroup ).getByRole( 'checkbox', {
+				name: /Credit \/ Debit Cards/,
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( paymentMethodsGroup ).queryByRole( 'checkbox', {
+				name: 'Amazon Pay',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( paymentMethodsGroup ).queryByRole( 'checkbox', {
+				name: 'Link',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Amazon Pay',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Link',
+			} )
+		).toBeDisabled();
+	} );
+
+	it( 'lets the merchant enable EPS from the payment methods list', async () => {
+		const addPaymentMethod = jest.fn();
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'eps',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			eps_payments: { status: 'active' },
+		} );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
+		mockUseSelectedPaymentMethod.mockReturnValue( [
+			[ 'card' ],
+			addPaymentMethod,
+		] );
+		mockUseUnselectedPaymentMethod.mockReturnValue( [ [ 'card' ], noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const paymentMethodsGroup = screen.getByRole( 'group', {
+			name: 'Payment methods',
+		} );
+		const epsCheckbox = within( paymentMethodsGroup ).getByRole(
+			'checkbox',
+			{
+				name: 'EPS',
+			}
+		);
+
+		expect( epsCheckbox ).toBeEnabled();
+		expect( epsCheckbox ).not.toBeChecked();
+
+		await userEvent.click( epsCheckbox );
+
+		expect( addPaymentMethod ).toHaveBeenCalledWith( 'eps' );
+	} );
+
+	it( 'hides Link by Stripe when card payments are not enabled', () => {
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'amazon_pay', 'affirm' ],
+			noop,
+		] );
+		mockUseSelectedPaymentMethod.mockReturnValue( [
+			[ 'amazon_pay', 'affirm' ],
+			noop,
+		] );
+		mockUseUnselectedPaymentMethod.mockReturnValue( [
+			[ 'amazon_pay', 'affirm' ],
+			noop,
+		] );
+		mockUseLinkEnabledSettings.mockReturnValue( [ false, noop, false ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
+				name: 'Link',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'renders payment methods with the reference row content', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'Let your customers pay with major credit and debit cards without leaving your store.'
+			)
+		).toBeInTheDocument();
+		expect( screen.getByText( '(Required)' ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'Credit / Debit Cards logo' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'Visa' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'Mastercard' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'American Express' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'Cartes Bancaires' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'renders accessible account-country fee details on payment method rows', async () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'alipay',
+			'affirm',
+			'amazon_pay',
+			'apple_pay',
+			'google_pay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			alipay_payments: { status: 'active' },
+			affirm_payments: { status: 'active' },
+			amazon_pay_payments: { status: 'active' },
+		} );
+		mockUseGetAccountFees.mockReturnValue( {
+			card: {
+				base: {
+					percentage_rate: 0.029,
+					fixed_rate: 30,
+					currency: 'USD',
+				},
+				additional: {
+					percentage_rate: 0.01,
+					fixed_rate: 0,
+					currency: 'USD',
+				},
+				fx: {
+					percentage_rate: 0.01,
+					fixed_rate: 0,
+					currency: 'USD',
+				},
+				discount: [
+					{
+						currency: 'USD',
+						discount: 0.1,
+						end_time: '2026-02-27 04:20:49',
+						volume_allowance: 100000,
+						volume_currency: 'USD',
+					},
+				],
+			},
+			alipay: {
+				base: {
+					percentage_rate: 0,
+					fixed_rate: 300,
+					currency: 'uGx',
+				},
+				additional: {
+					percentage_rate: 0,
+					fixed_rate: 0,
+					currency: 'uGx',
+				},
+				fx: {
+					percentage_rate: 0,
+					fixed_rate: 0,
+					currency: 'uGx',
+				},
+				discount: [],
+			},
+		} );
+
+		// The currency data the admin preload sends for a US store (live :8889 2026-10-03), as client 11.1.0 localizes it.
+		settingsWindow.wcSettings = {
+			...initialWcSettings,
+			admin: {
+				...( initialWcSettings?.admin as Record< string, unknown > ),
+				woopaymentsSettings: {
+					storeCountry: 'US',
+					zeroDecimalCurrencies: [
+						'bif',
+						'clp',
+						'djf',
+						'gnf',
+						'jpy',
+						'kmf',
+						'krw',
+						'mga',
+						'pyg',
+						'rwf',
+						'vnd',
+						'vuv',
+						'xaf',
+						'xof',
+						'xpf',
+					],
+					currencyData: {
+						US: {
+							code: 'USD',
+							symbol: '$',
+							symbolPosition: 'left',
+							thousandSeparator: ',',
+							decimalSeparator: '.',
+							precision: 2,
+						},
+						UG: {
+							code: 'UGX',
+							symbol: 'UGX',
+							symbolPosition: 'left_space',
+							thousandSeparator: ',',
+							decimalSeparator: '.',
+							precision: 0,
+						},
+					},
+				},
+			},
+		};
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const cardFeeButton = screen.getByRole( 'button', {
+			name: 'From 2.61% + $0.27 fee details',
+		} );
+		const zeroDecimalFeeButton = screen.getByRole( 'button', {
+			// Client 11.1.0 formatCurrency(): UGX is not zero-decimal, so 300 is 3; UGX precision 0 with the US store's symbol position.
+			name: 'From 0% + UGX3 fee details',
+		} );
+		const discountBadge = screen.getByText( /10% off fees through/ );
+
+		expect( cardFeeButton ).toBeInTheDocument();
+		expect( zeroDecimalFeeButton ).toBeInTheDocument();
+		expect( cardFeeButton ).toHaveAttribute( 'aria-haspopup', 'dialog' );
+		expect( discountBadge ).not.toHaveAttribute( 'title' );
+		expect( discountBadge ).toHaveAccessibleDescription(
+			expect.stringContaining(
+				'first $1,000.00 of total payment volume or through'
+			)
+		);
+		// While collapsed the dialog is unmounted, so the trigger must not
+		// reference it with a dangling aria-controls IDREF.
+		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
+
+		// Client 11.1.0 opens the fee details on hover (HoverTooltip) and on keyboard focus.
+		await userEvent.hover( cardFeeButton );
+		const feeDetailsDialog = screen.getByRole( 'dialog', {
+			name: 'From 2.61% + $0.27 fee details',
+		} );
+		// Once expanded, aria-controls points at the mounted dialog.
+		expect( cardFeeButton ).toHaveAttribute(
+			'aria-controls',
+			feeDetailsDialog.id
+		);
+		expect( screen.queryByRole( 'tooltip' ) ).not.toBeInTheDocument();
+		// Only "Learn more" is linked, as in client 11.1.0 utils/account-fees.tsx:224-246.
+		const feesLink = within( feeDetailsDialog ).getByRole( 'link', {
+			name: /^Learn more/,
+		} );
+		expect( feesLink ).not.toHaveTextContent( /about/ );
+		expect( feeDetailsDialog ).toHaveTextContent(
+			/about WooPayments Fees in your country/
+		);
+		expect( feesLink ).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fees/#united-states'
+		);
+		expect(
+			screen.getAllByText( 'Base fee' ).length
+		).toBeGreaterThanOrEqual( 1 );
+		expect( screen.getByText( '2.61% + $0.27' ) ).toBeInTheDocument();
+		expect( screen.getByText( '0.9%' ) ).toBeInTheDocument();
+		expect( screen.getAllByText( '1%' ).length ).toBeGreaterThanOrEqual(
+			1
+		);
+		expect(
+			screen.getAllByText( 'Total per transaction' ).length
+		).toBeGreaterThanOrEqual( 1 );
+		expect( screen.getByText( '4.51% + $0.27' ) ).toBeInTheDocument();
+
+		feesLink.focus();
+		expect( feesLink ).toHaveFocus();
+		const feeWrapper = cardFeeButton.closest(
+			'.woopayments-settings-payment-method-item__fee-wrapper'
+		);
+		if ( ! feeWrapper ) {
+			throw new Error( 'Fee wrapper should exist.' );
+		}
+		fireEvent.mouseLeave( feeWrapper );
+		expect( feeDetailsDialog ).toBeInTheDocument();
+
+		await userEvent.keyboard( '{Escape}' );
+		await waitFor( () => {
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'From 2.61% + $0.27 fee details',
+				} )
+			).not.toBeInTheDocument();
+		} );
+		expect( cardFeeButton ).toHaveAttribute( 'aria-expanded', 'false' );
+		// Collapsing unmounts the dialog, so the IDREF is dropped again.
+		expect( cardFeeButton ).not.toHaveAttribute( 'aria-controls' );
+		expect( cardFeeButton ).toHaveFocus();
+	} );
+
+	it.each( [
+		[
+			'GB',
+			'Learn more about WooPayments Fees in your country',
+			'https://woocommerce.com/document/woopayments/fees/#united-kingdom',
+		],
+		[
+			'SE',
+			'Learn more about WooPayments Fees in your country',
+			'https://woocommerce.com/document/woopayments/fees/#sweden',
+		],
+		[
+			'BR',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'constructor',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'toString',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			'__proto__',
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+		[
+			undefined,
+			'Learn more about WooPayments Fees',
+			'https://woocommerce.com/document/woopayments/fees/',
+		],
+	] )(
+		'links fee details for account country %s',
+		async ( accountCountry, linkLabel, expectedUrl ) => {
+			mockUseGetSettings.mockReturnValue( {
+				account_country: accountCountry,
+				store_currency: 'USD',
+				is_multi_currency_enabled: true,
+				feature_flags: DEFAULT_FEATURE_FLAGS,
+				available_payment_method_ids: [ 'card' ],
+			} );
+			mockUseGetAvailablePaymentMethodIds.mockReturnValue( [ 'card' ] );
+			mockUseGetPaymentMethodStatuses.mockReturnValue( {
+				card_payments: { status: 'active' },
+			} );
+			mockUseGetAccountFees.mockReturnValue( {
+				card: {
+					base: {
+						percentage_rate: 0.029,
+						fixed_rate: 30,
+						currency: 'USD',
+					},
+				},
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			// Keyboard focus opens the details too.
+			screen
+				.getByRole( 'button', {
+					name: 'From 2.9% + $0.30 fee details',
+				} )
+				.focus();
+			const dialog = await screen.findByRole( 'dialog', {
+				name: 'From 2.9% + $0.30 fee details',
+			} );
+			expect( dialog ).toHaveTextContent(
+				linkLabel.replace( /^Learn more/, '' )
+			);
+			expect(
+				within( dialog ).getByRole( 'link', { name: /^Learn more/ } )
+			).toHaveAttribute( 'href', expectedUrl );
+		}
+	);
+
+	it( 'renders badge payment method promotions on matching payment method rows', async () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			pm_promotions: [
+				{
+					id: 'klarna-badge',
+					promo_id: 'klarna-promo',
+					payment_method: 'klarna',
+					type: 'badge',
+					title: 'Limited offer',
+					description: 'Lower fees are available for Klarna.',
+					tc_url: 'https://example.com/terms',
+					tc_label: 'See terms',
+					badge_type: 'success',
+				},
+				{
+					id: 'affirm-spotlight',
+					promo_id: 'affirm-promo',
+					payment_method: 'affirm',
+					type: 'spotlight',
+					title: 'Activate Affirm',
+				},
+			],
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'klarna',
+			'affirm',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			klarna_payments: { status: 'active' },
+			affirm_payments: { status: 'active' },
+		} );
+		mockUseGetAccountFees.mockReturnValue( {
+			klarna: {
+				base: {
+					percentage_rate: 0.0599,
+					fixed_rate: 30,
+					currency: 'USD',
+				},
+			},
+		} );
+
+		const { container } = render( <WooPaymentsSettingsPage /> );
+
+		const badge = screen.getByRole( 'button', {
+			name: 'Limited offer promotion details',
+		} );
+		const klarnaRow = Array.from(
+			container.querySelectorAll(
+				'.woopayments-settings-payment-method-item'
+			)
+		).find( ( row ) => row.textContent?.includes( 'Klarna' ) );
+		expect( klarnaRow ).toBeDefined();
+		const feeButton = within( klarnaRow as HTMLElement ).getByRole(
+			'button',
+			{
+				name: 'From 5.99% + $0.30 fee details',
+			}
+		);
+
+		expect( badge ).toBeInTheDocument();
+		expect(
+			badge.closest(
+				'.woopayments-settings-payment-method-item__heading'
+			)
+		).not.toBeNull();
+		expect(
+			feeButton.closest(
+				'.woopayments-settings-payment-method-item__actions'
+			)
+		).not.toBeNull();
+		expect(
+			feeButton.closest(
+				'.woopayments-settings-payment-method-item__heading'
+			)
+		).toBeNull();
+		expect(
+			screen.queryByText( 'Activate Affirm' )
+		).not.toBeInTheDocument();
+		// While collapsed the dialog is unmounted, so the trigger must not
+		// reference it with a dangling aria-controls IDREF.
+		expect( badge ).not.toHaveAttribute( 'aria-controls' );
+
+		await userEvent.click( badge );
+
+		const detailsDialog = screen.getByRole( 'dialog', {
+			name: 'Limited offer promotion details',
+		} );
+		// Once expanded, aria-controls points at the mounted dialog.
+		expect( badge ).toHaveAttribute( 'aria-controls', detailsDialog.id );
+		expect(
+			within( detailsDialog ).getByText(
+				'Lower fees are available for Klarna.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( detailsDialog ).getByRole( 'link', { name: /See terms/ } )
+		).toHaveAttribute( 'href', 'https://example.com/terms' );
+
+		const termsLink = within( detailsDialog ).getByRole( 'link', {
+			name: /See terms/,
+		} );
+		termsLink.focus();
+		expect( termsLink ).toHaveFocus();
+		fireEvent.keyDown( termsLink, { key: 'Escape' } );
+
+		await waitFor( () => {
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'Limited offer promotion details',
+				} )
+			).not.toBeInTheDocument();
+		} );
+		expect( badge ).toHaveFocus();
+	} );
+
+	it( 'keeps active discount badges ahead of payment method promotion badges', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			pm_promotions: [
+				{
+					id: 'klarna-badge',
+					promo_id: 'klarna-promo',
+					payment_method: 'klarna',
+					type: 'badge',
+					title: 'Limited offer',
+					description: 'Lower fees are available for Klarna.',
+					badge_type: 'success',
+				},
+			],
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'klarna',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			klarna_payments: { status: 'active' },
+		} );
+		mockUseGetAccountFees.mockReturnValue( {
+			klarna: {
+				base: {
+					percentage_rate: 0.029,
+					fixed_rate: 30,
+					currency: 'USD',
+				},
+				discount: [
+					{
+						currency: 'USD',
+						discount: 0.2,
+					},
+				],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect( screen.getByText( '20% off fees' ) ).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', {
+				name: 'Limited offer promotion details',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'renders and dismisses duplicate payment method notices', async () => {
+		const updateDismissedDuplicateNotices = jest.fn();
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'alipay',
+			'affirm',
+			'amazon_pay',
+			'apple_pay',
+			'google_pay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			alipay_payments: { status: 'active' },
+			affirm_payments: { status: 'active' },
+			amazon_pay_payments: { status: 'active' },
+		} );
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			alipay: [ 'woocommerce_payments_alipay', 'legacy_alipay_gateway' ],
+		} );
+		mockUseDismissedDuplicatePaymentMethodNotices.mockReturnValue( [
+			{},
+			updateDismissedDuplicateNotices,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getAllByText( ( _content, element ) =>
+				Boolean(
+					element?.textContent?.includes(
+						'This payment method is enabled by other extensions.'
+					)
+				)
+			).length
+		).toBeGreaterThan( 0 );
+		expect(
+			screen.getByRole( 'link', { name: 'Review extensions' } )
+		).toHaveAttribute( 'href', 'admin.php?page=wc-settings&tab=checkout' );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Close' } )
+		);
+
+		expect( updateDismissedDuplicateNotices ).toHaveBeenCalledWith( {
+			alipay: [ 'woocommerce_payments_alipay', 'legacy_alipay_gateway' ],
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/settings/wcpay_duplicate_payment_method_notices_dismissed',
+			method: 'post',
+			data: {
+				value: {
+					alipay: [
+						'woocommerce_payments_alipay',
+						'legacy_alipay_gateway',
+					],
+				},
+			},
+		} );
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Alipay' } )
+		).toHaveFocus();
+	} );
+
+	it( 'does not stack duplicate payment method notices with status notices', () => {
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			affirm: [ 'woocommerce_payments_affirm', 'legacy_affirm_gateway' ],
+		} );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			affirm_payments: {
+				status: 'inactive',
+				requirements: [ 'business_profile.url' ],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'More information is needed to finish setting up this payment method.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( ( _content, element ) =>
+				Boolean(
+					element?.textContent?.includes(
+						'This payment method is enabled by other extensions.'
+					)
+				)
+			)
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'links customizable express checkout rows to native provider settings routes', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		const customizeLinks = [
+			screen.getByRole( 'link', { name: 'Customize WooPay' } ),
+			screen.getByRole( 'link', {
+				name: 'Customize Apple Pay / Google Pay',
+			} ),
+			screen.getByRole( 'link', { name: 'Customize Amazon Pay' } ),
+		];
+
+		expect( customizeLinks ).toHaveLength( 3 );
+		expect( customizeLinks[ 0 ] ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fwoopay'
+			)
+		);
+		expect( customizeLinks[ 1 ] ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Fpayment_request'
+			)
+		);
+		expect( customizeLinks[ 2 ] ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fsettings%2Fexpress-checkout%2Famazon_pay'
+			)
+		);
+	} );
+
+	it( 'shows one row per express checkout with its logo and name, and Apple Pay and Google Pay under one checkbox', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const labels = Array.from(
+			expressCheckoutsSection.querySelectorAll(
+				'.woopayments-settings-payment-method-item__label'
+			)
+		).map( ( label ) => label.textContent );
+
+		// Wallet names are plain labels, like the client's, not headings.
+		expect(
+			within( expressCheckoutsSection ).queryAllByRole( 'heading', {
+				level: 4,
+			} )
+		).toHaveLength( 0 );
+		expect( labels ).toEqual( [
+			'WooPay',
+			'Apple Pay',
+			'Google Pay',
+			'Link',
+			'Amazon Pay',
+		] );
+		expect(
+			within( expressCheckoutsSection ).getAllByRole( 'checkbox' )
+		).toHaveLength( 4 );
+		expect(
+			within( expressCheckoutsSection )
+				.getAllByRole( 'img' )
+				.map( ( image ) => image.getAttribute( 'alt' ) )
+		).toEqual( [
+			'WooPay logo',
+			'Apple Pay logo',
+			'Google Pay logo',
+			'Link logo',
+			'Amazon Pay logo',
+		] );
+		const paymentRequestRow = within( expressCheckoutsSection )
+			.getByRole( 'checkbox', { name: 'Apple Pay / Google Pay' } )
+			.closest( 'li' ) as HTMLElement;
+		expect(
+			paymentRequestRow.querySelectorAll(
+				'.woopayments-settings-payment-method-item__label'
+			)
+		).toHaveLength( 2 );
+		expect(
+			within( paymentRequestRow ).getAllByRole( 'link', {
+				name: 'Customize Apple Pay / Google Pay',
+			} )
+		).toHaveLength( 1 );
+	} );
+
+	it( 'lets the merchant enable Apple Pay, Google Pay and Amazon Pay and save them', async () => {
+		const setIsPaymentRequestEnabled = jest.fn();
+		const setIsAmazonPayEnabled = jest.fn();
+		mockUsePaymentRequestEnabledSettings.mockReturnValue( [
+			false,
+			setIsPaymentRequestEnabled,
+		] );
+		mockUseAmazonPayEnabledSettings.mockReturnValue( [
+			false,
+			setIsAmazonPayEnabled,
+		] );
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+		mockSaveSettings.mockResolvedValue( true );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const paymentRequestCheckbox = within(
+			expressCheckoutsSection
+		).getByRole( 'checkbox', {
+			name: /Apple Pay.*Google Pay/,
+		} );
+		const amazonPayCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{
+				name: /Amazon Pay/,
+			}
+		);
+
+		expect( paymentRequestCheckbox ).toBeEnabled();
+		expect( amazonPayCheckbox ).toBeEnabled();
+		expect(
+			within( expressCheckoutsSection ).queryByText( /extension/ )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).queryByText( /Not yet available/ )
+		).not.toBeInTheDocument();
+
+		await userEvent.click( paymentRequestCheckbox );
+		await userEvent.click( amazonPayCheckbox );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		);
+
+		expect( setIsPaymentRequestEnabled ).toHaveBeenCalledWith( true );
+		expect( setIsAmazonPayEnabled ).toHaveBeenCalledWith( true );
+		expect( mockSaveSettings ).toHaveBeenCalled();
+	} );
+
+	it( 'hides the WooPay express checkout row when the WooPay feature flag is disabled', async () => {
+		const setIsLinkEnabled = jest.fn();
+
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			feature_flags: {
+				...DEFAULT_FEATURE_FLAGS,
+				woopay: false,
+			},
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} );
+		mockUseLinkEnabledSettings.mockImplementation(
+			( isWooPayBlockingLink?: boolean ) => {
+				const shouldBlockLink = isWooPayBlockingLink ?? true;
+				const setLinkEnabledIfNotBlocked = ( isEnabled: boolean ) => {
+					if ( shouldBlockLink ) {
+						return;
+					}
+
+					setIsLinkEnabled( isEnabled );
+				};
+
+				return [ false, setLinkEnabledIfNotBlocked, shouldBlockLink ];
+			}
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
+				name: 'WooPay',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).queryByRole( 'link', {
+				name: 'Customize WooPay',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Amazon Pay',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).queryByText(
+				'To enable Link by Stripe, you must first disable WooPay.'
+			)
+		).not.toBeInTheDocument();
+
+		const linkCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{
+				name: 'Link',
+			}
+		);
+
+		expect( linkCheckbox ).toBeEnabled();
+		await userEvent.click( linkCheckbox );
+		expect( setIsLinkEnabled ).toHaveBeenCalledWith( true );
+	} );
+
+	it( 'hides the Amazon Pay express checkout row when the Amazon Pay feature flag is disabled', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			feature_flags: {
+				...DEFAULT_FEATURE_FLAGS,
+				amazonPay: false,
+			},
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).queryByRole( 'checkbox', {
+				name: 'Amazon Pay',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).queryByRole( 'link', {
+				name: 'Customize Amazon Pay',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Apple Pay / Google Pay',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'WooPay',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'renders express checkout legal links and read-more actions', () => {
+		mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+		mockUsePaymentRequestEnabledSettings.mockReturnValue( [ false, noop ] );
+		mockUseAmazonPayEnabledSettings.mockReturnValue( [ false, noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'link', {
+				name: /^WooPay/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopay-merchant-documentation/'
+		);
+		const linkHrefs = within( expressCheckoutsSection )
+			.getAllByRole( 'link' )
+			.map( ( link ) => link.getAttribute( 'href' ) );
+
+		expect( linkHrefs ).toEqual(
+			expect.arrayContaining( [
+				'https://wordpress.com/tos/',
+				'https://automattic.com/privacy/',
+				'https://woocommerce.com/usage-tracking/',
+				'https://stripe.com/apple-pay/legal',
+				'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/',
+				'https://androidpay.developers.google.com/terms/sellertos',
+				'https://link.com/terms',
+				'https://link.com/privacy',
+				'https://woocommerce.com/document/woopayments/payment-methods/link-by-stripe/',
+				'https://stripe.com/legal/ssa',
+				'https://stripe.com/legal/amazon-pay',
+			] )
+		);
+	} );
+
+	it( 'uses payment method status to disable Amazon Pay in the express checkout overview', () => {
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			link_payments: { status: 'active', requirements: [] },
+			amazon_pay_payments: {
+				status: 'inactive',
+				requirements: [ 'business_profile.url' ],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Amazon Pay',
+			} )
+		).toBeDisabled();
+		expect(
+			within( expressCheckoutsSection ).getByText(
+				'More information is needed to finish setting up this payment method.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( expressCheckoutsSection )
+				.getAllByRole( 'link', { name: /Learn more/ } )
+				.find(
+					( link ) =>
+						link.getAttribute( 'href' ) ===
+						'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#method-cant-be-enabled'
+				)
+		).toBeInTheDocument();
+	} );
+
+	it( 'renders Amazon Pay rejected status as an error notice in the express checkout overview', () => {
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			link_payments: { status: 'active', requirements: [] },
+			amazon_pay_payments: {
+				status: 'rejected',
+				requirements: [],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const rejectedNotice = within( expressCheckoutsSection )
+			.getByText( /Your application to use Amazon Pay has been rejected/ )
+			.closest( '.components-notice' );
+
+		expect( rejectedNotice ).toHaveClass( 'is-error' );
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'link', {
+				name: /Contact support/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/my-account/contact-support/'
+		);
+	} );
+
+	it( 'renders and dismisses duplicate notices for Apple Pay and Google Pay express buttons', async () => {
+		const updateDismissedDuplicateNotices = jest.fn();
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			apple_pay_google_pay: [
+				'woocommerce_payments',
+				'legacy_apple_pay_gateway',
+			],
+		} );
+		mockUseDismissedDuplicatePaymentMethodNotices.mockReturnValue( [
+			{},
+			updateDismissedDuplicateNotices,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+
+		expect(
+			within( expressCheckoutsSection ).getAllByText(
+				( _content, element ) =>
+					Boolean(
+						element?.textContent?.includes(
+							'This payment method is enabled by other extensions.'
+						)
+					)
+			).length
+		).toBeGreaterThan( 0 );
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'link', {
+				name: 'Review extensions',
+			} )
+		).toHaveAttribute( 'href', 'admin.php?page=wc-settings&tab=checkout' );
+
+		await userEvent.click(
+			within( expressCheckoutsSection ).getByRole( 'button', {
+				name: 'Close',
+			} )
+		);
+
+		expect( updateDismissedDuplicateNotices ).toHaveBeenCalledWith( {
+			apple_pay_google_pay: [
+				'woocommerce_payments',
+				'legacy_apple_pay_gateway',
+			],
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/settings/wcpay_duplicate_payment_method_notices_dismissed',
+			method: 'post',
+			data: {
+				value: {
+					apple_pay_google_pay: [
+						'woocommerce_payments',
+						'legacy_apple_pay_gateway',
+					],
+				},
+			},
+		} );
+		expect(
+			within( expressCheckoutsSection ).getByRole( 'checkbox', {
+				name: 'Apple Pay / Google Pay',
+			} )
+		).toHaveFocus();
+	} );
+
+	it( 'renders and dismisses the duplicate notice on the Amazon Pay express row', async () => {
+		const updateDismissedDuplicateNotices = jest.fn();
+		mockUseGetDuplicatedPaymentMethodIds.mockReturnValue( {
+			amazon_pay: [
+				'stripe_amazon_pay',
+				'woocommerce_payments_amazon_pay',
+			],
+		} );
+		mockUseDismissedDuplicatePaymentMethodNotices.mockReturnValue( [
+			{},
+			updateDismissedDuplicateNotices,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const expressCheckoutsSection =
+			getSettingsSectionByName( 'Express checkouts' );
+		const amazonPayCheckbox = within( expressCheckoutsSection ).getByRole(
+			'checkbox',
+			{ name: 'Amazon Pay' }
+		);
+		const amazonPayRow = amazonPayCheckbox.closest( 'li' ) as HTMLElement;
+		const paymentRequestRow = within( expressCheckoutsSection )
+			.getByRole( 'checkbox', { name: 'Apple Pay / Google Pay' } )
+			.closest( 'li' ) as HTMLElement;
+		const hasDuplicateNotice = ( row: HTMLElement ) =>
+			within( row ).queryAllByText( ( _content, element ) =>
+				Boolean(
+					element?.textContent?.includes(
+						'This payment method is enabled by other extensions.'
+					)
+				)
+			).length > 0;
+
+		expect( hasDuplicateNotice( amazonPayRow ) ).toBe( true );
+		expect( hasDuplicateNotice( paymentRequestRow ) ).toBe( false );
+
+		await userEvent.click(
+			within( amazonPayRow ).getByRole( 'button', { name: 'Close' } )
+		);
+
+		expect( updateDismissedDuplicateNotices ).toHaveBeenCalledWith( {
+			amazon_pay: [
+				'stripe_amazon_pay',
+				'woocommerce_payments_amazon_pay',
+			],
+		} );
+		expect( mockApiFetch ).toHaveBeenCalledWith( {
+			path: '/wc/v3/payments/settings/wcpay_duplicate_payment_method_notices_dismissed',
+			method: 'post',
+			data: {
+				value: {
+					amazon_pay: [
+						'stripe_amazon_pay',
+						'woocommerce_payments_amazon_pay',
+					],
+				},
+			},
+		} );
+		expect( amazonPayCheckbox ).toHaveFocus();
+	} );
+
+	it( 'shows the manual-capture conflict banner and disables incompatible methods', () => {
+		mockUseManualCapture.mockReturnValue( [ true, noop ] );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+			'klarna',
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getAllByText(
+				"Manual capture is enabled, so any payment methods that don't support it have been automatically disabled."
+			).length
+		).toBeGreaterThanOrEqual( 1 );
+		expect(
+			screen.getByRole( 'checkbox', { name: /Affirm/ } )
+		).toBeDisabled();
+		expect(
+			screen.getByRole( 'checkbox', { name: /Klarna/ } )
+		).toBeDisabled();
+		expect(
+			screen.getByRole( 'checkbox', { name: /Affirm/ } )
+		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
+		expect(
+			screen.getByRole( 'checkbox', { name: /Klarna/ } )
+		).toHaveAccessibleDescription( /Unavailable with manual capture/ );
+		expect(
+			screen.getAllByText( 'Unavailable with manual capture' )
+		).toHaveLength( 2 );
+		expect(
+			screen.queryByRole( 'button', { name: 'Dismiss this notice' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'uses account-country branding for Afterpay and Clearpay settings rows', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'afterpay_clearpay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			afterpay_clearpay_payments: {
+				status: 'active',
+				requirements: [],
+			},
+		} );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Cash App Afterpay' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Allow customers to pay over time with Cash App Afterpay.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'img', { name: 'Cash App Afterpay logo' } )
+		).toBeInTheDocument();
+
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'GB',
+		} );
+
+		rerender( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Clearpay' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Allow customers to pay over time with Clearpay.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'confirms unrequested payment method activation before enabling the method', async () => {
+		const selectPaymentMethod = jest.fn();
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
+		mockUseSelectedPaymentMethod.mockReturnValue( [
+			[ 'card' ],
+			selectPaymentMethod,
+		] );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			affirm_payments: {
+				status: 'unrequested',
+				requirements: [ 'business_profile.mcc' ],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: /Affirm/ } )
+		);
+
+		expect( selectPaymentMethod ).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'One more step to enable Affirm',
+			} )
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Continue' } )
+		);
+
+		expect( selectPaymentMethod ).toHaveBeenCalledWith( 'affirm' );
+	} );
+
+	it( 'renders disabled notices for payment methods that need account information', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'alipay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			alipay_payments: { status: 'inactive', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText( 'More information needed' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'More information is needed to finish setting up this payment method.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Alipay' } )
+		).toBeDisabled();
+	} );
+
+	it( 'links inactive buy now pay later methods to the BNPL guidance', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			affirm_payments: { status: 'inactive', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Affirm' } )
+		).toBeDisabled();
+		expect(
+			screen
+				.getAllByRole( 'link', { name: /Learn more/ } )
+				.find(
+					( link ) =>
+						link.getAttribute( 'href' ) ===
+						'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/#contact-support'
+				)
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payment-methods/buy-now-pay-later/#contact-support'
+		);
+	} );
+
+	it( 'renders delayed approval guidance for Alipay when approval is pending', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'alipay',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			alipay_payments: { status: 'pending', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Alipay' } )
+		).toBeDisabled();
+		expect( screen.getByText( 'Approval pending' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/Your store must be live and fully functional before this payment method can be offered/
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( /Approval typically takes 2–3 days/ )
+		).toBeInTheDocument();
+		expect(
+			screen
+				.getAllByRole( 'link', { name: /Learn more/ } )
+				.find(
+					( link ) =>
+						link.getAttribute( 'href' ) ===
+						'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#approval-delays'
+				)
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payment-methods/local-payment-methods/#approval-delays'
+		);
+	} );
+
+	it( 'keeps generic pending guidance for non-delayed approval methods', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'klarna',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			klarna_payments: { status: 'pending', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Klarna' } )
+		).toBeDisabled();
+		expect(
+			screen.getByText(
+				"This payment method is pending approval. It won't be available at checkout until it's approved."
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( /Approval typically takes 2–3 days/ )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'links pending verification guidance to the native payments overview route', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'sepa_debit',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			sepa_debit_payments: {
+				status: 'pending_verification',
+				requirements: [],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'SEPA Direct Debit' } )
+		).toBeDisabled();
+		expect(
+			screen.getByText(
+				/SEPA Direct Debit won't be available at checkout yet/
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', { name: /Payments overview/ } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining( 'path=%2Fwoopayments%2Foverview' )
+		);
+	} );
+
+	it( 'renders rejected payment methods with a contact support link', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'affirm',
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			affirm_payments: {
+				status: 'rejected',
+				requirements: [],
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Affirm' } )
+		).toBeDisabled();
+		expect(
+			screen
+				.getByText( /Your application to use Affirm has been rejected/ )
+				.closest( '.components-notice' )
+		).toHaveClass( 'is-error' );
+		expect(
+			screen.getByRole( 'link', { name: /Contact support/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/my-account/contact-support/'
+		);
+	} );
+
+	// Statuses arrive as the settings response's payment_method_statuses, built from the account capabilities
+	// (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:4696-4717).
+	it( 'renders a payment method the platform reports disabled as unavailable with a locked toggle', () => {
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'sepa_debit',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'sepa_debit' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			sepa_debit_payments: { status: 'disabled', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: /SEPA Direct Debit/ } )
+		).toBeDisabled();
+		expect(
+			screen
+				.getByText(
+					/isn't available for your store, so it won't be shown at checkout/
+				)
+				.closest( '.components-notice' )
+		).toHaveClass( 'is-warning' );
+	} );
+
+	it( 'renders a missing-currency warning for enabled methods when multi-currency is off', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: false,
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'bancontact',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'bancontact' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			bancontact_payments: { status: 'active', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'checkbox', { name: 'Bancontact' } )
+		).not.toBeDisabled();
+		expect(
+			screen.getByText(
+				'Bancontact requires the EUR currency. Add EUR to your store to offer this payment method.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'does not render a missing-currency warning for methods that are not enabled', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: false,
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'bancontact',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [ 'card' ], noop ] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			bancontact_payments: { status: 'active', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const bancontactCheckbox = screen.getByRole( 'checkbox', {
+			name: 'Bancontact',
+		} );
+
+		expect( bancontactCheckbox ).toBeInTheDocument();
+		expect( bancontactCheckbox ).not.toBeDisabled();
+		expect( bancontactCheckbox ).not.toBeChecked();
+		expect(
+			screen.queryByText(
+				'Bancontact requires the EUR currency. Add EUR to your store to offer this payment method.'
+			)
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'renders a missing-currency warning with multiple supported currencies', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'AUD',
+			is_multi_currency_enabled: false,
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'klarna',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'klarna' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			klarna_payments: { status: 'active', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'Klarna requires at least one of the following currencies: USD, GBP, EUR, DKK, NOK, or SEK. Add at least one of these currencies to your store to offer this payment method.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'uses account-country payment method currencies for missing-currency warnings', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'JP',
+			store_currency: 'USD',
+			is_multi_currency_enabled: false,
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'alipay',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'alipay' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			alipay_payments: { status: 'active', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'Alipay requires the JPY currency. Add JPY to your store to offer this payment method.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'renders a missing-currency warning for JCB on non-JPY stores', () => {
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: false,
+		} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [
+			'card',
+			'jcb',
+		] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [
+			[ 'card', 'jcb' ],
+			noop,
+		] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active', requirements: [] },
+			jcb_payments: { status: 'active', requirements: [] },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'JCB requires the JPY currency. Add JPY to your store to offer this payment method.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 settings/general-settings/index.js:57-62.
+	it( 'shows the Test mode heading with the test mode checkbox, and neither during test mode onboarding', () => {
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within( getGeneralSettingsSection() ).getByRole( 'heading', {
+				level: 4,
+				name: 'Test mode',
+			} )
+		).toBeInTheDocument();
+
+		mockUseTestModeOnboarding.mockReturnValue( true );
+		rerender( <WooPaymentsSettingsPage /> );
+
+		expect(
+			within( getGeneralSettingsSection() ).queryByRole( 'heading', {
+				name: 'Test mode',
+			} )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'requires confirmation before enabling test mode', async () => {
+		const setTestMode = jest.fn();
+		mockUseTestMode.mockReturnValue( [ false, setTestMode ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
+		);
+
+		expect( setTestMode ).not.toHaveBeenCalled();
+		expect(
+			getRecordedEventCalls( 'wcpay_test_mode_enabled' )
+		).toHaveLength( 0 );
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'Are you sure you want to enable test mode?',
+			} )
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Enable' } )
+		);
+
+		expect( setTestMode ).toHaveBeenCalledWith( true );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_test_mode_enabled',
+			{ source: 'wcadmin-settings-page' }
+		);
+	} );
+
+	it( 'records Tracks when canceling the test mode confirmation modal', async () => {
+		const setTestMode = jest.fn();
+		mockUseTestMode.mockReturnValue( [ false, setTestMode ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
+		);
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Cancel' } )
+		);
+
+		expect( setTestMode ).not.toHaveBeenCalled();
+		expect(
+			getRecordedEventCalls( 'wcpay_test_mode_enabled' )
+		).toHaveLength( 0 );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_test_mode_modal_exit',
+			{ source: 'wcadmin-settings-page' }
+		);
+	} );
+
+	it( 'records Tracks when disabling test mode', async () => {
+		const setTestMode = jest.fn();
+		mockUseTestMode.mockReturnValue( [ true, setTestMode ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable test mode' } )
+		);
+
+		expect( setTestMode ).toHaveBeenCalledWith( false );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_test_mode_disabled',
+			{ source: 'wcadmin-settings-page' }
+		);
+	} );
+
+	it( 'renders reference test-mode help links outside development mode', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getGeneralSettingsSection();
+
+		expect(
+			within( section ).getByRole( 'link', {
+				name: /test card numbers/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards'
+		);
+		expect(
+			within( section ).getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/'
+		);
+	} );
+
+	it( 'renders reference test-mode help links in development mode', () => {
+		mockUseDevMode.mockReturnValue( true );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getGeneralSettingsSection();
+
+		expect(
+			within( section ).getByRole( 'link', {
+				name: /WordPress environment/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
+		);
+		expect(
+			within( section ).getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/'
+		);
+		expect( section ).toHaveTextContent( 'WCPAY_DEV_MODE' );
+	} );
+
+	it( 'records Tracks when enabling WooPayments', async () => {
+		const setIsWCPayEnabled = jest.fn();
+		mockUseIsWCPayEnabled.mockReturnValue( [ false, setIsWCPayEnabled ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		expect( setIsWCPayEnabled ).toHaveBeenCalledWith( true );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_gateway_toggle',
+			{
+				action: 'enable',
+				context: 'wcpay-settings',
+			}
+		);
+	} );
+
+	it( 'requires confirmation before disabling WooPayments and records Tracks after confirm', async () => {
+		const setIsWCPayEnabled = jest.fn();
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, setIsWCPayEnabled ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		expect( setIsWCPayEnabled ).not.toHaveBeenCalled();
+		expect( getGatewayToggleEventCalls( 'disable' ) ).toHaveLength( 0 );
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+		expect(
+			within( dialog ).getByText(
+				'Payment methods that need WooPayments:'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText( 'Credit / Debit Cards' )
+		).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'Affirm' ) ).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText( 'Google Pay' )
+		).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'Apple Pay' ) ).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText( 'Amazon Pay' )
+		).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'Link' ) ).toBeInTheDocument();
+		expect( within( dialog ).getByText( 'WooPay' ) ).toBeInTheDocument();
+
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Disable' } )
+		);
+
+		expect( setIsWCPayEnabled ).toHaveBeenCalledWith( false );
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_gateway_toggle',
+			{
+				action: 'disable',
+				context: 'wcpay-settings',
+			}
+		);
+	} );
+
+	it( 'shows every affected payment method with its logo in a standard-size disable confirmation', async () => {
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, jest.fn() ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+		const items = within( dialog ).getAllByRole( 'listitem' );
+
+		expect( items.map( ( item ) => item.textContent ) ).toEqual( [
+			'Credit / Debit Cards',
+			'Affirm',
+			'Google Pay',
+			'Apple Pay',
+			'Amazon Pay',
+			'Link',
+			'WooPay',
+		] );
+		items.forEach( ( item ) => {
+			expect( item.querySelector( 'img' ) ).toHaveAttribute(
+				'src',
+				expect.stringMatching( /^images\/.+\.(svg|png)$/ )
+			);
+		} );
+		expect( items[ 4 ].querySelector( 'img' ) ).toHaveAttribute(
+			'src',
+			'images/payment-methods/amazon-pay-color.svg'
+		);
+	} );
+
+	it( 'does not disable WooPayments or record disable telemetry when canceling the confirmation', async () => {
+		const setIsWCPayEnabled = jest.fn();
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, setIsWCPayEnabled ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+
+		expect( setIsWCPayEnabled ).not.toHaveBeenCalled();
+		expect( getGatewayToggleEventCalls( 'disable' ) ).toHaveLength( 0 );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Disable WooPayments' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'uses effective express availability for affected methods in the disable confirmation', async () => {
+		const setIsWCPayEnabled = jest.fn();
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, setIsWCPayEnabled ] );
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			feature_flags: {
+				...DEFAULT_FEATURE_FLAGS,
+				woopay: false,
+			},
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+
+		expect(
+			within( dialog ).getByText( 'Amazon Pay' )
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).queryByText( 'WooPay' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'uses Amazon Pay actionability for affected methods in the disable confirmation', async () => {
+		const setIsWCPayEnabled = jest.fn();
+		mockUseIsWCPayEnabled.mockReturnValue( [ true, setIsWCPayEnabled ] );
+		mockUseGetPaymentMethodStatuses.mockReturnValue( {
+			card_payments: { status: 'active' },
+			link_payments: { status: 'active' },
+			affirm_payments: { status: 'active' },
+			amazon_pay_payments: { status: 'pending' },
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Disable WooPayments',
+		} );
+
+		expect(
+			within( dialog ).queryByText( 'Amazon Pay' )
+		).not.toBeInTheDocument();
+		expect( within( dialog ).getByText( 'WooPay' ) ).toBeInTheDocument();
+	} );
+
+	it( 'requires confirmation before enabling manual capture', async () => {
+		const setManualCapture = jest.fn();
+		mockUseManualCapture.mockReturnValue( [ false, setManualCapture ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', {
+				name: 'Enable manual capture',
+			} )
+		);
+
+		expect( setManualCapture ).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole( 'dialog', { name: 'Enable manual capture' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/Payments must be captured on the order details screen within 7 days of authorization/
+			)
+		).toBeInTheDocument();
+		expect(
+			within(
+				screen.getByRole( 'dialog', { name: 'Enable manual capture' } )
+			).getByText(
+				"Manual capture is available for card payments only. Payment methods that don't support it will be disabled."
+			)
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Enable manual capture' } )
+		);
+
+		expect( setManualCapture ).toHaveBeenCalledWith( true );
+	} );
+
+	it( 'disables manual capture without confirmation', async () => {
+		const setManualCapture = jest.fn();
+		mockUseManualCapture.mockReturnValue( [ true, setManualCapture ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', {
+				name: 'Enable manual capture',
+			} )
+		);
+
+		expect(
+			screen.queryByRole( 'dialog', { name: 'Enable manual capture' } )
+		).not.toBeInTheDocument();
+		expect( setManualCapture ).toHaveBeenCalledWith( false );
+	} );
+
+	it( 'cancels manual capture without changing the toggle or saving settings', async () => {
+		const setManualCapture = jest.fn();
+		mockUseManualCapture.mockReturnValue( [ false, setManualCapture ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const toggle = screen.getByRole( 'checkbox', {
+			name: 'Enable manual capture',
+		} );
+		await userEvent.click( toggle );
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Enable manual capture',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+
+		expect( dialog ).not.toBeInTheDocument();
+		expect( toggle ).not.toBeChecked();
+		expect( setManualCapture ).not.toHaveBeenCalled();
+		expect( mockSaveSettings ).not.toHaveBeenCalled();
+	} );
+
+	// Client 11.1.0 settings/payment-methods-list/index.js renders an empty
+	// list under the "Payment methods" heading when the settings read fails,
+	// and its server-rendered test-account notice stays.
+	it( 'leaves the payment methods card empty and keeps the test-account notice when the settings read fails', async () => {
+		mockUseGetSettings.mockReturnValue( {} );
+		mockUseGetAvailablePaymentMethodIds.mockReturnValue( [] );
+		mockUseEnabledPaymentMethodIds.mockReturnValue( [ [], noop ] );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						connected: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: { setup: '#live-onboarding' },
+				} );
+			}
+
+			return Promise.reject( new Error( 'Internal Server Error' ) );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const paymentMethodsSection = getSettingsSectionByName(
+			'Payments accepted on checkout'
+		);
+		expect(
+			within( paymentMethodsSection ).getByText( 'Payment methods' )
+		).toBeInTheDocument();
+		expect(
+			within( paymentMethodsSection ).queryByText(
+				/No additional checkout payment methods/
+			)
+		).not.toBeInTheDocument();
+		expect(
+			await screen.findByText( 'You are using a test account.' )
+		).toBeInTheDocument();
+	} );
+
+	// Client 11.1.0 renders the test and sandbox account notices on the server
+	// (`includes/admin/class-wc-payments-admin-settings.php:126-252`), so they show when every read fails.
+	describe( 'preloaded account mode', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
+		const isAccountRequest = ( options: unknown ) =>
+			( typeof options === 'string'
+				? options
+				: ( options as { path?: string } | undefined )?.path ) ===
+			'/wc-admin/settings/payments/woopayments/account';
+
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+			mockUseGetSettings.mockReturnValue( {} );
+			mockUseGetAvailablePaymentMethodIds.mockReturnValue( [] );
+			mockUseEnabledPaymentMethodIds.mockReturnValue( [ [], noop ] );
+			mockApiFetch.mockImplementation( () =>
+				Promise.reject( new Error( 'Internal Server Error' ) )
+			);
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setAccountMode = (
+			accountMode: Record< string, unknown >,
+			devMode = false
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: {
+					...previousWcSettings?.admin,
+					woopaymentsSettings: { accountMode, devMode },
+				},
+			};
+		};
+
+		it( 'renders the test-account notice and its modal from the page when the settings and account reads fail', async () => {
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: true,
+				sandbox: false,
+				setupUrl: 'https://example.com/preloaded-setup',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'You are using a test account.' )
+			).toBeInTheDocument();
+			expect(
+				mockApiFetch.mock.calls.filter( ( [ options ] ) =>
+					isAccountRequest( options )
+				)
+			).toHaveLength( 0 );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Activate payments' } )
+			);
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'Activate payments on your store',
+			} );
+			expect(
+				within( dialog ).getByRole( 'link', {
+					name: 'Activate payments',
+				} )
+			).toHaveAttribute(
+				'href',
+				expect.stringMatching(
+					/^https:\/\/example\.com\/preloaded-setup\?/
+				)
+			);
+		} );
+
+		// Client 11.1.0 prints the notice on the server, so it is there before the settings load.
+		it( 'shows the test-account notice while the settings are still loading', () => {
+			mockUseSettings.mockReturnValue( {
+				isLoading: true,
+				isSaving: false,
+				isDirty: false,
+				saveSettings: mockSaveSettings,
+			} );
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: true,
+				sandbox: false,
+				setupUrl: 'https://example.com/preloaded-setup',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'WooPayments settings are loading.' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'You are using a test account.' )
+			).toBeInTheDocument();
+		} );
+
+		it( 'renders the sandbox notice from the page', () => {
+			setAccountMode( {
+				connected: true,
+				live: false,
+				testDrive: false,
+				sandbox: true,
+				setupUrl: '',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.getByText( 'You are using a sandbox test account.' )
+			).toBeInTheDocument();
+		} );
+
+		// Client 11.1.0 picks the development copy from the server's `WC_Payments::mode()->is_dev()`.
+		it( 'uses the preloaded development mode when the settings read fails', () => {
+			setAccountMode(
+				{
+					connected: true,
+					live: false,
+					testDrive: true,
+					sandbox: false,
+					setupUrl: 'https://example.com/preloaded-setup',
+				},
+				true
+			);
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen
+					.getByText( 'You are using a test account.' )
+					.closest( 'p' )
+			).toHaveTextContent(
+				'⚠️ Development mode is enabled for the store!'
+			);
+			expect(
+				screen.queryByRole( 'button', { name: 'Activate payments' } )
+			).not.toBeInTheDocument();
+		} );
+
+		it( 'shows no notice for a live account and does not ask for the account', () => {
+			setAccountMode( {
+				connected: true,
+				live: true,
+				testDrive: false,
+				sandbox: false,
+				setupUrl: '',
+			} );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect(
+				screen.queryByText( /You are using a/ )
+			).not.toBeInTheDocument();
+			expect(
+				mockApiFetch.mock.calls.filter( ( [ options ] ) =>
+					isAccountRequest( options )
+				)
+			).toHaveLength( 0 );
+		} );
+	} );
+
+	describe( 'links inside running text', () => {
+		// Client 11.1.0 renders links inside sentences as plain anchors, with no
+		// external-link glyph: settings/express-checkout/*-item.tsx,
+		// general-settings/index.js:104-145, transactions/manual-capture-control.tsx:68,147,
+		// deposits/index.js:170,194, disable-confirmation-modal/index.js:159-176 and the
+		// server-rendered account notice (includes/admin/class-wc-payments-admin-settings.php).
+		it( 'renders express checkout terms links as plain links', () => {
+			mockUsePaymentRequestEnabledSettings.mockReturnValue( [
+				false,
+				noop,
+			] );
+			mockUseWooPayEnabledSettings.mockReturnValue( [ false, noop ] );
+			mockUseLinkEnabledSettings.mockReturnValue( [
+				false,
+				noop,
+				false,
+			] );
+			mockUseAmazonPayEnabledSettings.mockReturnValue( [ false, noop ] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://stripe.com/apple-pay/legal',
+					'https://developer.apple.com/apple-pay/acceptable-use-guidelines-for-websites/',
+					'https://androidpay.developers.google.com/terms/sellertos',
+					'https://link.com/terms',
+					'https://link.com/privacy',
+					'https://woocommerce.com/document/woopay-merchant-documentation/',
+					'https://wordpress.com/tos/',
+					'https://automattic.com/privacy/',
+					'https://woocommerce.com/usage-tracking/',
+					'https://stripe.com/legal/ssa',
+					'https://stripe.com/legal/amazon-pay',
+				],
+				'_blank'
+			);
+		} );
+
+		it( 'renders test mode and manual capture help links as plain links', async () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/#test-cards',
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/',
+					'https://woocommerce.com/document/woopayments/settings-guide/authorize-and-capture/',
+				],
+				'_blank'
+			);
+
+			await userEvent.click(
+				screen.getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			);
+			const modal = screen.getByRole( 'dialog', {
+				name: 'Enable manual capture',
+			} );
+			expect(
+				within( modal ).getByRole( 'link', {
+					name: 'Learn more about manual capture',
+				} )
+			).not.toHaveClass( 'components-external-link' );
+		} );
+
+		it( 'renders development mode help links as plain links', () => {
+			mockUseDevMode.mockReturnValue( true );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expectPlainLinks(
+				[
+					'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/',
+					'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/',
+				],
+				'_blank'
+			);
+		} );
+
+		it.each( [
+			[
+				'restricted',
+				() =>
+					mockUseDepositRestrictions.mockReturnValue(
+						'schedule_restricted'
+					),
+				'Payout scheduling is currently unavailable for your store. Learn more',
+			],
+			[
+				'in the waiting period',
+				() => mockUseCompletedWaitingPeriod.mockReturnValue( false ),
+				'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete. Learn more',
+			],
+		] )(
+			'renders the payout schedule notice link inline when scheduling is %s',
+			( _state, arrange, text ) => {
+				arrange();
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const payouts = getSettingsSectionByName( 'Payouts' );
+				expect(
+					within( payouts ).getByText(
+						( _content, element ) =>
+							element?.classList.contains(
+								'components-notice__content'
+							) === true && element.textContent?.trim() === text
+					)
+				).toBeInTheDocument();
+				expect(
+					within( payouts ).getByRole( 'link', {
+						name: 'Learn more',
+					} )
+				).not.toHaveClass( 'components-external-link' );
+			}
+		);
+
+		it( 'renders the Disable dialog help links as plain same-tab links', async () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			await userEvent.click(
+				screen.getByRole( 'checkbox', { name: 'Enable WooPayments' } )
+			);
+
+			const dialog = screen.getByRole( 'dialog' );
+			[
+				'https://woocommerce.com/document/woopayments/',
+				'https://woocommerce.com/my-account/create-a-ticket/?select=5278104',
+			].forEach( ( href ) => {
+				const link = dialog.querySelector( `a[href="${ href }"]` );
+
+				expect( link ).toBeInTheDocument();
+				expect( link ).not.toHaveClass( 'components-external-link' );
+				expect( link ).not.toHaveAttribute( 'target' );
+			} );
+		} );
+
+		it.each( [
+			[ 'test', false, { test_drive: true, sandbox: false } ],
+			[
+				'development-mode sandbox',
+				true,
+				{ test_drive: false, sandbox: true },
+			],
+		] )(
+			'renders the %s account notice links as plain links',
+			async ( _kind, isDevMode, account ) => {
+				mockUseDevMode.mockReturnValue( isDevMode );
+				mockApiFetch.mockImplementation( ( options ) => {
+					const path =
+						typeof options === 'string' ? options : options?.path;
+
+					if (
+						path ===
+						'/wc-admin/settings/payments/woopayments/account'
+					) {
+						return Promise.resolve( {
+							account: {
+								connected: true,
+								live: false,
+								...account,
+							},
+							urls: { setup: '#live-onboarding' },
+						} );
+					}
+
+					return Promise.resolve( {} );
+				} );
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const notice = (
+					await screen.findByText( /You are using a/, {
+						selector: 'strong',
+					} )
+				).closest(
+					'.woopayments-settings-account-mode-notice'
+				) as HTMLElement;
+				const links = within( notice ).getAllByRole( 'link' );
+				expect( links.length ).toBeGreaterThan( 0 );
+				links.forEach( ( link ) => {
+					expect( link ).not.toHaveClass(
+						'components-external-link'
+					);
+					expect( link ).toHaveAttribute( 'target', '_blank' );
+				} );
+			}
+		);
+	} );
+
+	it( 'renders the test-account switch-to-live notice and modal', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_test',
+						mode: 'test',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: {
+						setup: '#distinct-live-onboarding',
+					},
+				} );
+			}
+
+			return Promise.resolve( {
+				account: {
+					default_currency: 'usd',
+					default_external_accounts: [],
+				},
+			} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			await screen.findByText( 'You are using a test account.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'Provide additional details about your business so you can begin accepting real payments.'
+			)
+		).toBeInTheDocument();
+		const testAccountNotice = screen
+			.getByText( 'You are using a test account.' )
+			.closest(
+				'.woopayments-settings-account-mode-notice'
+			) as HTMLElement;
+		// Like the client, the notice sits above the sections, not inside General.
+		expect( getSettingsSectionByName( 'General' ) ).not.toContainElement(
+			testAccountNotice
+		);
+		expect(
+			within( testAccountNotice ).getByRole( 'link', {
+				name: /^Learn more/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/startup-guide/#signup-process'
+		);
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Activate payments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Activate payments on your store',
+		} );
+		expect(
+			within( dialog ).getByText(
+				"Before continuing, please make sure that you're aware of the following:"
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText(
+				'Your test account will be deactivated, but your transactions can be found in your order history.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText(
+				'To use WooPayments, you will need to verify your business details.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText(
+				'In order to receive payouts, you will need to provide your bank details.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByRole( 'link', {
+				name: 'Activate payments',
+			} )
+		).toHaveAttribute(
+			'href',
+			'#distinct-live-onboarding?source=wcadmin-settings-page&from=wcpay-setup-live-payments'
+		);
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_setup_live_payments_modal_open',
+			{
+				from: 'WCPAY_SETTINGS',
+				source: 'wcadmin-settings-page',
+			}
+		);
+	} );
+
+	it( 'records setup-live Tracks when activating payments from the modal', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_test',
+						mode: 'test',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: {
+						setup: '#distinct-live-onboarding',
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await screen.findByText( 'You are using a test account.' );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Activate payments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Activate payments on your store',
+		} );
+		const activateButton = within( dialog ).getByRole( 'link', {
+			name: 'Activate payments',
+		} );
+		expect( activateButton ).toHaveAttribute(
+			'href',
+			'#distinct-live-onboarding?source=wcadmin-settings-page&from=wcpay-setup-live-payments'
+		);
+
+		await userEvent.click( activateButton );
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_onboarding_flow_setup_live_payments',
+			{
+				from: 'WCPAY_SETTINGS',
+				source: 'wcadmin-settings-page',
+			}
+		);
+		expect( window.location.hash ).toBe(
+			'#distinct-live-onboarding?source=wcadmin-settings-page&from=wcpay-setup-live-payments'
+		);
+		expect( activateButton ).toHaveAttribute( 'aria-disabled', 'true' );
+	} );
+
+	it( 'records setup-live modal exit Tracks', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_test',
+						mode: 'test',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await screen.findByText( 'You are using a test account.' );
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Activate payments' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Activate payments on your store',
+		} );
+		await userEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Close' } )
+		);
+
+		await waitFor( () =>
+			expect( mockRecordEvent ).toHaveBeenCalledWith(
+				'wcpay_setup_live_payments_modal_exit',
+				{
+					from: 'WCPAY_SETTINGS',
+					source: 'wcadmin-settings-page',
+				}
+			)
+		);
+	} );
+
+	it( 'opens the setup-live modal from the legacy activation event bridge', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_test',
+						mode: 'test',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			return Promise.resolve( {
+				account: {
+					default_currency: 'usd',
+					default_external_accounts: [],
+				},
+			} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await screen.findByText( 'You are using a test account.' );
+		fireEvent( document, new CustomEvent( 'wcpay:activate_payments' ) );
+
+		expect(
+			await screen.findByRole( 'dialog', {
+				name: 'Activate payments on your store',
+			} )
+		).toBeInTheDocument();
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_settings_setup_live_payments_click',
+			{ source: 'wcadmin-settings-page' }
+		);
+	} );
+
+	it( 'renders the reference development-mode test-account warning copy', async () => {
+		mockUseDevMode.mockReturnValue( true );
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_test',
+						mode: 'test',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: true,
+						test_drive: true,
+						sandbox: false,
+						live: false,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const heading = await screen.findByText(
+			'You are using a test account.'
+		);
+		expect( heading.closest( 'p' ) ).toHaveTextContent(
+			'⚠️ Development mode is enabled for the store! There can be no live onboarding process while using development, testing, or staging WordPress environments!'
+		);
+		const noticeCopy = heading.closest( 'p' ) as HTMLElement;
+		expect(
+			within( noticeCopy ).getByRole( 'link', {
+				name: /WordPress environment/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://make.wordpress.org/core/2020/08/27/wordpress-environment-types/'
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Activate payments' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps express checkout detail controls out of the overview page', () => {
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.queryByLabelText( 'Show on product page' )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText( 'Show on cart page' )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText( 'Show on checkout page' )
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'combobox', { name: 'Call to action' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'does not render payout schedule controls while scheduling is unavailable', () => {
+		mockUseDepositStatus.mockReturnValue( 'restricted' );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				/^Payout scheduling is currently unavailable for your store\./
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'combobox', { name: 'Frequency' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'renders payout schedule and bank account management parity copy', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_live',
+						mode: 'live',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: false,
+						test_drive: false,
+						sandbox: false,
+						live: true,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			if ( path === '/wc-admin/settings/payments/woopayments/overview' ) {
+				return Promise.resolve( createShellWithAccountLink() );
+			}
+
+			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
+				return Promise.resolve( {
+					account: {
+						default_currency: 'usd',
+						default_external_accounts: [
+							{ currency: 'usd', status: 'enabled' },
+						],
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Payouts' );
+
+		expect(
+			within( section ).getByRole( 'heading', {
+				name: 'Payout schedule',
+			} )
+		).toBeInTheDocument();
+		// The 'Payout schedule' field group is a labelled `group` landmark;
+		// assert it carries the expected stable id.
+		expect(
+			within( section ).getByRole( 'group', {
+				name: 'Payout schedule',
+			} )
+		).toHaveAttribute( 'id', 'payout-schedule' );
+		expect(
+			within( section ).getByRole( 'link', {
+				name: /^Learn more about payout schedules/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/payouts/payout-schedule/'
+		);
+		expect(
+			within( section ).queryByRole( 'link', {
+				name: /^Learn more about pending schedules/,
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'heading', {
+				name: 'Payout bank account',
+			} )
+		).toBeInTheDocument();
+		expect(
+			await within( section ).findByText(
+				'Manage and update your bank account information to receive payouts.'
+			)
+		).toBeInTheDocument();
+		expect(
+			await within( section ).findByRole( 'link', {
+				name: /Manage in Stripe/,
+			} )
+		).toHaveAttribute( 'href', ACCOUNT_LINK );
+	} );
+
+	it( 'renders the failed payout bank-account notice when an external account errored', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_live',
+						mode: 'live',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: false,
+						test_drive: false,
+						sandbox: false,
+						live: true,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			if ( path === '/wc-admin/settings/payments/woopayments/overview' ) {
+				return Promise.resolve( createShellWithAccountLink() );
+			}
+
+			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
+				return Promise.resolve( {
+					account: {
+						default_currency: 'usd',
+						default_external_accounts: [
+							{ currency: 'usd', status: 'errored' },
+						],
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			await screen.findByText(
+				'Payouts are currently paused because a recent payout failed.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'link', {
+				name: /^update your bank account details/,
+			} )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining( 'source=wcpay-payout-failure-notice' )
+		);
+		expect( mockSpeak ).toHaveBeenCalledWith(
+			'Payouts are currently paused because a recent payout failed.',
+			'assertive'
+		);
+	} );
+
+	it( 'matches the reference settings behavior for multicurrency failed payout accounts', async () => {
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( {
+					account: {
+						id: 'acct_live',
+						mode: 'live',
+						default_currency: 'usd',
+						connected: true,
+						working: true,
+						can_process_payments: true,
+						test_mode: false,
+						test_drive: false,
+						sandbox: false,
+						live: true,
+					},
+					urls: {
+						setup: 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding',
+					},
+				} );
+			}
+
+			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
+				return Promise.resolve( {
+					account: {
+						default_currency: 'usd',
+						default_external_accounts: [
+							{ currency: 'usd', status: 'enabled' },
+							{ currency: 'eur', status: 'errored' },
+						],
+					},
+				} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			await screen.findByText(
+				'Payouts are currently paused because a recent payout failed.'
+			)
+		).toBeInTheDocument();
+		expect( mockSpeak ).toHaveBeenCalledWith(
+			'Payouts are currently paused because a recent payout failed.',
+			'assertive'
+		);
+	} );
+
+	it( 'uses the reference payout waiting-period copy', () => {
+		mockUseCompletedWaitingPeriod.mockReturnValue( false );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByText(
+				'Payout scheduling becomes available after the standard 7-day waiting period for new accounts is complete.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it.each( [
+		[ 'daily', 'Payouts will occur every business day.' ],
+		[
+			'weekly',
+			'Payouts that fall on a holiday will initiate on the next business day.',
+		],
+		[
+			'monthly',
+			'Payouts scheduled on a weekend will be sent on the next business day.',
+		],
+	] )(
+		'uses reference payout schedule helper copy for %s payouts',
+		( interval, helperCopy ) => {
+			mockUseDepositScheduleInterval.mockReturnValue( [
+				interval as string,
+				noop,
+			] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			expect( screen.getByText( helperCopy ) ).toBeInTheDocument();
+			expect(
+				screen.queryByText( /Payout currency:/ )
+			).not.toBeInTheDocument();
+		}
+	);
+
+	it( 'uses reference monthly payout date labels', () => {
+		mockUseDepositScheduleInterval.mockReturnValue( [ 'monthly', noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const dateSelect = screen.getByRole( 'combobox', { name: 'Date' } );
+		expect(
+			within( dateSelect ).getByRole( 'option', { name: '1st' } )
+		).toBeInTheDocument();
+		expect(
+			within( dateSelect ).getByRole( 'option', { name: '2nd' } )
+		).toBeInTheDocument();
+		expect(
+			within( dateSelect ).getByRole( 'option', { name: '3rd' } )
+		).toBeInTheDocument();
+	} );
+
+	it.each( [
+		[ 'weekly', '', 'monday' ],
+		[ 'weekly', 'thursday', 'thursday' ],
+		[ 'monthly', '', '1' ],
+		[ 'monthly', '15', '15' ],
+	] )(
+		'seeds the %s payout anchor from %p to %p before changing the interval',
+		async ( newInterval, currentAnchor, seededAnchor ) => {
+			const calls: string[] = [];
+			const setInterval = jest.fn( ( value: string ) =>
+				calls.push( `interval:${ value }` )
+			);
+			const setWeeklyAnchor = jest.fn( ( value: string ) =>
+				calls.push( `weekly:${ value }` )
+			);
+			const setMonthlyAnchor = jest.fn( ( value: string ) =>
+				calls.push( `monthly:${ value }` )
+			);
+			mockUseDepositScheduleInterval.mockReturnValue( [
+				'daily',
+				setInterval,
+			] );
+			mockUseDepositScheduleWeeklyAnchor.mockReturnValue( [
+				newInterval === 'weekly' ? currentAnchor : 'monday',
+				setWeeklyAnchor,
+			] );
+			mockUseDepositScheduleMonthlyAnchor.mockReturnValue( [
+				newInterval === 'monthly' ? currentAnchor : '1',
+				setMonthlyAnchor,
+			] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			await userEvent.selectOptions(
+				screen.getByRole( 'combobox', { name: 'Frequency' } ),
+				newInterval
+			);
+
+			expect( calls ).toEqual( [
+				`${ newInterval }:${ seededAnchor }`,
+				`interval:${ newInterval }`,
+			] );
+		}
+	);
+
+	it( 'does not seed a payout anchor when switching to daily payouts', async () => {
+		const setInterval = jest.fn();
+		const setWeeklyAnchor = jest.fn();
+		const setMonthlyAnchor = jest.fn();
+		mockUseDepositScheduleInterval.mockReturnValue( [
+			'weekly',
+			setInterval,
+		] );
+		mockUseDepositScheduleWeeklyAnchor.mockReturnValue( [
+			'',
+			setWeeklyAnchor,
+		] );
+		mockUseDepositScheduleMonthlyAnchor.mockReturnValue( [
+			'',
+			setMonthlyAnchor,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.selectOptions(
+			screen.getByRole( 'combobox', { name: 'Frequency' } ),
+			'daily'
+		);
+
+		expect( setInterval ).toHaveBeenCalledWith( 'daily' );
+		expect( setWeeklyAnchor ).not.toHaveBeenCalled();
+		expect( setMonthlyAnchor ).not.toHaveBeenCalled();
+	} );
+
+	it( 'renders notification email warning and confirmation when the email changes', async () => {
+		mockUseAccountCommunicationsEmail.mockImplementation( () =>
+			useState( 'owner@example.com' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Account notifications' );
+
+		expect(
+			within( section ).getByRole( 'heading', {
+				name: 'Notifications email',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				'Provide an email address where you would like to receive communications about your WooPayments account.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				'Anyone with access to this email address will be treated as the account owner. Please verify the address carefully.'
+			)
+		).toBeInTheDocument();
+
+		const emailInput = within( section ).getByRole( 'textbox', {
+			name: 'Email address',
+		} );
+		await userEvent.clear( emailInput );
+		await userEvent.type( emailInput, 'new-owner@example.com' );
+
+		const confirmInput = within( section ).getByRole( 'textbox', {
+			name: 'Confirm email address',
+		} );
+		await userEvent.type( confirmInput, 'someone-else@example.com' );
+		fireEvent.blur( confirmInput );
+
+		expect(
+			within( section ).getByText(
+				'Email addresses do not match. Please re-enter your email address.'
+			)
+		).toBeInTheDocument();
+		expect( confirmInput ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await userEvent.clear( confirmInput );
+		await userEvent.type( confirmInput, 'new-owner@example.com' );
+
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			).toBeEnabled()
+		);
+	} );
+
+	it( 'validates notification email format after the field is blurred', async () => {
+		mockUseAccountCommunicationsEmail.mockImplementation( () =>
+			useState( 'owner@example.com' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Account notifications' );
+		const emailInput = within( section ).getByRole( 'textbox', {
+			name: 'Email address',
+		} );
+
+		await userEvent.clear( emailInput );
+		await userEvent.type( emailInput, 'mailto:owner@example.com' );
+		fireEvent.blur( emailInput );
+
+		expect(
+			within( section ).getByText( 'Please enter a valid email address.' )
+		).toBeInTheDocument();
+		expect( emailInput ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( emailInput ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-notifications-email-error'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+	} );
+
+	it( 'renders transaction helper copy and validates support contact inputs', async () => {
+		mockUseAccountBusinessSupportEmail.mockImplementation( () =>
+			useState( 'support@example.com' )
+		);
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '+15555555555' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Transactions' );
+
+		expect(
+			within( section ).getByText(
+				'When enabled, users will be able to pay with a saved card during checkout. Card details are stored in our platform, not on your store.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				"Edit the way your store name appears on your customers' bank statements."
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				'Provide contact information where customers can reach you for support.'
+			)
+		).toBeInTheDocument();
+		const supportEmail = within( section ).getByRole( 'textbox', {
+			name: 'Support email',
+		} );
+		await userEvent.clear( supportEmail );
+		await userEvent.type( supportEmail, 'not-email' );
+		fireEvent.blur( supportEmail );
+
+		expect(
+			within( section ).getByText( 'Please enter a valid email address.' )
+		).toBeInTheDocument();
+		expect( supportEmail ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+
+		await userEvent.clear( supportEmail );
+		await userEvent.type( supportEmail, 'support@example.com' );
+
+		const supportPhone = within( section ).getByRole( 'textbox', {
+			name: 'Support phone number (required)',
+		} );
+		await userEvent.clear( supportPhone );
+		await userEvent.type( supportPhone, '12345' );
+		fireEvent.blur( supportPhone );
+
+		expect(
+			within( section ).getByText(
+				'A support phone number is required. Please enter a valid phone number.'
+			)
+		).toBeInTheDocument();
+		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
+		expect(
+			within( section ).getByText(
+				"This number may appear on customer bank statements and in-person purchase receipts, but not in order emails. Use a number you're comfortable sharing publicly."
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+	} );
+
+	it( 'focuses the first field with server validation details after a failed save', async () => {
+		const scrollIntoView = jest.fn();
+		const originalScrollIntoView = Element.prototype.scrollIntoView;
+		const originalMatchMedia = window.matchMedia;
+		let savingError: unknown = null;
+
+		Element.prototype.scrollIntoView = scrollIntoView;
+		window.matchMedia = jest.fn().mockReturnValue( { matches: true } );
+		mockSaveSettings.mockImplementation( async () => {
+			savingError = {
+				data: {
+					details: {
+						unknown_server_field: {
+							message: 'This field is not rendered.',
+						},
+						account_business_support_email: {
+							message:
+								'Please enter a valid support email address.',
+						},
+						account_business_support_phone: {
+							message:
+								'Please enter a valid support phone number.',
+						},
+					},
+				},
+			};
+
+			return false;
+		} );
+		mockUseGetSavingError.mockImplementation( () => savingError );
+
+		try {
+			render( <WooPaymentsSettingsPage /> );
+
+			await act( async () => {
+				await userEvent.click(
+					screen.getByRole( 'button', { name: 'Save changes' } )
+				);
+			} );
+
+			const supportEmail = screen.getByRole( 'textbox', {
+				name: 'Support email',
+			} );
+
+			await waitFor( () => expect( supportEmail ).toHaveFocus() );
+			expect( scrollIntoView ).toHaveBeenCalledWith( {
+				behavior: 'auto',
+				block: 'center',
+			} );
+		} finally {
+			Element.prototype.scrollIntoView = originalScrollIntoView;
+			window.matchMedia = originalMatchMedia;
+		}
+	} );
+
+	it( 'focuses the notifications email field for server validation details', async () => {
+		const scrollIntoView = jest.fn();
+		const originalScrollIntoView = Element.prototype.scrollIntoView;
+		const originalMatchMedia = window.matchMedia;
+		let savingError: unknown = null;
+
+		Element.prototype.scrollIntoView = scrollIntoView;
+		window.matchMedia = jest.fn().mockReturnValue( { matches: true } );
+		mockSaveSettings.mockImplementation( async () => {
+			savingError = {
+				data: {
+					details: {
+						account_communications_email: {
+							message:
+								'Please enter a valid notifications email address.',
+						},
+					},
+				},
+			};
+
+			return false;
+		} );
+		mockUseGetSavingError.mockImplementation( () => savingError );
+
+		try {
+			render( <WooPaymentsSettingsPage /> );
+
+			await act( async () => {
+				await userEvent.click(
+					screen.getByRole( 'button', { name: 'Save changes' } )
+				);
+			} );
+
+			const notificationsEmail = screen.getByRole( 'textbox', {
+				name: 'Email address',
+			} );
+
+			await waitFor( () => expect( notificationsEmail ).toHaveFocus() );
+			expect( scrollIntoView ).toHaveBeenCalledWith( {
+				behavior: 'auto',
+				block: 'center',
+			} );
+		} finally {
+			Element.prototype.scrollIntoView = originalScrollIntoView;
+			window.matchMedia = originalMatchMedia;
+		}
+	} );
+
+	it( 'requires a support phone number before settings can be saved', () => {
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Transactions' );
+		const supportPhone = within( section ).getByRole( 'textbox', {
+			name: 'Support phone number (required)',
+		} );
+
+		expect(
+			within( section ).getByText(
+				'A support phone number is required. Please enter a valid phone number.'
+			)
+		).toBeInTheDocument();
+		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
+	} );
+
+	// Client 11.1.0 settings/settings-manager/index.js:174-198 scrolls to the section named by the
+	// `anchor` query argument or the URL hash once settings have loaded, below the admin header.
+	it.each( [
+		[ 'hash', '#fraud-protection', 'fraud-protection' ],
+		[ 'anchor query argument', 'anchor=%23advanced', 'advanced' ],
+	] )(
+		'scrolls to the section named by the %s once settings have loaded',
+		( _source, urlPart, sectionId ) => {
+			if ( urlPart.startsWith( '#' ) ) {
+				setSettingsPageUrl();
+				window.history.replaceState(
+					null,
+					'',
+					`${ window.location.pathname }${ window.location.search }${ urlPart }`
+				);
+			} else {
+				setSettingsPageUrl( urlPart );
+			}
+			const scrollTo = jest
+				.spyOn( window, 'scrollTo' )
+				.mockImplementation( () => undefined );
+			const getBoundingClientRect = jest
+				.spyOn( HTMLElement.prototype, 'getBoundingClientRect' )
+				.mockImplementation( function ( this: HTMLElement ) {
+					return {
+						top: this.id === sectionId ? 4000 : 0,
+					} as DOMRect;
+				} );
+
+			try {
+				mockUseSettings.mockReturnValue( {
+					isLoading: true,
+					isSaving: false,
+					isDirty: false,
+					saveSettings: mockSaveSettings,
+				} );
+				mockUseGetSettings.mockReturnValue( {} );
+				const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+				// Sections move while settings load, so the client waits.
+				expect( scrollTo ).not.toHaveBeenCalled();
+
+				setHookDefaults();
+				rerender( <WooPaymentsSettingsPage /> );
+
+				// No `.woocommerce-layout__header` here: 60px header + 50px margin.
+				expect( scrollTo ).toHaveBeenCalledTimes( 1 );
+				expect( scrollTo ).toHaveBeenCalledWith( {
+					top: 4000 - 110,
+					behavior: 'smooth',
+				} );
+			} finally {
+				scrollTo.mockRestore();
+				getBoundingClientRect.mockRestore();
+				setSettingsPageUrl();
+			}
+		}
+	);
+
+	it( 'names the invalid field in the save bar status when validation blocks saving', () => {
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'button', { name: 'Save changes' } )
+		).toHaveAccessibleDescription(
+			'A support phone number is required. Please enter a valid phone number.'
+		);
+		expect(
+			screen.queryByText( 'You have unsaved changes.' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'moves focus to the first invalid field when save is activated while validation blocks it', async () => {
+		const scrollIntoView = jest.fn();
+		const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+		Element.prototype.scrollIntoView = scrollIntoView;
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+		mockUseAccountCommunicationsEmail.mockImplementation( () =>
+			useState( 'owner@example.com' )
+		);
+
+		try {
+			render( <WooPaymentsSettingsPage /> );
+
+			const notificationsEmail = screen.getByRole( 'textbox', {
+				name: 'Email address',
+			} );
+			await userEvent.clear( notificationsEmail );
+			await userEvent.type( notificationsEmail, 'new@example.com' );
+
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+
+			expect(
+				screen.getByRole( 'textbox', {
+					name: 'Support phone number (required)',
+				} )
+			).toHaveFocus();
+			expect( scrollIntoView ).toHaveBeenCalled();
+			expect( mockSaveSettings ).not.toHaveBeenCalled();
+		} finally {
+			Element.prototype.scrollIntoView = originalScrollIntoView;
+		}
+	} );
+
+	it( 'shows the support phone server error before the local validation message', () => {
+		mockUseAccountBusinessSupportPhone.mockImplementation( () =>
+			useState( '' )
+		);
+		mockUseGetSavingError.mockReturnValue( {
+			data: {
+				details: {
+					account_business_support_phone: {
+						message:
+							'Enter the support phone number on your account.',
+					},
+				},
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Transactions' );
+		const supportPhone = within( section ).getByRole( 'textbox', {
+			name: 'Support phone number (required)',
+		} );
+
+		expect(
+			within( section ).getByText(
+				'Enter the support phone number on your account.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).queryByText(
+				'A support phone number is required. Please enter a valid phone number.'
+			)
+		).not.toBeInTheDocument();
+		expect( supportPhone ).toHaveAttribute( 'aria-invalid', 'true' );
+		expect( supportPhone ).toHaveAttribute(
+			'aria-describedby',
+			'woopayments-support-phone-error'
+		);
+	} );
+
+	it( 'announces the page-level save busy state accessibly', () => {
+		mockUseSettings.mockReturnValue( {
+			isLoading: false,
+			isSaving: true,
+			isDirty: true,
+			saveSettings: mockSaveSettings,
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const status = document.querySelector(
+			'.woopayments-settings-busy-state__status'
+		) as HTMLElement;
+		expect( status ).toHaveTextContent( 'Saving…' );
+		expect( status.parentElement ).not.toHaveAttribute( 'aria-busy' );
+		expect(
+			status.parentElement?.querySelector(
+				'.woopayments-settings-busy-state__content'
+			)
+		).toHaveAttribute( 'aria-busy', 'true' );
+	} );
+
+	it( 'opens WooPay feedback after a successful save disables WooPay', async () => {
+		let isWooPayEnabled = true;
+		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
+			isWooPayEnabled = value;
+		} );
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			is_woopay_enabled: isWooPayEnabled,
+			woopay_last_disable_date: '',
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			setWooPayEnabled,
+		] );
+		mockSaveSettings.mockResolvedValue( true );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'WooPay feedback',
+		} );
+		expect(
+			within( dialog ).getByTitle( 'WooPay disable feedback' )
+		).toHaveAttribute(
+			'src',
+			'https://woocommerce.survey.fm/woopay-disabled-merchants-feedback-triggered'
+		);
+		// The loading message sits in a status region that stays mounted once the form loads.
+		const loadingStatus = within( dialog ).getByRole( 'status' );
+		expect( loadingStatus ).toHaveTextContent( 'Loading feedback form…' );
+		fireEvent.load(
+			within( dialog ).getByTitle( 'WooPay disable feedback' )
+		);
+		expect( loadingStatus ).toBeInTheDocument();
+		expect( loadingStatus.textContent ).toBe( '' );
+	} );
+
+	// Owner decision N-280, a recorded improvement over client 11.1.0: the terms text goes only after a save.
+	it( 'keeps an express method description until the change is saved', async () => {
+		let isWooPayEnabled = false;
+		let savedSettings = { is_woopay_enabled: false };
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			( value: boolean ) => {
+				isWooPayEnabled = value;
+			},
+		] );
+		mockUseGetSavedSettings.mockImplementation( () => savedSettings );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+		expect( queryWooPayTermsLink() ).toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		).toBeChecked();
+		expect( queryWooPayTermsLink() ).toBeInTheDocument();
+
+		// The save succeeds, so the store's saved snapshot now has WooPay on.
+		savedSettings = { is_woopay_enabled: true };
+		rerender( <WooPaymentsSettingsPage /> );
+		expect( queryWooPayTermsLink() ).not.toBeInTheDocument();
+	} );
+
+	it( 'does not open disable feedback after a successful WooPay enable save', async () => {
+		let isWooPayEnabled = false;
+		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
+			isWooPayEnabled = value;
+		} );
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			is_woopay_enabled: isWooPayEnabled,
+			woopay_last_disable_date: '',
+			available_payment_method_ids: [ 'card', 'link' ],
+		} ) );
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			setWooPayEnabled,
+		] );
+		mockSaveSettings.mockResolvedValue( true );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		expect( mockSaveSettings ).toHaveBeenCalledTimes( 1 );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'WooPay feedback' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'records payment request setting changes after a successful save', async () => {
+		let isPaymentRequestEnabled = true;
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			is_payment_request_enabled: isPaymentRequestEnabled,
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockSaveSettings.mockResolvedValue( true );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		isPaymentRequestEnabled = false;
+		rerender( <WooPaymentsSettingsPage /> );
+
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_payment_request_settings_change',
+			{ enabled: 'no' }
+		);
+	} );
+
+	it( 'does not record payment request setting changes after a failed save', async () => {
+		let isPaymentRequestEnabled = true;
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			is_payment_request_enabled: isPaymentRequestEnabled,
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockSaveSettings.mockResolvedValue( false );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		isPaymentRequestEnabled = false;
+		rerender( <WooPaymentsSettingsPage /> );
+
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		expect( mockRecordEvent ).not.toHaveBeenCalledWith(
+			'wcpay_payment_request_settings_change',
+			expect.anything()
+		);
+	} );
+
+	it( 'does not record unchanged payment request settings after a successful save', async () => {
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			store_currency: 'USD',
+			is_multi_currency_enabled: true,
+			is_payment_request_enabled: true,
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockSaveSettings.mockResolvedValue( true );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		expect( mockRecordEvent ).not.toHaveBeenCalledWith(
+			'wcpay_payment_request_settings_change',
+			expect.anything()
+		);
+	} );
+
+	it( 'does not open WooPay feedback after a failed disable save', async () => {
+		let isWooPayEnabled = true;
+		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
+			isWooPayEnabled = value;
+		} );
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			is_woopay_enabled: isWooPayEnabled,
+			woopay_last_disable_date: '',
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			setWooPayEnabled,
+		] );
+		mockSaveSettings.mockResolvedValue( false );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		await waitFor( () => expect( mockSaveSettings ).toHaveBeenCalled() );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'WooPay feedback' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'does not open WooPay feedback when the last disable date is recent', async () => {
+		// Five days after the last disable, inside the seven-day feedback throttle.
+		jest.useFakeTimers( {
+			now: new Date( '2026-06-20T12:00:00Z' ),
+			doNotFake: [ 'setTimeout', 'queueMicrotask', 'nextTick' ],
+		} );
+		let isWooPayEnabled = true;
+		const setWooPayEnabled = jest.fn( ( value: boolean ) => {
+			isWooPayEnabled = value;
+		} );
+		mockUseGetSettings.mockImplementation( () => ( {
+			account_country: 'US',
+			is_woopay_enabled: isWooPayEnabled,
+			woopay_last_disable_date: '2026-06-15',
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+		} ) );
+		mockUseWooPayEnabledSettings.mockImplementation( () => [
+			isWooPayEnabled,
+			setWooPayEnabled,
+		] );
+		mockSaveSettings.mockResolvedValue( true );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'checkbox', { name: 'WooPay' } )
+		);
+		rerender( <WooPaymentsSettingsPage /> );
+		await act( async () => {
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+		} );
+
+		await waitFor( () => expect( mockSaveSettings ).toHaveBeenCalled() );
+		expect(
+			screen.queryByRole( 'dialog', { name: 'WooPay feedback' } )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'renders fraud protection with the reference Basic and Advanced level controls', () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'basic', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [ [], noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Fraud protection' );
+
+		expect(
+			within( section ).getByText(
+				'Help avoid unauthorized transactions and disputes by setting your fraud protection level.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'link', {
+				name: /Learn more about fraud protection/,
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/fraud-and-disputes/fraud-protection/'
+		);
+		expect(
+			within( section ).getByRole( 'heading', {
+				name: 'Set your payment risk level',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'group', {
+				name: 'Fraud protection level',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'radio', { name: 'Basic' } )
+		).toBeChecked();
+		expect(
+			within( section ).getByRole( 'radio', { name: 'Advanced' } )
+		).toBeInTheDocument();
+		expect(
+			within( section ).queryByRole( 'combobox', {
+				name: 'Protection level',
+			} )
+		).not.toBeInTheDocument();
+		expect(
+			within( section ).queryByText( 'Standard' )
+		).not.toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				'Provides the base level of platform protection.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText(
+				'Allows you to fine-tune the level of filtering according to your business needs.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'records fraud protection risk level preset changes', async () => {
+		const setProtectionLevel = jest.fn();
+		mockUseCurrentProtectionLevel.mockReturnValue( [
+			'basic',
+			setProtectionLevel,
+		] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [ [], noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'radio', { name: 'Advanced' } )
+		);
+
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_fraud_protection_risk_level_preset_enabled',
+			{ preset: 'advanced' }
+		);
+		expect( setProtectionLevel ).toHaveBeenCalledWith( 'advanced' );
+	} );
+
+	it( 'links advanced fraud protection to the native provider settings route', () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [ [], noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.getByRole( 'link', { name: 'Configure' } )
+		).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fsettings%2Ffraud-protection'
+			)
+		);
+	} );
+
+	it( 'does not link advanced fraud protection while fraud settings failed to load', () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+			'error',
+			noop,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect(
+			screen.queryByRole( 'link', { name: 'Configure' } )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Configure' } )
+		).toBeDisabled();
+	} );
+
+	it( 'uses Edit copy for configured advanced fraud protection settings', () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+			[ { key: 'avs_verification' } ],
+			noop,
+		] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect( screen.getByRole( 'link', { name: 'Edit' } ) ).toHaveAttribute(
+			'href',
+			expect.stringContaining(
+				'path=%2Fwoopayments%2Fsettings%2Ffraud-protection'
+			)
+		);
+	} );
+
+	// Owner decision N-280: the label follows the saved rules, not rules the subpage has not saved yet.
+	it( 'keeps Configure until advanced fraud rules are saved', () => {
+		let savedSettings: Record< string, unknown > = {
+			advanced_fraud_protection_settings: [],
+		};
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+			[ { key: 'avs_verification' } ],
+			noop,
+		] );
+		mockUseGetSavedSettings.mockImplementation( () => savedSettings );
+
+		const { rerender } = render( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'link', { name: 'Configure' } )
+		).toBeInTheDocument();
+
+		savedSettings = {
+			advanced_fraud_protection_settings: [ { key: 'avs_verification' } ],
+		};
+		rerender( <WooPaymentsSettingsPage /> );
+		expect(
+			screen.getByRole( 'link', { name: 'Edit' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'opens the Basic fraud protection help modal', async () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'basic', noop ] );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Basic level help icon' } )
+		);
+
+		expect(
+			screen.getByRole( 'heading', { name: 'Basic filter level' } )
+		).toBeInTheDocument();
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Basic filter level',
+		} );
+		expect(
+			within( dialog ).getByText(
+				'Provides basic anti-fraud protection only.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText( 'Payments will be blocked if:' )
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText(
+				'The billing address does not match what is on file with the card issuer.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByText(
+				"The card's issuing bank cannot verify the CVV."
+			)
+		).toBeInTheDocument();
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Got it' } )
+		).toBeInTheDocument();
+		expect( mockRecordEvent ).toHaveBeenCalledWith(
+			'wcpay_fraud_protection_basic_modal_viewed'
+		);
+	} );
+
+	it( 'records fraud tour completion after the fraud section becomes visible', async () => {
+		installMockIntersectionObserver();
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const tourAnchor = document.getElementById(
+			'fraud-protection-card-options'
+		);
+		expect( tourAnchor ).not.toBeNull();
+		await waitFor( () => {
+			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
+		} );
+		expect(
+			mockIntersectionObserverInstances[ 0 ].observe
+		).toHaveBeenCalledWith( tourAnchor );
+
+		intersectObservedElement( tourAnchor as Element );
+
+		expect(
+			await screen.findByTestId( 'fraud-protection-tour' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Enhanced fraud protection' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( /\{\{strong\}\}/ )
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText( /Payments > Transactions/ )
+		).toBeInTheDocument();
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Finish fraud tour' } )
+		);
+
+		await waitFor( () => {
+			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
+		} );
+		expect( getFraudTourDismissalCalls()[ 0 ][ 0 ] ).toEqual( {
+			path: FRAUD_TOUR_DISMISSAL_PATH,
+			method: 'post',
+			data: { value: true },
+		} );
+		expect( getFraudTourEventNames() ).toEqual( [
+			'wcpay_fraud_protection_tour_clicked_through',
+		] );
+		expect(
+			screen.queryByTestId( 'fraud-protection-tour' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'keeps the fraud tour recoverable when dismissal persistence fails', async () => {
+		installMockIntersectionObserver();
+		mockApiFetch.mockImplementation( ( options ) => {
+			const path = typeof options === 'string' ? options : options?.path;
+
+			if ( path === FRAUD_TOUR_DISMISSAL_PATH ) {
+				return Promise.reject( new Error( 'option save failed' ) );
+			}
+
+			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
+				return Promise.resolve( getDefaultAccountResponse() );
+			}
+
+			if ( path === '/wc/v3/payments/deposits/overview-all' ) {
+				return new Promise( () => {} );
+			}
+
+			return Promise.resolve( {} );
+		} );
+		mockUseGetSettings.mockReturnValue( {
+			account_country: 'US',
+			store_currency: 'USD',
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			available_payment_method_ids: [
+				'card',
+				'link',
+				'affirm',
+				'amazon_pay',
+				'apple_pay',
+				'google_pay',
+			],
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const tourAnchor = document.getElementById(
+			'fraud-protection-card-options'
+		);
+		expect( tourAnchor ).not.toBeNull();
+		await waitFor( () => {
+			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
+		} );
+		intersectObservedElement( tourAnchor as Element );
+		await screen.findByTestId( 'fraud-protection-tour' );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Finish fraud tour' } )
+		);
+
+		await waitFor( () => {
+			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
+		} );
+		await waitFor( () => {
+			expect( mockCreateErrorNotice ).toHaveBeenCalledWith(
+				'Error saving option'
+			);
+		} );
+		expect( getFraudTourEventNames() ).toEqual( [] );
+		expect(
+			screen.getByTestId( 'fraud-protection-tour' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'records fraud tour abandonment after the fraud section becomes visible', async () => {
+		installMockIntersectionObserver();
+		mockUseGetSettings.mockReturnValue( {
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const tourAnchor = document.getElementById(
+			'fraud-protection-card-options'
+		);
+		expect( tourAnchor ).not.toBeNull();
+		await waitFor( () => {
+			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
+		} );
+		intersectObservedElement( tourAnchor as Element );
+		await screen.findByTestId( 'fraud-protection-tour' );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Dismiss fraud tour' } )
+		);
+
+		await waitFor( () => {
+			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
+		} );
+		expect( getFraudTourDismissalCalls()[ 0 ][ 0 ] ).toEqual( {
+			path: FRAUD_TOUR_DISMISSAL_PATH,
+			method: 'post',
+			data: { value: true },
+		} );
+		expect( getFraudTourEventNames() ).toEqual( [
+			'wcpay_fraud_protection_tour_abandoned',
+		] );
+	} );
+
+	it( 'records fraud tour abandonment when TourKit minimizes the visible tour', async () => {
+		installMockIntersectionObserver();
+		mockUseGetSettings.mockReturnValue( {
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const tourAnchor = document.getElementById(
+			'fraud-protection-card-options'
+		);
+		expect( tourAnchor ).not.toBeNull();
+		await waitFor( () => {
+			expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
+		} );
+		intersectObservedElement( tourAnchor as Element );
+		await screen.findByTestId( 'fraud-protection-tour' );
+
+		expect(
+			mockTourKitConfigs[ 0 ].options?.callbacks?.onMinimize
+		).toEqual( expect.any( Function ) );
+		mockTourKitConfigs[ 0 ].options?.callbacks?.onMinimize?.( 0 );
+
+		await waitFor( () => {
+			expect( getFraudTourDismissalCalls() ).toHaveLength( 1 );
+		} );
+		expect( getFraudTourEventNames() ).toEqual( [
+			'wcpay_fraud_protection_tour_abandoned',
+		] );
+		await waitFor( () =>
+			expect(
+				screen.queryByTestId( 'fraud-protection-tour' )
+			).not.toBeInTheDocument()
+		);
+	} );
+
+	it( 'does not start the fraud tour after it has been dismissed', () => {
+		installMockIntersectionObserver();
+		mockUseGetSettings.mockReturnValue( {
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: true,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		expect( window.IntersectionObserver ).not.toHaveBeenCalled();
+		expect(
+			screen.queryByTestId( 'fraud-protection-tour' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'does not start the fraud tour while fraud settings failed to load', async () => {
+		installMockIntersectionObserver();
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'advanced', noop ] );
+		mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+			'error',
+			noop,
+		] );
+		mockUseGetSettings.mockReturnValue( {
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Fraud protection' );
+		expect(
+			within( section ).getByText(
+				'There was an error retrieving your fraud protection settings. Please refresh the page to try again.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'group', {
+				name: 'Fraud protection level',
+			} )
+		).toBeDisabled();
+		await act( async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		} );
+
+		expect( window.IntersectionObserver ).not.toHaveBeenCalled();
+		expect( mockTourKitConfigs ).toHaveLength( 0 );
+		expect(
+			screen.queryByTestId( 'fraud-protection-tour' )
+		).not.toBeInTheDocument();
+	} );
+
+	it( 'uses focusable targets and reduced-motion autoscroll for the fraud tour', async () => {
+		installMockIntersectionObserver();
+		const originalMatchMedia = window.matchMedia;
+		window.matchMedia = jest.fn().mockReturnValue( { matches: true } );
+		mockUseGetSettings.mockReturnValue( {
+			feature_flags: DEFAULT_FEATURE_FLAGS,
+			fraud_protection: {
+				decline_on_avs_failure: true,
+				decline_on_cvc_failure: true,
+				is_welcome_tour_dismissed: false,
+			},
+		} );
+
+		try {
+			render( <WooPaymentsSettingsPage /> );
+
+			const tourAnchor = document.getElementById(
+				'fraud-protection-card-options'
+			);
+			expect( tourAnchor ).not.toBeNull();
+			await waitFor( () => {
+				expect( mockIntersectionObserverInstances ).toHaveLength( 1 );
+			} );
+			intersectObservedElement( tourAnchor as Element );
+			await screen.findByTestId( 'fraud-protection-tour' );
+
+			expect(
+				mockTourKitConfigs[ 0 ].options?.effects?.autoScroll
+			).toMatchObject( { behavior: 'auto', block: 'nearest' } );
+
+			mockTourKitConfigs[ 0 ].steps.forEach( ( step ) => {
+				const selector = step.focusElement?.desktop;
+
+				if ( ! selector ) {
+					return;
+				}
+
+				const focusTarget = document.querySelector( selector );
+				expect( focusTarget ).toBeInstanceOf( window.HTMLInputElement );
+			} );
+		} finally {
+			window.matchMedia = originalMatchMedia;
+		}
+	} );
+
+	it( 'honors explicitly disabled Basic fraud checks from the native settings contract', async () => {
+		mockUseCurrentProtectionLevel.mockReturnValue( [ 'basic', noop ] );
+		mockUseGetSettings.mockReturnValue( {
+			fraud_protection: {
+				decline_on_avs_failure: false,
+				decline_on_cvc_failure: false,
+			},
+			account_status: {
+				fraudProtection: {
+					declineOnAVSFailure: true,
+					declineOnCVCFailure: true,
+				},
+			},
+		} );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		await userEvent.click(
+			screen.getByRole( 'button', { name: 'Basic level help icon' } )
+		);
+
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Basic filter level',
+		} );
+		expect(
+			within( dialog ).queryByText( 'Payments will be blocked if:' )
+		).not.toBeInTheDocument();
+		expect(
+			within( dialog ).queryByText(
+				'The billing address does not match what is on file with the card issuer.'
+			)
+		).not.toBeInTheDocument();
+		expect(
+			within( dialog ).queryByText(
+				"The card's issuing bank cannot verify the CVV."
+			)
+		).not.toBeInTheDocument();
+	} );
+
+	describe( 'Stripe Billing', () => {
+		type BootstrapWindow = typeof window & {
+			wcSettings?: {
+				admin?: { woopaymentsSettings?: Record< string, unknown > };
+			};
+		};
+		let previousWcSettings: BootstrapWindow[ 'wcSettings' ];
+
+		beforeEach( () => {
+			previousWcSettings = ( window as BootstrapWindow ).wcSettings;
+		} );
+
+		afterEach( () => {
+			( window as BootstrapWindow ).wcSettings = previousWcSettings;
+		} );
+
+		const setBootstrap = (
+			woopaymentsSettings: Record< string, unknown >
+		) => {
+			( window as BootstrapWindow ).wcSettings = {
+				...previousWcSettings,
+				admin: { ...previousWcSettings?.admin, woopaymentsSettings },
+			};
+		};
+
+		// Client 11.1.0 `client/settings/advanced-settings/index.js:22-27`.
+		it.each( [
+			[ 'shows', true, true ],
+			[ 'hides without WooCommerce Subscriptions', false, true ],
+			[ 'hides for a store outside the US', true, false ],
+		] )(
+			'%s the Stripe Billing settings in Advanced settings',
+			( _label, isSubscriptionsActive, isStripeBillingEligible ) => {
+				setBootstrap( {
+					isSubscriptionsActive,
+					isStripeBillingEligible,
+				} );
+
+				render( <WooPaymentsSettingsPage /> );
+
+				const section = getSettingsSectionByName( 'Advanced settings' );
+				const isShown =
+					isSubscriptionsActive && isStripeBillingEligible;
+				expect(
+					within( section ).queryByRole( 'group', {
+						name: 'Subscriptions',
+					} )
+				).toEqual( isShown ? expect.anything() : null );
+				expect(
+					within( section ).queryByRole( 'checkbox', {
+						name: 'Enable Stripe Billing for future subscriptions',
+					} )
+				).toEqual( isShown ? expect.anything() : null );
+			}
+		);
+
+		// Client 11.1.0 `client/settings/transactions/manual-capture-control.tsx:55,95-102`.
+		it( 'locks manual capture while Stripe Billing is on', () => {
+			mockUseStripeBilling.mockReturnValue( [ true, noop ] );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = getSettingsSectionByName( 'Transactions' );
+			expect(
+				within( section ).getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			).toBeDisabled();
+			expect(
+				within( section ).getByText(
+					'Manual capture is not available when Stripe Billing is active.'
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'leaves manual capture available while Stripe Billing is off', () => {
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = getSettingsSectionByName( 'Transactions' );
+			expect(
+				within( section ).getByRole( 'checkbox', {
+					name: 'Enable manual capture',
+				} )
+			).toBeEnabled();
+			expect(
+				within( section ).queryByText(
+					'Manual capture is not available when Stripe Billing is active.'
+				)
+			).not.toBeInTheDocument();
+		} );
+	} );
+
+	it( 'renders reference advanced settings copy and development-mode debug behavior', () => {
+		mockUseDevMode.mockReturnValue( true );
+
+		render( <WooPaymentsSettingsPage /> );
+
+		const section = getSettingsSectionByName( 'Advanced settings' );
+
+		expect(
+			within( section ).getByText(
+				/Allow customers to shop and pay in multiple currencies./
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByRole( 'link', { name: /Learn more/ } )
+		).toHaveAttribute(
+			'href',
+			'https://woocommerce.com/document/woopayments/currencies/multi-currency-setup/'
+		);
+		expect(
+			within( section ).queryByRole( 'checkbox', {
+				name: 'Enable Subscriptions with WooPayments',
+			} )
+		).not.toBeInTheDocument();
+
+		const debugLog = within( section ).getByRole( 'checkbox', {
+			name: 'Log error messages (defaulted on for test accounts)',
+		} );
+		expect( debugLog ).toBeChecked();
+		expect( debugLog ).toBeDisabled();
+		expect(
+			within( section ).getByText(
+				'When enabled, payment error logs will be saved to WooCommerce > Status > Logs.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	// The rendering tests above rely on a blanket `jest.mock( '../data/hooks' )`
+	// that replaces every settings hook with a bare `jest.fn()`. That keeps the
+	// render fast and deterministic, but on its own it lets a real contract
+	// change slip through: a hook can be added, removed, renamed, or have its
+	// return shape reworked and the stubbed tests keep passing against the stale
+	// stubs. Every hook in that module reads or writes the settings data store
+	// (see data/hooks.ts), so none can be safely un-mocked in the render tests
+	// without standing up the store. These two contract tests close that gap by
+	// checking the stub surface and the most load-bearing hook against the real
+	// module and a real store.
+	describe( 'data hook contracts', () => {
+		it( 'stubs exactly the real settings hooks module surface', () => {
+			const stubbedDataHooks = jest.requireMock( '../data/hooks' );
+			const realDataHooks = jest.requireActual( '../data/hooks' );
+
+			// If a hook is added, removed, or renamed in data/hooks.ts, the
+			// blanket stub above goes out of sync and this fails, forcing the
+			// mock to be updated instead of silently masking the drift.
+			expect( Object.keys( stubbedDataHooks ).sort() ).toEqual(
+				Object.keys( realDataHooks ).sort()
+			);
+		} );
+
+		it( 'exposes the documented useSettings contract against the real store', async () => {
+			// Exercise the real hook (not the stub) against the real data store,
+			// so a change to useSettings' return shape or to the store selectors
+			// it depends on (isSavingSettings/isDirty/getSettings/resolution)
+			// surfaces here rather than hiding behind the stub the render tests
+			// consume.
+			const { useSettings } = jest.requireActual( '../data/hooks' );
+
+			const { result, unmount } = renderHook( () => useSettings() );
+
+			expect( result.current ).toEqual(
+				expect.objectContaining( {
+					isLoading: expect.any( Boolean ),
+					isSaving: expect.any( Boolean ),
+					isDirty: expect.any( Boolean ),
+					saveSettings: expect.any( Function ),
+				} )
+			);
+			// getSettings resolves against the mocked settings endpoint, so the
+			// hook starts loading while resolution is pending.
+			expect( result.current.isLoading ).toBe( true );
+
+			await waitFor( () =>
+				expect( result.current.isLoading ).toBe( false )
+			);
+
+			unmount();
+		} );
+	} );
+} );

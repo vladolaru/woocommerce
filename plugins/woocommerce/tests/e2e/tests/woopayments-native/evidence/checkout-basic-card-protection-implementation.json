@@ -1,0 +1,53 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-basic-card-protection-implementation",
+	"wc_base_commit": "f606e403bcd97ecbe2b46926d96a0743fb2e484c",
+	"verified_at_commit": "1960d15ed6819724ce6c0d9232d61a80519cabae",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/shopper-card-protection.spec.ts",
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/card-testing-protection.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/drivers/classic-card-checkout.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-card-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/provider-evidence.ts",
+		"plugins/woocommerce/tests/e2e/utils/woopayments-native/record-evidence.ts"
+	],
+	"source_test_sha256": "795faa8b07dd6d120a7104dcd504c40b106fe3a5654c9248c54175ef310565bf",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-purchase.spec.ts:53::Successful purchase › Carding protection true › using a basic card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/card-payment.ts",
+			"contract": "Successful purchase › Carding protection true › using a basic card"
+		}
+	],
+	"implementation_commits": [
+		"b0ede5b2eef8ce7db0a1171bacfdbc14631cffeb",
+		"552e15c574e5b5dd37d4d33846c99e09dd15cac8",
+		"cd82340e388e9ca4ec64f307c899588d6c716e1b",
+		"39e01165015b11ad6167302d2a29ce11aed09efb",
+		"fd86ca7bc20d2eab6bf7e9e4274395f653af4240",
+		"37303ad4b697c28cbd79de40b980be277c3b2ac9",
+		"1960d15ed6819724ce6c0d9232d61a80519cabae"
+	],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "implementation-spec",
+			"verdict": "APPROVE",
+			"source_test_sha256": "795faa8b07dd6d120a7104dcd504c40b106fe3a5654c9248c54175ef310565bf",
+			"summary": "Fresh specification reviews approved ledger-derived routing, the raw-byte protection transaction, the one-shot Classic checkout adapter, the protected provider-card reader, and exact strict-false and strict-true scenario composition."
+		},
+		{
+			"role": "implementation-quality",
+			"verdict": "APPROVE",
+			"source_test_sha256": "795faa8b07dd6d120a7104dcd504c40b106fe3a5654c9248c54175ef310565bf",
+			"summary": "Fresh quality reviews approved the simplified standard wp-env transport, cold mutation and restoration proofs, durable journal recovery, quarantine and session ownership, exact provider correlation, and retained strict-false behavior with no unresolved findings."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": null
+}

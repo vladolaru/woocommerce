@@ -1,0 +1,45 @@
+{
+	"schema_version": 2,
+	"slice_id": "refund-validation-environment-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1c8712f425dab6e604e24158a118c0abd94c1307",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid quantity › should fail refund attempt when quantity is negative",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid refund amount in line item › should fail refund attempt when refund amount in line item is negative",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is greater than maximum",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-refund-failures.spec.ts:100::Order › Refund Failure › Invalid total refund amount › should fail refund attempt when total refund amount is negative"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/includes/class-wc-ajax-test.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/orders-refunds.spec.ts",
+			"contract": "merchant rejects out-of-bounds quantities, net line totals, and aggregate refund amounts before mutation"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact six-row refund-validation blocked-environment deferral and four-field-only specified-to-deferred transition; canonical calibration bundle ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec; provider-free runtime failures at :8086 (connection refused), :8087 (no active WooCommerce REST route), and :8889 (HTTP 401), all before fixture creation; the repeated material response-headers-versus-jQuery-DOM synchronization finding after the two-cycle revision cap; lower-layer non-substitution and preservation of committed fix 1c8712f425dab6e604e24158a118c0abd94c1307; absence of browser/provider/lifecycle/cleanup-residue/quarantine claims; and the smallest complete unlock of an externally ready authenticated Core E2E site plus a fresh authorized adaptation iteration proving a discriminating post-reload DOM state with one worker, zero retries, and fresh reviews."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "The required provider-free browser smoke cannot execute in an approved Core E2E runtime: the configured localhost:8086 endpoint refuses connections, the exact-checkout test site on localhost:8087 has no active WooCommerce REST route, and the exact-checkout development site on localhost:8889 rejects the first REST request with HTTP 401. The final uncommitted adaptation also retained a repeated rendered-DOM synchronization review finding after two revision cycles.",
+		"affected_scope": "Only the six specified invalid-refund contracts and their required lower-layer-plus-one-browser-smoke disposition. The committed lower-layer matrix and bounded Core validation correction remain available, but no required-green browser proof, rendered post-rejection state, or closed native support is claimed.",
+		"no_allowlisted_action_reason": "The run cannot start, repair, restart, reseed, or reconfigure shared E2E sites or credentials. It also cannot waive a repeated material review finding or exceed the two-cycle revision cap. Static collection, controller tests, and the committed lower-layer regression matrix do not substitute for the required browser boundary.",
+		"reference": "blocked-environment:PILOT-CORE-E2E-ENVIRONMENT-READINESS",
+		"unlock_decision": "Externally provide a reachable configured Core E2E site with valid WooCommerce REST credentials and authenticated admin access, then authorize a fresh implementation iteration that proves response completion and a discriminating post-reload DOM state before the no-refund assertion. Rerun the provider-free smoke once with one worker and zero retries and obtain fresh implementation reviews before closure.",
+		"quarantine_status": "All browser attempts stopped before fixture creation, provider work, or browser mutation. No account, store, order, product, refund, setting, listener, lock, journal, or quarantine was created; the separately owned provider listener remains untouched."
+	}
+}

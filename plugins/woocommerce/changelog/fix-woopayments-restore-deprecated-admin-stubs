@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+Comment: Restore the removed WooCommercePayments onboarding task, WcPayPromotion Init and WcPayWelcomePage classes and aliases as inert deprecated stubs until WooCommerce 12.0.0, so third-party references keep resolving.
+

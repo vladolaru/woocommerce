@@ -1,0 +1,140 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCLICommand;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsCLICommand class.
+ */
+class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Expected option key for the native failed-webhook fetch timestamp.
+	 *
+	 * @var string
+	 */
+	private const EXPECTED_LAST_FETCH_OPTION = 'woocommerce_woopayments_last_webhook_fetch';
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		$this->reset_container_replacements();
+		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'wcpay_account_data' );
+		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
+		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Status lines report owner, filter resolution, preflight failures, and account summary.
+	 */
+	public function test_status_lines_report_runtime_filter_preflight_and_account_summary(): void {
+		$this->fake_plugin( false );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		$this->seed_connected_store();
+
+		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
+		$text  = implode( "\n", $lines );
+
+		$this->assertStringContainsString( 'Owner: builtin', $text );
+		$this->assertStringContainsString( 'Native enabled: yes', $text );
+		$this->assertStringContainsString( 'Filter: woocommerce_woopayments_builtin_enabled (source: filter)', $text );
+		$this->assertStringContainsString( 'woocommerce_woopayments_builtin_kill_switch', $text );
+		$this->assertStringContainsString( 'final authority', $text );
+		$this->assertStringContainsString( 'Preflight failures:', $text );
+		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
+	}
+
+	/**
+	 * @testdox Status lines report whether the WooPayments rate provider is available.
+	 */
+	public function test_status_lines_report_rate_provider_availability(): void {
+		$this->fake_plugin( false );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		$this->seed_connected_store();
+		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+
+		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
+		$text  = implode( "\n", $lines );
+
+		$this->assertStringContainsString( 'Multi-currency: enabled (rate provider: woopayments, unavailable)', $text );
+	}
+
+	/**
+	 * Seed a connected WooPayments store.
+	 */
+	private function seed_connected_store(): void {
+		// A connected store: without a connection the account read returns no account, like the client (client 11.1.0 `includes/class-wc-payments-account.php:2441-2444`).
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		wc_get_container()->get( WooPaymentsAccountService::class )->cache_account_data(
+			array(
+				'account_id'        => 'acct_native_test',
+				'is_live'           => true,
+				'payments_enabled'  => true,
+				'details_submitted' => true,
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'platform_checkout'              => 'yes',
+				'payment_request'                => 'yes',
+			)
+		);
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
+	}
+
+	/**
+	 * Control every WooPayments-plugin detection signal in a single mock registration, so a test process that loaded
+	 * the plugin (WCPAY_PLUGIN_FILE defined) or activated it still gets the requested owner.
+	 *
+	 * @param bool $active Whether the WooPayments plugin should appear active.
+	 */
+	private function fake_plugin( bool $active ): void {
+		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
+					if ( 'active_plugins' === $name ) {
+						return $active ? array( $entry ) : array();
+					}
+					return get_option( $name, $default_value );
+				},
+				'get_site_option' => function ( $name, $default_value = false ) {
+					if ( 'active_sitewide_plugins' === $name ) {
+						return array();
+					}
+					return get_site_option( $name, $default_value );
+				},
+				'defined'         => function ( $constant_name ) use ( $active ) {
+					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
+						return $active;
+					}
+					return defined( $constant_name );
+				},
+			)
+		);
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+	}
+}

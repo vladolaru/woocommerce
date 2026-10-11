@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-3ds-saved-token-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "fc2f5c3f15dc7f08029a76446c931f5933d62b7f",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:93::Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-tokens.spec.ts",
+			"contract": "Saved cards › When using a 3ds card added on checkout › should process a payment with the saved card"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh terminal-deferral review approved pre-review SHA ece2d73a687a74e4f8b6740a7a24c4106757b27c9374c6299781457771100053 for checkout-basic-card-false-protection-deferral.json and pre-review SHA c55cc8fa60bdcaffb78b31a0ca52b18cb12e55b616ddf3bb9a3c2f5ff850a161 for historical-3ds-saved-token-deferral.json against mutated ledger SHA 285080c37e06ab087d83d0865b8c99bbd188e67325ccffdbeb53be511e4a2402, with no findings. Exactly physical rows 121 and 127 change only fields 37-40 while their accepted dispositions, exact non-pending targets/contracts and autonomous-run:pilot-calibration owners remain byte-identical. Closure is correctly rejected: row 121 remains readiness-blocked with its target absent and a future strict-false, one-request, one 1099 USD 4242 financial graph, no-token/no-challenge/no-duplicate and accessible oracle; row 127 remains blocked by same-lane listener exclusivity because basic calibration cannot prove historical 3184, with exact creation-cutover-use identity, two mandatory accessible same-intent challenge lifecycles and one native-use capture required. Both packets require one writer and exclusive listener, zero retries/replay, separate journals, restoration, immutable retention, connected-graph quarantine, drift handling and protected-closure reopening if touched, without inventing a defect, known gap, execution, verification or closure."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "A separately owned listener prevents exclusive attribution for the required historical 3DS provider interval. No exact row-annotated 3184 transition, deterministic mandatory-challenge capability, intermediate action-state and authentication reader or row-scoped closure bundle exists. The basic calibration and current basic-default target deliberately omit the 3DS clause; no native defect is established.",
+		"affected_scope": "One fresh disposable version-pinned plugin store graph binds one local user to one provider customer and, before cutover, saves one reusable Visa 3184 method through one checkout creation order. The unchanged creation PaymentIntent enters the approved action-required state, exactly one named accessible challenge receives focus and one keyboard-operable Complete action is activated once; the same intent authenticates and captures once, exactly one Woo token equals the attached provider method, and the creation order retains that relationship. After one journaled cutover, the identical token, method, user, customer attachment, safe label, expiry and selection state survive with no replacement or duplicate. One unique USD 10.99 native Classic checkout exposes exactly one accessible control bound to that token and dispatches once under a distinct journal. The unchanged use intent enters action-required once; one second named accessible challenge receives focus and one Complete action is activated once; focus returns and the same intent succeeds with one captured charge and one capture. The use order, intent, method and charge all equal 1099 USD and one exact accessible receipt appears. The two intentional creation/use graphs share only the exact customer, method and token identity and contain zero extra orders, intents, charges, captures, tokens, attachments, callbacks, challenge actions or receipt effects.",
+		"no_allowlisted_action_reason": "This run cannot stop, alter, borrow or take over the separately owned listener; allocate a provider writer; modify the accepted target or protected saved-token closure bundle; approve 3184 behavior; or execute or replay a provider mutation. A basic token, lower-layer test, safe label, optional private-frame helper, receipt or sibling 3DS artifact cannot replace the historical identity and two mandatory authentication graphs. The future execution uses one worker, zero Playwright retries, one provider writer, one exclusively owned listener, one creation dispatch, one native-use dispatch, one activation per challenge, shrinking-deadline read-only reconciliation and zero replay.",
+		"reference": "blocked-environment:PILOT-PROVIDER-LISTENER-EXCLUSIVITY",
+		"unlock_decision": "Provide a fresh authorized disposable transition interval with one provider writer and exactly one exclusively owned listener from preflight through bounded quiescence. Approve the immutable plugin seed, deterministic mandatory-3184 capability, exact action, authentication and event readers, and a row-annotated implementation at the preserved target. Prefer a new 3DS-specific driver that leaves the protected basic closure bundle byte-identical; if protected bytes must change, legally reopen both basic saved-token closures, recompute and rerun their bundle and obtain fresh required reviews before reclosure. Execute this row once with separate creation, challenge, cutover, use and cleanup journals, exact restoration and retention, then obtain fresh code, E2E, reliability, concurrency, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "This deferral opened no browser, allocated no account, store, customer, writer or listener, acquired no lock, created no journal, performed no cutover or provider write and created no quarantine; the separately owned listener remains untouched. A future readiness, seed, ownership, customer, method, token, order, intent or charge identity, challenge presence or accessibility, event cardinality, listener continuity, lock ownership, cleanup, restoration, publication or source, target or provider drift mismatch must halt without replay, retain immutable financial, authentication and event history plus open journals, and quarantine the exact account, store, customer, session, product, cart, token, method, order, intent, charge, challenge, event, listener and held-lock graph."
+	}
+}

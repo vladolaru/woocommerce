@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Optimize the WooPayments JCB, UnionPay and WooPay preview card images, reducing the plugin download size without changing how they look.

@@ -1,0 +1,2896 @@
+<?php
+/**
+ * WooPaymentsApiClient class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
+
+use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCompatibilityData;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
+use WP_Error;
+use WP_REST_Request;
+
+/**
+ * Minimal native WooPayments API client for provider-owned WooPayments operations.
+ *
+ * @since 11.0.0
+ * @internal Transitional internal component for the native payments runtime.
+ */
+class WooPaymentsApiClient {
+
+	/**
+	 * Request timeout.
+	 */
+	private const REQUEST_TIMEOUT_SECONDS = 70;
+
+	/**
+	 * Longest metadata value the platform accepts, in characters.
+	 */
+	private const METADATA_VALUE_MAX_LENGTH = 500;
+
+	/**
+	 * Retry attempts after the initial request for idempotent transport failures.
+	 */
+	private const REQUEST_RETRIES_LIMIT = 3;
+
+	/**
+	 * Base backoff between transport retries, in microseconds (250 ms).
+	 */
+	private const REQUEST_RETRIES_BACKOFF_MICROSECONDS = 250000;
+
+	/**
+	 * Params a wcpay_api_request_params callback cannot change on the POSTs that move money, by API path ({id}: one segment).
+	 *
+	 * Each list is the IMMUTABLE_PARAMS of the WooPayments 11.1.0 request class that sends the same POST, which its
+	 * Request::apply_filters() kept from callbacks (includes/core/server/class-request.php:528-569), plus every value the
+	 * store's own protections read back, named beside each list. A dot names a key inside metadata. Every other param stays
+	 * open to callbacks.
+	 */
+	private const LOCKED_REQUEST_PARAMS = array(
+		// Create_And_Confirm_Intention and Create_Intention; terminal intents share the path. Read back by the kept charge
+		// key (the idempotency key) and WooPaymentsChargeAmbiguityService (customer, metadata.order_id and order_key).
+		'intentions'              => array( 'amount', 'currency', 'payment_method', 'confirmation_token', 'payment_method_update_data', 'return_url', 'customer', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+		// Capture_Intention. The capture writes the metadata onto the intent, where WooPaymentsEventOrderResolver reads
+		// metadata.order_id and order_key.
+		'intentions/{id}/capture' => array( 'amount_to_capture', 'metadata.order_id', 'metadata.order_key', 'idempotency_key' ),
+		// Refund_Charge. Read back by WooPaymentsRefundAmbiguityService: the key, amount and metadata.refund_attempt.
+		'refunds'                 => array( 'charge', 'amount', 'metadata.refund_attempt', 'idempotency_key' ),
+		// Create_Setup_Intention and Create_And_Confirm_Setup_Intention, plus the idempotency key.
+		'setup_intents'           => array( 'customer', 'confirm', 'idempotency_key' ),
+	);
+
+	/**
+	 * Route ID pattern for resource IDs: letters, digits, underscores and hyphens.
+	 */
+	private const ROUTE_ID_PATTERN = '/^[\w-]+$/';
+
+	/**
+	 * Route ID pattern for word-only IDs: letters, digits and underscores.
+	 */
+	private const ROUTE_WORD_ID_PATTERN = '/^\w+$/';
+
+	/**
+	 * Route ID pattern for export IDs: export routes accept opaque IDs from the platform and only exclude path separators and URL-encoded path bytes.
+	 */
+	private const ROUTE_EXPORT_ID_PATTERN = '/^[^\/\\\\%]+$/';
+
+	/**
+	 * Route ID pattern for payment method promotion IDs.
+	 */
+	private const ROUTE_PM_PROMOTION_ID_PATTERN = '/^[A-Za-z0-9_-]+$/';
+
+	/**
+	 * Public WordPress.com API base preserved for compatibility filters.
+	 */
+	private const WPCOM_ENDPOINT_BASE = 'https://public-api.wordpress.com/wpcom/v2';
+
+	/**
+	 * WooPayments onboarding API path.
+	 */
+	private const ONBOARDING_API = 'onboarding';
+
+	/**
+	 * WooPayments accounts API path.
+	 */
+	private const ACCOUNTS_API = 'accounts';
+
+	/**
+	 * WooPayments account capabilities API path.
+	 */
+	private const CAPABILITIES_API = 'accounts/capabilities';
+
+	/**
+	 * WooPay (platform checkout) accounts endpoint.
+	 */
+	private const WOOPAY_ACCOUNTS_API = 'accounts/platform_checkout';
+
+	/**
+	 * WooPayments files API path.
+	 */
+	private const FILES_API = 'files';
+
+	/**
+	 * WooPayments API root.
+	 */
+	private const ENDPOINT_REST_BASE = 'wcpay';
+
+	/**
+	 * WooPayments V2 API root.
+	 */
+	private const V2_ENDPOINT_REST_BASE = 'transact';
+
+	/**
+	 * WooPayments recommended payment methods API path.
+	 */
+	private const RECOMMENDED_PAYMENT_METHODS = 'payment_methods/recommended';
+
+	/**
+	 * WooPayments payment methods API path.
+	 */
+	private const PAYMENT_METHODS_API = 'payment_methods';
+
+	/**
+	 * WooPayments payment method domain registration API path.
+	 */
+	private const DOMAIN_REGISTRATION_API = 'payment_method_domains';
+
+	/**
+	 * WooPayments timeline API path.
+	 */
+	private const TIMELINE_API = 'timeline';
+
+	/**
+	 * WooPayments store setup API path.
+	 */
+	private const STORE_SETUP_API = 'accounts/store_setup';
+
+	/**
+	 * WooPayments public fraud-services config API path.
+	 */
+	private const FRAUD_SERVICES_API = 'accounts/fraud_services';
+
+	/**
+	 * WooPayments compatibility API path.
+	 */
+	private const COMPATIBILITY_API = 'compatibility';
+
+	/**
+	 * WooPay compatibility API path.
+	 */
+	private const WOOPAY_COMPATIBILITY_API = 'woopay/compatibility';
+
+	/**
+	 * WooPayments tracking API path.
+	 */
+	private const TRACKING_API = 'tracking';
+
+	/**
+	 * WooPayments address autocomplete token API path.
+	 */
+	private const ADDRESS_AUTOCOMPLETE_TOKEN_API = 'address-autocomplete-token';
+
+	/**
+	 * WooPayments failed webhook events API path.
+	 */
+	private const WEBHOOK_FETCH_API = 'webhook/failed_events';
+
+	/**
+	 * WooPayments terminal connection-token API path.
+	 */
+	private const TERMINAL_CONNECTION_TOKENS_API = 'terminal/connection_tokens';
+
+	/**
+	 * WooPayments terminal locations API path.
+	 */
+	private const TERMINAL_LOCATIONS_API = 'terminal/locations';
+
+	/**
+	 * WooPayments terminal readers API path.
+	 */
+	private const TERMINAL_READERS_API = 'terminal/readers';
+
+	/**
+	 * WooPayments reader charge summary API path.
+	 */
+	private const READERS_CHARGE_SUMMARY_API = 'reader-charges/summary';
+
+	/**
+	 * WooPayments transactions API path.
+	 */
+	private const TRANSACTIONS_API = 'transactions';
+
+	/**
+	 * WooPayments authorizations API path.
+	 */
+	private const AUTHORIZATIONS_API = 'authorizations';
+
+	/**
+	 * WooPayments disputes API path.
+	 */
+	private const DISPUTES_API = 'disputes';
+
+	/**
+	 * WooPayments fraud outcomes API path.
+	 */
+	private const FRAUD_OUTCOMES_API = 'fraud_outcomes';
+
+	/**
+	 * WooPayments fraud ruleset API path.
+	 */
+	private const FRAUD_RULESET_API = 'fraud_ruleset';
+
+	/**
+	 * WooPayments deposits API path. These endpoints back the merchant-facing payouts surfaces.
+	 */
+	private const DEPOSITS_API = 'deposits';
+
+	/**
+	 * WooPayments Documents API path.
+	 */
+	private const DOCUMENTS_API = 'documents';
+
+	/**
+	 * WooPayments VAT API path.
+	 */
+	private const VAT_API = 'vat';
+
+	/**
+	 * WooPayments currency API path.
+	 */
+	private const CURRENCY_API = 'currency';
+
+	/**
+	 * WooPayments Capital API path.
+	 */
+	private const CAPITAL_API = 'capital';
+
+	/**
+	 * WooPayments account links API path.
+	 */
+	private const LINKS_API = 'links';
+
+	/**
+	 * HTTP client.
+	 *
+	 * @var WooPaymentsHttpClient
+	 */
+	private WooPaymentsHttpClient $http_client;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Transport log.
+	 *
+	 * @var WooPaymentsTransportLog
+	 */
+	private WooPaymentsTransportLog $transport_log;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsHttpClient     $http_client     Native WPCOM transport.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsTransportLog   $transport_log   Transport log.
+	 */
+	final public function init( WooPaymentsHttpClient $http_client, WooPaymentsAccountService $account_service, WooPaymentsTransportLog $transport_log ): void {
+		$this->http_client     = $http_client;
+		$this->account_service = $account_service;
+		$this->transport_log   = $transport_log;
+	}
+
+	/**
+	 * Tell whether the transport is available.
+	 *
+	 * @return bool
+	 */
+	public function is_available(): bool {
+		return $this->http_client->is_connected() && null !== $this->http_client->get_blog_id();
+	}
+
+	/**
+	 * Create a refund.
+	 *
+	 * @param string      $charge_id        Charge ID.
+	 * @param int|null    $amount           Minor-unit amount.
+	 * @param string|null $reason           Merchant reason.
+	 * @param string      $source           Refund source identifier.
+	 * @param string      $idempotency_key  Key minted fresh for this refund call by the caller, reused across transport retries. It is
+	 *                                      also sent as the `refund_attempt` metadata, so the charge's refund list shows which
+	 *                                      refund the call made. An empty key lets each send mint its own and sends no marker.
+	 * @return array<string,mixed>
+	 */
+	public function refund_charge( string $charge_id, ?int $amount, ?string $reason, string $source, string $idempotency_key ): array {
+		$params = array(
+			'charge'          => $charge_id,
+			'idempotency_key' => $idempotency_key,
+			'metadata'        => array(
+				'refund_source' => $source,
+			),
+			'amount'          => null,
+			'reason'          => null,
+		);
+
+		if ( null !== $amount ) {
+			$params['amount'] = $amount;
+		}
+
+		if ( in_array( $reason, array( 'duplicate', 'fraudulent', 'requested_by_customer' ), true ) ) {
+			$params['reason'] = $reason;
+		}
+
+		if ( null !== $reason && '' !== $reason ) {
+			// The platform caps metadata values at 500 characters and rejects the whole
+			// request beyond it; a long merchant reason must cost its tail, not the refund.
+			$params['metadata']['merchant_refund_reason'] = mb_substr( $reason, 0, self::METADATA_VALUE_MAX_LENGTH );
+		}
+
+		if ( '' !== $idempotency_key ) {
+			$params['metadata']['refund_attempt'] = $idempotency_key;
+		}
+
+		return $this->request( $params, 'refunds', 'POST' );
+	}
+
+	/**
+	 * Capture a payment intention.
+	 *
+	 * @param string              $intent_id          Intent ID.
+	 * @param int                 $amount_to_capture  Minor-unit capture amount.
+	 * @param array<string,mixed> $metadata           Intent metadata.
+	 * @param array<string,mixed> $level3             Level 3 data; sent even when empty, matching the plugin's capture request shape.
+	 * @return array<string,mixed>
+	 */
+	public function capture_intention( string $intent_id, int $amount_to_capture, array $metadata = array(), array $level3 = array() ): array {
+		$params = array(
+			'amount_to_capture' => $amount_to_capture,
+			'metadata'          => $metadata,
+			'level3'            => $level3,
+		);
+
+		return $this->request( $params, 'intentions/' . $intent_id . '/capture', 'POST' );
+	}
+
+	/**
+	 * Cancel a payment intention.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @return array<string,mixed>
+	 */
+	public function cancel_intention( string $intent_id ): array {
+		return $this->request( array(), 'intentions/' . $intent_id . '/cancel', 'POST' );
+	}
+
+	/**
+	 * Create a WooPayments customer.
+	 *
+	 * @param array<string,mixed> $customer_data Customer payload.
+	 * @return string
+	 */
+	public function create_customer( array $customer_data ): string {
+		$result = $this->request( $customer_data, 'customers', 'POST' );
+
+		return isset( $result['id'] ) ? (string) $result['id'] : '';
+	}
+
+	/**
+	 * Update a WooPayments customer.
+	 *
+	 * @param string              $customer_id   Customer ID.
+	 * @param array<string,mixed> $customer_data Customer update payload.
+	 * @return void
+	 * @throws WooPaymentsApiException When the customer ID is missing.
+	 */
+	public function update_customer( string $customer_id, array $customer_data = array() ): void {
+		if ( '' === trim( $customer_id ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Customer ID is required.', 'woocommerce' ), 'wcpay_mandatory_customer_id_missing', 400 );
+		}
+
+		$this->request( $customer_data, 'customers/' . $customer_id, 'POST' );
+	}
+
+	/**
+	 * Create and confirm a positive-amount WooPayments PaymentIntent.
+	 *
+	 * @param array<string,mixed> $request_data     Intent payload.
+	 * @param string              $idempotency_key  Caller-supplied idempotency key (minted per payment attempt).
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request shape is invalid.
+	 */
+	public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+		$has_payment_method     = isset( $request_data['payment_method'] ) && '' !== trim( (string) $request_data['payment_method'] );
+		$has_confirmation_token = isset( $request_data['confirmation_token'] ) && '' !== trim( (string) $request_data['confirmation_token'] );
+
+		if ( $has_payment_method === $has_confirmation_token ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'A WooPayments charge requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
+		}
+
+		$request_data['confirm']         = 'true';
+		$request_data['capture_method']  = $request_data['capture_method'] ?? 'automatic';
+		$request_data['idempotency_key'] = $idempotency_key;
+
+		return $this->request( $request_data, 'intentions', 'POST' );
+	}
+
+	/**
+	 * Create and confirm a WooPayments SetupIntent.
+	 *
+	 * @param array<string,mixed> $request_data    SetupIntent payload.
+	 * @param string              $idempotency_key Caller-supplied idempotency key.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request shape is invalid.
+	 */
+	public function create_and_confirm_setup_intention( array $request_data, string $idempotency_key ): array {
+		$has_payment_method     = isset( $request_data['payment_method'] ) && '' !== trim( (string) $request_data['payment_method'] );
+		$has_confirmation_token = isset( $request_data['confirmation_token'] ) && '' !== trim( (string) $request_data['confirmation_token'] );
+
+		if ( $has_payment_method === $has_confirmation_token ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'A WooPayments setup intent requires exactly one payment credential.', 'woocommerce' ), 'wcpay_invalid_payment_credential', 400 );
+		}
+
+		$this->validate_setup_intent_payment_method_types( $request_data );
+
+		$request_data['confirm']         = 'true';
+		$request_data['idempotency_key'] = $idempotency_key;
+
+		return $this->request( $request_data, 'setup_intents', 'POST' );
+	}
+
+	/**
+	 * Create an unconfirmed WooPayments SetupIntent.
+	 *
+	 * @param array<string,mixed> $request_data    SetupIntent payload.
+	 * @param string              $idempotency_key Optional idempotency key.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_setup_intention( array $request_data, string $idempotency_key = '' ): array {
+		$this->validate_setup_intent_payment_method_types( $request_data );
+
+		$request_data['confirm'] = 'false';
+
+		if ( '' !== $idempotency_key ) {
+			$request_data['idempotency_key'] = $idempotency_key;
+		}
+
+		return $this->request( $request_data, 'setup_intents', 'POST' );
+	}
+
+	/**
+	 * Validate that a SetupIntent payload declares explicit payment method types.
+	 *
+	 * @param array<string,mixed> $request_data SetupIntent payload.
+	 * @return void
+	 * @throws WooPaymentsApiException When payment method types are missing or invalid.
+	 */
+	private function validate_setup_intent_payment_method_types( array $request_data ): void {
+		$payment_method_types = $request_data['payment_method_types'] ?? null;
+
+		if ( ! is_array( $payment_method_types ) || empty( $payment_method_types ) ) {
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException(
+				__( 'A WooPayments setup intent requires at least one payment method type.', 'woocommerce' ),
+				'wcpay_missing_payment_method_types',
+				400
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		foreach ( $payment_method_types as $payment_method_type ) {
+			if ( ! is_string( $payment_method_type ) || '' === trim( $payment_method_type ) ) {
+				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+				throw new WooPaymentsApiException(
+					__( 'A WooPayments setup intent requires valid payment method types.', 'woocommerce' ),
+					'wcpay_invalid_payment_method_types',
+					400
+				);
+				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			}
+		}
+	}
+
+	/**
+	 * Retrieve a WooPayments PaymentIntent.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_intention( string $intent_id ): array {
+		return $this->request( array(), 'intentions/' . rawurlencode( $intent_id ), 'GET' );
+	}
+
+	/**
+	 * List a customer's WooPayments PaymentIntents, newest first.
+	 *
+	 * The platform proxies Stripe's PaymentIntents list for the connected account, so the body is Stripe's list object:
+	 * `data` (the intents, with their metadata) and `has_more`.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $customer_id Customer ID.
+	 * @param int    $limit       Most intents to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the customer ID is invalid or the request fails.
+	 */
+	public function list_payment_intentions( string $customer_id, int $limit = 100 ): array {
+		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
+
+		return $this->request(
+			array(
+				'customer' => $customer_id,
+				'limit'    => $limit,
+			),
+			'intentions',
+			'GET'
+		);
+	}
+
+	/**
+	 * List the account's WooPayments PaymentIntents created within a time range, both ends included, newest first.
+	 *
+	 * The platform's intentions list declares `created` and forwards it to Stripe's PaymentIntents list unchanged, so
+	 * `created[gte]` and `created[lte]` filter by creation time. Used when the customer list cannot be read, for example
+	 * because the customer was deleted, which leaves its PaymentIntents in place.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param int $created_from Unix time of the oldest intent to list.
+	 * @param int $created_to   Unix time of the newest intent to list.
+	 * @param int $limit        Most intents to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function list_payment_intentions_created_between( int $created_from, int $created_to, int $limit = 100 ): array {
+		return $this->request(
+			array(
+				'created' => array(
+					'gte' => $created_from,
+					'lte' => $created_to,
+				),
+				'limit'   => $limit,
+			),
+			'intentions',
+			'GET'
+		);
+	}
+
+	/**
+	 * List a charge's refunds, newest first.
+	 *
+	 * The platform proxies Stripe's refunds list for the connected account, so the body is Stripe's list object: `data`
+	 * (the refunds, with their metadata, unexpanded) and `has_more`. A GET carries no idempotency key, so a transport
+	 * failure is not retried.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @param int    $limit     Most refunds to return; Stripe allows up to 100.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the charge ID is invalid or the request fails.
+	 */
+	public function list_charge_refunds( string $charge_id, int $limit = 100 ): array {
+		$this->validate_route_id( $charge_id, self::ROUTE_WORD_ID_PATTERN );
+
+		return $this->request(
+			array(
+				'charge' => $charge_id,
+				'limit'  => $limit,
+			),
+			'refunds',
+			'GET'
+		);
+	}
+
+	/**
+	 * Retrieve a WooPayments PaymentIntent in an explicit account mode.
+	 *
+	 * Historical order readers use this instead of inheriting the store's current mode.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @param bool   $test_mode Whether to read test-mode data.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_intention_for_mode( string $intent_id, bool $test_mode ): array {
+		return $this->request( array( 'test_mode' => $test_mode ), 'intentions/' . rawurlencode( $intent_id ), 'GET' );
+	}
+
+	/**
+	 * Retrieve a WooPayments SetupIntent.
+	 *
+	 * @param string $setup_intent_id SetupIntent ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_setup_intention( string $setup_intent_id ): array {
+		return $this->request( array(), 'setup_intents/' . rawurlencode( $setup_intent_id ), 'GET' );
+	}
+
+	/**
+	 * Register an Apple Pay payment method domain.
+	 *
+	 * @param string $domain_name Domain name to register.
+	 * @return array<string,mixed>
+	 */
+	public function register_apple_pay_domain( string $domain_name ): array {
+		return $this->request(
+			array(
+				'domain_name' => $domain_name,
+				'enabled'     => 'true',
+			),
+			self::DOMAIN_REGISTRATION_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve a WooPayments payment method.
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_payment_method( string $payment_method_id ): array {
+		return $this->request( array(), self::PAYMENT_METHODS_API . '/' . rawurlencode( $payment_method_id ), 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments payment methods for a customer.
+	 *
+	 * @param string $customer_id Customer ID.
+	 * @param string $type        Payment method type.
+	 * @param int    $limit       Result limit.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the customer ID is invalid.
+	 */
+	public function get_payment_methods( string $customer_id, string $type, int $limit = 100 ): array {
+		$this->validate_route_id( $customer_id, self::ROUTE_WORD_ID_PATTERN );
+
+		return $this->request(
+			array(
+				'customer' => $customer_id,
+				'type'     => $type,
+				'limit'    => $limit,
+			),
+			self::PAYMENT_METHODS_API,
+			'GET'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments currency conversion rates.
+	 *
+	 * @param string                  $currency_from Source currency code.
+	 * @param array<int, string>|null $currencies_to Optional target currency codes.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the source currency is missing.
+	 *
+	 * @since 11.0.0
+	 */
+	public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+		if ( empty( $currency_from ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Currency From parameter is required', 'woocommerce' ), 'wcpay_mandatory_currency_from_missing', 400 );
+		}
+
+		$params = array(
+			'currency_from' => $currency_from,
+		);
+
+		if ( null !== $currencies_to ) {
+			$params['currencies_to'] = $currencies_to;
+		}
+
+		return $this->request( $params, self::CURRENCY_API . '/rates', 'GET', true, false, true, true, false, true );
+	}
+
+	/**
+	 * Update a WooPayments payment method.
+	 *
+	 * @param string              $payment_method_id   Payment method ID.
+	 * @param array<string,mixed> $payment_method_data Payment method update payload.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function update_payment_method( string $payment_method_id, array $payment_method_data = array() ): array {
+		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( $payment_method_data, self::PAYMENT_METHODS_API . '/' . $payment_method_id, 'POST' );
+	}
+
+	/**
+	 * Detach a WooPayments payment method.
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function detach_payment_method( string $payment_method_id ): array {
+		$this->validate_route_id( $payment_method_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::PAYMENT_METHODS_API . '/' . $payment_method_id . '/detach', 'POST' );
+	}
+
+	/**
+	 * Retrieve visible WooPayments payment method promotions for the current store context.
+	 *
+	 * Returns the promotions with the platform's `cache-for` header, which sets how long they may be cached, as the client
+	 * reads it from the raw response (client 11.1.0 `includes/class-wc-payments-pm-promotions-service.php:224-254`).
+	 *
+	 * @param array<string,mixed> $store_context Store context parameters.
+	 * @return array{promotions:array<int|string,mixed>,cache_for:string}
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_pm_promotions( array $store_context ): array {
+		$request  = WooPaymentsGetPmPromotionsRequest::from_store_context( $store_context );
+		$response = $this->request_with_legacy_request_filter(
+			$request,
+			'wcpay_get_pm_promotions_request',
+			false,
+			true
+		);
+
+		$response_code = (int) wp_remote_retrieve_response_code( $response );
+		$body          = json_decode( wp_remote_retrieve_body( $response ), true );
+		$content_type  = wp_remote_retrieve_header( $response, 'content-type' );
+		// An undecodable JSON body is an error whatever the status, as on the client's request path (client 11.1.0
+		// `includes/wc-payment-api/class-wc-payments-api-client.php:2826-2834`); only a 200 carries promotions.
+		if ( null === $body && false !== strpos( strtolower( is_array( $content_type ) ? implode( ',', $content_type ) : (string) $content_type ), 'application/json' ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
+		}
+		if ( 200 !== $response_code ) {
+			$body = null;
+		}
+		$cache_for = wp_remote_retrieve_header( $response, 'cache-for' );
+
+		return array(
+			'promotions' => is_array( $body ) ? $body : array(),
+			'cache_for'  => is_string( $cache_for ) ? $cache_for : '',
+		);
+	}
+
+	/**
+	 * Activate a WooPayments payment method promotion.
+	 *
+	 * @param string $promotion_id Promotion ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the promotion ID or request is invalid.
+	 */
+	public function activate_pm_promotion( string $promotion_id ): array {
+		$this->validate_route_id( $promotion_id, self::ROUTE_PM_PROMOTION_ID_PATTERN );
+		$request = WooPaymentsActivatePmPromotionRequest::from_id( $promotion_id );
+
+		return $this->request_with_legacy_request_filter(
+			$request,
+			'wcpay_activate_pm_promotion_request'
+		);
+	}
+
+	/**
+	 * Retrieve the WooPayments timeline for an intent or order identifier.
+	 *
+	 * @param string $id Payment intent ID or order ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_timeline( string $id ): array {
+		$this->validate_route_id( $id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::TIMELINE_API . '/' . $id, 'GET' );
+	}
+
+	/**
+	 * Send the current store setup snapshot.
+	 *
+	 * @param array<string,mixed> $store_setup Store setup snapshot.
+	 * @return array<string,mixed>
+	 */
+	public function send_store_setup( array $store_setup ): array {
+		return $this->request(
+			array(
+				'snapshot'  => $store_setup,
+				'test_mode' => $this->account_service->is_test_mode_onboarding_enabled(),
+			),
+			self::STORE_SETUP_API,
+			'POST',
+			true,
+			false,
+			false
+		);
+	}
+
+	/**
+	 * Send WooPayments compatibility data.
+	 *
+	 * @param array<string,mixed> $compatibility_data Compatibility payload.
+	 * @return array<string,mixed>
+	 */
+	public function update_compatibility_data( array $compatibility_data ): array {
+		return $this->request(
+			array(
+				'compatibility_data' => $compatibility_data,
+			),
+			self::COMPATIBILITY_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve WooPay extension compatibility data.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_woopay_compatibility(): array {
+		return $this->request( array(), self::WOOPAY_COMPATIBILITY_API, 'GET' );
+	}
+
+	/**
+	 * Track a WooPayments order creation or update event.
+	 *
+	 * @param array<string,mixed> $order_data Order payload.
+	 * @param bool                $update     Whether this is an update event.
+	 * @return array<string,mixed>
+	 */
+	public function track_order( array $order_data, bool $update = false ): array {
+		return $this->request(
+			array(
+				'order_data' => $order_data,
+				'update'     => $update,
+			),
+			self::TRACKING_API . '/order',
+			'POST'
+		);
+	}
+
+	/**
+	 * Link a browsing session to a WooPayments customer for fraud tracking (client 11.1.0 api-client:1926-1935).
+	 *
+	 * @param string|null $session_id  Sift session ID of the browsing session.
+	 * @param string      $customer_id WooPayments customer ID.
+	 * @return array<string,mixed>
+	 */
+	public function link_session_to_customer( ?string $session_id, string $customer_id ): array {
+		return $this->request(
+			array(
+				'session'  => $session_id,
+				'customer' => $customer_id,
+			),
+			self::TRACKING_API . '/link-session',
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve the site's platform tracking info, such as its hosting provider.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_tracking_info(): array {
+		return $this->request( array(), self::TRACKING_API . '/info', 'GET' );
+	}
+
+	/**
+	 * Retrieve failed webhook events for replay.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_failed_webhook_events(): array {
+		return $this->request( array(), self::WEBHOOK_FETCH_API, 'POST' );
+	}
+
+	/**
+	 * Create a terminal connection token.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function create_terminal_connection_token(): array {
+		return $this->request( array(), self::TERMINAL_CONNECTION_TOKENS_API, 'POST' );
+	}
+
+	/**
+	 * Create an address autocomplete token.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_address_autocomplete_token(): array {
+		return $this->request( array(), self::ADDRESS_AUTOCOMPLETE_TOKEN_API, 'POST' );
+	}
+
+	/**
+	 * Create a terminal payment intent.
+	 *
+	 * @param array<string,mixed> $request_data Terminal PaymentIntent payload.
+	 * @return array<string,mixed>
+	 */
+	public function create_terminal_payment_intention( array $request_data ): array {
+		return $this->request( $request_data, 'intentions', 'POST' );
+	}
+
+	/**
+	 * Prepare a terminal payment intent for reader collection.
+	 *
+	 * @param string $intent_id Intent ID.
+	 * @param int    $order_id  Order ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function prepare_terminal_payment( string $intent_id, int $order_id ): array {
+		$this->validate_route_id( $intent_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request(
+			array(
+				'order_id' => $order_id,
+			),
+			'intentions/' . $intent_id . '/prepare_terminal_payment',
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve terminal readers.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_terminal_readers(): array {
+		return $this->request( array(), self::TERMINAL_READERS_API, 'GET' );
+	}
+
+	/**
+	 * Register a terminal reader.
+	 *
+	 * @param string                   $location          Terminal location ID.
+	 * @param string                   $registration_code Reader registration code.
+	 * @param string|null              $label             Optional reader label.
+	 * @param array<string,mixed>|null $metadata          Optional reader metadata.
+	 * @return array<string,mixed>
+	 */
+	public function register_terminal_reader( string $location, string $registration_code, ?string $label = null, ?array $metadata = null ): array {
+		$params = array(
+			'location'          => $location,
+			'registration_code' => $registration_code,
+		);
+
+		if ( null !== $label ) {
+			$params['label'] = $label;
+		}
+
+		if ( null !== $metadata ) {
+			$params['metadata'] = $metadata;
+		}
+
+		return $this->request( $params, self::TERMINAL_READERS_API, 'POST' );
+	}
+
+	/**
+	 * Retrieve reader charge summary data.
+	 *
+	 * @param string      $charge_date    Charge date in Y-m-d format.
+	 * @param string|null $transaction_id Optional transaction ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_readers_charge_summary( string $charge_date, ?string $transaction_id = null ): array {
+		$params = array(
+			'charge_date' => $charge_date,
+		);
+
+		if ( null !== $transaction_id && '' !== $transaction_id ) {
+			$params['transaction_id'] = $transaction_id;
+		}
+
+		return $this->request( $params, self::READERS_CHARGE_SUMMARY_API, 'GET' );
+	}
+
+	/**
+	 * Retrieve terminal locations.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_terminal_locations(): array {
+		return $this->request( array(), self::TERMINAL_LOCATIONS_API, 'GET' );
+	}
+
+	/**
+	 * Retrieve one terminal location.
+	 *
+	 * @param string $location_id Location ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_terminal_location( string $location_id ): array {
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::TERMINAL_LOCATIONS_API . '/' . $location_id, 'GET' );
+	}
+
+	/**
+	 * Create a terminal location.
+	 *
+	 * @param string              $display_name Location display name.
+	 * @param array<string,mixed> $address      Location address.
+	 * @param array<string,mixed> $metadata     Location metadata.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request is missing required address fields.
+	 */
+	public function create_terminal_location( string $display_name, array $address, array $metadata = array() ): array {
+		if ( empty( $address['country'] ) || empty( $address['line1'] ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Address country and line1 are required.', 'woocommerce' ), 'wcpay_invalid_terminal_location_request', 400 );
+		}
+
+		return $this->request(
+			array(
+				'display_name' => $display_name,
+				'address'      => $address,
+				'metadata'     => $metadata,
+			),
+			self::TERMINAL_LOCATIONS_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Update a terminal location.
+	 *
+	 * @param string                   $location_id  Location ID.
+	 * @param string|null              $display_name Optional display name.
+	 * @param array<string,mixed>|null $address      Optional address.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function update_terminal_location( string $location_id, ?string $display_name = null, ?array $address = null ): array {
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
+
+		$params = array();
+		if ( null !== $display_name ) {
+			$params['display_name'] = $display_name;
+		}
+
+		if ( null !== $address ) {
+			$params['address'] = $address;
+		}
+
+		return $this->request( $params, self::TERMINAL_LOCATIONS_API . '/' . $location_id, 'POST' );
+	}
+
+	/**
+	 * Delete a terminal location.
+	 *
+	 * @param string $location_id Location ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function delete_terminal_location( string $location_id ): array {
+		$this->validate_route_id( $location_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::TERMINAL_LOCATIONS_API . '/' . $location_id, 'DELETE' );
+	}
+
+	/**
+	 * Retrieve a WooPayments charge.
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_charge( string $charge_id ): array {
+		$this->validate_route_id( $charge_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), 'charges/' . $charge_id, 'GET' );
+	}
+
+	/**
+	 * Retrieve a WooPayments dispute summary.
+	 *
+	 * @param string $dispute_id Dispute ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_dispute_summary( string $dispute_id ): array {
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), 'disputes/' . $dispute_id . '/summary', 'GET' );
+	}
+
+	/**
+	 * Retrieve a WooPayments transaction.
+	 *
+	 * @param string $transaction_id Transaction ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_transaction( string $transaction_id ): array {
+		$this->validate_route_id( $transaction_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::TRANSACTIONS_API . '/' . $transaction_id, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments transactions.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_transactions( array $query = array() ): array {
+		return $this->request( $query, self::TRANSACTIONS_API, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments reporting balance summary.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_reporting_balance_summary( array $query = array() ): array {
+		return $this->request_with_legacy_request_filter(
+			WooPaymentsReportingBalanceSummaryRequest::from_params(
+				array_intersect_key(
+					$query,
+					array(
+						'date_start' => true,
+						'date_end'   => true,
+						'currency'   => true,
+					)
+				)
+			),
+			'wcpay_get_reporting_balance_summary_request'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments transactions summary.
+	 *
+	 * @param array<string,mixed> $filters    Summary filters.
+	 * @param string|null         $deposit_id Optional payout/deposit ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_transactions_summary( array $filters = array(), ?string $deposit_id = null ): array {
+		if ( null !== $deposit_id && '' !== $deposit_id ) {
+			$filters['deposit_id'] = $deposit_id;
+		}
+
+		return $this->request( $filters, self::TRANSACTIONS_API . '/summary', 'GET' );
+	}
+
+	/**
+	 * Retrieve the manual-capture authorization summary used by admin menu badges.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_authorizations_summary( array $query = array() ): array {
+		return $this->request_with_legacy_filter(
+			$query,
+			self::AUTHORIZATIONS_API . '/summary',
+			'GET',
+			'wc_pay_get_authorizations_summary'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments uncaptured authorizations.
+	 *
+	 * @param array<string,mixed> $query                  Query params.
+	 * @param bool                $preserve_legacy_filter Whether to apply the preserved legacy request hook.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_authorizations( array $query = array(), bool $preserve_legacy_filter = true ): array {
+		if ( ! $preserve_legacy_filter ) {
+			return $this->request( $query, self::AUTHORIZATIONS_API, 'GET' );
+		}
+
+		return $this->request_with_legacy_request_filter(
+			WooPaymentsAuthorizationsListRequest::from_params( $query ),
+			'wcpay_list_authorizations_request'
+		);
+	}
+
+	/**
+	 * Retrieve a WooPayments uncaptured authorization.
+	 *
+	 * @param string $payment_intent_id Payment intent ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_authorization( string $payment_intent_id ): array {
+		$this->validate_route_id( $payment_intent_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request_with_legacy_filter(
+			array(),
+			self::AUTHORIZATIONS_API . '/' . $payment_intent_id,
+			'GET',
+			'wcpay_get_authorization_request'
+		);
+	}
+
+	/**
+	 * Initiate a WooPayments transactions export.
+	 *
+	 * @param array<string,mixed> $filters    Export filters.
+	 * @param string              $user_email User email for the export.
+	 * @param string|null         $deposit_id Optional payout/deposit ID.
+	 * @param string|null         $locale     Site locale.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_transactions_export( array $filters = array(), string $user_email = '', ?string $deposit_id = null, ?string $locale = null ): array {
+		if ( '' !== $user_email ) {
+			$filters['user_email'] = $user_email;
+		}
+
+		if ( null !== $deposit_id && '' !== $deposit_id ) {
+			$filters['deposit_id'] = $deposit_id;
+		}
+
+		if ( null !== $locale && '' !== $locale ) {
+			$filters['locale'] = $locale;
+		}
+
+		return $this->request( $filters, self::TRANSACTIONS_API . '/download', 'POST' );
+	}
+
+	/**
+	 * Retrieve a WooPayments transactions export URL.
+	 *
+	 * @param string $export_id Export ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_transactions_export_url( string $export_id ): array {
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
+
+		return $this->request( array(), self::TRANSACTIONS_API . '/download/' . $export_id, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments transaction search autocomplete results.
+	 *
+	 * @param string $search_term Search term.
+	 * @return array<int,array<string,string>>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_transactions_search_autocomplete( string $search_term ): array {
+		$search_results = $this->request( array( 'search_term' => $search_term ), self::TRANSACTIONS_API . '/search', 'GET' );
+		$results        = array_values(
+			array_map(
+				static function ( array $result ): array {
+					$customer_name  = isset( $result['customer_name'] ) ? (string) $result['customer_name'] : '';
+					$customer_email = isset( $result['customer_email'] ) ? (string) $result['customer_email'] : '';
+
+					return array(
+						'label' => trim( sprintf( '%s (%s)', $customer_name, $customer_email ) ),
+					);
+				},
+				$search_results
+			)
+		);
+
+		$order = wc_get_order( $search_term );
+		if ( $order ) {
+			$is_subscription = function_exists( 'wcs_is_subscription' ) && wcs_is_subscription( $order );
+			array_unshift(
+				$results,
+				array(
+					'label' => ( $is_subscription ? __( 'Subscription #', 'woocommerce' ) : __( 'Order #', 'woocommerce' ) ) . $search_term,
+				)
+			);
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Retrieve WooPayments fraud outcome transactions by status.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string|int,mixed>
+	 * @throws WooPaymentsApiException When the fraud outcome status is invalid.
+	 */
+	public function get_fraud_outcomes( array $query = array() ): array {
+		$status = isset( $query['status'] ) && is_scalar( $query['status'] ) ? (string) $query['status'] : '';
+		unset( $query['status'] );
+
+		if ( ! in_array( $status, array( 'allow', 'block', 'review' ), true ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Invalid fraud outcome status provided.', 'woocommerce' ), 'invalid_fraud_outcome_status', 400 );
+		}
+
+		return $this->request( $query, self::FRAUD_OUTCOMES_API . '/status/' . $status, 'GET' );
+	}
+
+	/**
+	 * Get the latest fraud outcome for a given payment intent ID.
+	 *
+	 * @param string $id Payment intent ID.
+	 * @return array<string|int,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_latest_fraud_outcome( string $id ): array {
+		$this->validate_route_id( $id, self::ROUTE_WORD_ID_PATTERN );
+
+		$response = $this->request( array(), self::FRAUD_OUTCOMES_API . '/order_id/' . $id, 'GET' );
+
+		if ( isset( $response[0] ) && is_array( $response[0] ) ) {
+			return $response[0];
+		}
+
+		return $response;
+	}
+
+	/**
+	 * Get the latest fraud ruleset config for the connected account.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_latest_fraud_ruleset(): array {
+		return $this->request( array(), self::FRAUD_RULESET_API, 'GET' );
+	}
+
+	/**
+	 * Save fraud ruleset config for the connected account.
+	 *
+	 * @param array<int|string,mixed> $ruleset_config Ruleset config.
+	 * @return array<string,mixed>
+	 */
+	public function save_fraud_ruleset( array $ruleset_config ): array {
+		return $this->request(
+			array(
+				'ruleset_config' => $ruleset_config,
+			),
+			self::FRAUD_RULESET_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments disputes.
+	 *
+	 * @param array<string,mixed> $filters Query filters.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_disputes( array $filters = array() ): array {
+		return $this->request( $filters, self::DISPUTES_API, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments disputes summary.
+	 *
+	 * @param array<string,mixed> $filters Summary filters.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_disputes_summary( array $filters = array() ): array {
+		return $this->request( $filters, self::DISPUTES_API . '/summary', 'GET' );
+	}
+
+	/**
+	 * Retrieve dispute status counts used by admin menu badges.
+	 *
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_dispute_status_counts(): array {
+		return $this->request_with_legacy_filter(
+			array(),
+			self::DISPUTES_API . '/status_counts',
+			'GET',
+			'wcpay_get_dispute_status_counts'
+		);
+	}
+
+	/**
+	 * Retrieve a WooPayments dispute.
+	 *
+	 * @param string $dispute_id Dispute ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_dispute( string $dispute_id ): array {
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::DISPUTES_API . '/' . $dispute_id, 'GET' );
+	}
+
+	/**
+	 * Update a WooPayments dispute.
+	 *
+	 * @param string              $dispute_id Dispute ID.
+	 * @param array<string,mixed> $evidence   Evidence payload.
+	 * @param bool                $submit     Whether to submit the evidence.
+	 * @param array<string,mixed> $metadata   Metadata payload.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function update_dispute( string $dispute_id, array $evidence, bool $submit, array $metadata ): array {
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
+
+		$request = array(
+			'evidence' => $evidence,
+			'submit'   => $submit,
+			'metadata' => $metadata,
+		);
+
+		$dispute_details = $this->get_dispute( $dispute_id );
+		if ( isset( $dispute_details['reason'] ) && 'noncompliant' === $dispute_details['reason'] ) {
+			$request['evidence']['enhanced_evidence'] = array_merge(
+				isset( $request['evidence']['enhanced_evidence'] ) && is_array( $request['evidence']['enhanced_evidence'] ) ? $request['evidence']['enhanced_evidence'] : array(),
+				array(
+					'visa_compliance' => array(
+						'fee_acknowledged' => 'true',
+					),
+				)
+			);
+		}
+
+		return $this->request( $request, self::DISPUTES_API . '/' . $dispute_id, 'POST' );
+	}
+
+	/**
+	 * Close a WooPayments dispute.
+	 *
+	 * @param string $dispute_id Dispute ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function close_dispute( string $dispute_id ): array {
+		$this->validate_route_id( $dispute_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::DISPUTES_API . '/' . $dispute_id . '/close', 'POST' );
+	}
+
+	/**
+	 * Initiate a WooPayments disputes export.
+	 *
+	 * @param array<string,mixed> $filters    Export filters.
+	 * @param string              $user_email User email for the export.
+	 * @param string|null         $locale     Site locale.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_disputes_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
+		if ( '' !== $user_email ) {
+			$filters['user_email'] = $user_email;
+		}
+
+		if ( null !== $locale && '' !== $locale ) {
+			$filters['locale'] = $locale;
+		}
+
+		return $this->request( $filters, self::DISPUTES_API . '/download', 'POST' );
+	}
+
+	/**
+	 * Retrieve a WooPayments disputes export URL.
+	 *
+	 * @param string $export_id Export ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_disputes_export_url( string $export_id ): array {
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
+
+		return $this->request( array(), self::DISPUTES_API . '/download/' . $export_id, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments payout overviews.
+	 *
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_deposits_overview(): array {
+		return $this->request( array(), self::DEPOSITS_API . '/overview-all', 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments payouts.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_deposits( array $query = array() ): array {
+		return $this->request( $query, self::DEPOSITS_API, 'GET' );
+	}
+
+	/**
+	 * Retrieve WooPayments payout summary.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_deposits_summary( array $query = array() ): array {
+		return $this->request( $query, self::DEPOSITS_API . '/summary', 'GET' );
+	}
+
+	/**
+	 * Retrieve a WooPayments payout detail.
+	 *
+	 * @param string $deposit_id Deposit ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_deposit( string $deposit_id ): array {
+		$this->validate_route_id( $deposit_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::DEPOSITS_API . '/' . $deposit_id, 'GET' );
+	}
+
+	/**
+	 * Initiate a WooPayments payout export.
+	 *
+	 * @param array<string,mixed> $filters    Export filters.
+	 * @param string              $user_email User email for the export.
+	 * @param string|null         $locale     Site locale.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_deposits_export( array $filters = array(), string $user_email = '', ?string $locale = null ): array {
+		if ( '' !== $user_email ) {
+			$filters['user_email'] = $user_email;
+		}
+
+		if ( null !== $locale && '' !== $locale ) {
+			$filters['locale'] = $locale;
+		}
+
+		return $this->request( $filters, self::DEPOSITS_API . '/download', 'POST' );
+	}
+
+	/**
+	 * Retrieve a WooPayments payout export URL.
+	 *
+	 * @param string $export_id Export ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_payouts_export_url( string $export_id ): array {
+		$this->validate_route_id( $export_id, self::ROUTE_EXPORT_ID_PATTERN );
+
+		return $this->request( array(), self::DEPOSITS_API . '/download/' . $export_id, 'GET' );
+	}
+
+	/**
+	 * Trigger a WooPayments manual payout.
+	 *
+	 * @param string $type     Payout type.
+	 * @param string $currency Payout currency.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function manual_deposit( string $type, string $currency ): array {
+		return $this->request(
+			array(
+				'type'     => $type,
+				'currency' => $currency,
+			),
+			self::DEPOSITS_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments documents.
+	 *
+	 * @param array<string,mixed> $query Query params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_documents( array $query = array() ): array {
+		$query = array_intersect_key(
+			$query,
+			array(
+				'page'         => true,
+				'pagesize'     => true,
+				'sort'         => true,
+				'direction'    => true,
+				'limit'        => true,
+				'match'        => true,
+				'date_before'  => true,
+				'date_after'   => true,
+				'date_between' => true,
+				'type_is'      => true,
+				'type_is_not'  => true,
+			)
+		);
+
+		return $this->request_with_legacy_request_filter(
+			WooPaymentsDocumentsListRequest::from_params( $query ),
+			'wcpay_list_documents_request'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments documents summary.
+	 *
+	 * @param array<string,mixed> $query Query filters.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_documents_summary( array $query = array() ): array {
+		$query = array_intersect_key(
+			$query,
+			array(
+				'match'        => true,
+				'date_before'  => true,
+				'date_after'   => true,
+				'date_between' => true,
+				'type_is'      => true,
+				'type_is_not'  => true,
+			)
+		);
+
+		return $this->request( $query, self::DOCUMENTS_API . '/summary', 'GET' );
+	}
+
+	/**
+	 * Retrieve a WooPayments document raw response.
+	 *
+	 * @param string $document_id Document ID.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	public function get_document( string $document_id ): array {
+		$this->validate_route_id( $document_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request( array(), self::DOCUMENTS_API . '/' . $document_id, 'GET', true, false, true, true, true );
+	}
+
+	/**
+	 * Validate a VAT number.
+	 *
+	 * @param string $vat_number VAT number.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function validate_vat( string $vat_number ): array {
+		return $this->request_with_legacy_filter(
+			array(),
+			self::VAT_API . '/' . rawurlencode( $vat_number ),
+			'GET',
+			'wcpay_validate_vat_request'
+		);
+	}
+
+	/**
+	 * Save VAT details.
+	 *
+	 * @param string|null $vat_number VAT number.
+	 * @param string      $name       Name.
+	 * @param string      $address    Address.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function save_vat_details( ?string $vat_number, string $name, string $address ): array {
+		$params = array(
+			'name'    => $name,
+			'address' => $address,
+		);
+
+		if ( null !== $vat_number ) {
+			$params['vat_number'] = $vat_number;
+		}
+
+		$response = $this->request( $params, self::VAT_API, 'POST' );
+		$this->account_service->refresh_account_data();
+
+		return $response;
+	}
+
+	/**
+	 * Retrieve the WooPayments Capital active loan summary.
+	 *
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_capital_active_loan_summary(): array {
+		return $this->request_with_legacy_filter(
+			array(),
+			self::CAPITAL_API . '/active_loan_summary',
+			'GET',
+			'wcpay_get_active_loan_summary_request'
+		);
+	}
+
+	/**
+	 * Retrieve WooPayments Capital loans.
+	 *
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_capital_loans(): array {
+		return $this->request_with_legacy_filter(
+			array(),
+			self::CAPITAL_API . '/loans',
+			'GET',
+			'wcpay_get_loans_request'
+		);
+	}
+
+	/**
+	 * Create a WooPayments embedded account session.
+	 *
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_embedded_account_session(): array {
+		return $this->request( array(), self::ACCOUNTS_API . '/embedded/session', 'POST', true, true );
+	}
+
+	/**
+	 * Create a WooPayments Capital account link.
+	 *
+	 * @param string $return_url  URL to return to after viewing the offer.
+	 * @param string $refresh_url URL to use when the link expires or is invalid.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_capital_link( string $return_url, string $refresh_url ): array {
+		$request = WooPaymentsGetAccountCapitalLinkRequest::from_urls( $return_url, $refresh_url );
+
+		return $this->request_with_legacy_request_filter(
+			$request,
+			'wcpay_get_account_capital_link',
+			true
+		);
+	}
+
+	/**
+	 * Create a WooPayments account link from platform-issued arguments.
+	 *
+	 * @param array<string,mixed> $args Account-link arguments.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_account_link( array $args ): array {
+		return $this->request( $args, self::LINKS_API, 'POST', true, true );
+	}
+
+	/**
+	 * Create a one-time Stripe dashboard login link.
+	 *
+	 * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0): user-token auth, the test-mode-onboarding flag and its `wpcay_get_account_login_data` filter.
+	 *
+	 * @param string $redirect_url URL to return to from the dashboard.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function create_login_link( string $redirect_url ): array {
+		return $this->request_with_legacy_request_filter(
+			WooPaymentsGetAccountLoginDataRequest::from_redirect_url(
+				$redirect_url,
+				$this->account_service->is_test_mode_onboarding_enabled()
+			),
+			'wpcay_get_account_login_data'
+		);
+	}
+
+	/**
+	 * Retrieve recommended payment methods for onboarding.
+	 *
+	 * This route is intentionally not sent through the signed provider request path because recommendations are used
+	 * before onboarding has connected a store/account.
+	 *
+	 * @param string $country_code Business location country code.
+	 * @param string $locale       User locale.
+	 * @return array<int,array<string,mixed>>
+	 * @throws WooPaymentsApiException When the public request fails.
+	 */
+	public function get_recommended_payment_methods( string $country_code, string $locale = '' ): array {
+		$request_args = Jetpack_Connection_Client::validate_args_for_wpcom_json_api_request(
+			self::ENDPOINT_REST_BASE . '/' . self::RECOMMENDED_PAYMENT_METHODS,
+			'2',
+			array(),
+			'wpcom'
+		);
+		$url          = add_query_arg(
+			array(
+				'country_code' => $country_code,
+				'locale'       => $locale,
+			),
+			$request_args['url']
+		);
+
+		/**
+		 * Filters WooPayments public API request headers.
+		 *
+		 * @since 11.0.0
+		 *
+	 * @param array<string,string> $headers Request headers.
+		 */
+		$headers = apply_filters(
+			'wcpay_api_request_headers',
+			array(
+				'Content-type' => 'application/json; charset=utf-8',
+			)
+		);
+
+		$response = wp_remote_get(
+			$url,
+			array(
+				'headers'    => $headers,
+				'user-agent' => $this->get_user_agent(),
+				'timeout'    => self::REQUEST_TIMEOUT_SECONDS,
+				'sslverify'  => true,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException(
+				sprintf(
+					/* translators: %1$s: original error message. */
+					__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
+					$response->get_error_message()
+				),
+				'wcpay_http_request_failed',
+				500
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		if ( 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return array();
+		}
+
+		$decoded_body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		return is_array( $decoded_body ) ? $decoded_body : array();
+	}
+
+	/**
+	 * Fetch the platform's public (merchant-agnostic) fraud-services config.
+	 *
+	 * This endpoint is public and unauthenticated by design — it serves the
+	 * merchant-agnostic fallback used before account data carries a
+	 * merchant-specific config — so the request deliberately bypasses the
+	 * signed transport. Failures return null: fraud config is best-effort and
+	 * must never break a checkout render.
+	 *
+	 * @return array<string,mixed>|null Decoded config, or null when unavailable.
+	 */
+	public function fetch_public_fraud_services_config(): ?array {
+		$request_args = Jetpack_Connection_Client::validate_args_for_wpcom_json_api_request(
+			self::ENDPOINT_REST_BASE . '/' . self::FRAUD_SERVICES_API,
+			'2',
+			array(),
+			'wpcom'
+		);
+
+		/**
+		 * Filters WooPayments public API request headers.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<string,string> $headers Request headers.
+		 */
+		$headers = apply_filters(
+			'wcpay_api_request_headers',
+			array(
+				'Content-type' => 'application/json; charset=utf-8',
+			)
+		);
+
+		$response = wp_remote_get(
+			$request_args['url'],
+			array(
+				'headers'    => $headers,
+				'user-agent' => $this->get_user_agent(),
+				'timeout'    => self::REQUEST_TIMEOUT_SECONDS,
+				'sslverify'  => true,
+			)
+		);
+
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return null;
+		}
+
+		$decoded_body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+		return is_array( $decoded_body ) && array() !== $decoded_body ? $decoded_body : null;
+	}
+
+	/**
+	 * Retrieve onboarding field data.
+	 *
+	 * @param string $locale User locale.
+	 * @return array<string,mixed>
+	 */
+	public function get_onboarding_fields_data( string $locale = '' ): array {
+		return $this->request(
+			array(
+				'locale' => $locale,
+			),
+			self::ONBOARDING_API . '/fields_data',
+			'GET',
+			false,
+			true
+		);
+	}
+
+	/**
+	 * Initialize the non-embedded onboarding flow.
+	 *
+	 * @param bool                $live_account   Whether to create a live account.
+	 * @param string              $return_url     URL to redirect to at the end of the flow.
+	 * @param array<string,mixed> $site_data      Site payload.
+	 * @param array<string,mixed> $user_data      User payload.
+	 * @param array<string,mixed> $account_data   Account payload.
+	 * @param string[]            $actioned_notes Actioned note names.
+	 * @param bool                $collect_payout_requirements Whether to collect payout requirements during onboarding.
+	 * @param string|null         $referral_code  Referral code.
+	 * @return array<string,mixed>
+	 */
+	public function initialize_onboarding(
+		bool $live_account,
+		string $return_url,
+		array $site_data = array(),
+		array $user_data = array(),
+		array $account_data = array(),
+		array $actioned_notes = array(),
+		bool $collect_payout_requirements = false,
+		?string $referral_code = null
+	): array {
+		$request_args                  = $this->get_filtered_onboarding_request_args(
+			array(
+				'return_url'                  => $return_url,
+				'site_data'                   => $site_data,
+				'user_data'                   => $user_data,
+				'account_data'                => $account_data,
+				'actioned_notes'              => $actioned_notes,
+				'create_live_account'         => $live_account,
+				'collect_payout_requirements' => $collect_payout_requirements,
+			)
+		);
+		$request_args['referral_code'] = $referral_code;
+
+		return $this->request(
+			$request_args,
+			self::ONBOARDING_API . '/init',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Initialize the embedded KYC onboarding flow.
+	 *
+	 * @param bool                $live_account   Whether to create a live account.
+	 * @param array<string,mixed> $site_data      Site payload.
+	 * @param array<string,mixed> $user_data      User payload.
+	 * @param array<string,mixed> $account_data   Account payload.
+	 * @param string[]            $actioned_notes Actioned note names.
+	 * @param string|null         $referral_code  Referral code.
+	 * @return array<string,mixed>
+	 */
+	public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+		$request_args                  = $this->get_filtered_onboarding_request_args(
+			array(
+				'site_data'           => $site_data,
+				'user_data'           => $user_data,
+				'account_data'        => $account_data,
+				'actioned_notes'      => $actioned_notes,
+				'create_live_account' => $live_account,
+			)
+		);
+		$request_args['referral_code'] = $referral_code;
+
+		return $this->request(
+			$request_args,
+			self::ONBOARDING_API . '/embedded',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Finalize the embedded KYC onboarding flow.
+	 *
+	 * @param string   $locale         User locale.
+	 * @param string   $source         Onboarding source.
+	 * @param string[] $actioned_notes Actioned note names.
+	 * @return array<string,mixed>
+	 */
+	public function finalize_onboarding_embedded_kyc( string $locale, string $source, array $actioned_notes = array() ): array {
+		return $this->request(
+			array(
+				'locale'         => $locale,
+				'source'         => $source,
+				'actioned_notes' => $actioned_notes,
+			),
+			self::ONBOARDING_API . '/embedded/finalize',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Delete the connected WooPayments account.
+	 *
+	 * @param bool $test_mode Whether to delete a test-mode account.
+	 * @return array<string,mixed>
+	 */
+	public function delete_account( bool $test_mode = false ): array {
+		return $this->request(
+			array(
+				'test_mode' => $test_mode,
+			),
+			self::ACCOUNTS_API . '/delete',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Update connected account settings.
+	 *
+	 * @param array<string,mixed> $account_settings Account settings accepted by the platform accounts endpoint.
+	 * @return array<string,mixed>
+	 */
+	public function update_account( array $account_settings ): array {
+		if ( empty( $account_settings ) ) {
+			return array();
+		}
+
+		return $this->request( $account_settings, self::ACCOUNTS_API, 'POST', true, true );
+	}
+
+	/**
+	 * Update the account's WooPay (platform checkout) data.
+	 *
+	 * Mirrors the plugin's update_woopay(): blog-token auth and the test-mode-onboarding flag, since the platform resolves the WooPay account per onboarding mode.
+	 *
+	 * @param array<string,mixed> $data WooPay account data (e.g. webhook_secret).
+	 * @return array<string,mixed>
+	 */
+	public function update_woopay( array $data ): array {
+		return $this->request(
+			array_merge(
+				array( 'test_mode' => $this->account_service->is_test_mode_onboarding_enabled() ),
+				$data
+			),
+			self::WOOPAY_ACCOUNTS_API,
+			'POST'
+		);
+	}
+
+	/**
+	 * Add an account Terms of Service agreement.
+	 *
+	 * @param string $source    Source that collected the agreement.
+	 * @param string $user_name Current WordPress user login.
+	 * @return array<string,mixed>
+	 */
+	public function add_account_tos_agreement( string $source, string $user_name ): array {
+		return $this->request(
+			array(
+				'source'    => $source,
+				'user_name' => $user_name,
+			),
+			self::ACCOUNTS_API . '/tos_agreements',
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Request or unrequest a connected account capability.
+	 *
+	 * @param string $capability_id Capability ID.
+	 * @param bool   $requested Whether the capability should be requested.
+	 * @return array<string,mixed>
+	 */
+	public function request_capability( string $capability_id, bool $requested ): array {
+		return $this->request(
+			array(
+				'capability_id' => $capability_id,
+				'requested'     => $requested,
+			),
+			self::CAPABILITIES_API,
+			'POST',
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Retrieve the connected WooPayments account.
+	 *
+	 * @param string $woocommerce_store_id WooCommerce store ID.
+	 * @return array<string,mixed>
+	 */
+	public function get_account( string $woocommerce_store_id = '' ): array {
+		$params = array(
+			'test_mode' => $this->account_service->is_test_mode_onboarding_enabled(),
+		);
+
+		if ( '' !== $woocommerce_store_id ) {
+			$params['woocommerce_store_id'] = $woocommerce_store_id;
+		}
+
+		return $this->request(
+			$params,
+			self::ACCOUNTS_API,
+			'GET'
+		);
+	}
+
+	/**
+	 * Upload a file through the native files endpoint.
+	 *
+	 * @param WP_REST_Request $request Request object.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the uploaded file is invalid or the request fails.
+	 */
+	public function upload_file( WP_REST_Request $request ): array {
+		$file_params = $request->get_file_params();
+		$file        = is_array( $file_params['file'] ?? null ) ? $file_params['file'] : array();
+
+		if ( empty( $file ) || ! empty( $file['error'] ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Max file size exceeded.', 'woocommerce' ), 'wcpay_evidence_file_max_size', 400 );
+		}
+
+		$file_contents = file_get_contents( (string) ( $file['tmp_name'] ?? '' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local uploaded temp file.
+		if ( false === $file_contents ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Unable to read the uploaded file.', 'woocommerce' ), 'wcpay_evidence_file_read_error', 400 );
+		}
+
+		try {
+			return $this->request(
+				array(
+					'file'       => base64_encode( $file_contents ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encoding uploaded file contents for the provider Files API.
+					'file_name'  => isset( $file['name'] ) && is_scalar( $file['name'] ) ? (string) $file['name'] : '',
+					'file_type'  => isset( $file['type'] ) && is_scalar( $file['type'] ) ? (string) $file['type'] : '',
+					'purpose'    => (string) $request->get_param( 'purpose' ),
+					'as_account' => (bool) $request->get_param( 'as_account' ),
+				),
+				self::FILES_API,
+				'POST'
+			);
+		} catch ( WooPaymentsApiException $exception ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( $exception->getMessage(), 'wcpay_evidence_file_upload_error', $exception->get_http_code() );
+		}
+	}
+
+	/**
+	 * Retrieve provider file details.
+	 *
+	 * @param string $file_id    Provider file ID.
+	 * @param bool   $as_account Whether to fetch the file as the connected account.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_file( string $file_id, bool $as_account = true ): array {
+		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request(
+			array( 'as_account' => $as_account ),
+			self::FILES_API . '/' . $file_id,
+			'GET'
+		);
+	}
+
+	/**
+	 * Retrieve provider file contents.
+	 *
+	 * @param string $file_id    Provider file ID.
+	 * @param bool   $as_account Whether to fetch the file as the connected account.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	public function get_file_contents( string $file_id, bool $as_account = true ): array {
+		$this->validate_route_id( $file_id, self::ROUTE_ID_PATTERN );
+
+		return $this->request(
+			array( 'as_account' => $as_account ),
+			self::FILES_API . '/' . $file_id . '/contents',
+			'GET'
+		);
+	}
+
+	/**
+	 * Add the store ID and compatibility data to an onboarding payload, then apply the public payload filter.
+	 *
+	 * The client adds both through its own callbacks on the same filter, at priority 10 (client 11.1.0
+	 * `includes/class-wc-payments-onboarding-service.php:120`, `:1491-1496`; `includes/class-compatibility-service.php:46`,
+	 * `:75-77`). Native adds them before any callback runs, so callbacks at every priority see them and can change them.
+	 *
+	 * @param array<string,mixed> $request_args Onboarding request payload.
+	 * @return array<string,mixed>
+	 */
+	private function get_filtered_onboarding_request_args( array $request_args ): array {
+		$request_args['woocommerce_store_id'] = $this->account_service->get_woocommerce_store_id();
+		$request_args['compatibility_data']   = WooPaymentsCompatibilityData::get();
+
+		/**
+		 * Filters WooPayments onboarding request args.
+		 *
+		 * @since 11.0.0
+		 *
+	 * @param array<string,mixed> $request_args Onboarding request payload.
+		 */
+		$filtered_args = apply_filters( 'wc_payments_get_onboarding_data_args', $request_args );
+
+		return is_array( $filtered_args ) ? $filtered_args : $request_args;
+	}
+
+	/**
+	 * Validate a WooPayments route ID against its pattern before path interpolation.
+	 *
+	 * @param string $id      Route ID.
+	 * @param string $pattern One of the ROUTE_*_PATTERN constants.
+	 * @throws WooPaymentsApiException When the route parameter is invalid.
+	 */
+	private function validate_route_id( string $id, string $pattern ): void {
+		if ( '' === $id || ! preg_match( $pattern, $id ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Route param validation failed.', 'woocommerce' ), 'wcpay_route_validation_failure', 400 );
+		}
+	}
+
+	/**
+	 * Get the params a request filter callback cannot change on this request.
+	 *
+	 * @param string $api    API path.
+	 * @param string $method HTTP method.
+	 * @return array<int,string> Locked param names; empty when the request is not a locked money POST.
+	 */
+	private static function get_locked_request_params( string $api, string $method ): array {
+		if ( 'POST' !== $method ) {
+			return array();
+		}
+
+		foreach ( self::LOCKED_REQUEST_PARAMS as $path => $keys ) {
+			if ( 1 === preg_match( '#^' . str_replace( '\{id\}', '[^/]+', preg_quote( $path, '#' ) ) . '$#', $api ) ) {
+				return $keys;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Set each locked param back to the value the store built, removing it where the store sent none.
+	 *
+	 * @param array<int|string,mixed> $built    Params before the request filter.
+	 * @param array<int|string,mixed> $filtered Params the filter returned.
+	 * @param array<int,string>       $keys     Locked param names; a dot names a key one level down.
+	 * @return array{0:array<int|string,mixed>,1:array<int,string>} The params to send, and the names a callback had changed.
+	 */
+	private static function restore_locked_params( array $built, array $filtered, array $keys ): array {
+		$changed = array();
+		foreach ( $keys as $key ) {
+			$path   = explode( '.', $key, 2 );
+			$parent = $path[0];
+			$child  = $path[1] ?? null;
+			$had    = null === $child ? array_key_exists( $parent, $built ) : isset( $built[ $parent ] ) && is_array( $built[ $parent ] ) && array_key_exists( $child, $built[ $parent ] );
+			$has    = null === $child ? array_key_exists( $parent, $filtered ) : isset( $filtered[ $parent ] ) && is_array( $filtered[ $parent ] ) && array_key_exists( $child, $filtered[ $parent ] );
+			if ( $had === $has && ( ! $had || ( null === $child ? $built[ $parent ] === $filtered[ $parent ] : $built[ $parent ][ $child ] === $filtered[ $parent ][ $child ] ) ) ) {
+				continue;
+			}
+
+			$changed[] = $key;
+			if ( null === $child ) {
+				if ( $had ) {
+					$filtered[ $parent ] = $built[ $parent ];
+				} else {
+					unset( $filtered[ $parent ] );
+				}
+			} elseif ( $had ) {
+				if ( ! isset( $filtered[ $parent ] ) || ! is_array( $filtered[ $parent ] ) ) {
+					$filtered[ $parent ] = array();
+				}
+				$filtered[ $parent ][ $child ] = $built[ $parent ][ $child ];
+			} else {
+				unset( $filtered[ $parent ][ $child ] );
+			}
+		}
+
+		return array( $filtered, $changed );
+	}
+
+	/**
+	 * Set the Idempotency-Key header back to the key the store set, dropping any copy under another case.
+	 *
+	 * @param array<int|string,mixed> $built    Headers before the request filter.
+	 * @param array<int|string,mixed> $filtered Headers the filter returned.
+	 * @return array{0:array<int|string,mixed>,1:bool} The headers to send, and whether a callback had changed the key.
+	 */
+	private static function restore_idempotency_header( array $built, array $filtered ): array {
+		if ( ! isset( $built['Idempotency-Key'] ) ) {
+			return array( $filtered, false );
+		}
+
+		$changed = false;
+		foreach ( array_keys( $filtered ) as $name ) {
+			// Header names are case-insensitive, so a second copy would be sent beside the store's key.
+			if ( 'Idempotency-Key' !== $name && 0 === strcasecmp( (string) $name, 'Idempotency-Key' ) ) {
+				unset( $filtered[ $name ] );
+				$changed = true;
+			}
+		}
+
+		if ( ( $filtered['Idempotency-Key'] ?? null ) !== $built['Idempotency-Key'] ) {
+			$filtered['Idempotency-Key'] = $built['Idempotency-Key'];
+			$changed                     = true;
+		}
+
+		return array( $filtered, $changed );
+	}
+
+	/**
+	 * Log one warning when a request filter callback changed values the store locks, naming the keys, never the values.
+	 *
+	 * @param string            $method         HTTP method.
+	 * @param string            $api            API path.
+	 * @param array<int,string> $changed_params Locked params a wcpay_api_request_params callback had changed.
+	 * @param bool              $changed_header Whether a wcpay_api_request_headers callback had changed the Idempotency-Key.
+	 */
+	private function warn_of_restored_values( string $method, string $api, array $changed_params, bool $changed_header ): void {
+		$changes = array();
+		if ( array() !== $changed_params ) {
+			$changes[] = 'wcpay_api_request_params changed ' . implode( ', ', $changed_params );
+		}
+		if ( $changed_header ) {
+			$changes[] = 'wcpay_api_request_headers changed Idempotency-Key';
+		}
+		if ( array() === $changes ) {
+			return;
+		}
+
+		$this->transport_log->warning( sprintf( 'A callback changed values the store locks on the WooPayments %1$s %2$s request (%3$s). The values the store built were sent instead.', $method, $api, implode( '; ', $changes ) ) );
+	}
+
+	/**
+	 * Send a request through the provider transport.
+	 *
+	 * @param array<int|string,mixed> $params        Request params.
+	 * @param string                  $api           API path.
+	 * @param string                  $method        HTTP method.
+	 * @param bool                    $is_site_scoped Whether to include the WPCOM site ID in the API path.
+	 * @param bool                    $use_user_token Whether to sign with the connection-owner user token.
+	 * @param bool                    $blocking      Whether to block for the transport response.
+	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
+	 * @param bool                    $return_raw_response Whether to return the raw transport response.
+	 * @param bool                    $use_v2_api Whether to use the Transact API root.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	private function request( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ): array {
+		$decoded_body = $this->request_decoded( $params, $api, $method, $is_site_scoped, $use_user_token, $blocking, $include_test_mode_param, $return_raw_response, $use_v2_api );
+
+		return is_array( $decoded_body ) ? $decoded_body : array();
+	}
+
+	/**
+	 * Send a request through the provider transport and return the decoded body, whatever its JSON type.
+	 *
+	 * @param array<int|string,mixed> $params        Request params.
+	 * @param string                  $api           API path.
+	 * @param string                  $method        HTTP method.
+	 * @param bool                    $is_site_scoped Whether to include the WPCOM site ID in the API path.
+	 * @param bool                    $use_user_token Whether to sign with the connection-owner user token.
+	 * @param bool                    $blocking      Whether to block for the transport response.
+	 * @param bool                    $include_test_mode_param Whether to add test mode to request params.
+	 * @param bool                    $return_raw_response Whether to return the raw transport response.
+	 * @param bool                    $use_v2_api Whether to use the Transact API root.
+	 * @return mixed Decoded body; the raw transport response when asked for; an empty array for a non-blocking request.
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	private function request_decoded( array $params, string $api, string $method, bool $is_site_scoped = true, bool $use_user_token = false, bool $blocking = true, bool $include_test_mode_param = true, bool $return_raw_response = false, bool $use_v2_api = false ) {
+		if ( ! $this->is_available() ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Site is not connected to WordPress.com.', 'woocommerce' ), 'wcpay_wpcom_not_connected', 409 );
+		}
+
+		if ( $include_test_mode_param ) {
+			$params = wp_parse_args(
+				$params,
+				array(
+					'test_mode' => $this->account_service->is_test_mode_enabled(),
+				)
+			);
+		}
+
+		/**
+		 * Filters the WooPayments native request parameters before transport dispatch.
+		 *
+		 * On the POSTs that move money, the store sets the money and identity params back after this filter (charge amount,
+		 * currency, payment method, customer, order id and key; refund charge, amount and attempt; capture amount; setup
+		 * customer and confirm; the idempotency key) and logs a warning. Every other param stays open.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<int|string,mixed> $params Request parameters.
+		 * @param string                  $api    API path.
+		 * @param string                  $method HTTP method.
+		 */
+		$filtered_params = apply_filters( 'wcpay_api_request_params', $params, $api, $method );
+		// A callback that returns something other than an array is ignored, so it cannot turn every platform call into a fatal.
+		list( $params, $changed_params ) = self::restore_locked_params( $params, is_array( $filtered_params ) ? $filtered_params : $params, self::get_locked_request_params( $api, $method ) );
+
+		$headers = array(
+			'Content-Type' => 'application/json; charset=utf-8',
+			'User-Agent'   => $this->get_user_agent(),
+		);
+
+		$caller_idempotency_key = '';
+		if ( isset( $params['idempotency_key'] ) ) {
+			$caller_idempotency_key = (string) $params['idempotency_key'];
+			unset( $params['idempotency_key'] );
+		}
+
+		if ( ! in_array( $method, array( 'GET', 'DELETE' ), true ) ) {
+			$headers['Idempotency-Key'] = '' !== $caller_idempotency_key ? $caller_idempotency_key : wp_generate_uuid4();
+		}
+
+		// Redaction cleans every string value, so it runs only when the gated transport log is written.
+		$log_transport   = $this->transport_log->is_enabled();
+		$redacted_params = $log_transport ? $this->transport_log->redact( $params ) : array();
+
+		/**
+		 * Filters the WooPayments native request headers before transport dispatch.
+		 *
+		 * The Idempotency-Key the store set is restored after this filter, and a warning is logged when a callback changed it.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param array<string,string> $headers Request headers.
+		 */
+		$filtered_headers = apply_filters( 'wcpay_api_request_headers', $headers );
+		// A callback cannot change the key the store set above (caller key or minted), which Stripe replays by and transport retries resend.
+		list( $headers, $changed_header ) = self::restore_idempotency_header( $headers, is_array( $filtered_headers ) ? $filtered_headers : $headers );
+		$this->warn_of_restored_values( $method, $api, $changed_params, $changed_header );
+
+		$site_id            = $this->http_client->get_blog_id();
+		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
+		$path               = $is_site_scoped
+			? sprintf( '/sites/%d/%s/%s', (int) $site_id, $endpoint_rest_base, $api )
+			: sprintf( '/%s/%s', $endpoint_rest_base, $api );
+		$body               = null;
+		$redacted_path      = $path;
+		$filter_url         = $this->get_filter_request_url( $api, $is_site_scoped, $use_v2_api );
+
+		if ( in_array( $method, array( 'GET', 'DELETE' ), true ) ) {
+			$query_string   = http_build_query( $params );
+			$path          .= '?' . $query_string;
+			$filter_url    .= '?' . $query_string;
+			$redacted_path .= '?' . http_build_query( is_array( $redacted_params ) ? $redacted_params : array() );
+		} else {
+			$body = wp_json_encode( $params );
+
+			if ( false === $body ) {
+				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+				throw new WooPaymentsApiException( __( 'Unable to encode the WooPayments request body.', 'woocommerce' ), 'wcpay_client_unable_to_encode_json' );
+			}
+		}
+
+		$stop_trying_at = time() + self::REQUEST_TIMEOUT_SECONDS;
+		$retries        = 0;
+		$retries_limit  = $blocking && array_key_exists( 'Idempotency-Key', $headers ) ? self::REQUEST_RETRIES_LIMIT : 0;
+
+		while ( true ) {
+			$headers['X-Request-Initiated'] = (string) microtime( true );
+
+			$log_request_id = uniqid();
+			$this->transport_log->info(
+				sprintf( 'API REQUEST (%s): %s %s', $log_request_id, $method, $redacted_path ),
+				null !== $body ? array( 'body' => $redacted_params ) : array()
+			);
+
+			$response = $this->http_client->request(
+				$method,
+				$path,
+				$headers,
+				$body,
+				self::REQUEST_TIMEOUT_SECONDS,
+				$use_user_token,
+				$blocking
+			);
+
+			/**
+			 * Filters the WooPayments native response after transport dispatch.
+			 *
+			 * @since 11.0.0
+			 *
+			 * @param mixed  $response Transport response.
+			 * @param string $method   HTTP method.
+			 * @param string $url      Public WordPress.com API URL.
+			 * @param string $api      WooPayments API path.
+			 */
+			$response      = apply_filters( 'wcpay_api_request_response', $response, $method, $filter_url, $api );
+			$response_code = $response instanceof WP_Error ? 0 : (int) wp_remote_retrieve_response_code( $response );
+
+			if ( ! $this->should_retry_request_response( $response, $response_code, $retries, $retries_limit, $stop_trying_at ) ) {
+				break;
+			}
+
+			$backoff_microseconds = self::REQUEST_RETRIES_BACKOFF_MICROSECONDS * ( 2 ** $retries );
+			$this->sleep_before_retry( $backoff_microseconds );
+			++$retries;
+		}
+
+		if ( ! $blocking ) {
+			return array();
+		}
+
+		if ( $response instanceof WP_Error ) {
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			if ( 'wcpay_wpcom_not_connected' === $response->get_error_code() ) {
+				// Client 11.1.0 class-wc-payments-http.php:59-65 answers a lost connection with 409, as the pre-check above.
+				throw new WooPaymentsApiException( $response->get_error_message(), 'wcpay_wpcom_not_connected', 409 );
+			}
+
+			throw new WooPaymentsApiException(
+				sprintf(
+					/* translators: %1$s: original error message. */
+					__( 'Http request failed. Reason: %1$s', 'woocommerce' ),
+					$response->get_error_message()
+				),
+				'wcpay_http_request_failed',
+				500,
+				'',
+				'',
+				array( 'transport_error_code' => (string) $response->get_error_code() )
+			);
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+		}
+
+		$response_code       = (int) wp_remote_retrieve_response_code( $response );
+		$response_body       = wp_remote_retrieve_body( $response );
+		$content_type_header = wp_remote_retrieve_header( $response, 'content-type' );
+		$content_type        = is_array( $content_type_header ) ? implode( ',', $content_type_header ) : (string) $content_type_header;
+		$is_json             = false !== strpos( strtolower( $content_type ), 'application/json' );
+		$decoded_body        = json_decode( $response_body, true );
+
+		if ( $log_transport ) {
+			$this->transport_log->info(
+				sprintf( 'API RESPONSE (%s): %s %s', $log_request_id, $method, $redacted_path ),
+				array( 'body' => $this->transport_log->redact( is_array( $decoded_body ) ? $decoded_body : $response_body ) )
+			);
+		}
+
+		if ( $return_raw_response && 400 > $response_code ) {
+			return is_array( $response ) ? $response : array();
+		}
+
+		if ( null === $decoded_body && '' !== $response_body && $is_json ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
+			throw new WooPaymentsApiException( __( 'Unable to decode response from WooPayments.', 'woocommerce' ), 'wcpay_unparseable_or_null_body', $response_code );
+		}
+
+		if ( 400 <= $response_code ) {
+			$this->throw_api_error( is_array( $decoded_body ) ? $decoded_body : array(), $response_code );
+		}
+
+		return $decoded_body;
+	}
+
+	/**
+	 * Send a site-scoped platform request, signed with the store's own token, and return the decoded body whatever its JSON type.
+	 *
+	 * For provider modules that own their platform paths. The caller validates ids and paths, and the type of the body.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param array<int|string,mixed> $params Request params.
+	 * @param string                  $api    API path below the site's WooPayments root.
+	 * @param string                  $method HTTP method.
+	 * @return mixed Decoded JSON body.
+	 * @throws WooPaymentsApiException When the request fails or the body cannot be decoded.
+	 */
+	public function send_site_request( array $params, string $api, string $method ) {
+		return $this->request_decoded( $params, $api, $method );
+	}
+
+	/**
+	 * Send a legacy compatibility request through its request-object filter contract.
+	 *
+	 * @since 11.0.0
+	 *
+	 * @param WooPaymentsPaginatedListRequest $request Request compatibility object.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
+	 */
+	public function send_legacy_request( WooPaymentsPaginatedListRequest $request ): array {
+		$hook = $request->get_hook();
+
+		if ( '' === $hook ) {
+			// translators: %s: request class name.
+			$message = sprintf( __( 'WooPayments request %s must define a filter hook before send().', 'woocommerce' ), get_class( $request ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_request_missing_hook', 500 );
+		}
+
+		return $this->request_with_legacy_request_filter( $request, $hook, false, true );
+	}
+
+	/**
+	 * Send a request after applying a legacy WooPayments request-object filter.
+	 *
+	 * @param array<int|string,mixed> $params Request params.
+	 * @param string                  $api    API path.
+	 * @param string                  $method HTTP method.
+	 * @param string                  $hook   Legacy WooPayments request filter hook.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	private function request_with_legacy_filter( array $params, string $api, string $method, string $hook ): array {
+		$request = WooPaymentsApiRequest::create( $params, $api, $method );
+
+		return $this->request_with_legacy_request_filter( $request, $hook );
+	}
+
+	/**
+	 * Send a concrete request after applying a legacy WooPayments request-object filter.
+	 *
+	 * @param WooPaymentsPaginatedListRequest $request Native request compatibility object.
+	 * @param string                          $hook    Legacy WooPayments request filter hook.
+	 * @param bool                            $include_test_mode_in_query Whether to add test mode to the API path query.
+	 * @param bool                            $honor_raw_response Whether to honor the request object's raw-response flag.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the request fails.
+	 */
+	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
+		$request->assign_hook( $hook );
+
+		/**
+		 * Filters a WooPayments API request before it is sent to the platform.
+		 *
+		 * Fires under the WooPayments extension's request hook names, so existing callbacks keep running. Callbacks receive the
+		 * provider's own request object, not the extension's `WCPay\Core\Server\Request` classes; its class and setters are not
+		 * a supported API. Any return value that is not a `WooPaymentsPaginatedListRequest` stops the request with an error.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param WooPaymentsPaginatedListRequest $request Request about to be sent.
+		 */
+		$filtered_request = apply_filters( $hook, $request );
+
+		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
+			// translators: %s: WooPayments API request filter hook name.
+			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), $hook );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
+		}
+
+		$filtered_params = $filtered_request->get_params();
+		$filtered_api    = $filtered_request->get_api();
+		$filtered_method = $filtered_request->get_method();
+
+		if ( $include_test_mode_in_query ) {
+			$filtered_api = add_query_arg(
+				array(
+					'test_mode' => $this->account_service->is_test_mode_enabled() ? '1' : '0',
+				),
+				$filtered_api
+			);
+		}
+
+		return $this->request(
+			$filtered_params,
+			$filtered_api,
+			$filtered_method,
+			$filtered_request->is_site_specific(),
+			$filtered_request->should_use_user_token(),
+			true,
+			! $include_test_mode_in_query,
+			$honor_raw_response && $filtered_request->should_return_raw_response()
+		);
+	}
+
+	/**
+	 * Get the compatibility URL exposed to WooPayments API response filters.
+	 *
+	 * @param string $api            WooPayments API path.
+	 * @param bool   $is_site_scoped Whether the request is site-scoped.
+	 * @param bool   $use_v2_api     Whether to use the Transact API root.
+	 * @return string
+	 */
+	private function get_filter_request_url( string $api, bool $is_site_scoped, bool $use_v2_api ): string {
+		$url = self::WPCOM_ENDPOINT_BASE;
+		if ( $is_site_scoped ) {
+			$url .= '/sites/%s';
+		}
+
+		$endpoint_rest_base = $use_v2_api ? self::V2_ENDPOINT_REST_BASE : self::ENDPOINT_REST_BASE;
+
+		return $url . '/' . $endpoint_rest_base . '/' . ltrim( $api, '/' );
+	}
+
+	/**
+	 * Rotate the card-testing prevention token when the platform signals a
+	 * fraud-flagged decline, so a card tester cannot replay the same session
+	 * token across attempts. Mirrors the plugin's maybe_act_on_fraud_prevention:
+	 * only the fraudulent decline and the platform's card-testing code rotate.
+	 *
+	 * @param string $error_code Platform error or decline code.
+	 */
+	private function maybe_rotate_fraud_prevention_token( string $error_code ): void {
+		if ( ! in_array( $error_code, array( 'fraudulent', 'wcpay_card_testing_prevention' ), true ) ) {
+			return;
+		}
+		if ( null === WC()->session ) {
+			return;
+		}
+
+		$fraud_prevention_service = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class );
+		if ( $fraud_prevention_service->is_enabled() ) {
+			$fraud_prevention_service->regenerate_token();
+		}
+	}
+
+	/**
+	 * Throw a normalized API exception from a decoded response body.
+	 *
+	 * @param array<string,mixed> $response_body Decoded response body.
+	 * @param int                 $response_code HTTP status code.
+	 * @throws WooPaymentsApiException Always.
+	 */
+	private function throw_api_error( array $response_body, int $response_code ): void {
+		$error_code        = 'wcpay_client_error_code_missing';
+		$error_message     = __( 'Server error. Please try again.', 'woocommerce' );
+		$error_type        = '';
+		$decline_code      = '';
+		$error_data        = isset( $response_body['data'] ) && is_array( $response_body['data'] ) ? $response_body['data'] : array();
+		$payment_intent_id = '';
+		$merchant_message  = '';
+		$wrap_message      = true;
+
+		if ( isset( $response_body['code'] ) && 'amount_too_small' === $response_body['code'] ) {
+			// The plugin resolves the top-level amount_too_small shape before the error envelope
+			// and throws the platform message unwrapped; the minimum rides in the data payload.
+			$error_code    = 'amount_too_small';
+			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
+			$wrap_message  = false;
+		} elseif ( isset( $response_body['error'] ) && is_array( $response_body['error'] ) ) {
+			$error                 = $response_body['error'];
+			$error_message         = isset( $error['message'] ) ? (string) $error['message'] : $error_message;
+			$error_type            = isset( $error['type'] ) && is_string( $error['type'] ) ? $error['type'] : '';
+			$decline_code          = isset( $error['decline_code'] ) && is_string( $error['decline_code'] ) ? $error['decline_code'] : '';
+			$payment_intent_id     = isset( $error['payment_intent']['id'] ) && is_string( $error['payment_intent']['id'] ) ? $error['payment_intent']['id'] : '';
+			$payment_intent_status = isset( $error['payment_intent']['status'] ) && is_string( $error['payment_intent']['status'] ) ? $error['payment_intent']['status'] : '';
+
+			if ( isset( $error['code'] ) && is_scalar( $error['code'] ) ) {
+				$error_code = (string) $error['code'];
+			} elseif ( isset( $error['message_code'] ) && is_scalar( $error['message_code'] ) ) {
+				$error_code = (string) $error['message_code'];
+			} elseif ( '' !== $error_type ) {
+				$error_code = $error_type;
+			}
+
+			// The platform identifies the request field that caused an account-update rejection in error.param; the code/message/data shape already rides in via the top-level data payload.
+			if ( isset( $error['param'] ) && is_string( $error['param'] ) ) {
+				$error_data['param'] = $error['param'];
+			}
+
+			if ( 'amount_too_large' === $error_code && 'requires_capture' === $payment_intent_status ) {
+				// The plugin redacts the raw API message so the merchant is not prompted to
+				// contact support when over-capturing an authorized amount.
+				$error_message = __( 'The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.', 'woocommerce' );
+			}
+
+			if (
+				'card_declined' === $error_code
+				&& isset( $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'] )
+				&& is_string( $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'] )
+			) {
+				$merchant_message = $error['payment_intent']['charges']['data'][0]['outcome']['seller_message'];
+			}
+		} elseif ( isset( $response_body['code'] ) ) {
+			$error_code    = (string) $response_body['code'];
+			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
+		}
+
+		$this->maybe_rotate_fraud_prevention_token( $decline_code );
+		$this->maybe_rotate_fraud_prevention_token( $error_code );
+
+		$this->transport_log->error( $error_message, $error_code );
+
+		$message = $wrap_message
+			? sprintf(
+				/* translators: %s: provider error message. */
+				__( 'Error: %s', 'woocommerce' ),
+				$error_message
+			)
+			: $error_message;
+
+		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Provider error is transported as structured application data, not rendered HTML.
+		throw new WooPaymentsApiException(
+			$message,
+			$error_code,
+			$response_code,
+			$error_type,
+			$decline_code,
+			$error_data,
+			$payment_intent_id,
+			$merchant_message
+		);
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	}
+
+	/**
+	 * Sleep before retrying a transient transport failure.
+	 *
+	 * @param int $backoff_microseconds Base retry backoff in microseconds.
+	 *
+	 * @since 11.0.0
+	 */
+	protected function sleep_before_retry( int $backoff_microseconds ): void {
+		usleep( $backoff_microseconds + wp_rand( 0, (int) ( $backoff_microseconds / 4 ) ) );
+	}
+
+	/**
+	 * Tell whether the transport response should be retried.
+	 *
+	 * @param mixed $response       Transport response.
+	 * @param int   $response_code  HTTP status code.
+	 * @param int   $retries        Retry attempts already made.
+	 * @param int   $retries_limit  Retry attempts limit.
+	 * @param int   $stop_trying_at Epoch timestamp at which retrying must stop.
+	 * @return bool
+	 */
+	private function should_retry_request_response( $response, int $response_code, int $retries, int $retries_limit, int $stop_trying_at ): bool {
+		if ( $response_code || time() >= $stop_trying_at || $retries_limit === $retries ) {
+			return false;
+		}
+
+		return $response instanceof WP_Error && $this->is_retryable_transport_error( $response );
+	}
+
+	/**
+	 * Tell whether a transport error may recover on retry.
+	 *
+	 * @param WP_Error $error Transport error.
+	 * @return bool
+	 */
+	private function is_retryable_transport_error( WP_Error $error ): bool {
+		return in_array(
+			(string) $error->get_error_code(),
+			array(
+				'http_request_failed',
+				'http_request_not_executed',
+			),
+			true
+		);
+	}
+
+	/**
+	 * Build the provider user-agent string.
+	 *
+	 * @return string
+	 */
+	private function get_user_agent(): string {
+		return WooPaymentsClientVersion::get_user_agent();
+	}
+}

@@ -1,0 +1,225 @@
+@import "../_tokens.scss";
+
+// Client 11.1.0 `deposits/details/style.scss`: the payout overview header.
+.woocommerce-woopayments-payout-overview {
+	background: $white;
+	border: 1px solid $studio-gray-5;
+	border-radius: $radius-medium;
+	display: flex;
+	flex-wrap: wrap;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.woocommerce-woopayments-payout-overview__item {
+	display: flex;
+	flex: 1 1 200px;
+	flex-direction: column;
+	gap: $gap-smaller;
+	margin: 0;
+	padding: $gap-large;
+}
+
+// Client 11.1.0 `deposits/details/index.tsx:163-228`: the instant payout tiles share one row, and stack below
+// the `SummaryList` dropdown breakpoint (`< large`, 960px), each tile as tall as its content.
+.woocommerce-woopayments-payout-overview--instant {
+	flex-wrap: nowrap;
+
+	> .woocommerce-woopayments-payout-overview__item {
+		flex: 1 1 0;
+		min-width: 0;
+	}
+
+	> li + li {
+		border-inline-start: 1px solid $studio-gray-5;
+	}
+
+	@media (max-width: 959px) {
+		flex-direction: column;
+
+		> .woocommerce-woopayments-payout-overview__item {
+			flex: none;
+		}
+
+		> li + li {
+			border-inline-start: 0;
+			border-block-start: 1px solid $studio-gray-5;
+		}
+	}
+}
+
+.woocommerce-woopayments-payout-overview__label {
+	font-size: $woopayments-font-size-detail;
+	line-height: $font-line-height-small;
+}
+
+.woocommerce-woopayments-payout-overview__value {
+	font-size: $font-size-x-large;
+	line-height: $font-line-height-large;
+}
+
+.woocommerce-woopayments-payout-overview__value--fee {
+	color: $studio-red-70;
+}
+
+.woocommerce-woopayments-payout-overview__value--net {
+	color: $studio-green-70;
+}
+
+.woocommerce-woopayments-payout-overview__amount {
+	flex-grow: 1;
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 payout amount size; base-styles' type scale has no 36px (32px → none).
+	font-size: 36px;
+	line-height: 1.2;
+	margin: 0;
+	padding: $gap-large;
+	text-align: end;
+	align-self: center;
+}
+
+// A divider between the date and the amount of an automatic payout (the client's summary item border).
+.woocommerce-woopayments-payout-overview--automatic {
+	> .woocommerce-woopayments-payout-overview__item {
+		border-inline-end: 1px solid $gray-100;
+		flex: 0 1 auto;
+	}
+}
+
+// Client 11.1.0 `deposits/details/style.scss:2-28`: the status dot size and colours.
+.woocommerce-woopayments-payout-overview__status {
+	margin-bottom: $gap-smallest;
+	white-space: nowrap;
+
+	.woocommerce-order-status__indicator {
+		// The client's WC Admin page is border-box, so its ring sits inside the 0.85em dot (17px at 20px).
+		box-sizing: border-box;
+		height: 0.85em;
+		width: 0.85em;
+
+		&.is-paid {
+			background: $studio-green-40;
+			border-color: $studio-green-5;
+		}
+
+		// stylelint-disable color-no-hex -- Client 11.1.0 payout status dot palette (pending and in transit) has no upstream token; improvement pass with the status badges.
+		&.is-pending {
+			background: #f0c33c;
+			border-color: #f5e6ab;
+		}
+
+		&.is-in_transit {
+			background: #3582c4;
+			border-color: #c5d9ed;
+		}
+		// stylelint-enable color-no-hex
+
+		&.is-failed {
+			background: $studio-red-50;
+			border-color: $studio-red-5;
+		}
+	}
+}
+
+// Client 11.1.0 renders the payout placeholder on a border-box WC Admin page; its fixed 117px item height assumes it.
+.woocommerce-woopayments-money-movement {
+	.woocommerce-summary.is-placeholder .woocommerce-summary__item {
+		box-sizing: border-box;
+	}
+}
+
+// Client 11.1.0 `deposits/details/style.scss:62-100`: the payout details card.
+.woocommerce-woopayments-payout-details__title {
+	// stylelint-disable-next-line declaration-property-value-disallowed-list -- base-styles' type scale has no 16px (15px → 20px).
+	font-size: 16px;
+	font-weight: 600;
+	line-height: $font-line-height-medium;
+	margin: 0;
+}
+
+.woocommerce-woopayments-payout-details {
+	display: flex;
+	flex-wrap: wrap;
+	gap: $gap-small;
+	justify-content: space-between;
+	margin: 0;
+
+	&__item {
+		display: flex;
+
+		@media (max-width: 659px) {
+			flex-direction: column;
+		}
+	}
+
+	dt {
+		color: $gray-900;
+		font-size: $font-size-x-small;
+		font-weight: 500;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- Client 11.1.0 label column width; no upstream token.
+		min-width: 176px;
+		text-transform: uppercase;
+	}
+
+	dd {
+		align-items: center;
+		align-self: center;
+		color: $studio-gray-50;
+		display: flex;
+		gap: $gap-smallest;
+		margin: 0;
+
+		@media (max-width: 659px) {
+			align-self: flex-start;
+		}
+	}
+
+	// Client 11.1.0 `deposits/details/style.scss:40-47`: long references break instead of widening the page.
+	&__reference {
+		font-family: monospace;
+		overflow-wrap: anywhere;
+	}
+
+	// Client 11.1.0 `components/copy-button/style.scss`: a text-sized icon in the row's grey.
+	&__copy.components-button.has-icon {
+		color: inherit;
+		height: $grid-unit-20;
+		min-width: 0;
+		padding: 0;
+		width: $grid-unit-20;
+
+		&:hover {
+			opacity: 0.7;
+		}
+	}
+}
+
+@media (max-width: 659px) {
+	.woocommerce-woopayments-payout-overview {
+		flex-direction: column;
+	}
+
+	.woocommerce-woopayments-payout-overview__amount {
+		align-self: stretch;
+		border-block-start: 1px solid $studio-gray-5;
+		text-align: start;
+	}
+}
+
+// Client 11.1.0 `components/inline-notice/styles.scss`: the error notice with its icon.
+.woocommerce-woopayments-payout-details-error.components-notice {
+	margin: 0;
+
+	.components-notice__content {
+		align-items: center;
+		display: flex;
+		gap: $gap-small;
+	}
+}
+
+.woocommerce-woopayments-payout-details-error__icon {
+	fill: $woopayments-error-red;
+	flex-shrink: 0;
+	height: $icon-size;
+	width: $icon-size;
+}
