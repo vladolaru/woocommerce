@@ -659,24 +659,23 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $status close replayed onto the closed note the WooPayments extension wrote (dispute ID suffix: $with_dispute_id) changes nothing.
+	 * @testdox A $status close replayed onto the closed note the WooPayments extension wrote changes nothing.
 	 *
 	 * Client 11.1.0 writes the note in generate_dispute_closed_note() (class-wc-payments-order-service.php:2516-2558) with
 	 * compose_dispute_url() (:2681-2690), and skips the close when a note with the same text exists (:619-623,
-	 * order_note_exists() at :810-823). Versions before 11.1.0 wrote it without the dispute ID.
+	 * order_note_exists() at :810-823).
 	 *
 	 * @dataProvider woopayments_extension_closed_note_provider
 	 *
-	 * @param string $status          Dispute status.
-	 * @param bool   $with_dispute_id Whether the extension appended the dispute ID.
+	 * @param string $status Dispute status.
 	 */
-	public function test_woopayments_extension_era_closed_note_suppresses_replayed_close( string $status, bool $with_dispute_id ): void {
+	public function test_woopayments_extension_era_closed_note_suppresses_replayed_close( string $status ): void {
 		$order = $this->create_disputable_order();
 		$order->set_status( 'on-hold' );
 		$order->update_meta_data( '_charge_id', 'ch_cutover' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover' );
 		$order->save();
-		$order->add_order_note( 'Dispute has been closed with status ' . $status . '. See <a href="' . $this->get_woopayments_extension_dispute_url( 'ch_cutover' ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.' . ( $with_dispute_id ? ' (Dispute ID: dp_cutover)' : '' ) );
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.closed', $status, 'ch_cutover' ) . ' (Dispute ID: dp_cutover)' );
 
 		// A Stripe Dispute, as charge.dispute.closed carries it; client 11.1.0 reads charge, status and id
 		// (class-wc-payments-webhook-processing-service.php:748-754), and amount and currency for a lost close.
@@ -700,37 +699,30 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Closed notes the WooPayments extension wrote.
 	 *
-	 * @return array<string,array{0:string,1:bool}>
+	 * @return array<string,array{0:string}>
 	 */
 	public function woopayments_extension_closed_note_provider(): array {
 		return array(
-			'won, 11.1.0'                 => array( 'won', true ),
-			'won, before the dispute ID'  => array( 'won', false ),
-			'lost, 11.1.0'                => array( 'lost', true ),
-			'lost, before the dispute ID' => array( 'lost', false ),
+			'won'  => array( 'won' ),
+			'lost' => array( 'lost' ),
 		);
 	}
 
 	/**
-	 * @testdox A created event replayed onto the created note the WooPayments extension wrote (dispute ID suffix: $with_dispute_id) changes nothing, and the note gets the dispute's note identity.
+	 * @testdox A created event replayed onto the created note the WooPayments extension wrote changes nothing, and the note gets the dispute's note identity.
 	 *
 	 * Client 11.1.0 writes the note in generate_dispute_created_note() (class-wc-payments-order-service.php:2455-2504) with
 	 * compose_dispute_url() (:2681-2690), escaping the text around the link (WC_Payments_Utils::esc_interpolated_html()),
-	 * and skips the hold when a note with the same text exists (:590-594). Versions before 11.1.0 wrote it without the
-	 * dispute ID.
-	 *
-	 * @dataProvider woopayments_extension_dispute_id_provider
-	 *
-	 * @param bool $with_dispute_id Whether the extension appended the dispute ID.
+	 * and skips the hold when a note with the same text exists (:590-594).
 	 */
-	public function test_woopayments_extension_era_created_note_suppresses_replayed_created( bool $with_dispute_id ): void {
+	public function test_woopayments_extension_era_created_note_suppresses_replayed_created(): void {
 		$order = $this->create_disputable_order();
 		$order->update_meta_data( '_charge_id', 'ch_cutover_created' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover_created' );
 		$order->save();
 		$event             = $this->get_created_event_object( 'dp_cutover_created', 'needs_response' );
 		$event['charge']   = 'ch_cutover_created';
-		$extension_note_id = $order->add_order_note( 'Payment has been disputed for ' . wc_price( 10.0, array( 'currency' => 'USD' ) ) . ' with reason &quot;Transaction unauthorized&quot;. <a href="' . $this->get_woopayments_extension_dispute_url( 'ch_cutover_created' ) . '" target="_blank" rel="noopener noreferrer">Response due by ' . date_i18n( wc_date_format(), 1893456000 ) . '</a>.' . ( $with_dispute_id ? ' (Dispute ID: dp_cutover_created)' : '' ) );
+		$extension_note_id = $order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.created', 'needs_response', 'ch_cutover_created' ) . ' (Dispute ID: dp_cutover_created)' );
 
 		$this->sut->process( 'charge.dispute.created', $event );
 
@@ -746,22 +738,17 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dispute update replayed onto the update note the WooPayments extension wrote (dispute ID suffix: $with_dispute_id) adds no second note.
+	 * @testdox A dispute update replayed onto the update note the WooPayments extension wrote adds no second note.
 	 *
 	 * Client 11.1.0 writes the note in process_webhook_dispute_updated() (class-wc-payments-webhook-processing-service.php:825-845)
-	 * and adds it only when no note with the same text exists (:847-849). Versions before 11.1.0 wrote it without the
-	 * dispute ID.
-	 *
-	 * @dataProvider woopayments_extension_dispute_id_provider
-	 *
-	 * @param bool $with_dispute_id Whether the extension appended the dispute ID.
+	 * and adds it only when no note with the same text exists (:847-849).
 	 */
-	public function test_woopayments_extension_era_update_note_suppresses_replayed_update( bool $with_dispute_id ): void {
+	public function test_woopayments_extension_era_update_note_suppresses_replayed_update(): void {
 		$order = $this->create_disputable_order();
 		$order->update_meta_data( '_charge_id', 'ch_cutover_updated' );
 		$order->update_meta_data( '_wcpay_payment_transaction_id', 'txn_cutover_updated' );
 		$order->save();
-		$order->add_order_note( 'Payment dispute has been updated. See <a href="' . add_query_arg( array( 'id' => 'ch_cutover_updated' ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) ) . '">dispute overview</a> for more details.' . ( $with_dispute_id ? ' (Dispute ID: dp_cutover_updated)' : '' ) );
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( 'charge.dispute.updated', 'under_review', 'ch_cutover_updated' ) . ' (Dispute ID: dp_cutover_updated)' );
 
 		// A Stripe Dispute, as charge.dispute.updated carries it; client 11.1.0 reads id and charge
 		// (class-wc-payments-webhook-processing-service.php:794-806), and native also reads its status.
@@ -780,15 +767,96 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The WooPayments extension's note with the dispute ID (11.1.0) and without it (earlier versions).
+	 * @testdox A $event_type event for a second dispute on the charge applies over the first dispute's note that the WooPayments extension wrote without the dispute ID.
 	 *
-	 * @return array<string,array{0:bool}>
+	 * Client 11.1.0 matches a dispute note by its exact text (order_note_exists(), class-wc-payments-order-service.php:810-823),
+	 * and the text carries the dispute ID since 11.0.0 (#11991, #11993). A note from an earlier version is not matched, and
+	 * no open-dispute record (added in 11.1.0, #11997) names its dispute.
+	 *
+	 * @dataProvider provider_second_dispute_over_a_note_without_the_dispute_id
+	 *
+	 * @param string              $event_type        Dispute event type.
+	 * @param array<string,mixed> $dispute           Second dispute's object fields; the test adds the charge.
+	 * @param string              $initial_status    Order status left by the first dispute.
+	 * @param string              $expected_status   Order status after the second dispute's event.
+	 * @param string|string[]     $expected_open_ids Open-dispute record after the event ('' when there is none).
+	 * @param int                 $expected_refunds  Local refunds after the event.
+	 * @param string              $note              Fragment that finds both disputes' notes.
 	 */
-	public function woopayments_extension_dispute_id_provider(): array {
-		return array(
-			'11.1.0'                => array( true ),
-			'before the dispute ID' => array( false ),
+	public function test_second_disputes_event_applies_over_a_note_without_the_dispute_id( string $event_type, array $dispute, string $initial_status, string $expected_status, $expected_open_ids, int $expected_refunds, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->set_status( $initial_status );
+		$order->update_meta_data( '_charge_id', 'ch_two_disputes' );
+		$order->save();
+		$order->add_order_note( $this->get_woopayments_extension_note_without_dispute_id( $event_type, (string) $dispute['status'], 'ch_two_disputes' ) );
+
+		$this->sut->process( $event_type, array_merge( $dispute, array( 'charge' => 'ch_two_disputes' ) ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertSame( $expected_open_ids, $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$this->assertCount( $expected_refunds, $order->get_refunds() );
+		$this->assertCount( 2, $this->find_order_note( $order, $note ) );
+		$this->assertCount( 1, $this->find_order_note( $order, '(Dispute ID: dp_second)' ) );
+	}
+
+	/**
+	 * Second disputes on a charge whose first dispute's note carries no dispute ID.
+	 *
+	 * Stripe Dispute objects with the fields client 11.1.0 reads for each event (class-wc-payments-webhook-processing-service.php:
+	 * created :699-710, closed :748-781, updated :794-806). The closed ones add amount and currency, which only native reads:
+	 * for a lost close whose dispute summary cannot be fetched.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:string,4:string|string[],5:int,6:string}>
+	 */
+	public function provider_second_dispute_over_a_note_without_the_dispute_id(): array {
+		$closed = array(
+			'id'       => 'dp_second',
+			'amount'   => 1000,
+			'currency' => 'usd',
 		);
+
+		return array(
+			'closed, won'  => array( 'charge.dispute.closed', array_merge( $closed, array( 'status' => 'won' ) ), 'on-hold', 'completed', '', 0, 'Dispute has been closed with status won' ),
+			'closed, lost' => array( 'charge.dispute.closed', array_merge( $closed, array( 'status' => 'lost' ) ), 'on-hold', 'refunded', '', 1, 'Dispute has been closed with status lost' ),
+			'created'      => array( 'charge.dispute.created', $this->get_created_event_object( 'dp_second', 'needs_response' ), 'completed', 'on-hold', array( 'dp_second' ), 0, 'Payment has been disputed' ),
+			'updated'      => array(
+				'charge.dispute.updated',
+				array(
+					'id'     => 'dp_second',
+					'status' => 'under_review',
+				),
+				'on-hold',
+				'on-hold',
+				'',
+				0,
+				'Payment dispute has been updated',
+			),
+		);
+	}
+
+	/**
+	 * Build a dispute note as the WooPayments extension wrote it, without the dispute ID it appends since 11.0.0.
+	 *
+	 * Client 11.1.0: created generate_dispute_created_note() (class-wc-payments-order-service.php:2455-2504), closed
+	 * generate_dispute_closed_note() (:2516-2558), updated process_webhook_dispute_updated()
+	 * (class-wc-payments-webhook-processing-service.php:825-845). The created note is the one get_created_event_object() makes.
+	 *
+	 * @param string $event_type Dispute event type.
+	 * @param string $status     Dispute status, for a closed note.
+	 * @param string $charge_id  Disputed charge ID.
+	 * @return string
+	 */
+	private function get_woopayments_extension_note_without_dispute_id( string $event_type, string $status, string $charge_id ): string {
+		if ( 'charge.dispute.created' === $event_type ) {
+			return 'Payment has been disputed for ' . wc_price( 10.0, array( 'currency' => 'USD' ) ) . ' with reason &quot;Transaction unauthorized&quot;. <a href="' . $this->get_woopayments_extension_dispute_url( $charge_id ) . '" target="_blank" rel="noopener noreferrer">Response due by ' . date_i18n( wc_date_format(), 1893456000 ) . '</a>.';
+		}
+
+		if ( 'charge.dispute.closed' === $event_type ) {
+			return 'Dispute has been closed with status ' . $status . '. See <a href="' . $this->get_woopayments_extension_dispute_url( $charge_id ) . '" target="_blank" rel="noopener noreferrer">dispute overview</a> for more details.';
+		}
+
+		return 'Payment dispute has been updated. See <a href="' . add_query_arg( array( 'id' => $charge_id ), admin_url( 'admin.php?page=wc-admin&path=/payments/transactions/details' ) ) . '">dispute overview</a> for more details.';
 	}
 
 	/**

@@ -180,7 +180,7 @@ class WooPaymentsDisputeEventHandler {
 			'charge.dispute.created',
 			$event_object,
 			$charge_id,
-			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type, $charge_id, $amount, $reason, $due_by, $is_inquiry ): bool {
+			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type ): bool {
 				return $this->add_dispute_order_note_once(
 					$order,
 					$note,
@@ -190,10 +190,7 @@ class WooPaymentsDisputeEventHandler {
 					function () use ( $order, $dispute_id ): void {
 						$this->add_open_dispute_id( $order, $dispute_id );
 						$order->update_status( OrderStatus::ON_HOLD );
-					},
-					// Notes written before the dispute ID was appended carry none;
-					// a redelivered event must still match such a note.
-					array( $this->get_dispute_created_note( $charge_id, $amount, $reason, $due_by, $is_inquiry ) )
+					}
 				);
 			}
 		);
@@ -218,7 +215,7 @@ class WooPaymentsDisputeEventHandler {
 			'charge.dispute.closed',
 			$event_object,
 			$charge_id,
-			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id, $is_inquiry )
+			fn( WC_Order $order ): bool => $this->apply_dispute_closed( $order, $event_object, $note, $dispute_id, $status, $note_type, $charge_id )
 		);
 	}
 
@@ -232,10 +229,9 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string              $status                 Dispute status.
 	 * @param string              $note_type              Note type.
 	 * @param string              $charge_id              Charge ID.
-	 * @param bool                $is_inquiry             Whether the dispute is an inquiry.
 	 * @return bool True when the close was applied.
 	 */
-	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id, bool $is_inquiry ): bool {
+	private function apply_dispute_closed( WC_Order $order, array $event_object, string $note, string $dispute_id, string $status, string $note_type, string $charge_id ): bool {
 		// A callback of its own, so removing it cannot remove a site's own '__return_false' on these emails.
 		$disable_email = static fn(): bool => false;
 
@@ -291,10 +287,7 @@ class WooPaymentsDisputeEventHandler {
 					remove_filter( 'woocommerce_email_enabled_customer_refunded_order', $disable_email );
 					remove_filter( 'woocommerce_email_enabled_customer_completed_renewal_order', $disable_email );
 				}
-			},
-			// Notes written before the dispute ID was appended carry none;
-			// a redelivered event must still match such a note.
-			array( $this->get_dispute_closed_note( $charge_id, $status, $is_inquiry ) )
+			}
 		);
 	}
 
@@ -341,8 +334,7 @@ class WooPaymentsDisputeEventHandler {
 			$event_type,
 			$event_object,
 			$charge_id,
-			// Notes written before the dispute ID was appended carry none; a redelivered event must still match such a note.
-			fn( WC_Order $order ): bool => $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type, null, array( $note_without_id ) ),
+			fn( WC_Order $order ): bool => $this->add_dispute_order_note_once( $order, $note, $dispute_id, $status, $note_type ),
 			$message
 		);
 	}
@@ -719,15 +711,14 @@ class WooPaymentsDisputeEventHandler {
 	 * @param string   $event_status Provider dispute status.
 	 * @param string   $note_type    Stable note type.
 	 * @param callable $before_add   Side effects to apply only when the note is new.
-	 * @param string[] $equivalent_notes Other wordings that count as the same note, such as one without the dispute ID.
 	 * @return bool True when the note was added.
 	 */
-	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null, array $equivalent_notes = array() ): bool {
+	private function add_dispute_order_note_once( WC_Order $order, string $note, string $dispute_id, string $event_status, string $note_type, ?callable $before_add = null ): bool {
 		return $this->order_note_service->add_note_once(
 			$order,
 			$note,
 			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
-			$equivalent_notes,
+			array(),
 			$before_add
 		);
 	}
