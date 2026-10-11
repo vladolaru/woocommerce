@@ -941,7 +941,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return false;
 		}
 
-		return $this->get_account_service()->can_process_payments() && $this->is_country_tracks_eligible();
+		// Any connected account, onboarded or not, like the client's `is_stripe_connected()` (`class-woopay-tracker.php:248-252`).
+		return array() !== $this->get_account_service()->get_cached_account_data() && $this->is_country_tracks_eligible();
 	}
 
 	/**

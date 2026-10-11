@@ -3,10 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -465,10 +468,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
 			->getMock();
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
-		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
 		$sut = $this->create_controller( true, $account_service );
@@ -491,10 +493,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
 			->getMock();
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
-		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
 		$sut          = $this->create_controller( true, $account_service );
@@ -1089,6 +1090,217 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 `should_enable_tracking()` checks `is_stripe_connected()` (`includes/class-woopay-tracker.php:248-252`):
+	 * any cached account counts, onboarded or not, and an errored refresh serves the earlier account
+	 * (`includes/class-database-cache.php:176-179`); only no account, or an errored cache with no account, sends nothing.
+	 *
+	 * @testdox Should send shopper events for a connected account, onboarded or not, and none without an account.
+	 * @dataProvider connected_account_provider
+	 *
+	 * @param bool   $earlier_account Whether an expired account cache holds an earlier account.
+	 * @param string $error_code      Error code the platform answers with, or '' to return the account.
+	 * @param bool   $expected_sent   Whether the shopper events are sent.
+	 */
+	public function test_shopper_events_follow_a_connected_account_like_the_client( bool $earlier_account, string $error_code, bool $expected_sent ): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		delete_option( 'wcpay_account_data' );
+		if ( $earlier_account ) {
+			// The client's database cache wrapper, expired so the read refreshes (`includes/class-database-cache.php`).
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'    => $this->get_partially_onboarded_account(),
+					'fetched' => time() - 2 * DAY_IN_SECONDS,
+					'errored' => false,
+				)
+			);
+		}
+		wp_set_current_user( 0 );
+		$sut = $this->create_controller( true, $this->create_account_service_on_platform( $this->get_partially_onboarded_account(), $error_code ) );
+		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( false ) );
+		$order = wc_create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->set_payment_method_title( 'Card' );
+		$order->save();
+		\WC_Tracks_Footer_Pixel::clear_events();
+
+		try {
+			$sut->register();
+
+			// The page view the product page queues for the footer script.
+			do_action( 'woocommerce_after_single_product' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+			$sut->enqueue_frontend_events_script();
+			$localized = (string) wp_scripts()->get_data( 'wc-woopayments-frontend-tracks', 'data' );
+
+			// The page view the footer script posts to the shopper Tracks route.
+			$this->get_rest_routes_after_init();
+			$request = new \WP_REST_Request( 'POST', '/wc/v3/payments/tracks' );
+			$request->set_body_params(
+				array(
+					'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
+					'tracksEventName' => 'product_page_view',
+					'tracksEventProp' => wp_json_encode( array( 'theme_type' => 'short_code' ) ),
+				)
+			);
+			rest_get_server()->dispatch( $request );
+			$page_view_events = \WC_Tracks_Footer_Pixel::get_events();
+			\WC_Tracks_Footer_Pixel::clear_events();
+
+			/** This action is documented in includes/class-wc-checkout.php */
+			do_action( 'woocommerce_checkout_order_processed', $order->get_id() );
+			$order_events = \WC_Tracks_Footer_Pixel::get_events();
+		} finally {
+			\WC_Tracks_Footer_Pixel::clear_events();
+			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
+			wp_dequeue_script( 'wc-woopayments-frontend-tracks' );
+			wp_deregister_script( 'wc-woopayments-frontend-tracks' );
+		}
+
+		$queued = array();
+		if ( 1 === preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) ) {
+			$queued = array_column( json_decode( $matches[1], true )['events'], 'event' );
+		}
+		$this->assertSame( $expected_sent ? array( 'product_page_view' ) : array(), $queued, 'Queued page views' );
+		$this->assertSame( $expected_sent ? array( 'wcpay_product_page_view' ) : array(), array_column( $page_view_events, '_en' ), 'Recorded page views' );
+		$this->assertSame( $expected_sent ? array( 'wcpay_checkout_order_placed' ) : array(), array_column( $order_events, '_en' ), 'Order-placed events' );
+		if ( $expected_sent ) {
+			$this->assertSame( 'Card', $order_events[0]->payment_title );
+		}
+	}
+
+	/**
+	 * Account cache states and platform answers.
+	 *
+	 * @return array<string,array{bool,string,bool}>
+	 */
+	public function connected_account_provider(): array {
+		return array(
+			'partially onboarded account'                => array( false, '', true ),
+			'errored refresh with an earlier account'    => array( true, 'wcpay_temporary_failure', true ),
+			'errored cache with no account'              => array( false, 'wcpay_temporary_failure', false ),
+			'no account, the platform answers not found' => array( false, 'wcpay_account_not_found', false ),
+		);
+	}
+
+	/**
+	 * A connected account that has not finished onboarding.
+	 *
+	 * The recorded account response (Fixtures/rec-t60-test-drive-account.json, REC-T60-2) as a live account whose details
+	 * are not submitted, so it cannot take payments yet.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_partially_onboarded_account(): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t60-test-drive-account.json' ), true );
+
+		return array_merge(
+			$fixture['account'],
+			array(
+				'is_live'           => true,
+				'payments_enabled'  => false,
+				'details_submitted' => false,
+			)
+		);
+	}
+
+	/**
+	 * Create a real account service whose platform transport returns an account or fails with an error code.
+	 *
+	 * @param array<string,mixed> $account    Account the platform returns.
+	 * @param string              $error_code Error code the platform fails with, or '' to return the account.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_account_service_on_platform( array $account, string $error_code ): WooPaymentsAccountService {
+		$api_client = new class( $account, $error_code ) extends WooPaymentsApiClient {
+			/**
+			 * Account the platform returns.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Error code the platform fails with.
+			 *
+			 * @var string
+			 */
+			private string $error_code;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account    Account the platform returns.
+			 * @param string              $error_code Error code the platform fails with.
+			 */
+			public function __construct( array $account, string $error_code ) {
+				$this->account    = $account;
+				$this->error_code = $error_code;
+			}
+
+			/**
+			 * Tell whether the site has a platform connection.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Return the account or fail.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				// The client caches wcpay_account_not_found as no account and any other error as a failed read (`includes/class-wc-payments-account.php:2464-2477`).
+				if ( 'wcpay_account_not_found' === $this->error_code ) {
+					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
+				}
+				if ( '' !== $this->error_code ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->account;
+			}
+		};
+
+		$account_service = new class( $api_client ) extends WooPaymentsAccountService {
+			/**
+			 * Fake platform transport.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $api_client;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $api_client Fake platform transport.
+			 */
+			public function __construct( WooPaymentsApiClient $api_client ) {
+				$this->api_client = $api_client;
+			}
+
+			/**
+			 * Get the fake platform transport.
+			 *
+			 * @return WooPaymentsApiClient|null
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->api_client;
+			}
+		};
+		$account_service->init( new LegacyProxy() );
+
+		return $account_service;
+	}
+
+	/**
 	 * Create the controller under test.
 	 *
 	 * @param bool                           $native_register Whether native runtime owns WooPayments.
@@ -1144,11 +1356,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $test_mode, bool $gateway_enabled = true, bool $woopay_enabled = true ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled', 'is_gateway_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled', 'is_gateway_enabled' ) )
 			->getMock();
 
 		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
-		$account_service->method( 'can_process_payments' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
 				'country'                    => 'US',
