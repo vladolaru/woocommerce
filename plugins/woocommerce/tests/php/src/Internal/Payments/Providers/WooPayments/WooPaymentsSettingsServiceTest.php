@@ -1352,6 +1352,35 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 always computes this field as the account's domestic currency (`class-wc-rest-payments-settings-controller.php:574`
+	 * through the gateway's `get_option()` override, `class-wc-payment-gateway-wcpay.php:3090-3091`).
+	 *
+	 * @testdox Should report the account country's currency as the domestic currency, not the account's default currency or a stored value.
+	 */
+	public function test_get_settings_reports_the_account_country_currency_as_the_domestic_currency(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_domestic_currency' => 'usd' ) );
+		// A CA account whose default currency is USD. The account fields follow the recorded
+		// Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'       => 'acct_native_test',
+					'is_live'          => true,
+					'country'          => 'CA',
+					'store_currencies' => array(
+						'default' => 'usd',
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$this->assertSame( 'cad', $this->sut->get_settings()['account_domestic_currency'] );
+	}
+
+	/**
 	 * @testdox Should report card-present eligibility only for eligible accounts with Cash on delivery available, looking up available gateways only for eligible accounts.
 	 *
 	 * @testWith [true, true, true, 1]

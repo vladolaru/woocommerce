@@ -2208,7 +2208,7 @@ class WooPaymentsSettingsService {
 			'account_branding_icon'              => $this->get_account_string_setting( $account_data, array( 'branding', 'icon' ), $this->get_string_setting( $settings, 'account_branding_icon' ) ),
 			'account_branding_primary_color'     => $this->get_account_string_setting( $account_data, array( 'branding', 'primary_color' ), $this->get_string_setting( $settings, 'account_branding_primary_color' ) ),
 			'account_branding_secondary_color'   => $this->get_account_string_setting( $account_data, array( 'branding', 'secondary_color' ), $this->get_string_setting( $settings, 'account_branding_secondary_color' ) ),
-			'account_domestic_currency'          => $this->get_string_setting( $settings, 'account_domestic_currency', $this->account_service->get_account_default_currency() ),
+			'account_domestic_currency'          => $this->account_service->get_account_domestic_currency(),
 			'account_communications_email'       => $this->get_account_string_setting( $account_data, array( 'communications_email' ), $this->get_string_setting( $settings, 'account_communications_email' ) ),
 			'deposit_schedule_interval'          => $this->get_account_string_setting( $account_data, array( 'deposits', 'interval' ), $this->get_string_setting( $settings, 'deposit_schedule_interval' ) ),
 			'deposit_schedule_monthly_anchor'    => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'monthly_anchor' ), $this->get_nullable_int_setting( $settings, 'deposit_schedule_monthly_anchor' ) ),
