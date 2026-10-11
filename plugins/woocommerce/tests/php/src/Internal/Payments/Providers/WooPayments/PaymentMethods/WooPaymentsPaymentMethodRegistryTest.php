@@ -685,7 +685,7 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Create an account service whose account has a fee for every payment method, so Amazon Pay is registered and every
-	 * method is available. Fees are keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json
+	 * method is available. Fees are keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json
 	 * `account.fees`.
 	 *
 	 * @return WooPaymentsAccountService

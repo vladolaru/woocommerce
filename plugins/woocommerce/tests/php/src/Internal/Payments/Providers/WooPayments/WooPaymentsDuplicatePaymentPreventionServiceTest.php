@@ -760,7 +760,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	 * A succeeded attached PaymentIntent whose charge carries the given fields.
 	 *
 	 * The platform's GET intentions/{id} answer carries the intent's charges with `amount`, `amount_refunded`, `refunded`
-	 * and `disputed` (recorded in Fixtures/rec-t3-3ds-manual.json; Stripe "The Charge object").
+	 * and `disputed` (recorded in Fixtures/platform-3ds-challenge-results.json; Stripe "The Charge object").
 	 *
 	 * @param WC_Order            $order         Order the intent belongs to.
 	 * @param array<string,mixed> $charge_fields Fields of the intent's charge.

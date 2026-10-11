@@ -396,7 +396,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A WooPayments card decline fails the order with its intent id, exactly one note, and the allow fraud meta.
 	 *
-	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/rec-1-intention-declines.json`)
+	 * Outcome shape matches the recorded `generic_decline` envelope (`Fixtures/platform-intention-declines.json`)
 	 * as `WooPaymentsPaymentOperationServiceTest::test_native_charge_decline_envelope_maps_each_card_code` proves
 	 * the real adapter produces it. Client 11.1.0 citations: order `failed` (`class-wc-payment-gateway-wcpay.php:1324-1328`),
 	 * intent id kept on the failed order (`:1331-1333`), exactly one failed-payment note (`:1359-1361`, `:1400`),
@@ -4787,7 +4787,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * A Link PaymentIntent with its latest charge expanded, reduced to the fields the effect plan reads. The envelope
 	 * (charges.data, application_fee_amount, the expanded balance_transaction) follows the recorded platform intention
-	 * response in Providers/WooPayments/Fixtures/rec-t3-basic-card.json (entries[0].response.body); the Link wallet type
+	 * response in Providers/WooPayments/Fixtures/platform-intention-basic-card.json (entries[0].response.body); the Link wallet type
 	 * follows client 11.1.0 class-wc-payment-gateway-wcpay.php:2700-2745. Other fields are omitted on purpose.
 	 */
 	private function completed_link_payment_intent_result(): array {

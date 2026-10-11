@@ -418,7 +418,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$account_service = $this->create_account_service(
 			array(
 				'fees' => array(
@@ -565,7 +565,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should report the available payment methods as the registered methods the account has fees for (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
 	 */
 	public function test_store_setup_sync_reports_available_methods_from_account_fees(): void {
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$account_service = $this->create_account_service(
 			array(
 				'country' => 'US',
@@ -602,7 +602,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_store_setup_sync_reports_amazon_pay_only_while_its_feature_is_on( string $flag, bool $expected ): void {
 		update_option( '_wcpay_feature_amazon_pay', $flag );
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$account_service = $this->create_account_service(
 			array(
 				'fees' => array(
@@ -625,7 +625,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should report a stored empty list of enabled payment methods as empty (client 11.1.0 `get_upe_enabled_payment_method_ids()`, `class-wc-payment-gateway-wcpay.php:4682-4689`, sent at `class-wc-payments-account.php:2909`).
 	 */
 	public function test_store_setup_sync_reports_a_stored_empty_enabled_list_as_empty(): void {
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$account_service = $this->create_account_service( array( 'fees' => array( 'card' => array() ) ) );
 
 		$snapshot = $this->send_store_setup_snapshot(
@@ -866,7 +866,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		// A GB account: Amazon Pay's supported currencies there include EUR (client 11.1.0
 		// `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`). The account fields follow the
-		// recorded Fixtures/rec-t60-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
+		// recorded Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
 		$account_service = $this->create_account_service(
 			array(
 				'account_id'       => 'acct_native_test',

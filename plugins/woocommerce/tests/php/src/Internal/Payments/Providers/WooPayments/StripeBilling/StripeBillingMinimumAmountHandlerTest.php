@@ -14,7 +14,7 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-subscription-minimum-amount-handler.php`
  * and `includes/subscriptions/class-wc-payments-subscription-minimum-amount-handler.php`). The USD minimum is the local
- * platform recording `get_currency_minimum_recurring_amount` in `Fixtures/rec-t63-billing-api.json`.
+ * platform recording `get_currency_minimum_recurring_amount` in `Fixtures/platform-stripe-billing-api.json`.
  */
 class StripeBillingMinimumAmountHandlerTest extends WC_Unit_Test_Case {
 

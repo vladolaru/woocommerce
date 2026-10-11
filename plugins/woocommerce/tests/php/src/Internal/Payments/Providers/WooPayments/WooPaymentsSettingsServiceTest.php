@@ -3217,7 +3217,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function store_card_and_amazon_pay_account_data(): void {
 		// The option envelope client 11.1.0 Database_Cache writes (class-database-cache.php:377-382; an entry without
-		// consecutive_errors reads as zero, :367), around account fields as recorded in Fixtures/rec-t60-test-drive-account.json
+		// consecutive_errors reads as zero, :367), around account fields as recorded in Fixtures/platform-test-drive-account.json
 		// `account`: capability statuses keyed by capability and fees keyed by payment method ID.
 		update_option(
 			'wcpay_account_data',
@@ -3245,7 +3245,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function set_card_and_ideal_account_data(): void {
 		// The option envelope client 11.1.0 Database_Cache writes (class-database-cache.php:377-382; an entry without
-		// consecutive_errors reads as zero, :367), around account fields as recorded in Fixtures/rec-t60-test-drive-account.json
+		// consecutive_errors reads as zero, :367), around account fields as recorded in Fixtures/platform-test-drive-account.json
 		// `account`: capability statuses keyed by capability and fees keyed by payment method ID.
 		update_option(
 			'wcpay_account_data',

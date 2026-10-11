@@ -519,7 +519,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * `on-hold` transition.
 	 *
 	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC recorded dispute object
-	 * (`Fixtures/rec-t3-dispute-created-events.json`, pair `accept_case_created`) instead of the
+	 * (`Fixtures/platform-dispute-created-events.json`, pair `accept_case_created`) instead of the
 	 * hand-built `get_created_event_object()` fixture.
 	 */
 	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
@@ -1090,7 +1090,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_dispute_object( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-t3-dispute-created-events.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-dispute-created-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );

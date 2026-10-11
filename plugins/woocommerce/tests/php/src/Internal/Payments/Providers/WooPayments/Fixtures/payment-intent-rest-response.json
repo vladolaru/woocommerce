@@ -1,6 +1,6 @@
 {
 	"_meta": {
-		"what": "Client 11.1.0 WC_REST_Payments_Payment_Intents_Controller::prepare_item_for_response() output for the REC-3 create-and-confirm response (Fixtures/rec-3-eur-charge.json entry 0), produced on the client 11.1.0 store (:8097) on 2026-10-03 by deserializing the recorded body with the client API client and calling the controller method; nothing written to the store."
+		"what": "Client 11.1.0 WC_REST_Payments_Payment_Intents_Controller::prepare_item_for_response() output for the REC-3 create-and-confirm response (Fixtures/platform-eur-charge.json entry 0), produced on the client 11.1.0 store (:8097) on 2026-10-03 by deserializing the recorded body with the client API client and calling the controller method; nothing written to the store."
 	},
 	"client_projection": {
 		"id": "pi_3UJWs2BzWlxcwgpP10KzkjsT",

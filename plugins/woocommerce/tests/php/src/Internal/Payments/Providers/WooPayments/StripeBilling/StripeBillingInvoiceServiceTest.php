@@ -27,13 +27,13 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-invoice-service.php` and
  * `includes/subscriptions/class-wc-payments-invoice-service.php`); platform answers are the local platform recordings
- * in `Fixtures/rec-t63-billing-api.json` and `Fixtures/rec-t63-invoice-events.json`. Request bodies are written from the
+ * in `Fixtures/platform-stripe-billing-api.json` and `Fixtures/platform-invoice-events.json`. Request bodies are written from the
  * client's array literals, with `test_mode` first as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 
-	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
-	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/rec-t63-invoice-events.json';
+	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
+	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/platform-invoice-events.json';
 
 	/**
 	 * Blog and account the recordings were made on.

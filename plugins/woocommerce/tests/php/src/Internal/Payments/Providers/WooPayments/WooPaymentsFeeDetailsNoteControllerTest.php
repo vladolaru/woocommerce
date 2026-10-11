@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -248,14 +248,14 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider recorded_captured_event_names
 	 *
-	 * @param string $name Case name in `Fixtures/rec-n296-captured-event-notes.json`.
+	 * @param string $name Case name in `Fixtures/captured-event-fee-notes.json`.
 	 */
 	public function test_add_fee_breakdown_to_order_notes_renders_captured_timeline_event( string $name ): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->save();
 
-		$case       = ClientRenderedCapturedEvents::get( $name );
+		$case       = CapturedEventFeeNotes::get( $name );
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
 		$api_client->expects( $this->once() )
 			->method( 'get_timeline' )

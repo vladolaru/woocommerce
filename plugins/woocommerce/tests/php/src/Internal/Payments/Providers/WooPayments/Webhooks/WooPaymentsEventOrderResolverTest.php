@@ -17,7 +17,7 @@ use WC_Unit_Test_Case;
  * The intent lookup differs from client 11.1.0 in two places. When the order holding the intent fails the key check,
  * the order the metadata names is tried next, so an intent ID that another site's order holds does not hide this
  * site's order (the client returns no order, :1002-1012). The first charge is read from `charges.data[0]`, the list
- * shape the recorded webhook carries (`Fixtures/rec-t3-3ds-manual.json:63-65`) and the client's succeeded handler reads
+ * shape the recorded webhook carries (`Fixtures/platform-3ds-challenge-results.json:63-65`) and the client's succeeded handler reads
  * (:500-502), where the client's order lookup reads `charges[0]` (:984-986).
  */
 class WooPaymentsEventOrderResolverTest extends WC_Unit_Test_Case {

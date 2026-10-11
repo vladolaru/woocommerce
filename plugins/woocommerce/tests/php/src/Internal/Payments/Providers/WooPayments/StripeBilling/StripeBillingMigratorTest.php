@@ -24,7 +24,7 @@ use WC_Unit_Test_Case;
  * Migration of Stripe-billed subscriptions to on-site renewals.
  *
  * Expectations follow client 11.1.0 (`includes/subscriptions/class-wc-payments-subscriptions-migrator.php`; its test file has one
- * case). Stripe subscriptions are the local platform recordings in `Fixtures/rec-t63-billing-api.json`: `update_subscription`
+ * case). Stripe subscriptions are the local platform recordings in `Fixtures/platform-stripe-billing-api.json`: `update_subscription`
  * answered with the main-chain subscription active on user 1's saved card, `cancel_subscription` with it cancelled.
  *
  * WooCommerce Subscriptions is made active through the legacy proxy's `class_exists`, which every test resets. Its background
@@ -34,7 +34,7 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
-	private const FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
+	private const FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
 
 	private const MAIN_SUBSCRIPTION_ID  = 'sub_1UM1VrBzWlxcwgpP6A3GwGLe';
 	private const CLOCK_SUBSCRIPTION_ID = 'sub_1UM1XLBzWlxcwgpPwEbcmZJt';
@@ -243,7 +243,7 @@ class StripeBillingMigratorTest extends WC_Unit_Test_Case {
 	 * @testWith ["get_subscription", "---- ERROR: Failed to fetch subscription #%1$d (%2$s) from Stripe. Platform error: HTTP status 400, error code amount_too_small."]
 	 *           ["cancel_subscription", "---- ERROR: Failed to cancel the Stripe subscription (%2$s). Platform error: HTTP status 400, error code amount_too_small."]
 	 *
-	 * The platform answers with the recorded amount_too_small envelope (`Fixtures/rec-t63-billing-api.json`, pair
+	 * The platform answers with the recorded amount_too_small envelope (`Fixtures/platform-stripe-billing-api.json`, pair
 	 * `error_amount_too_small`: top-level code, message and data.minimum_amount / data.currency, the shape client 11.1.0
 	 * turns into Amount_Too_Small_Exception, class-wc-payments-api-client.php:2845-2851), its message replaced by one holding
 	 * an email, a URL and a key. StripeBillingApi maps it to a StripeBillingException that wraps the platform error.

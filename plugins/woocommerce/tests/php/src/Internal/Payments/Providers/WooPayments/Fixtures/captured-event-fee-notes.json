@@ -2297,7 +2297,7 @@
 			"client_html": "<div class=\"captured-event-details\">\n<p>Base fee (2.9% + $0.30): -$0.59</p>\n<p>Net payout: $9.41 USD</p>\n</div>"
 		},
 		"recorded-rec-5a:usd_full_refund_free_text_reason": {
-			"source": "recorded REC-5a timeline (Fixtures/rec-5a-timelines.json, pair usd_full_refund_free_text_reason)",
+			"source": "recorded REC-5a timeline (Fixtures/platform-timelines.json, pair usd_full_refund_free_text_reason)",
 			"event": {
 				"type": "captured",
 				"amount": 1099,
@@ -2401,7 +2401,7 @@
 			"client_html": "<div class=\"captured-event-details\">\n<p>Fee (2.9% + $0.30): $0.62 USD</p>\n<p>Net payout: $10.37 USD</p>\n</div>"
 		},
 		"recorded-rec-5a:eur_full_refund": {
-			"source": "recorded REC-5a timeline (Fixtures/rec-5a-timelines.json, pair eur_full_refund)",
+			"source": "recorded REC-5a timeline (Fixtures/platform-timelines.json, pair eur_full_refund)",
 			"event": {
 				"type": "captured",
 				"amount": 1234,

@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-subscription-change-payment-method.php`
  * and `includes/subscriptions/class-wc-payments-subscription-change-payment-method-handler.php`). Stripe IDs are those of the
- * recorded test-clock chain in `Fixtures/rec-t63-invoice-events.json`, whose renewal invoice failed.
+ * recorded test-clock chain in `Fixtures/platform-invoice-events.json`, whose renewal invoice failed.
  */
 class StripeBillingChangePaymentMethodHandlerTest extends WC_Unit_Test_Case {
 

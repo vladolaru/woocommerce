@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapturedEventNote;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
 
@@ -16,10 +16,10 @@ class WooPaymentsCapturedEventNoteTest extends WC_Unit_Test_Case {
 	/**
 	 * Each event renders exactly the note client 11.1.0 rendered for it.
 	 *
-	 * The expected HTML in `Fixtures/rec-n296-captured-event-notes.json` was produced by running client 11.1.0
+	 * The expected HTML in `Fixtures/captured-event-fee-notes.json` was produced by running client 11.1.0
 	 * `WC_Payments_Captured_Event_Note::generate_html_note()` on each event; see the fixture's `_meta`.
 	 *
-	 * @dataProvider client_rendered_captured_events
+	 * @dataProvider captured_event_fee_notes
 	 *
 	 * @param array<string,mixed> $event       Captured timeline event.
 	 * @param string              $client_html Note the client rendered for it.
@@ -33,10 +33,10 @@ class WooPaymentsCapturedEventNoteTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{array<string,mixed>,string}>
 	 */
-	public function client_rendered_captured_events(): array {
+	public function captured_event_fee_notes(): array {
 		return array_map(
 			static fn( array $entry ): array => array( $entry['event'], $entry['client_html'] ),
-			ClientRenderedCapturedEvents::all()
+			CapturedEventFeeNotes::all()
 		);
 	}
 

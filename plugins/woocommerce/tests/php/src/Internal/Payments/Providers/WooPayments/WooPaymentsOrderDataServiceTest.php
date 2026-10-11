@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\ClientRenderedCapturedEvents;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -118,10 +118,10 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider recorded_captured_event_names
 	 *
-	 * @param string $name Case name in `Fixtures/rec-n296-captured-event-notes.json`.
+	 * @param string $name Case name in `Fixtures/captured-event-fee-notes.json`.
 	 */
 	public function test_get_fee_breakdown_note_from_timeline_event_renders_the_client_note( string $name ): void {
-		$case = ClientRenderedCapturedEvents::get( $name );
+		$case = CapturedEventFeeNotes::get( $name );
 
 		$this->assertSame( '<strong>Fee details:</strong>' . $case['client_html'], $this->sut->get_fee_breakdown_note_from_timeline_event( $case['event'] ) );
 	}

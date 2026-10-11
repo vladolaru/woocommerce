@@ -1616,7 +1616,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_amazon_pay_follows_the_account_customer_currencies( string $scenario, array $supported, bool $offered ): void {
 		unset( $scenario );
-		// The account's `customer_currencies` as recorded in Fixtures/rec-t60-test-drive-account.json `account.customer_currencies`.
+		// The account's `customer_currencies` as recorded in Fixtures/platform-test-drive-account.json `account.customer_currencies`.
 		$sut = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
@@ -2306,7 +2306,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$account_data = array_merge(
 			array(
 				'country'          => 'US',
-				// A connected account's status, as recorded in Fixtures/rec-t60-test-drive-account.json `account.status`.
+				// A connected account's status, as recorded in Fixtures/platform-test-drive-account.json `account.status`.
 				'status'           => 'complete',
 				'payments_enabled' => true,
 				'capabilities'     => array(

@@ -1344,7 +1344,7 @@
 		},
 		{
 			"pair": "invoice_paid_parent_user_1",
-			"context": "supporting: invoice.paid for the main-chain subscription_create invoice (user_1 customer, not on a clock), marked paid out of band by the charge_invoice entry of rec-t63-billing-api.json",
+			"context": "supporting: invoice.paid for the main-chain subscription_create invoice (user_1 customer, not on a clock), marked paid out of band by the charge_invoice entry of platform-stripe-billing-api.json",
 			"event_id": "evt_1UM1WFBzWlxcwgpPOQhMdi3g",
 			"queued_at": "2026-10-02T08:08:39+00:00",
 			"wpcom_job_id": 143919,

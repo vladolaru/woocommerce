@@ -49,21 +49,21 @@ use WC_Unit_Test_Case;
  *
  * Expectations follow client 11.1.0 (`tests/unit/subscriptions/test-class-wc-payments-subscriptions-event-handler.php` and
  * `includes/subscriptions/class-wc-payments-subscriptions-event-handler.php`, "event handler" below). Event bodies are the
- * local platform recordings in `Fixtures/rec-t63-invoice-events.json`; platform answers are the recordings in
- * `Fixtures/rec-t63-billing-api.json`. Request bodies are written from the client's array literals, with `test_mode` first
+ * local platform recordings in `Fixtures/platform-invoice-events.json`; platform answers are the recordings in
+ * `Fixtures/platform-stripe-billing-api.json`. Request bodies are written from the client's array literals, with `test_mode` first
  * as the client's `request()` adds it (`class-wc-payments-api-client.php:2635-2640`).
  */
 class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
-	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/rec-t63-invoice-events.json';
-	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
+	private const EVENTS_FIXTURE  = __DIR__ . '/../Fixtures/platform-invoice-events.json';
+	private const BILLING_FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
 
 	/**
 	 * Card declines recorded from `POST intentions` on the local platform; their charges stand in for the failed renewal charge, which was not read.
 	 */
-	private const DECLINES_FIXTURE = __DIR__ . '/../Fixtures/rec-1-intention-declines.json';
+	private const DECLINES_FIXTURE = __DIR__ . '/../Fixtures/platform-intention-declines.json';
 
 	/**
 	 * Blog and account the recordings were made on, and the Stripe product the recorded subscription items are billed under.

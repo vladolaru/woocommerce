@@ -266,7 +266,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	public function test_request_lifts_idempotency_key_and_preserves_filtered_params(): void {
 		// Reduced fixture: the platform answers with the Stripe Refund object, payment_intent expanded (wpcom
 		// wp-content/rest-api-plugins/endpoints/wcpay/class-refunds-controller.php:114-149, process_refund();
-		// Stripe API reference, "The Refund object"); a full recorded body is in Fixtures/rec-5a-refunds.json.
+		// Stripe API reference, "The Refund object"); a full recorded body is in Fixtures/platform-refunds.json.
 		// Only `id` is kept: this test is about the request. WooPayments 11.1.0 reads currency, id, status and
 		// balance_transaction from it (includes/class-wc-payment-gateway-wcpay.php:2978, :3009).
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -397,7 +397,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A refund request sends its key as the refund_attempt metadata, the exact body recorded on local WPCOM.
 	 *
-	 * Recorded in `Fixtures/rec-f458-refund-errors.json`, pair `reused_key_identical_params_replays_refund`: the request
+	 * Recorded in `Fixtures/platform-refund-errors.json`, pair `reused_key_identical_params_replays_refund`: the request
 	 * carried `metadata.refund_attempt` equal to its Idempotency-Key, and the platform answered the identical resend with
 	 * the original refund, marker included, so the charge's refund list can show which refund a call made.
 	 */
@@ -899,7 +899,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_error_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/rec-f458-refund-errors.json' );
+		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-refund-errors.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -3234,7 +3234,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Listing a charge's refunds sends the recorded GET refunds request and returns the platform's list unchanged.
 	 *
-	 * Recorded on a local WPCOM platform (`Fixtures/rec-f458-refund-list.json`): the platform proxies Stripe's refunds
+	 * Recorded on a local WPCOM platform (`Fixtures/platform-refund-list.json`): the platform proxies Stripe's refunds
 	 * list for the charge, newest first, each item unexpanded and carrying the metadata the store sent, and `has_more`
 	 * is the only sign that a page is incomplete (`count` is the page size).
 	 *
@@ -3325,7 +3325,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_list_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/rec-f458-refund-list.json' );
+		$fixture = file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-refund-list.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -3656,7 +3656,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The body is the recorded platform response in Fixtures/rec-t63-public-fraud-services.json.
+	 * The body is the recorded platform response in Fixtures/platform-public-fraud-services.json.
 	 *
 	 * @testdox Should send the native client identity on the public fraud services request.
 	 */
@@ -5634,7 +5634,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Closing a dispute posts the recorded body: only `test_mode`, never an empty body.
 	 *
-	 * REC-5b R-d `accept_close` (`Fixtures/rec-5b-disputes.json`): the caller passes
+	 * REC-5b R-d `accept_close` (`Fixtures/platform-disputes.json`): the caller passes
 	 * no fields, but the wire body is not literally empty. {@see WooPaymentsApiClient::request()}
 	 * always merges in `test_mode`, so `close_dispute()` posts exactly `{"test_mode": true}`
 	 * (client `includes/admin/class-wc-rest-payments-disputes-controller.php:164-167`, `api:748-757`).
@@ -5666,7 +5666,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Updating a dispute reads it first, then posts evidence, submit and metadata over a second request.
 	 *
-	 * REC-5b R-d `win_update_pre_read`/`win_update_submit` (`Fixtures/rec-5b-disputes.json`):
+	 * REC-5b R-d `win_update_pre_read`/`win_update_submit` (`Fixtures/platform-disputes.json`):
 	 * `update_dispute()` makes two transport calls in order, a GET then a POST
 	 * (client `api:689-722`). With reason `fraudulent` (not `noncompliant`) the
 	 * Visa `enhanced_evidence` flag is never added, and `submit` travels as a JSON
@@ -5791,7 +5791,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_dispute_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5b-disputes.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-disputes.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -6648,7 +6648,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A site request returns the decoded body whatever its JSON type, as the client's request() does.
 	 *
-	 * The platform's minimum recurring amount endpoint answers with a bare integer (`Fixtures/rec-t63-billing-api.json`).
+	 * The platform's minimum recurring amount endpoint answers with a bare integer (`Fixtures/platform-stripe-billing-api.json`).
 	 */
 	public function test_send_site_request_returns_a_bare_integer_body(): void {
 		list( $sut, $http_client ) = $this->make_sut( true, 100 );

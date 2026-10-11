@@ -356,7 +356,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$logger = RecordingWcLogger::install();
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$recording = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/rec-t63-invoice-events.json' ), true );
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-invoice-events.json' ), true );
 		$event     = $recording['entries'][0]['body'];
 		// The recorded invoice left these empty; fill them as a real customer's invoice carries them.
 		$event['data']['object'] = array_merge(
@@ -415,7 +415,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The received line redacts a dispute's evidence and issuer evidence, which carry the shopper's details and free text.
 	 *
-	 * REC-5b R-e `winning_evidence_closed_won` (`Fixtures/rec-5b-dispute-events.json`) is the exact dispute event body local
+	 * REC-5b R-e `winning_evidence_closed_won` (`Fixtures/platform-dispute-closed-events.json`) is the exact dispute event body local
 	 * WPCOM forwarded; its `evidence` object holds billing_address, customer_email_address and customer_name, and its
 	 * `issuer_evidence` list holds the issuer's text_evidence.
 	 */
@@ -2520,7 +2520,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.dispute.created resolves the order by charge ID and places it on hold.
 	 *
 	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC `charge.dispute.created` webhook body
-	 * (`Fixtures/rec-t3-dispute-created-events.json`, pair `accept_case_created`) forwarded from local
+	 * (`Fixtures/platform-dispute-created-events.json`, pair `accept_case_created`) forwarded from local
 	 * WPCOM, instead of the hand-built `create_dispute_event()` envelope. The order's `_charge_id`
 	 * meta is set to REC-DC's own recorded charge id so the event resolves to this order exactly as
 	 * a real webhook would, and the live-mode filter is forced to match REC-DC's own `livemode: false`
@@ -2930,9 +2930,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * Client `os:632-661`: when the disputed amount is not less than the order
 	 * total, the refund amount is `min(remaining, disputed)` and the order's line
 	 * items are kept intact; only a partial dispute clears them. REC-5b R-e
-	 * `accept_closed_lost` (`Fixtures/rec-5b-dispute-events.json`) is a real
+	 * `accept_closed_lost` (`Fixtures/platform-dispute-closed-events.json`) is a real
 	 * full-amount lost dispute on a $50.00 charge, fed to the ingestor unchanged;
-	 * REC-5b R-d `accept_summary_after_close` (`Fixtures/rec-5b-disputes.json`) is
+	 * REC-5b R-d `accept_summary_after_close` (`Fixtures/platform-disputes.json`) is
 	 * the matching recorded `get_dispute_summary()` response. Neither recorded
 	 * charge had a Woo order (R-e's own store observation), so the order here is a
 	 * fixture matched to the recorded charge ID, not the recording itself.
@@ -3509,13 +3509,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A succeeded intent that carries an invoice and no order ID is left to its invoice event, as on the client.
 	 *
 	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:968-993`. The recorded renewal intent
-	 * (`Fixtures/rec-t63-invoice-events.json`, `payment_intent_succeeded_with_invoice`) reaches the store about one
+	 * (`Fixtures/platform-invoice-events.json`, `payment_intent_succeeded_with_invoice`) reaches the store about one
 	 * second before its `invoice.paid`, when the renewal order may already exist unpaid.
 	 */
 	public function test_succeeded_intent_with_an_invoice_and_no_order_id_is_left_to_the_invoice_event(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
-		$recording = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/rec-t63-invoice-events.json' ), true );
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-invoice-events.json' ), true );
 		$event     = array_values( array_filter( $recording['supporting_entries'], static fn( array $entry ) => 'payment_intent_succeeded_with_invoice' === $entry['pair'] ) )[0]['body'];
 
 		$renewal_order = $this->create_woopayments_order();
@@ -4108,7 +4108,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox charge.refund.updated writes success metadata only for matched refunds.
 	 *
-	 * Fed by REC-5a R-c (`Fixtures/rec-5a-refund-updated-event.json`, pair
+	 * Fed by REC-5a R-c (`Fixtures/platform-refund-updated-events.json`, pair
 	 * `afterpay_clearpay_refund_updated_succeeded`), the primary redirect-method
 	 * `charge.refund.updated` event local WPCOM forwarded for this recording
 	 * (`data/rec-5a-refunds.md`, `data/t1-provider-family-audit.md` §4 Batch 5).
@@ -5553,7 +5553,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @param string $country Account country, or '' for account data without one.
 	 */
 	private function set_woopayments_account_country( string $country ): void {
-		// Account fields as recorded in ../Fixtures/rec-t60-test-drive-account.json `account` (`account_id`, `is_live`, `country`).
+		// Account fields as recorded in ../Fixtures/platform-test-drive-account.json `account` (`account_id`, `is_live`, `country`).
 		// Varied: `is_live` is true, so the account service accepts the cache without turning on onboarding test mode
 		// (WooPaymentsAccountService::is_valid_cached_account()), and `country` is left out for account data without one.
 		$data = array(
@@ -5887,7 +5887,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_dispute_created_event( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-t3-dispute-created-events.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-dispute-created-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -5984,7 +5984,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_updated_event( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5a-refund-updated-event.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-refund-updated-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -6007,7 +6007,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_dispute_closed_event( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5b-dispute-events.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-dispute-closed-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -6029,7 +6029,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_dispute_summary( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5b-disputes.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-disputes.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );

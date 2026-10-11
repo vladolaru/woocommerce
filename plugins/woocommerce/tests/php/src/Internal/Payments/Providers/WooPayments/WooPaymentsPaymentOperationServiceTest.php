@@ -67,7 +67,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	use ProviderTextLogAssertions;
 
 	/**
-	 * Charge refunded in `Fixtures/rec-f458-refund-list.json`.
+	 * Charge refunded in `Fixtures/platform-refund-list.json`.
 	 */
 	private const F458_CHARGE = 'ch_3UOv4vBzWlxcwgpP0ALlMGAw';
 
@@ -2486,7 +2486,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Stripe's card decline, passed through by the platform.
 	 *
-	 * Same status and error fields as the recorded decline in `Fixtures/rec-1-intention-declines.json`, pair
+	 * Same status and error fields as the recorded decline in `Fixtures/platform-intention-declines.json`, pair
 	 * `generic_decline`.
 	 *
 	 * @return array<string,mixed>
@@ -2508,7 +2508,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * A succeeded create-and-confirm answer.
 	 *
-	 * The fields the store reads from the recorded answer in `Fixtures/rec-t3-basic-card.json`, pair
+	 * The fields the store reads from the recorded answer in `Fixtures/platform-intention-basic-card.json`, pair
 	 * `basic_card_usd_create_and_confirm` (a 200 PaymentIntent with id, status succeeded, amount, currency, customer and
 	 * payment_method; https://docs.stripe.com/api/payment_intents/object).
 	 *
@@ -3895,7 +3895,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				// notification method: once submitted the intent is `processing` and reaches `succeeded` later
 				// (Stripe docs, https://docs.stripe.com/payments/sepa-debit/accept-a-payment, "Confirm the
 				// PaymentIntent succeeded"). The platform returns the intent with a `charges` list, as recorded
-				// for a card in Fixtures/rec-t3-basic-card.json; WooPayments 11.1.0 reads its total_count and
+				// for a card in Fixtures/platform-intention-basic-card.json; WooPayments 11.1.0 reads its total_count and
 				// data (includes/wc-payment-api/class-wc-payments-api-client.php:2403). The list is left empty
 				// and amount, created and metadata are omitted: this test checks only the request.
 				return array(
@@ -4512,7 +4512,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Charge should resolve saved WooCommerce token IDs before native transport.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's saved-PM
-	 * variant (`Fixtures/rec-t3-3ds-requires-action.json`, pair
+	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair
 	 * `saved_payment_method_requires_action`): an on-session PaymentIntent for an already-attached
 	 * 3DS-required card, real from the local platform. The token-resolution guard this test exists
 	 * for moves to the sent request body (`pm_saved`, the resolved token, not a raw context
@@ -4528,7 +4528,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order();
 		$saved_token           = $this->create_card_token( $user_id, 'pm_saved' );
-		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'saved_payment_method_requires_action' );
+		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-3ds-requires-action.json', 'saved_payment_method_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -5324,7 +5324,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				// notification method: once submitted the intent is `processing` and reaches `succeeded` later
 				// (Stripe docs, https://docs.stripe.com/payments/sepa-debit/accept-a-payment, "Confirm the
 				// PaymentIntent succeeded"). The platform returns the intent with a `charges` list, as recorded
-				// for a card in Fixtures/rec-t3-basic-card.json; WooPayments 11.1.0 reads its total_count and
+				// for a card in Fixtures/platform-intention-basic-card.json; WooPayments 11.1.0 reads its total_count and
 				// data (includes/wc-payment-api/class-wc-payments-api-client.php:2403). The list is left empty
 				// and amount, created and metadata are omitted.
 				return array(
@@ -5612,7 +5612,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Native charge decline envelopes recorded from the local platform (REC-1) map each card code to its outcome.
 	 *
 	 * The response status and body are the real decline envelope local WPCOM returned for each Stripe test
-	 * card, recorded in `Fixtures/rec-1-intention-declines.json` (REC-1). Every field the client reads
+	 * card, recorded in `Fixtures/platform-intention-declines.json` (REC-1). Every field the client reads
 	 * at `class-wc-payments-api-client.php:2853-2872` (11.1.0) exists at the path it reads there, including
 	 * a `decline_code` equal to `code` for three of the five pairs and a full `payment_intent` in
 	 * `requires_payment_method` status. All five recorded errors are `card_error`, so all five must mark the
@@ -5727,7 +5727,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_decline_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-1-intention-declines.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-intention-declines.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -5753,7 +5753,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
 	 * {@see PaymentProcessingService::process_checkout_outcome}, real {@see WooPaymentsProvider}, this adapter,
 	 * the real {@see WooPaymentsApiClient}, and the real {@see WooPaymentsOrderEffectApplier} against a
-	 * FAKEHTTP transport (`Fixtures/rec-1-intention-declines.json`).
+	 * FAKEHTTP transport (`Fixtures/platform-intention-declines.json`).
 	 *
 	 * @dataProvider recorded_checkout_decline_envelope_data
 	 *
@@ -6074,7 +6074,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The logger is WooCommerce's own, so the refusal's line runs the woocommerce_logger_log_message filter
 	 * (WC_Logger::log()); the filter throws on it here. The attached intent is the recorded completed challenge for 10.99
-	 * (Fixtures/rec-t3-3ds-manual.json), and the order total changed to 12.00 since, so the guard refuses with the
+	 * (Fixtures/platform-3ds-challenge-results.json), and the order total changed to 12.00 since, so the guard refuses with the
 	 * overpayment notice (client 11.1.0 class-duplicate-payment-prevention-service.php:117-130).
 	 *
 	 * @testWith ["RuntimeException"]
@@ -6128,11 +6128,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A checkout of a payable order whose attached payment was fully refunded charges the shopper again and pays the order with the new intent.
 	 *
 	 * The old intent keeps `succeeded` after the refund. The new create-and-confirm is answered with the recorded successful
-	 * card payment (`Fixtures/rec-t3-basic-card.json`, pair `basic_card_usd_create_and_confirm`, POST intentions).
+	 * card payment (`Fixtures/platform-intention-basic-card.json`, pair `basic_card_usd_create_and_confirm`, POST intentions).
 	 */
 	public function test_checkout_of_a_payable_order_whose_attached_payment_was_refunded_charges_again(): void {
 		$order           = $this->create_order_left_by_a_completed_challenge();
-		$new_charge      = $this->load_recorded_intent_entry( 'rec-t3-basic-card.json', 'basic_card_usd_create_and_confirm' );
+		$new_charge      = $this->load_recorded_intent_entry( 'platform-intention-basic-card.json', 'basic_card_usd_create_and_confirm' );
 		$refunded_charge = array(
 			'refunded'        => true,
 			'amount_refunded' => 1099,
@@ -6161,7 +6161,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * PaymentIntent of the recorded 3DS checkout whose challenge the shopper completed (`Fixtures/rec-t3-3ds-manual.json`).
+	 * PaymentIntent of the recorded 3DS checkout whose challenge the shopper completed (`Fixtures/platform-3ds-challenge-results.json`).
 	 */
 	private const CHALLENGE_COMPLETED_INTENT_ID = 'pi_3UJjK4BzWlxcwgpP0xWpBE77';
 
@@ -6188,7 +6188,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * The platform's GET intentions/{id} answer for the order's attached intent after its charge was given back.
 	 *
-	 * The recorded answer for the completed challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * The recorded answer for the completed challenge (`Fixtures/platform-3ds-challenge-results.json`, pair
 	 * `classic_checkout_challenge_completed`: status `succeeded`, one charge in `charges.data`), its metadata pointed at this
 	 * order, with the charge fields Stripe sets on a dispute (`disputed`, `dispute`) or a full refund (`refunded`,
 	 * `amount_refunded`; Stripe API reference, "The Charge object"). The intent keeps `succeeded` either way.
@@ -6198,7 +6198,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function attached_intent_given_back( WC_Order $order, array $charge_fields ): array {
-		$intent                             = $this->load_recorded_intent_entry( 'rec-t3-3ds-manual.json', 'classic_checkout_challenge_completed' )['body'];
+		$intent                             = $this->load_recorded_intent_entry( 'platform-3ds-challenge-results.json', 'classic_checkout_challenge_completed' )['body'];
 		$intent['metadata']['order_id']     = (string) $order->get_id();
 		$intent['metadata']['order_number'] = (string) $order->get_order_number();
 		$intent['charges']['data'][0]       = array_merge( $intent['charges']['data'][0], $charge_fields );
@@ -6315,7 +6315,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Native charge decoding should plan card display effects without mutating the order.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's new-card
-	 * variant (`Fixtures/rec-t3-3ds-requires-action.json`, pair `new_card_requires_action`), real
+	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair `new_card_requires_action`), real
 	 * from the local platform. A real `requires_action` PaymentIntent carries no charge yet
 	 * (`charges.total_count 0`): unlike the earlier hand-written stub, which put a charge on the
 	 * requires_action intent, this outcome carries no `charge_id` at all —
@@ -6324,7 +6324,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_native_charge_returns_display_effect_plan_without_mutating_order(): void {
 		$order                 = $this->create_woopayments_order();
-		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-3ds-requires-action.json', 'new_card_requires_action' );
+		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-3ds-requires-action.json', 'new_card_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -6625,14 +6625,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * covered pieces of this before; neither goes through the adapter's own intent-type wiring.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-4's recorded envelope
-	 * (`Fixtures/rec-t3-setup-intent-requires-action.json`, pair `setup_intent_requires_action`), the
+	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`), the
 	 * same real My Account add-payment-method `requires_action` SetupIntent REC-2 recorded its
 	 * declines from.
 	 */
 	public function test_zero_total_setup_intent_requiring_action_returns_si_confirmation_redirect(): void {
 		$user_id               = $this->factory()->user->create();
 		$order                 = $this->create_woopayments_order( '0.00' );
-		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
+		$recorded              = $this->load_recorded_intent_entry( 'platform-setup-intent-requires-action.json', 'setup_intent_requires_action' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -6961,7 +6961,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * this adapter, the real {@see WooPaymentsApiClient}, and the real
 	 * {@see WooPaymentsOrderEffectApplier} against a FAKEHTTP transport queued
 	 * with the exact refund response REC-5a R-a recorded from local WPCOM
-	 * (`Fixtures/rec-5a-refunds.json`). The request body sent over that
+	 * (`Fixtures/platform-refunds.json`). The request body sent over that
 	 * transport is compared to the recorded request. The recording settles F9:
 	 * the platform's refund `balance_transaction` is a bare string id, not the
 	 * expanded object some native sync fixtures use, and
@@ -7105,7 +7105,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * Register row 458: the platform refunded but the store's request timed out, WooCommerce deleted the refund row, and
 	 * the refund webhook was refused by the lock the call held. Before the fix the retry sent a second refund under a
-	 * fresh key. The lookup reads the charge's refunds (`Fixtures/rec-f458-refund-list.json`, the 5.55 refund carrying
+	 * fresh key. The lookup reads the charge's refunds (`Fixtures/platform-refund-list.json`, the 5.55 refund carrying
 	 * the lost call's key as its marker, which the recording shows is always the key it was sent under).
 	 *
 	 * @dataProvider ambiguous_refund_answer_data
@@ -7157,7 +7157,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A same-amount retry inside 300 s of the ambiguous answer, with nothing listed yet, resends the earlier request byte for byte under the held key.
 	 *
 	 * The earlier request may still be running, so a new key could refund twice; the same key makes Stripe run it once
-	 * or replay it (`Fixtures/rec-f458-refund-errors.json`, pair `reused_key_identical_params_replays_refund`). The retry
+	 * or replay it (`Fixtures/platform-refund-errors.json`, pair `reused_key_identical_params_replays_refund`). The retry
 	 * carries another reason, which must not reach the body.
 	 */
 	public function test_refund_retry_inside_the_held_key_window_resends_the_earlier_request_under_its_key(): void {
@@ -7272,7 +7272,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Failed reads of the charge's refunds: a transport failure (a GET is never retried), an error status (the recorded
-	 * refund error envelope, `Fixtures/rec-f458-refund-errors.json`), and an answer with no list.
+	 * refund error envelope, `Fixtures/platform-refund-errors.json`), and an answer with no list.
 	 *
 	 * @return array<string,array{mixed}>
 	 */
@@ -8078,7 +8078,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A definitive refund failure holds no key, so the next refund of any amount sends with no lookup.
 	 *
-	 * The recorded error envelope (`Fixtures/rec-f458-refund-errors.json`, pair `refund_exceeds_charge`) is Stripe's
+	 * The recorded error envelope (`Fixtures/platform-refund-errors.json`, pair `refund_exceeds_charge`) is Stripe's
 	 * refusal passed through as `400 wcpay_bad_request`.
 	 */
 	public function test_definitive_refund_failure_holds_no_key(): void {
@@ -8183,7 +8183,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An older same-amount refund on the charge without the marker is never taken for the earlier attempt.
 	 *
-	 * The recorded 7.77 refund (`Fixtures/rec-f458-refund-list.json`) was sent without a marker, like a refund made in
+	 * The recorded 7.77 refund (`Fixtures/platform-refund-list.json`) was sent without a marker, like a refund made in
 	 * the Stripe dashboard. Inside the window the same-amount call resends under the held key instead.
 	 */
 	public function test_same_amount_refund_without_the_marker_is_not_taken_for_the_attempt(): void {
@@ -8243,7 +8243,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Monitor ruling 2026-10-10 13:35 (U1): a requires_action refund awaits the customer's bank details and has moved no
 	 * money; it is a live refund, recorded and settled by charge.refund.updated like a pending one. Client 11.1.0 records
 	 * every refund its request returns (class-wc-payment-gateway-wcpay.php:3003-3009). The answer is HAND-BUILT
-	 * (`Fixtures/stripe-docs-f458-requires-action-refund.json`) from Stripe's refund object
+	 * (`Fixtures/stripe-docs-requires-action-refund.json`) from Stripe's refund object
 	 * (https://docs.stripe.com/api/refunds/object) and https://docs.stripe.com/refunds#requires-action, on a recorded
 	 * Multibanco refund: no WooPayments payment method reaches requires_action today.
 	 */
@@ -8298,7 +8298,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function load_requires_action_refund(): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/stripe-docs-f458-requires-action-refund.json' ), true );
+		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/stripe-docs-requires-action-refund.json' ), true );
 		$this->assertTrue( $decoded['_meta']['hand_built'] ?? false, 'The fixture is hand-built and says so.' );
 
 		return $decoded['entries'][0]['response']['body'];
@@ -9284,7 +9284,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an order paid by the charge recorded in `Fixtures/rec-f458-refund-list.json`.
+	 * Create an order paid by the charge recorded in `Fixtures/platform-refund-list.json`.
 	 *
 	 * @return WC_Order
 	 */
@@ -9592,14 +9592,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get a recorded refund list body (`Fixtures/rec-f458-refund-list.json`).
+	 * Get a recorded refund list body (`Fixtures/platform-refund-list.json`).
 	 *
 	 * @param string $pair Fixture pair key.
 	 * @return array<string,mixed>
 	 */
 	private function recorded_refund_list( string $pair = 'list_limit_100_complete' ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-f458-refund-list.json' ), true );
+		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-refund-list.json' ), true );
 		foreach ( $decoded['entries'] ?? array() as $entry ) {
 			if ( ( $entry['pair'] ?? '' ) === $pair ) {
 				return $entry['response']['body'];
@@ -9630,7 +9630,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get a refund answer in the recorded POST shape (`Fixtures/rec-f458-refund-errors.json`, pair
+	 * Get a refund answer in the recorded POST shape (`Fixtures/platform-refund-errors.json`, pair
 	 * `reused_key_identical_params_replays_refund`), with its ID, marker and amount set for the test.
 	 *
 	 * @param string $refund_id Refund ID.
@@ -9648,14 +9648,14 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load one recorded F458 (b) or (c) entry (`Fixtures/rec-f458-refund-errors.json`).
+	 * Load one recorded F458 (b) or (c) entry (`Fixtures/platform-refund-errors.json`).
 	 *
 	 * @param string $pair Fixture pair key.
 	 * @return array<string,mixed>
 	 */
 	private function load_recorded_refund_error( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-f458-refund-errors.json' ), true );
+		$decoded = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-refund-errors.json' ), true );
 		foreach ( $decoded['entries'] ?? array() as $entry ) {
 			if ( ( $entry['pair'] ?? '' ) === $pair ) {
 				return $entry;
@@ -9747,7 +9747,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refunds.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-refunds.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -9770,7 +9770,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * fixture file and pair key.
 	 *
 	 * Shared by the T.3 Task 2 checkout-over-fake-transport tests, which each read a different
-	 * `Fixtures/rec-t3-*.json` or `Fixtures/rec-3-eur-charge.json` recording.
+	 * `Fixtures/platform-*.json` recording.
 	 *
 	 * @param string $fixture Fixture file name under `Fixtures/`.
 	 * @param string $pair    Fixture pair key.
@@ -9806,8 +9806,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * by running a real recorded PaymentIntent response through the full production stack:
 	 * {@see PaymentProcessingService::process_checkout_outcome} → the real {@see WooPaymentsProvider} → this
 	 * adapter → the real {@see WooPaymentsApiClient} → a FAKEHTTP transport queued with REC-BC
-	 * (`Fixtures/rec-t3-basic-card.json`, USD, no currency conversion) and REC-3
-	 * (`Fixtures/rec-3-eur-charge.json`, EUR charge on a USD account), which also joins the
+	 * (`Fixtures/platform-intention-basic-card.json`, USD, no currency conversion) and REC-3
+	 * (`Fixtures/platform-eur-charge.json`, EUR charge on a USD account), which also joins the
 	 * multi-currency settlement-meta path end to end for a real converted checkout. The order carries
 	 * one physical product line item, matching the plan's smoke and REC-BC/REC-3's real (non-virtual)
 	 * checkouts, so `payment_complete()` needs processing and lands the order on `processing`
@@ -9901,7 +9901,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function recorded_card_checkout_envelope_data(): array {
 		return array(
 			'usd basic card, no conversion'          => array(
-				'rec-t3-basic-card.json',
+				'platform-intention-basic-card.json',
 				'basic_card_usd_create_and_confirm',
 				'USD',
 				'10.99',
@@ -9913,7 +9913,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				null,
 			),
 			'eur charge converted to usd settlement' => array(
-				'rec-3-eur-charge.json',
+				'platform-eur-charge.json',
 				'eur_charge_create_and_confirm',
 				'EUR',
 				'12.34',
@@ -9933,7 +9933,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * T.3 Task 2 (`plan-task-t3.md`): the save path from a real recorded response to exactly one token
 	 * row, joining {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplierTest::test_requested_token_effects_are_idempotent}'s
 	 * hand-built outcome with a real REC-SUB step-1 signup response
-	 * (`Fixtures/rec-t3-subscription.json`, pair `signup_initial_setup_future_usage`) run through the
+	 * (`Fixtures/platform-intention-subscription.json`, pair `signup_initial_setup_future_usage`) run through the
 	 * full production stack, including the real {@see \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService}.
 	 */
 	public function test_native_card_checkout_with_save_over_fake_transport_creates_one_token_from_recorded_payment_method(): void {
@@ -9942,7 +9942,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->save();
 
-		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-subscription.json', 'signup_initial_setup_future_usage' );
+		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'signup_initial_setup_future_usage' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -10020,7 +10020,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * T.3 Task 2 (`plan-task-t3.md`): joins
 	 * {@see self::test_scheduled_subscription_charge_uses_merchant_initiated_recurring_request_shape}'s
 	 * merchant-initiated request shape with a real off-session REC-SUB step-2 renewal response
-	 * (`Fixtures/rec-t3-subscription.json`, pair `renewal_off_session`), built the same way that test
+	 * (`Fixtures/platform-intention-subscription.json`, pair `renewal_off_session`), built the same way that test
 	 * builds its scheduled-renewal context, run through the full production stack against a FAKEHTTP
 	 * transport, and asserts the renewal order actually ends up paid (`completed`,
 	 * `OrderPaymentLifecycleService::apply_status_transition()`) with exactly one `successfully
@@ -10039,7 +10039,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->add_payment_token( $saved_token );
 		$order->save();
 
-		$recorded              = $this->load_recorded_intent_entry( 'rec-t3-subscription.json', 'renewal_off_session' );
+		$recorded              = $this->load_recorded_intent_entry( 'platform-intention-subscription.json', 'renewal_off_session' );
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->response = array(
 			'response' => array( 'code' => $recorded['http_status'] ),
@@ -10140,10 +10140,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * the same production wiring as
 	 * {@see self::test_native_refund_over_fake_transport_persists_refund_identity_status_and_one_note},
 	 * fed the recorded Afterpay refund response REC-5a R-a returns while
-	 * `pending` (`Fixtures/rec-5a-refunds.json`, pair
+	 * `pending` (`Fixtures/platform-refunds.json`, pair
 	 * `afterpay_clearpay_full_refund_pending`); the second leg processes the
 	 * exact `charge.refund.updated` succeeded body REC-5a R-c recorded for
-	 * that same refund (`Fixtures/rec-5a-refund-updated-event.json`, pair
+	 * that same refund (`Fixtures/platform-refund-updated-events.json`, pair
 	 * `afterpay_clearpay_refund_updated_succeeded`) through the real
 	 * {@see WooPaymentsRefundEventHandler}. Client parity: the pending and
 	 * succeeded legs render distinct note text (`os:2633-2638`) and the
@@ -10225,7 +10225,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_updated_event( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-5a-refund-updated-event.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-refund-updated-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -11514,7 +11514,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);
-		// A connected account with a status and payments enabled, as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
+		// A connected account with a status and payments enabled, as recorded in Fixtures/platform-test-drive-account.json `account`.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array_merge(
 				array(

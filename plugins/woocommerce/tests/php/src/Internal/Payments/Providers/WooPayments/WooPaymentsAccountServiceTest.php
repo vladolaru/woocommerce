@@ -2144,7 +2144,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_test_drive_account(): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t60-test-drive-account.json' ), true );
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-test-drive-account.json' ), true );
 
 		return $fixture['account'];
 	}

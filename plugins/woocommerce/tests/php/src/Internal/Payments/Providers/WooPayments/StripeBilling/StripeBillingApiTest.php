@@ -14,11 +14,11 @@ use WC_Unit_Test_Case;
 
 /**
  * Contract of the Stripe Billing platform calls, against responses recorded from the local platform
- * (`Fixtures/rec-t63-billing-api.json`); paths, methods and params follow client 11.1.0.
+ * (`Fixtures/platform-stripe-billing-api.json`); paths, methods and params follow client 11.1.0.
  */
 class StripeBillingApiTest extends WC_Unit_Test_Case {
 
-	private const FIXTURE = __DIR__ . '/../Fixtures/rec-t63-billing-api.json';
+	private const FIXTURE = __DIR__ . '/../Fixtures/platform-stripe-billing-api.json';
 
 	/**
 	 * Blog ID the recordings were made on.

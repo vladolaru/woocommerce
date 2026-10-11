@@ -1415,14 +1415,14 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * A connected account that has not finished onboarding.
 	 *
-	 * The recorded account response (Fixtures/rec-t60-test-drive-account.json, REC-T60-2) as a live account whose details
+	 * The recorded account response (Fixtures/platform-test-drive-account.json, REC-T60-2) as a live account whose details
 	 * are not submitted, so it cannot take payments yet.
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_partially_onboarded_account(): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t60-test-drive-account.json' ), true );
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-test-drive-account.json' ), true );
 
 		return array_merge(
 			$fixture['account'],
@@ -1591,7 +1591,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			$connected
-				// Two fields of the recorded account response (Fixtures/rec-t60-test-drive-account.json, REC-T60-2).
+				// Two fields of the recorded account response (Fixtures/platform-test-drive-account.json, REC-T60-2).
 				? array(
 					'country'                    => 'US',
 					'platform_checkout_eligible' => true,

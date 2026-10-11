@@ -14,7 +14,7 @@ class WooPaymentsFeaturePolicyTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Cached account data of a connected account that keeps ECE confirmation tokens on, as the recorded
-	 * Fixtures/rec-t60-test-drive-account.json `account` reports `ece_confirmation_tokens_disabled: false`.
+	 * Fixtures/platform-test-drive-account.json `account` reports `ece_confirmation_tokens_disabled: false`.
 	 */
 	private const ACCOUNT_WITH_TOKENS = array(
 		'account_id'                       => 'acct_policy_test',

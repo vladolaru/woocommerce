@@ -97,7 +97,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Shared intent confirmation should apply the native payment lifecycle directly.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
-	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `classic_checkout_challenge_completed`):
+	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`):
 	 * a classic checkout that finished a hosted 3DS challenge, obtained via one API-only GET of the
 	 * resulting PaymentIntent through native transport after a real Playwright run.
 	 */
@@ -179,7 +179,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Order-status callback should complete a zero-total order from the native SetupIntent.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-5's succeeded
-	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `my_account_setup_intent_challenge_completed`):
+	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `my_account_setup_intent_challenge_completed`):
 	 * a real My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
 	 */
 	public function test_update_order_status_completes_zero_total_setup_intent(): void {
@@ -1782,7 +1782,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): a hosted 3DS challenge that fails, or that completes and is
 	 * then declined, both leave the PaymentIntent `requires_payment_method`. REC-3DS-3a
-	 * (`Fixtures/rec-t3-3ds-manual.json`, pair `blocks_challenge_failed`) has 0 charges
+	 * (`Fixtures/platform-3ds-challenge-results.json`, pair `blocks_challenge_failed`) has 0 charges
 	 * (`payment_intent_authentication_failure`); REC-3DS-3b (pair
 	 * `blocks_post_authentication_decline`) has one failed charge (`card_declined`/
 	 * `generic_decline`). Both carry `last_payment_error`, so the order is `failed`, as the client's
@@ -1859,7 +1859,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Order-status callback should save requested cards before completing the order.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
-	 * challenge (`Fixtures/rec-t3-3ds-manual.json`, pair `classic_checkout_challenge_completed`),
+	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`),
 	 * a guest classic checkout in the recording; this test gives its customer a WordPress user (per
 	 * the plan's recording notes) so the token-count assertions below stay meaningful.
 	 */
@@ -2023,8 +2023,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->set_payment_method_title( 'WooPayments' );
 
-		// REC-CAP's manual-capture authorization (Fixtures/rec-t3-manual-capture.json); the processing case changes only the intent status.
-		$intent           = $this->load_recorded_intent_entry( 'rec-t3-manual-capture.json', 'authorize_manual_capture' )['body'];
+		// REC-CAP's manual-capture authorization (Fixtures/platform-manual-capture.json); the processing case changes only the intent status.
+		$intent           = $this->load_recorded_intent_entry( 'platform-manual-capture.json', 'authorize_manual_capture' )['body'];
 		$intent['status'] = $status;
 		$order->update_meta_data( '_intent_id', $intent['id'] );
 		$order->save();
@@ -2960,7 +2960,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Setup-intent callback should return the native SetupIntent response envelope.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): the `requires_action` row is REC-3DS-4's recorded envelope
-	 * (`Fixtures/rec-t3-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
+	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
 	 * 3DS-required card add attempt through the same `create_setup_intent_for_request()` path REC-2
 	 * recorded its declines from. The controller only ever re-serializes `id`/`status`/`client_secret`
 	 * from whatever `create_and_confirm_setup_intention()` returns
@@ -2980,7 +2980,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$http_client = null;
 
 		if ( $use_recorded_envelope ) {
-			$recorded              = $this->load_recorded_intent_entry( 'rec-t3-setup-intent-requires-action.json', 'setup_intent_requires_action' );
+			$recorded              = $this->load_recorded_intent_entry( 'platform-setup-intent-requires-action.json', 'setup_intent_requires_action' );
 			$http_client           = new FakeWooPaymentsHttpClient();
 			$http_client->response = array(
 				'response' => array( 'code' => $recorded['http_status'] ),
@@ -3085,7 +3085,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Setup-intent card declines return the localized shopper message, create the customer before the transport call, and leave no payment method saved.
 	 *
 	 * The response body and HTTP status are the real decline envelope local WPCOM returned for each Stripe
-	 * test card, recorded in `Fixtures/rec-2-setup-intent-declines.json` (REC-2). All five recorded errors
+	 * test card, recorded in `Fixtures/platform-setup-intent-declines.json` (REC-2). All five recorded errors
 	 * are `card_error` and carry a `setup_intent` object (never `payment_intent`); the client's decline-code
 	 * lookup at `class-wc-payments-utils.php:801-817`, catalog `:852-866` (11.1.0) does not read either
 	 * intent object, only `code` and `decline_code`. The recorded 402 answers 400, as the client maps it
@@ -3172,7 +3172,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_setup_intent_decline_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-2-setup-intent-declines.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-setup-intent-declines.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -3223,7 +3223,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Load one recorded REC-3DS-2/3/5 manual-run entry's response body by pair key.
 	 *
-	 * `Fixtures/rec-t3-3ds-manual.json` entries are keyed by `pair`, not `response.content_type`
+	 * `Fixtures/platform-3ds-challenge-results.json` entries are keyed by `pair`, not `response.content_type`
 	 * (they were captured with a plain `get_payment_intention()`/`get_setup_intention()` GET, not
 	 * through the REC-1-style pair/http_status/content_type shape).
 	 *
@@ -3232,7 +3232,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_manual_3ds_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-manual.json' );
+		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' );
 		$this->assertIsString( $contents );
 		$decoded = json_decode( $contents, true );
 		$this->assertIsArray( $decoded );

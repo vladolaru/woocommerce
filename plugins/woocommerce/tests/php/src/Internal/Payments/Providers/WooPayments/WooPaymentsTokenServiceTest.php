@@ -1601,7 +1601,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		// The account ID follows the recorded Fixtures/rec-t60-test-drive-account.json `account`.
+		// The account ID follows the recorded Fixtures/platform-test-drive-account.json `account`.
 		$account_service = $this->create_account_service_with_enabled_methods( array( 'card', 'amazon_pay' ), array( 'account_id' => 'acct_native_test' ) );
 		$this->create_service( array(), null, $customer_service, $account_service );
 

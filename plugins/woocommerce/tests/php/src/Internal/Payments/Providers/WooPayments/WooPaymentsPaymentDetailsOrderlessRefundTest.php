@@ -220,7 +220,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 	 */
 	private function get_recorded_refund_response(): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-5a-refunds.json' ), true );
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-refunds.json' ), true );
 		$entry   = $fixture['entries'][0];
 		$this->assertSame( 'usd_card_full_refund_free_text_reason', $entry['pair'] );
 

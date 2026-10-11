@@ -637,8 +637,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->set_customer_id( $user_id );
 		$order->save();
 
-		// REC-CAP's manual-capture authorization (Fixtures/rec-t3-manual-capture.json); the processing case changes only the intent status.
-		$intent            = $this->load_recorded_fixture_body( 'rec-t3-manual-capture.json', 'authorize_manual_capture' );
+		// REC-CAP's manual-capture authorization (Fixtures/platform-manual-capture.json); the processing case changes only the intent status.
+		$intent            = $this->load_recorded_fixture_body( 'platform-manual-capture.json', 'authorize_manual_capture' );
 		$intent['status']  = $status;
 		$payment_method_id = (string) $intent['payment_method'];
 		$card              = $intent['charges']['data'][0]['payment_method_details']['card'];
@@ -1361,7 +1361,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Synchronous PaymentIntent effects persist settlement exchange-rate meta for a currency-converted order from the create-and-confirm response alone.
 	 *
-	 * REC-3 (`Fixtures/rec-3-eur-charge.json`) recorded local WPCOM's response to a 12.34 EUR card
+	 * REC-3 (`Fixtures/platform-eur-charge.json`) recorded local WPCOM's response to a 12.34 EUR card
 	 * charge on a USD account: `charges.data[0].balance_transaction` arrives as an **expanded object**
 	 * with `exchange_rate` 1.13905 on the synchronous create-and-confirm call itself, not only on a
 	 * later `GET charge`. Client 11.1.0 only reads the settlement rate after checkout via a separate
@@ -1413,7 +1413,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 attaches the exchange rate after checkout whatever the intent status (gw:2146), reading the charge's
 	 * `balance_transaction.exchange_rate` (gw:2776-2810). The intent is REC-3's recorded EUR charge
-	 * (`Fixtures/rec-3-eur-charge.json`) with only its status changed to processing.
+	 * (`Fixtures/platform-eur-charge.json`) with only its status changed to processing.
 	 */
 	public function test_processing_payment_intent_effects_persist_settlement_meta_for_converted_order(): void {
 		$original_currency = get_option( 'woocommerce_currency', 'USD' );
@@ -1470,7 +1470,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_eur_charge_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/rec-3-eur-charge.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-eur-charge.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );

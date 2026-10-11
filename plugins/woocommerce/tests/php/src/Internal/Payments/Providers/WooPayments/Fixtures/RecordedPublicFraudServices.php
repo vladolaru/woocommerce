@@ -17,7 +17,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\F
  */
 final class RecordedPublicFraudServices {
 
-	private const FIXTURE = __DIR__ . '/rec-t63-public-fraud-services.json';
+	private const FIXTURE = __DIR__ . '/platform-public-fraud-services.json';
 
 	/**
 	 * Answer the public fraud-services request for the rest of the current test.

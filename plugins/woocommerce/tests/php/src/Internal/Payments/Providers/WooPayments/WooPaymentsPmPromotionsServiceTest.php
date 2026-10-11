@@ -127,7 +127,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		if ( $filter_it_out ) {
 			add_filter( 'wcpay_upe_available_payment_methods', $filter );
 		}
-		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/rec-t60-test-drive-account.json `account.fees`.
+		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
 				'card'             => array(),

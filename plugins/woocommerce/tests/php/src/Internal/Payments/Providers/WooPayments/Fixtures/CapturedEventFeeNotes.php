@@ -10,11 +10,11 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures;
 
 /**
- * Reads `rec-n296-captured-event-notes.json`; its `_meta` says how each event was recorded and rendered.
+ * Reads `captured-event-fee-notes.json`; its `_meta` says how each event was recorded and rendered.
  */
-final class ClientRenderedCapturedEvents {
+final class CapturedEventFeeNotes {
 
-	private const FIXTURE = __DIR__ . '/rec-n296-captured-event-notes.json';
+	private const FIXTURE = __DIR__ . '/captured-event-fee-notes.json';
 
 	/**
 	 * Get every case by name.

@@ -344,7 +344,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * proves this convergence for `charge.refunded`, the full-charge event;
 	 * this proves it for `charge.refund.updated`, the bare-refund event, which
 	 * that test does not exercise (client `os:1937`, `wh:355-359`). Recorded
-	 * webhook body: REC-5a R-c (`Fixtures/rec-5a-refund-updated-event.json`,
+	 * webhook body: REC-5a R-c (`Fixtures/platform-refund-updated-events.json`,
 	 * pair `afterpay_clearpay_refund_updated_succeeded`), the primary
 	 * redirect-method refund-updated event local WPCOM forwarded for this
 	 * recording (`data/rec-5a-refunds.md`).
@@ -538,7 +538,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_refund_updated_event( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/../Fixtures/rec-5a-refund-updated-event.json' );
+		$fixture = file_get_contents( __DIR__ . '/../Fixtures/platform-refund-updated-events.json' );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -968,14 +968,14 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A charge.refunded event whose refund is in requires_action records it as pending, and a succeeded charge.refund.updated settles it.
 	 *
 	 * Monitor ruling 2026-10-10 13:35 (U1): the webhook's refund row follows the same pending rule as the refund call. The
-	 * refund is HAND-BUILT (`Fixtures/stripe-docs-f458-requires-action-refund.json`, from Stripe's refund object,
+	 * refund is HAND-BUILT (`Fixtures/stripe-docs-requires-action-refund.json`, from Stripe's refund object,
 	 * https://docs.stripe.com/api/refunds/object, and https://docs.stripe.com/refunds#requires-action): no WooPayments
 	 * payment method reaches requires_action today. The charge fields are those client 11.1.0 reads
 	 * (class-wc-payments-webhook-processing-service.php:1079-1143).
 	 */
 	public function test_charge_refunded_with_a_requires_action_refund_records_it_as_pending(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/stripe-docs-f458-requires-action-refund.json' ), true );
+		$fixture = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/stripe-docs-requires-action-refund.json' ), true );
 		$this->assertTrue( $fixture['_meta']['hand_built'] ?? false );
 		$refund = $fixture['entries'][0]['response']['body'];
 		$order  = wc_create_order();

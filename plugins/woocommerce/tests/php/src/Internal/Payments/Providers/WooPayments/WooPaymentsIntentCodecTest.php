@@ -30,7 +30,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_contains_no_order_effect_data(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: the succeeded PaymentIntent in Fixtures/rec-t3-basic-card.json (entries[0]), with charges as a Stripe list
+			// Shape: the succeeded PaymentIntent in Fixtures/platform-intention-basic-card.json (entries[0]), with charges as a Stripe list
 			// object and an expanded balance_transaction, reduced to the fields the codec reads.
 			array(
 				'id'             => 'pi_neutral',
@@ -231,7 +231,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_outcome_from_intention_uses_charge_payment_method_before_credential_fallback(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: charges.data[].payment_method as in Fixtures/rec-t3-basic-card.json (entries[0]), reduced to that one field.
+			// Shape: charges.data[].payment_method as in Fixtures/platform-intention-basic-card.json (entries[0]), reduced to that one field.
 			array(
 				'id'      => 'pi_charge_pm',
 				'status'  => 'succeeded',
@@ -250,7 +250,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_intent_mapping_separates_localized_shopper_message_from_raw_provider_message(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: last_payment_error from Fixtures/rec-1-intention-declines.json (entries[2]: card_error, card_declined,
+			// Shape: last_payment_error from Fixtures/platform-intention-declines.json (entries[2]: card_error, card_declined,
 			// insufficient_funds), with a synthetic diagnostic message.
 			array(
 				'id'                 => 'pi_declined',

@@ -171,7 +171,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A card payment waiting for 3D Secure, with no charge yet, titles the order "Card".
 	 *
-	 * The intent is REC-3DS-1's recorded new-card requires_action response (`Fixtures/rec-t3-3ds-requires-action.json`, pair
+	 * The intent is REC-3DS-1's recorded new-card requires_action response (`Fixtures/platform-intention-3ds-requires-action.json`, pair
 	 * `new_card_requires_action`), whose `charges.data` is empty. Client 11.1.0 titles the order from the charge's card
 	 * details when it has them (gw:2162-2195), and with none falls back to the card definition's title
 	 * (includes/payment-methods/class-upe-payment-method.php:176-182,
@@ -179,7 +179,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_post_lifecycle_effects_title_a_card_payment_without_a_charge_card(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-requires-action.json' ), true );
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-3ds-requires-action.json' ), true );
 		$intent  = array();
 		foreach ( $fixture['entries'] as $entry ) {
 			if ( 'new_card_requires_action' === $entry['pair'] ) {

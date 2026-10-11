@@ -709,7 +709,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
 	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsPaymentOperationService} and
 	 * {@see WooPaymentsApiClient} over a fake transport queued with REC-CAP's recorded
-	 * `capture_full_amount` response (`Fixtures/rec-t3-manual-capture.json`,
+	 * `capture_full_amount` response (`Fixtures/platform-manual-capture.json`,
 	 * `data/rec-t3-api-recordings.md`): a 10.99 USD manual-capture authorization captured
 	 * for its full amount. Client parity: the capture note is the exact `was
 	 * <strong>successfully captured</strong> using WooPayments` wording plus the intent id
@@ -996,7 +996,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_manual_capture_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-manual-capture.json' );
+		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-manual-capture.json' );
 		$this->assertIsString( $contents );
 		$decoded = json_decode( $contents, true );
 		$this->assertIsArray( $decoded );

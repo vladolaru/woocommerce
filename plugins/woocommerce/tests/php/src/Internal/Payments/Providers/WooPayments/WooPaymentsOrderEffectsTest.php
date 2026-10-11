@@ -285,7 +285,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	 */
 	private function load_rec_3_entry( int $index ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		return json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-3-eur-charge.json' ), true )['entries'][ $index ]['response']['body'];
+		return json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-eur-charge.json' ), true )['entries'][ $index ]['response']['body'];
 	}
 
 	/**

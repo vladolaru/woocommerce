@@ -426,7 +426,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * The `Alipay (REC-RM)` row is T.3 Task 4's RECORD swap (`plan-task-t3.md`): the real recorded
 	 * PaymentIntent REC-RM's Alipay handle-redirect return produced
-	 * (`Fixtures/rec-t3-redirect-alipay.json`, pair `alipay_redirect_return_succeeded`), obtained
+	 * (`Fixtures/platform-intention-alipay-redirect.json`, pair `alipay_redirect_return_succeeded`), obtained
 	 * from one API-only GET of the intent a real Playwright run's hosted authorize left behind. That
 	 * recording's shopper is a guest, so this row gives the test order's customer a WordPress user
 	 * (the plan's recording notes) and adds the missing "no token for non-reusable methods on
@@ -513,7 +513,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_redirect_alipay_entry(): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-redirect-alipay.json' );
+		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-intention-alipay-redirect.json' );
 		$this->assertIsString( $contents );
 		$decoded = json_decode( $contents, true );
 		$this->assertIsArray( $decoded );

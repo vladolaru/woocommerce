@@ -105,7 +105,7 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Each REC-1 card decline code pair maps to its exact client shopper message, present or mirrored.
 	 *
-	 * REC-1 (`Fixtures/rec-1-intention-declines.json`) recorded that the platform's `decline_code`
+	 * REC-1 (`Fixtures/platform-intention-declines.json`) recorded that the platform's `decline_code`
 	 * is present even when it equals `code` (`expired_card`, `incorrect_cvc`, `processing_error`), so
 	 * the mapping must not assume it is only present for `card_declined`. Client citations
 	 * `class-wc-payments-utils.php:806-817` (decline code first, then error code) and `:852-866`

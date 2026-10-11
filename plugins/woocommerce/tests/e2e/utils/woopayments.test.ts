@@ -151,7 +151,7 @@ test( 'requireTestModeAccount refuses a live account', async () => {
 } );
 
 // The provider fields used below come from the recorded PaymentIntent and Charge responses in
-// `tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-t3-manual-capture.json`.
+// `tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/platform-manual-capture.json`.
 const SETTLED_INTENT = {
 	status: 'succeeded',
 	amount: 1099,

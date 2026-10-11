@@ -436,7 +436,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// Account fields as recorded in Providers/WooPayments/Fixtures/platform-test-drive-account.json `account` (`country`, capability statuses keyed by
 		// capability); varied: a Belgian account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
@@ -507,7 +507,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// Account fields as recorded in Providers/WooPayments/Fixtures/platform-test-drive-account.json `account` (`country`, capability statuses keyed by
 		// capability); varied: a Dutch account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
@@ -1061,7 +1061,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		// Account fields as recorded in Providers/WooPayments/Fixtures/rec-t60-test-drive-account.json `account` (`country`, capability statuses keyed by
+		// Account fields as recorded in Providers/WooPayments/Fixtures/platform-test-drive-account.json `account` (`country`, capability statuses keyed by
 		// capability); varied: only the card capability this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
@@ -2020,7 +2020,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should save setup-intent payment methods from the account add-payment-method form.
 	 *
-	 * The SetupIntent is a recorded succeeded 3DS challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * The SetupIntent is a recorded succeeded 3DS challenge (`Fixtures/platform-3ds-challenge-results.json`, pair
 	 * `my_account_setup_intent_challenge_completed`): a My Account add-payment-method SetupIntent that succeeded after a
 	 * hosted 3DS challenge.
 	 */
@@ -2062,7 +2062,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should refuse to save a payment method from a non-succeeded SetupIntent.
 	 *
-	 * The SetupIntent is a recorded failed 3DS challenge (`Fixtures/rec-t3-3ds-manual.json`, pair
+	 * The SetupIntent is a recorded failed 3DS challenge (`Fixtures/platform-3ds-challenge-results.json`, pair
 	 * `my_account_setup_intent_challenge_failed`): a My
 	 * Account add-payment-method SetupIntent left `requires_payment_method` after a failed 3DS
 	 * challenge. `add_payment_method()` returns its error before ever calling the token service
@@ -2114,7 +2114,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	private function load_recorded_manual_3ds_entry( string $pair ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$contents = file_get_contents( __DIR__ . '/Fixtures/rec-t3-3ds-manual.json' );
+		$contents = file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' );
 		$this->assertIsString( $contents );
 		$decoded = json_decode( $contents, true );
 		$this->assertIsArray( $decoded );
@@ -8248,12 +8248,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * Answer the Stripe Billing module's platform requests with a recorded response, on the account and blog it was recorded on.
 	 *
-	 * @param string $pair Entry name in `Fixtures/rec-t63-billing-api.json`.
+	 * @param string $pair Entry name in `Fixtures/platform-stripe-billing-api.json`.
 	 * @return FakeWooPaymentsHttpClient
 	 */
 	private function use_recorded_platform( string $pair ): FakeWooPaymentsHttpClient {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
-		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/rec-t63-billing-api.json' ), true );
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-stripe-billing-api.json' ), true );
 		$entries   = array_values( array_filter( array_merge( $recording['entries'], $recording['supporting_entries'] ?? array() ), static fn( array $entry ) => $pair === $entry['pair'] ) );
 		$this->assertNotEmpty( $entries, "Fixture entry $pair is missing." );
 

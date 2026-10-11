@@ -628,7 +628,7 @@ describe( 'WooPayments money movement pages', () => {
 			'Refunded',
 		],
 		// Source: client 11.1.0 utils/charge/index.ts:168-169 and payment-status-chip/mappings.ts:45-52;
-		// charge fields from the recorded Fixtures/rec-t3-manual-capture.json entries.
+		// charge fields from the recorded Fixtures/platform-manual-capture.json entries.
 		[
 			'captured',
 			{
@@ -668,7 +668,7 @@ describe( 'WooPayments money movement pages', () => {
 			'Disputed: Response needed',
 		],
 		// Source: client 11.1.0 utils/charge/index.ts:52-71, 146-151 and payment-status-chip/mappings.ts:57-64;
-		// the issuer_declined outcome type is recorded in Fixtures/rec-1-intention-declines.json.
+		// the issuer_declined outcome type is recorded in Fixtures/platform-intention-declines.json.
 		[
 			'failed',
 			{
@@ -7290,7 +7290,7 @@ describe( 'WooPayments money movement pages', () => {
 			fs.readFileSync(
 				path.resolve(
 					__dirname,
-					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-5b-disputes.json'
+					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/platform-disputes.json'
 				),
 				'utf8'
 			)
@@ -8006,7 +8006,7 @@ describe( 'WooPayments money movement pages', () => {
 			fs.readFileSync(
 				path.resolve(
 					__dirname,
-					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/rec-5a-timelines.json'
+					'../../../../../../tests/php/src/Internal/Payments/Providers/WooPayments/Fixtures/platform-timelines.json'
 				),
 				'utf8'
 			)

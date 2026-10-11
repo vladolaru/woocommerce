@@ -162,7 +162,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 */
 	public function test_get_cart_extension_data_lists_amazon_pay_only_for_an_account_that_needs_no_setup( string $scenario, array $missing_fields, bool $listed ): void {
 		unset( $scenario );
-		// Account fields as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
+		// Account fields as recorded in Fixtures/platform-test-drive-account.json `account`.
 		$account_data = array(
 			'account_id'                       => 'acct_store_api_test',
 			'status'                           => 'complete',
@@ -204,7 +204,7 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 				'express_checkout_cart_methods'     => array( 'payment_request' ),
 				'express_checkout_checkout_methods' => array( 'payment_request' ),
 			),
-			// Account fields as recorded in Fixtures/rec-t60-test-drive-account.json `account`.
+			// Account fields as recorded in Fixtures/platform-test-drive-account.json `account`.
 			array(
 				'account_id'                       => 'acct_store_api_test',
 				'status'                           => 'complete',
