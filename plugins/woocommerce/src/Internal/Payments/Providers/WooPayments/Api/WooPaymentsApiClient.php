@@ -737,7 +737,7 @@ class WooPaymentsApiClient {
 	 */
 	public function get_pm_promotions( array $store_context ): array {
 		$request  = WooPaymentsGetPmPromotionsRequest::from_store_context( $store_context );
-		$response = $this->request_with_legacy_request_filter(
+		$response = $this->request_with_compat_request_filter(
 			$request,
 			'wcpay_get_pm_promotions_request',
 			false,
@@ -775,7 +775,7 @@ class WooPaymentsApiClient {
 		$this->validate_route_id( $promotion_id, self::ROUTE_PM_PROMOTION_ID_PATTERN );
 		$request = WooPaymentsActivatePmPromotionRequest::from_id( $promotion_id );
 
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			$request,
 			'wcpay_activate_pm_promotion_request'
 		);
@@ -1138,7 +1138,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_reporting_balance_summary( array $query = array() ): array {
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			WooPaymentsReportingBalanceSummaryRequest::from_params(
 				array_intersect_key(
 					$query,
@@ -1177,7 +1177,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_authorizations_summary( array $query = array() ): array {
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			$query,
 			self::AUTHORIZATIONS_API . '/summary',
 			'GET',
@@ -1188,17 +1188,17 @@ class WooPaymentsApiClient {
 	/**
 	 * Retrieve WooPayments uncaptured authorizations.
 	 *
-	 * @param array<string,mixed> $query                  Query params.
-	 * @param bool                $preserve_legacy_filter Whether to apply the preserved legacy request hook.
+	 * @param array<string,mixed> $query               Query params.
+	 * @param bool                $apply_compat_filter Whether to apply the preserved legacy request hook.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	public function get_authorizations( array $query = array(), bool $preserve_legacy_filter = true ): array {
-		if ( ! $preserve_legacy_filter ) {
+	public function get_authorizations( array $query = array(), bool $apply_compat_filter = true ): array {
+		if ( ! $apply_compat_filter ) {
 			return $this->request( $query, self::AUTHORIZATIONS_API, 'GET' );
 		}
 
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			WooPaymentsAuthorizationsListRequest::from_params( $query ),
 			'wcpay_list_authorizations_request'
 		);
@@ -1214,7 +1214,7 @@ class WooPaymentsApiClient {
 	public function get_authorization( string $payment_intent_id ): array {
 		$this->validate_route_id( $payment_intent_id, self::ROUTE_ID_PATTERN );
 
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			array(),
 			self::AUTHORIZATIONS_API . '/' . $payment_intent_id,
 			'GET',
@@ -1390,7 +1390,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_dispute_status_counts(): array {
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			array(),
 			self::DISPUTES_API . '/status_counts',
 			'GET',
@@ -1615,7 +1615,7 @@ class WooPaymentsApiClient {
 			)
 		);
 
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			WooPaymentsDocumentsListRequest::from_params( $query ),
 			'wcpay_list_documents_request'
 		);
@@ -1665,7 +1665,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function validate_vat( string $vat_number ): array {
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			array(),
 			self::VAT_API . '/' . rawurlencode( $vat_number ),
 			'GET',
@@ -1705,7 +1705,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_capital_active_loan_summary(): array {
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			array(),
 			self::CAPITAL_API . '/active_loan_summary',
 			'GET',
@@ -1720,7 +1720,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function get_capital_loans(): array {
-		return $this->request_with_legacy_filter(
+		return $this->request_with_compat_filter(
 			array(),
 			self::CAPITAL_API . '/loans',
 			'GET',
@@ -1749,7 +1749,7 @@ class WooPaymentsApiClient {
 	public function create_capital_link( string $return_url, string $refresh_url ): array {
 		$request = WooPaymentsGetAccountCapitalLinkRequest::from_urls( $return_url, $refresh_url );
 
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			$request,
 			'wcpay_get_account_capital_link',
 			true
@@ -1777,7 +1777,7 @@ class WooPaymentsApiClient {
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
 	public function create_login_link( string $redirect_url ): array {
-		return $this->request_with_legacy_request_filter(
+		return $this->request_with_compat_request_filter(
 			WooPaymentsGetAccountLoginDataRequest::from_redirect_url(
 				$redirect_url,
 				$this->account_service->is_test_mode_onboarding_enabled()
@@ -2614,7 +2614,7 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Send a legacy compatibility request through its request-object filter contract.
+	 * Send a list request through its request-object filter.
 	 *
 	 * @since 11.0.0
 	 *
@@ -2622,7 +2622,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
 	 */
-	public function send_legacy_request( WooPaymentsPaginatedListRequest $request ): array {
+	public function send_list_request( WooPaymentsPaginatedListRequest $request ): array {
 		$hook = $request->get_hook();
 
 		if ( '' === $hook ) {
@@ -2632,11 +2632,11 @@ class WooPaymentsApiClient {
 			throw new WooPaymentsApiException( $message, 'wcpay_request_missing_hook', 500 );
 		}
 
-		return $this->request_with_legacy_request_filter( $request, $hook, false, true );
+		return $this->request_with_compat_request_filter( $request, $hook, false, true );
 	}
 
 	/**
-	 * Send a request after applying a legacy WooPayments request-object filter.
+	 * Send a request after applying a WooPayments compat request-object filter.
 	 *
 	 * @param array<int|string,mixed> $params Request params.
 	 * @param string                  $api    API path.
@@ -2645,14 +2645,14 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	private function request_with_legacy_filter( array $params, string $api, string $method, string $hook ): array {
+	private function request_with_compat_filter( array $params, string $api, string $method, string $hook ): array {
 		$request = WooPaymentsApiRequest::create( $params, $api, $method );
 
-		return $this->request_with_legacy_request_filter( $request, $hook );
+		return $this->request_with_compat_request_filter( $request, $hook );
 	}
 
 	/**
-	 * Send a concrete request after applying a legacy WooPayments request-object filter.
+	 * Send a concrete request after applying a WooPayments compat request-object filter.
 	 *
 	 * @param WooPaymentsPaginatedListRequest $request Native request compatibility object.
 	 * @param string                          $hook    Legacy WooPayments request filter hook.
@@ -2661,7 +2661,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	private function request_with_legacy_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
+	private function request_with_compat_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
 		/**

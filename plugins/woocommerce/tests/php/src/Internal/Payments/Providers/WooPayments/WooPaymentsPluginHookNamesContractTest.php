@@ -51,16 +51,16 @@ class WooPaymentsPluginHookNamesContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Method-call wrappers whose own literal argument becomes the `apply_filters` hook name one
-	 * level down (`WooPaymentsApiClient::request_with_legacy_request_filter()` /
-	 * `request_with_legacy_filter()`, both of which end in `apply_filters( $hook, $request )`,
+	 * level down (`WooPaymentsApiClient::request_with_compat_request_filter()` /
+	 * `request_with_compat_filter()`, both of which end in `apply_filters( $hook, $request )`,
 	 * arity 1). Needed for `wcpay_get_reporting_balance_summary_request`, the one FALSE_NEGATIVE row
 	 * not covered by the runtime probe set.
 	 *
 	 * @var array<string,int>
 	 */
 	private const HOOK_ARGUMENT_WRAPPERS = array(
-		'request_with_legacy_request_filter' => 1,
-		'request_with_legacy_filter'         => 3,
+		'request_with_compat_request_filter' => 1,
+		'request_with_compat_filter'         => 3,
 	);
 
 	/**

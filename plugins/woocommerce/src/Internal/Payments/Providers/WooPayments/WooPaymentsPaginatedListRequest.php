@@ -336,6 +336,6 @@ abstract class WooPaymentsPaginatedListRequest {
 	public function send() {
 		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
 
-		return $this->format_response( $api_client->send_legacy_request( $this ) );
+		return $this->format_response( $api_client->send_list_request( $this ) );
 	}
 }

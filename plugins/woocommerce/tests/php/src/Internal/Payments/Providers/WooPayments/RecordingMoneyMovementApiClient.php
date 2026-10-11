@@ -92,16 +92,16 @@ class RecordingMoneyMovementApiClient extends WooPaymentsApiClient {
 	/**
 	 * Get authorizations.
 	 *
-	 * @param array<string,mixed> $query                  Query params.
-	 * @param bool                $preserve_legacy_filter Whether to preserve legacy request filters.
+	 * @param array<string,mixed> $query               Query params.
+	 * @param bool                $apply_compat_filter Whether to preserve legacy request filters.
 	 * @return array<string,mixed>
 	 */
-	public function get_authorizations( array $query = array(), bool $preserve_legacy_filter = true ): array {
+	public function get_authorizations( array $query = array(), bool $apply_compat_filter = true ): array {
 		$this->record(
 			'get_authorizations',
 			array(
-				'query'                  => $query,
-				'preserve_legacy_filter' => $preserve_legacy_filter,
+				'query'               => $query,
+				'apply_compat_filter' => $apply_compat_filter,
 			)
 		);
 
