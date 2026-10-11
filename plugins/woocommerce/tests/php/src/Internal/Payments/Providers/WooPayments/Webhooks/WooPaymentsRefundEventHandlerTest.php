@@ -275,7 +275,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A German refund note from the WooPayments extension is adopted without adding the Core-catalog rendering.
+	 * @testdox A succeeded charge.refund.updated for a linked refund adopts the WooPayments extension's German refund note without adding the Core-catalog rendering.
 	 */
 	public function test_german_woopayments_extension_refund_note_followed_by_webhook_converges(): void {
 		$previous_enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', false );
@@ -312,7 +312,20 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			$order->add_order_note( $plugin_note );
 			$order->save();
 
-			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+			// The Refund object charge.refund.updated carries (https://docs.stripe.com/api/refunds/object), with the values of
+			// get_successful_refund_charge()'s refund.
+			$this->sut->process(
+				'charge.refund.updated',
+				array(
+					'id'                  => 're_123',
+					'charge'              => 'ch_123',
+					'amount'              => 400,
+					'currency'            => 'usd',
+					'reason'              => 'Requested by customer',
+					'status'              => 'succeeded',
+					'balance_transaction' => 'txn_123',
+				)
+			);
 
 			$order = wc_get_order( $order->get_id() );
 			$this->assertInstanceOf( WC_Order::class, $order );

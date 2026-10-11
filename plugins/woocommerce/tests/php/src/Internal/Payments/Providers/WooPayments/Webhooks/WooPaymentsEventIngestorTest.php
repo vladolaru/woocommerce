@@ -3540,15 +3540,29 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.refunded ignores already persisted WooPayments refund IDs.
+	 * @testdox charge.refunded for a refund the order already links changes nothing ($event_status event).
+	 *
+	 * @dataProvider linked_refund_charge_refunded_provider
+	 *
+	 * @param string $event_status   Refund status the event carries.
+	 * @param string $refund_status  Order refund status before the event.
+	 * @param string $transaction_id Refund transaction meta before the event.
 	 */
-	public function test_charge_refunded_ignores_duplicate_provider_refund_id(): void {
+	public function test_charge_refunded_for_a_linked_refund_changes_nothing( string $event_status, string $refund_status, string $transaction_id ): void {
 		$order  = $this->create_refundable_woopayments_order( '10.00' );
 		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
 		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
+		if ( '' !== $transaction_id ) {
+			$refund->update_meta_data( '_wcpay_refund_transaction_id', $transaction_id );
+		}
 		$refund->save_meta_data();
+		if ( '' !== $refund_status ) {
+			$order->update_meta_data( '_wcpay_refund_status', $refund_status );
+			$order->save();
+		}
+		$note_count = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded' ) );
+		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, $event_status ) );
 
 		$order  = wc_get_order( $order->get_id() );
 		$refund = wc_get_order( $refund->get_id() );
@@ -3556,33 +3570,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
 		$this->assertCount( 1, $order->get_refunds() );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_123', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'was successfully processed using WooPayments', 're_123' ) );
+		$this->assertSame( $refund_status, $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( $transaction_id, $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**
-	 * @testdox charge.refunded does not downgrade successful duplicate refunds to pending.
+	 * Provide charge.refunded cases for a refund the order already links.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
 	 */
-	public function test_charge_refunded_duplicate_pending_retry_does_not_downgrade_successful_refund(): void {
-		$order  = $this->create_refundable_woopayments_order( '10.00' );
-		$refund = $this->create_local_refund( $order, 4.00, 'Existing refund' );
-		$refund->update_meta_data( '_wcpay_refund_id', 're_123' );
-		$refund->update_meta_data( '_wcpay_refund_transaction_id', 'txn_existing' );
-		$refund->save_meta_data();
-		$order->update_meta_data( '_wcpay_refund_status', 'successful' );
-		$order->save();
-
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'pending' ) );
-
-		$order  = wc_get_order( $order->get_id() );
-		$refund = wc_get_order( $refund->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertInstanceOf( WC_Order_Refund::class, $refund );
-		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 'txn_existing', $refund->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertOrderLacksNoteContaining( $order, array( 'is pending', 're_123' ) );
+	public function linked_refund_charge_refunded_provider(): array {
+		return array(
+			'succeeded event, nothing recorded yet'   => array( 'succeeded', '', '' ),
+			'pending event after a successful refund' => array( 'pending', 'successful', 'txn_existing' ),
+		);
 	}
 
 	/**

@@ -126,7 +126,7 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Process a charge.refunded event from outside WP Admin.
+	 * Process a charge.refunded event: create the local refund with its note and metadata, unless the order already links the refund.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @throws RuntimeException When the refund event cannot be processed safely.
@@ -177,23 +177,22 @@ class WooPaymentsRefundEventHandler {
 				return;
 			}
 
+			// The request that linked this refund, the gateway's refund or an earlier delivery of this event, already wrote its
+			// note and metadata (client 11.1.0 class-wc-payments-webhook-processing-service.php:1120-1130).
+			if ( $this->get_refund_by_provider_refund_id( $order, $refund_id ) instanceof WC_Order_Refund ) {
+				return;
+			}
+
 			if ( $refunded_amount > (float) $order->get_total() ) {
 				throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 			}
 
-			$existing_refund = $this->get_refund_by_provider_refund_id( $order, $refund_id );
-			if ( $existing_refund instanceof WC_Order_Refund && $is_pending_refund && 'successful' === $order->get_meta( '_wcpay_refund_status', true ) ) {
-				return;
-			}
-
-			$wc_refund = $existing_refund instanceof WC_Order_Refund
-				? $existing_refund
-				: $this->create_local_refund(
-					$order,
-					$refunded_amount,
-					$refund_reason,
-					$is_partial_refund ? array() : $order->get_items()
-				);
+			$wc_refund = $this->create_local_refund(
+				$order,
+				$refunded_amount,
+				$refund_reason,
+				$is_partial_refund ? array() : $order->get_items()
+			);
 
 			$this->add_note_and_metadata_for_created_refund( $order, $wc_refund, $refund_id, $balance_txn_id, $is_pending_refund );
 		} finally {
