@@ -1093,15 +1093,22 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 `checkout_order_processed()` counts an order paid with another gateway on the WordPress.com stats pixel
 	 * (`includes/class-woopay-tracker.php:581-602`, `bump_stats()` at :545-574); native does not wait for the answer.
 	 *
-	 * @testdox Should send one stats counter request, without waiting for the answer, for an order paid with another gateway from $hook.
+	 * @testdox Should send one stats counter request, carrying nothing but its URL and without waiting for the answer, for an order paid with another gateway.
 	 * @dataProvider order_processed_action_provider
 	 *
-	 * @param string $hook Order-processed action.
+	 * @param string $hook           Order-processed action.
+	 * @param string $payment_method Gateway ID of the order; empty for a free order.
+	 * @param bool   $admin_ajax     Whether checkout runs in an admin-ajax request.
 	 */
-	public function test_counts_an_order_paid_with_another_gateway_once_without_waiting( string $hook ): void {
+	public function test_counts_an_order_paid_with_another_gateway_once_without_waiting( string $hook, string $payment_method, bool $admin_ajax ): void {
 		$requests = $this->capture_http_requests();
 		$sut      = $this->arrange_counter_eligible_store( $this->create_account_service( false ) );
-		$order    = $this->create_order_paid_with( 'cod', 'Cash on delivery' );
+		$order    = $this->create_order_paid_with( $payment_method, '' === $payment_method ? '' : 'Cash on delivery' );
+		if ( $admin_ajax ) {
+			// Client 11.1.0 tracks admin-ajax requests by shoppers (`includes/class-woopay-tracker.php:276-283`).
+			set_current_screen( 'dashboard' );
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
 
 		$sut->register();
 		$this->fire_order_processed( $hook, $order );
@@ -1110,18 +1117,54 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'https://pixel.wp.com/g.gif?v=wpcom-no-pv&x_wcpay_order_completed_gateway=other' ), array_column( $requests->getArrayCopy(), 'url' ), 'One counter request' );
 		$this->assertFalse( $requests[0]['blocking'], 'Checkout does not wait for the answer' );
 		$this->assertSame( 1, $requests[0]['timeout'], 'One-second timeout' );
+		// WP_Http::request() defaults (wp-includes/class-wp-http.php): no headers, body or cookies are added.
+		$this->assertSame( array(), $requests[0]['headers'], 'No headers' );
+		$this->assertNull( $requests[0]['body'], 'No body' );
+		$this->assertSame( array(), $requests[0]['cookies'], 'No cookies' );
 	}
 
 	/**
 	 * Both order-processed actions client 11.1.0 counts from (`includes/class-woopay-tracker.php:78-79`).
 	 *
-	 * @return array<string,array{string}>
+	 * Client 11.1.0 counts any order its gateway lookup does not match to WooPayments, a free order with no payment method
+	 * included (`includes/class-woopay-tracker.php:583-600`).
+	 *
+	 * @return array<string,array{string,string,bool}>
 	 */
 	public function order_processed_action_provider(): array {
 		return array(
-			'classic checkout'   => array( 'woocommerce_checkout_order_processed' ),
-			'Store API checkout' => array( 'woocommerce_store_api_checkout_order_processed' ),
+			'classic checkout'                  => array( 'woocommerce_checkout_order_processed', 'cod', false ),
+			'Store API checkout'                => array( 'woocommerce_store_api_checkout_order_processed', 'cod', false ),
+			'free order with no payment method' => array( 'woocommerce_checkout_order_processed', '', false ),
+			'admin-ajax checkout by a shopper'  => array( 'woocommerce_checkout_order_processed', 'cod', true ),
 		);
+	}
+
+	/**
+	 * @testdox Should finish the order-processed action when sending the stats counter throws.
+	 */
+	public function test_a_failing_counter_request_does_not_interrupt_order_processing(): void {
+		$sut   = $this->arrange_counter_eligible_store( $this->create_account_service( false ) );
+		$order = $this->create_order_paid_with( 'cod', 'Cash on delivery' );
+		add_filter(
+			'pre_http_request',
+			static function () {
+				throw new \RuntimeException( 'Transport failure.' );
+			}
+		);
+		$later_callback_ran = false;
+		add_action(
+			'woocommerce_checkout_order_processed',
+			static function () use ( &$later_callback_ran ): void {
+				$later_callback_ran = true;
+			},
+			20
+		);
+
+		$sut->register();
+		$this->fire_order_processed( 'woocommerce_checkout_order_processed', $order );
+
+		$this->assertTrue( $later_callback_ran );
 	}
 
 	/**
@@ -1201,7 +1244,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Record every outgoing HTTP request without sending it.
 	 *
-	 * @return \ArrayObject<int,array{url:string,blocking:mixed,timeout:mixed}>
+	 * @return \ArrayObject<int,array{url:string,blocking:mixed,timeout:mixed,headers:mixed,body:mixed,cookies:mixed}>
 	 */
 	private function capture_http_requests(): \ArrayObject {
 		$requests = new \ArrayObject();
@@ -1213,6 +1256,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 					'url'      => $url,
 					'blocking' => $parsed_args['blocking'],
 					'timeout'  => $parsed_args['timeout'],
+					'headers'  => $parsed_args['headers'],
+					'body'     => $parsed_args['body'],
+					'cookies'  => $parsed_args['cookies'],
 				);
 
 				return new \WP_Error( 'http_request_blocked', 'Blocked in tests.' );
@@ -1439,7 +1485,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			 * @throws WooPaymentsApiException When set to fail.
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
-				// The client caches wcpay_account_not_found as no account and any other error as a failed read (`includes/class-wc-payments-account.php:2464-2477`).
+				// Account-not-found becomes no account; a temporary failure becomes a failed read (`includes/class-wc-payments-account.php:2464-2477`, where onboarding-disabled also becomes no account).
 				if ( 'wcpay_account_not_found' === $this->error_code ) {
 					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
 				}
@@ -1545,6 +1591,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_gateway_enabled' )->willReturn( $gateway_enabled );
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			$connected
+				// Two fields of the recorded account response (Fixtures/rec-t60-test-drive-account.json, REC-T60-2).
 				? array(
 					'country'                    => 'US',
 					'platform_checkout_eligible' => true,
