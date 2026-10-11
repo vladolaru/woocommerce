@@ -41,13 +41,6 @@ class WooPaymentsEventIngestor {
 	private const PROCESSED_EVENT_TRANSIENT_TTL = HOUR_IN_SECONDS;
 
 	/**
-	 * Event types this store cannot apply yet; the cutover preflight check fails while the list is not empty.
-	 *
-	 * @var string[]
-	 */
-	const KNOWN_UNHANDLED_EVENT_TYPES = array();
-
-	/**
 	 * Stripe Billing invoice event types.
 	 *
 	 * The Stripe Billing module handles them when it is loaded. Otherwise they are refused, as client 11.1.0 refuses them

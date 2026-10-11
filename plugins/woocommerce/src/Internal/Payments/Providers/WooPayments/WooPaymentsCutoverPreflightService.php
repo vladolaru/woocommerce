@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -212,15 +211,6 @@ class WooPaymentsCutoverPreflightService {
 		}
 		if ( ! $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) {
 			$failures[] = 'builtin_admin_surfaces_unavailable';
-		}
-		/**
-		 * Event types that still block the switch. The list is empty today.
-		 *
-		 * @var string[] $unhandled_event_types
-		 */
-		$unhandled_event_types = WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES;
-		if ( array() !== $unhandled_event_types ) {
-			$failures[] = 'provider_events_unhandled';
 		}
 		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
 			$failures[] = 'operational_queue_hooks_unhandled';

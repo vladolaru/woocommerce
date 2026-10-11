@@ -2179,7 +2179,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'native transport unavailable'               => array( 'builtin_transport_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'multi-currency rates unavailable'           => array( 'multi_currency_rates_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'native admin surfaces unavailable'          => array( 'builtin_admin_surfaces_unavailable', WooPaymentsCutoverState::DEFERRED ),
-			'provider events undispositioned'            => array( 'provider_events_unhandled', WooPaymentsCutoverState::DEFERRED ),
 			'financial migrations unavailable'           => array( 'financial_migrations_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'WordPress.com blog ID unavailable'          => array( 'wpcom_blog_id_unavailable', WooPaymentsCutoverState::DEFERRED ),
 			'WordPress.com connection unavailable'       => array( 'wpcom_connection_unavailable', WooPaymentsCutoverState::DEFERRED ),

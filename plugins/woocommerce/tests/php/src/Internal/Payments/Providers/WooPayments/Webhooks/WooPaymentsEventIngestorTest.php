@@ -3238,22 +3238,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Migrated account and refund webhook event types are no longer cutover blockers.
-	 */
-	public function test_refund_webhook_events_are_not_known_unhandled(): void {
-		$this->assertNotContains( 'charge.refunded', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'charge.refund.updated', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'account.updated', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'account.deleted', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'wcpay.notification', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'invoice.paid', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'invoice.payment_failed', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'invoice.upcoming', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'radar.early_fraud_warning.created', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-		$this->assertNotContains( 'radar.early_fraud_warning.updated', WooPaymentsEventIngestor::KNOWN_UNHANDLED_EVENT_TYPES );
-	}
-
-	/**
 	 * @testdox Without the Stripe Billing module, $event_type is refused with the WooPayments extension's reason, after the before-delivery hook only, is not marked processed and is not logged here.
 	 *
 	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws

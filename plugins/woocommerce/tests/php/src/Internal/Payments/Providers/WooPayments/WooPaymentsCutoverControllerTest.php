@@ -1571,9 +1571,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight no longer reports event or queue blockers after A5a disposition.
+	 * @testdox Cutover preflight no longer reports admin surface or queue blockers after A5a disposition.
 	 */
-	public function test_preflight_closes_event_and_queue_blockers_by_default(): void {
+	public function test_preflight_closes_admin_surface_and_queue_blockers_by_default(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
@@ -1582,7 +1582,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$failures = $this->sut->get_preflight_failures();
 
 		$this->assertNotContains( 'builtin_admin_surfaces_unavailable', $failures );
-		$this->assertNotContains( 'provider_events_unhandled', $failures );
 		$this->assertNotContains( 'operational_queue_hooks_unhandled', $failures );
 	}
 
