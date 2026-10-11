@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -166,7 +167,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || $order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) || $order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
 			return;
 		}
 
@@ -214,7 +215,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) ) {
+		if ( $fresh_order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) ) {
 			return;
 		}
 
@@ -382,7 +383,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		try {
 			$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
-			if ( $fresh_order->has_status( array( 'processing', 'completed', 'on-hold' ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
+			if ( $fresh_order->has_status( array( OrderStatus::PROCESSING, OrderStatus::COMPLETED, OrderStatus::ON_HOLD ) ) || ! $this->order_matches_intent( $fresh_order, $intent_id ) ) {
 				return false;
 			}
 

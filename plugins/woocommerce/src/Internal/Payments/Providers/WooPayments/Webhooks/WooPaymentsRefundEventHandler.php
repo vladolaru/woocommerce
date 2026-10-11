@@ -363,7 +363,7 @@ class WooPaymentsRefundEventHandler {
 			$this->add_refund_order_note_once( $order, $note, $refund_id, $is_cancelled ? 'canceled' : 'failed' );
 		}
 
-		if ( 'refunded' === $order->get_status() ) {
+		if ( OrderStatus::REFUNDED === $order->get_status() ) {
 			$order->update_status( OrderStatus::FAILED );
 		}
 

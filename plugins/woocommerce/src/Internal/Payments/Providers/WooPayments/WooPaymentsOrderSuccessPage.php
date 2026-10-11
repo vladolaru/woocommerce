@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
@@ -264,7 +265,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return $text;
 		}
 
-		$should_show_failure = $order->has_status( 'failed' );
+		$should_show_failure = $order->has_status( OrderStatus::FAILED );
 		if ( ! $should_show_failure ) {
 			$payment_method_type = str_replace( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX, '', $order->get_payment_method() );
 			$intent_id           = (string) $order->get_meta( '_intent_id', true );
@@ -545,7 +546,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		if (
 			! $order instanceof WC_Order
 			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' !== $order->get_payment_method()
-			|| 'on-hold' !== $order->get_status()
+			|| OrderStatus::ON_HOLD !== $order->get_status()
 		) {
 			return;
 		}

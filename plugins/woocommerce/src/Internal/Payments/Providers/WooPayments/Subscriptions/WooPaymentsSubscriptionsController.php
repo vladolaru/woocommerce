@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
@@ -285,7 +286,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			$renewal_order->add_order_note( __( 'Subscription renewal failed: No saved payment method found.', 'woocommerce' ) );
 			// Client 11.1.0 trait:415.
 			$this->get_logger()->error( 'There is no saved payment token for order #' . $renewal_order->get_id() );
-			$renewal_order->update_status( 'failed' );
+			$renewal_order->update_status( OrderStatus::FAILED );
 			return;
 		}
 
@@ -402,8 +403,8 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			throw $exception;
 		}
 
-		if ( ! $renewal_order->has_status( 'failed' ) ) {
-			$renewal_order->update_status( 'failed' );
+		if ( ! $renewal_order->has_status( OrderStatus::FAILED ) ) {
+			$renewal_order->update_status( OrderStatus::FAILED );
 		}
 
 		$failure_note = $this->get_subscription_customer_action_failure_note( $renewal_order, $outcome, $charge_id );

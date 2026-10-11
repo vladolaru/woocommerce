@@ -1462,7 +1462,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		if ( ! empty( $_POST['is-woopay-preflight-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$order->update_status( 'pending' );
+			$order->update_status( OrderStatus::PENDING );
 
 			return array(
 				'result'   => 'success',

@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\API\Reports\Cache as ReportsCache;
+use Automattic\WooCommerce\Enums\OrderInternalStatus;
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use Exception;
@@ -410,7 +412,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			$wcpay_refund_count  = count( $wcpay_refunds );
 			$wcpay_refund_total  = 0.0;
 			$wcpay_refund_ids    = array();
-			$would_change_status = 'refunded' === $order->get_status();
+			$would_change_status = OrderStatus::REFUNDED === $order->get_status();
 			$changes             = array();
 
 			foreach ( $wcpay_refunds as $refund ) {
@@ -481,7 +483,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			$order->delete_meta_data( '_wcpay_refund_status' );
 
 			if ( $would_change_status ) {
-				$order->set_status( 'cancelled', '', false );
+				$order->set_status( OrderStatus::CANCELLED, '', false );
 			}
 
 			$note_parts = array( 'Removed incorrect data from canceled authorization:' );
@@ -699,14 +701,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			WHERE orders.type = 'shop_order'
 				AND orders.date_created_gmt >= %s
 				AND (
-					orders.status = 'wc-refunded'
+					orders.status = %s
 					OR (
-						orders.status = 'wc-cancelled'
+						orders.status = %s
 						AND fees_meta.order_id IS NOT NULL
 					)
 				)";
 
-		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE );
+		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE, OrderInternalStatus::REFUNDED, OrderInternalStatus::CANCELLED );
 
 		if ( $last_order_id > 0 ) {
 			$sql     .= ' AND orders.id > %d';
@@ -740,14 +742,14 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			WHERE orders.post_type IN ('shop_order', 'shop_order_placeholder')
 				AND orders.post_date >= %s
 				AND (
-					orders.post_status = 'wc-refunded'
+					orders.post_status = %s
 					OR (
-						orders.post_status = 'wc-cancelled'
+						orders.post_status = %s
 						AND fees_meta.post_id IS NOT NULL
 					)
 				)";
 
-		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE );
+		$params = array( self::CANCELED_INTENT_STATUS, self::BUG_START_DATE, OrderInternalStatus::REFUNDED, OrderInternalStatus::CANCELLED );
 
 		if ( $last_order_id > 0 ) {
 			$sql     .= ' AND orders.ID > %d';
