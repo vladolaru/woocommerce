@@ -441,7 +441,7 @@ class WooPaymentsPaymentOperationService {
 	}
 
 	/**
-	 * Resolve the durable idempotency key for a native charge.
+	 * Return the order's own kept charge key, or keep the candidate as that key and return it.
 	 *
 	 * @param WC_Order $order     Order being charged.
 	 * @param string   $candidate Current checkout invocation key.
@@ -449,7 +449,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * @since 11.2.0
 	 */
-	private function resolve_charge_idempotency_key( WC_Order $order, string $candidate ): string {
+	private function ensure_charge_idempotency_key( WC_Order $order, string $candidate ): string {
 		$persisted_key = (string) $order->get_meta( self::CHARGE_IDEMPOTENCY_KEY_META, true );
 		$record        = $order->get_meta( self::CHARGE_AMBIGUITY_META, true );
 		// A record naming another order means the key was copied from that order with it, so neither belongs here.
@@ -480,7 +480,7 @@ class WooPaymentsPaymentOperationService {
 	 */
 	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
 		$order    = $context->get_order();
-		$sent_key = $this->resolve_charge_idempotency_key( $order, $attempt_key );
+		$sent_key = $this->ensure_charge_idempotency_key( $order, $attempt_key );
 
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
