@@ -1410,6 +1410,43 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorized card PaymentIntent exposes its Visa title to the on-hold emails the lifecycle sends.
+	 *
+	 * Client 11.1.0 sets the card title before update_order_status_from_intent() for every payment, so the emails the
+	 * status change sends render it (class-wc-payment-gateway-wcpay.php:2157-2195).
+	 */
+	public function test_authorized_card_payment_intent_exposes_card_title_to_on_hold_observers(): void {
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_payment_method( 'cheque' );
+		$order->save();
+		// A manual-capture intent carries its uncaptured charge as the recorded platform answer does (Providers/WooPayments/Fixtures/platform-manual-capture.json entries[0].response.body).
+		$result                                   = $this->completed_card_payment_intent_result();
+		$result['status']                         = 'requires_capture';
+		$result['charges']['data'][0]['captured'] = false;
+		$provider                                 = $this->completed_payment_intent_provider( $result, new \ArrayObject() );
+		$observed                                 = array();
+		$observer                                 = static function ( int $order_id ) use ( $order, &$observed ): void {
+			if ( $order->get_id() !== $order_id ) {
+				return;
+			}
+
+			$reloaded = wc_get_order( $order_id );
+			if ( $reloaded instanceof WC_Order ) {
+				$observed[] = $reloaded->get_payment_method_title();
+			}
+		};
+		add_action( 'woocommerce_order_status_on-hold', $observer );
+
+		try {
+			$this->sut->process_checkout_outcome( $this->completed_payment_intent_context( $order, false ), $provider );
+		} finally {
+			remove_action( 'woocommerce_order_status_on-hold', $observer );
+		}
+
+		$this->assertSame( array( 'Visa credit card' ), $observed );
+	}
+
+	/**
 	 * @testdox Completed express PaymentIntents store the title "$expected_title" when the suffix filter returns $label, through the payment lifecycle.
 	 * @dataProvider malformed_payment_request_suffix_data
 	 *
@@ -4828,7 +4865,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				$context->get_order()->save_meta_data();
 				$this->sequence[] = $is_recurring ? 'transport:scheduled' : 'transport:direct';
 
-				return ( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_lifecycle_title', '', 'pm_lifecycle_title' ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $this->result, $is_recurring ) );
+				$status = 'requires_capture' === $this->result['status'] ? PaymentOutcome::STATUS_AUTHORIZED : PaymentOutcome::STATUS_COMPLETED;
+
+				return ( new PaymentOutcome( $status, 'pi_lifecycle_title', '', 'pm_lifecycle_title' ) )->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $this->result, $is_recurring ) );
 			}
 
 			/**

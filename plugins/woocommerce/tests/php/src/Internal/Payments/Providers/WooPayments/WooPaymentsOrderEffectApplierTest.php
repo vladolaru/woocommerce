@@ -213,13 +213,13 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed and customer-action PaymentIntents do not apply completed card display details early.
-	 * @dataProvider incomplete_payment_intent_data
+	 * @testdox A $outcome_status PaymentIntent applies its card display details before the payment lifecycle, as a completed one does.
+	 * @dataProvider not_completed_payment_intent_data
 	 *
 	 * @param string $outcome_status Provider outcome status.
 	 * @param string $intent_status  PaymentIntent status.
 	 */
-	public function test_incomplete_payment_intents_do_not_apply_completed_card_display_details_early( string $outcome_status, string $intent_status ): void {
+	public function test_not_completed_payment_intents_apply_card_display_details_before_the_lifecycle( string $outcome_status, string $intent_status ): void {
 		$order = $this->create_woopayments_order();
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
@@ -254,18 +254,18 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'WooPayments', $reloaded->get_payment_method_title() );
-		$this->assertSame( '', $reloaded->get_meta( 'last4', true ) );
-		$this->assertSame( '', $reloaded->get_meta( '_card_brand', true ) );
+		$this->assertSame( 'Visa credit card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '4242', $reloaded->get_meta( 'last4', true ) );
 	}
 
 	/**
-	 * Provide unsuccessful PaymentIntent outcomes that must not use the completed display branch.
+	 * PaymentIntent outcomes other than completed, whose emails the lifecycle may send.
 	 *
 	 * @return array<string,array{string,string}>
 	 */
-	public function incomplete_payment_intent_data(): array {
+	public function not_completed_payment_intent_data(): array {
 		return array(
+			'authorized'      => array( PaymentOutcome::STATUS_AUTHORIZED, 'requires_capture' ),
 			'failed'          => array( PaymentOutcome::STATUS_FAILED, 'requires_payment_method' ),
 			'requires action' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'requires_action' ),
 		);

@@ -116,7 +116,7 @@ class WooPaymentsOrderEffectApplier {
 				}
 
 				$display_effects = $this->compose_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
-				if ( PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() && ! empty( $display_effects ) ) {
+				if ( ! empty( $display_effects ) ) {
 					$this->apply_composed_payment_method_display_details( $context->get_order(), $display_effects );
 				} else {
 					$this->apply_generic_payment_method_title( $context->get_order() );
