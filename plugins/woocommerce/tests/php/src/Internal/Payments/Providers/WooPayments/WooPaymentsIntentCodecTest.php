@@ -349,30 +349,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed HTTP transport outcomes localize structured card decline details without replacing diagnostics.
-	 */
-	public function test_failed_transport_outcome_localizes_structured_card_decline(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException(
-				'Error: Provider diagnostic for request req_private.',
-				'card_declined',
-				402,
-				'card_error',
-				'insufficient_funds'
-			)
-		);
-
-		$data = $sut->get_data();
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $sut->get_status() );
-		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
-		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
-		$this->assertSame( 'charge', $data['operation'] );
-	}
-
-	/**
 	 * @testdox Failed transport outcomes carry the platform status and an amount_too_small minimum, as the admin capture route answers them.
 	 */
 	public function test_failed_transport_outcome_carries_status_and_minimum_amount(): void {
@@ -406,76 +382,55 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed transport outcomes preserve grounded platform messages without changing diagnostic copy.
+	 * @testdox A failed $operation transport outcome ($_dataName) keeps the platform's diagnostics and shows the shopper the client's copy.
 	 *
-	 * @dataProvider grounded_transport_error_data
+	 * Client 11.1.0 `class-wc-payments-utils.php:770-821`: a card decline code gets its localized copy, a typed non-card error
+	 * the generic copy (`:797-798`), and grounded or typeless messages pass through.
 	 *
-	 * @param string $error_type       Error type.
-	 * @param string $error_code       Error code.
-	 * @param string $platform_message Normalized platform message.
+	 * @dataProvider provider_failed_transport_shopper_messages
+	 *
+	 * @param string $operation           Operation that failed.
+	 * @param string $message             Normalized platform message.
+	 * @param string $error_code          Error code.
+	 * @param int    $http_code           HTTP status.
+	 * @param string $error_type          Error type.
+	 * @param string $decline_code        Decline code.
+	 * @param string $provider_payment_id Explicit provider payment ID, '' for none (the default).
+	 * @param string $shopper_message     Expected shopper message.
 	 */
-	public function test_failed_transport_outcome_preserves_grounded_platform_message( string $error_type, string $error_code, string $platform_message ): void {
+	public function test_failed_transport_outcome_shopper_message( string $operation, string $message, string $error_code, int $http_code, string $error_type, string $decline_code, string $provider_payment_id, string $shopper_message ): void {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException( $platform_message, $error_code, 400, $error_type )
+			$operation,
+			new WooPaymentsApiException( $message, $error_code, $http_code, $error_type, $decline_code ),
+			$provider_payment_id
 		);
 
 		$data = $outcome->get_data();
 
-		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( $platform_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( $error_code, $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( $message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( $shopper_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
+		$this->assertSame( $operation, $data['operation'] );
 	}
 
 	/**
-	 * Grounded platform transport errors whose normalized message is safe to show.
+	 * Failed transport errors and the shopper copy each gets.
 	 *
-	 * @return array<string,array{string,string,string}>
+	 * @return array<string,array{0:string,1:string,2:string,3:int,4:string,5:string,6:string,7:string}>
 	 */
-	public function grounded_transport_error_data(): array {
+	public function provider_failed_transport_shopper_messages(): array {
+		$generic = "We're not able to process this request. Please refresh the page and try again.";
+		$too_big = 'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.';
+
 		return array(
-			'card-testing prevention' => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
-			'unmapped card error'     => array( 'card_error', 'provider_internal_detail', 'Error: Your card does not support this type of purchase.' ),
-		);
-	}
-
-	/**
-	 * @testdox Failed transport outcomes redact a typed invalid-request error for the shopper and keep it for diagnostics.
-	 *
-	 * Source: client 11.1.0 `class-wc-payments-utils.php:797-798` (typed non-card errors use the generic copy).
-	 */
-	public function test_failed_transport_outcome_redacts_typed_invalid_request_error(): void {
-		$platform_message = 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters';
-		$outcome          = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException( $platform_message, 'invalid_request_error', 400, 'invalid_request_error' )
-		);
-
-		$data = $outcome->get_data();
-
-		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( "We're not able to process this request. Please refresh the page and try again.", $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
-	}
-
-	/**
-	 * @testdox Failed non-card transport outcomes use generic shopper copy without replacing diagnostics.
-	 */
-	public function test_failed_transport_outcome_redacts_non_card_error(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException(
-				'Error: Private upstream host refused the request.',
-				'provider_internal_failure',
-				500,
-				'api_error'
-			)
-		);
-
-		$data = $sut->get_data();
-
-		$this->assertSame( 'Error: Private upstream host refused the request.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
-			$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null
+			'card decline, insufficient funds' => array( 'charge', 'Error: Provider diagnostic for request req_private.', 'card_declined', 402, 'card_error', 'insufficient_funds', '', 'Error: Your card has insufficient funds.' ),
+			'card-testing prevention'          => array( 'charge', "Error: We're not able to add this payment method. Please try again later.", 'wcpay_card_testing_prevention', 400, '', '', '', "Error: We're not able to add this payment method. Please try again later." ),
+			'unmapped card error'              => array( 'charge', 'Error: Your card does not support this type of purchase.', 'provider_internal_detail', 400, 'card_error', '', '', 'Error: Your card does not support this type of purchase.' ),
+			'typed invalid request error'      => array( 'charge', 'Error: Invalid string length: 55555501004242424242424242 must be at most 20 characters', 'invalid_request_error', 400, 'invalid_request_error', '', '', $generic ),
+			'non-card api error'               => array( 'charge', 'Error: Private upstream host refused the request.', 'provider_internal_failure', 500, 'api_error', '', '', $generic ),
+			'amount_too_small without data'    => array( 'charge', 'Amount too small', 'amount_too_small', 400, '', '', '', 'Amount too small' ),
+			'amount_too_large capture'         => array( 'capture', $too_big, 'amount_too_large', 400, 'invalid_request_error', '', 'pi_auth_test', $too_big ),
 		);
 	}
 
@@ -540,41 +495,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 50, get_transient( 'wcpay_minimum_amount_usd' ), 'The platform floor must be cached per currency so the next attempt can fail before the API call.' );
 
 		delete_transient( 'wcpay_minimum_amount_usd' );
-	}
-
-	/**
-	 * @testdox Failed amount_too_small outcomes without a data payload keep the typeless platform message.
-	 *
-	 * Without a floor to render, the error is an ordinary typeless error (client `class-wc-payments-utils.php:770`, `:821`).
-	 */
-	public function test_failed_transport_outcome_amount_too_small_without_data_keeps_platform_message(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException( 'Amount too small', 'amount_too_small', 400 )
-		);
-
-		$this->assertSame( 'Amount too small', $sut->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
-	}
-
-	/**
-	 * @testdox Failed amount_too_large transport outcomes pass the redacted capture message through to the shopper surface.
-	 */
-	public function test_failed_transport_outcome_passes_amount_too_large_message_through(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'capture',
-			new WooPaymentsApiException(
-				'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
-				'amount_too_large',
-				400,
-				'invalid_request_error'
-			),
-			'pi_auth_test'
-		);
-
-		$this->assertSame(
-			'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
-			$sut->get_data()[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null
-		);
 	}
 
 	/**
