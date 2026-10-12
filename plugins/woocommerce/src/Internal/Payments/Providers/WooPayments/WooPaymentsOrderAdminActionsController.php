@@ -67,22 +67,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( false === has_filter( 'woocommerce_order_actions', array( $this, 'handle_woocommerce_order_actions' ) ) ) {
-			add_filter( 'woocommerce_order_actions', array( $this, 'handle_woocommerce_order_actions' ) );
-		}
-		if ( false === has_action( 'woocommerce_order_action_capture_charge', array( $this, 'handle_woocommerce_order_action_capture_charge' ) ) ) {
-			add_action( 'woocommerce_order_action_capture_charge', array( $this, 'handle_woocommerce_order_action_capture_charge' ) );
-		}
-		if ( false === has_action( 'woocommerce_order_action_cancel_authorization', array( $this, 'handle_woocommerce_order_action_cancel_authorization' ) ) ) {
-			add_action( 'woocommerce_order_action_cancel_authorization', array( $this, 'handle_woocommerce_order_action_cancel_authorization' ) );
-		}
-		if ( false === has_action( 'woocommerce_order_status_completed', array( $this, 'handle_woocommerce_order_status_completed' ) ) ) {
-			add_action( 'woocommerce_order_status_completed', array( $this, 'handle_woocommerce_order_status_completed' ), 10, 3 );
-		}
-		if ( false === has_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ) ) ) {
-			add_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ), 10, 3 );
-		}
-		if ( is_admin() && false === has_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ) ) ) {
+		add_filter( 'woocommerce_order_actions', array( $this, 'handle_woocommerce_order_actions' ) );
+		add_action( 'woocommerce_order_action_capture_charge', array( $this, 'handle_woocommerce_order_action_capture_charge' ) );
+		add_action( 'woocommerce_order_action_cancel_authorization', array( $this, 'handle_woocommerce_order_action_cancel_authorization' ) );
+		add_action( 'woocommerce_order_status_completed', array( $this, 'handle_woocommerce_order_status_completed' ), 10, 3 );
+		add_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ), 10, 3 );
+		if ( is_admin() ) {
 			add_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ), 10, 2 );
 		}
 	}
