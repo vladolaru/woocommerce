@@ -514,7 +514,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @param string              $account_country Connected account country override.
 	 */
 	public function apply_payment_method_display_details( WC_Order $order, array $result, string $account_country = '' ): void {
-		$effects = $this->compose_payment_method_display_details( $order, $result, $account_country );
+		$effects = $this->compose_payment_method_display_details( $order, $result );
 		$this->apply_composed_payment_method_display_details( $order, $effects, $account_country );
 	}
 
@@ -616,14 +616,11 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Compose payment-method display effects for an order without writing them.
 	 *
-	 * @param WC_Order            $order           Order being projected.
-	 * @param array<string,mixed> $result          Provider PaymentIntent response.
-	 * @param string              $account_country Connected account country override.
+	 * @param WC_Order            $order  Order being projected.
+	 * @param array<string,mixed> $result Provider PaymentIntent response.
 	 * @return array{meta:array<string,string>,payment_method_id:string,payment_method_type:string,payment_method_details:array<string,mixed>,express_checkout_type:string}|array{}
 	 */
-	private function compose_payment_method_display_details( WC_Order $order, array $result, string $account_country = '' ): array {
-		unset( $account_country );
-
+	private function compose_payment_method_display_details( WC_Order $order, array $result ): array {
 		return WooPaymentsOrderEffects::compose_payment_method_display_details(
 			$result,
 			(string) $order->get_meta( '_wcpay_express_checkout_payment_method', true )
@@ -682,7 +679,7 @@ class WooPaymentsOrderEffectApplier {
 	 * @param string              $account_country Connected account country override.
 	 */
 	public function apply_payment_method_display_title( WC_Order $order, array $result, string $account_country = '' ): void {
-		$effects = $this->compose_payment_method_display_details( $order, $result, $account_country );
+		$effects = $this->compose_payment_method_display_details( $order, $result );
 		if ( empty( $effects ) ) {
 			return;
 		}

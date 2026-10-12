@@ -1584,7 +1584,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return;
 		}
 
-		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, $intent_id );
+		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $intent_id );
 	}
 
 	/**

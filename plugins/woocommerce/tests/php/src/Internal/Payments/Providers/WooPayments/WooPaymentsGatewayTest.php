@@ -33,6 +33,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -2384,7 +2385,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( $order->get_id(), $service->last_checkout_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
 		$this->assertFalse( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
-		$this->assertSame( 'pi_mock', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertSame( 'pi_mock', WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**
@@ -2419,7 +2420,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
-		$this->assertSame( 'pi_plugin_history_use', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertSame( 'pi_plugin_history_use', WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**
@@ -2467,13 +2468,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service->checkout_outcome = new PaymentOutcome( $status, $provider_payment_id );
 		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
-		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, null );
+		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, null );
 		$_POST['wcpay-payment-method'] = 'pm_card';
 
 		$gateway->process_payment( $order->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**
@@ -4790,7 +4791,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$result
 		);
 		$this->assertNull( $service->last_checkout_context );
-		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
 	}
@@ -5300,7 +5301,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'] );
 		$this->assertSame( 0, $service->checkout_attempt_count, 'An already-paid order must never reach the processing service.' );
-		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**
@@ -5325,7 +5326,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertStringContainsString( 'wcpay_previous_successful_intent=yes', $result['redirect'], 'The answer must match the already-paid check before the lock.' );
 		$this->assertSame( 'WooPayments: detected and prevented a second payment for this order, which had already been paid.', $notes[0]->content ?? null );
-		$this->assertNull( WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
+		$this->assertNull( WC()->session->get( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**

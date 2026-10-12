@@ -639,7 +639,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -675,7 +675,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -708,7 +708,7 @@ class WooPaymentsOrderNoteService {
 					'code'   => '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$intent_id
 		);
@@ -744,7 +744,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -812,7 +812,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -1117,7 +1117,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -1195,7 +1195,7 @@ class WooPaymentsOrderNoteService {
 					'a'      => '' !== $transaction_url ? '<a href="%4$s" target="_blank" rel="noopener noreferrer">' : '<code>',
 				)
 			),
-			$formatted_amount ?? $this->format_order_amount_for_domain( $order, $text_domain ),
+			$formatted_amount ?? $this->format_order_amount( $order ),
 			'WooPayments',
 			$transaction_id,
 			$transaction_url
@@ -1722,21 +1722,6 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function format_order_amount( WC_Order $order ): string {
 		return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
-	}
-
-	/**
-	 * Format an order total for one known catalog.
-	 *
-	 * @param WC_Order $order       Order object.
-	 * @param string   $text_domain Translation catalog to render.
-	 * @return string
-	 */
-	private function format_order_amount_for_domain( WC_Order $order, string $text_domain ): string {
-		if ( 'woocommerce-payments' === $text_domain ) {
-			return WooPaymentsCurrencyUtils::format_explicit_order_price( (float) $order->get_total(), $order->get_currency(), $order );
-		}
-
-		return $this->format_order_amount( $order );
 	}
 
 	/**

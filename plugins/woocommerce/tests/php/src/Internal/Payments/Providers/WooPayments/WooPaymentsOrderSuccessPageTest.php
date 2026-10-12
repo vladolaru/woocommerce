@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -608,7 +607,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
 		$page  = $this->create_page( true );
 		$order = $this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock' );
-		WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
+		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
 		$page->register();
 		$this->registered_pages[] = $page;
 
@@ -635,7 +634,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$original_session = WC()->session;
 
 		if ( $has_session ) {
-			WC()->session->set( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, $session_intent_id );
+			WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, $session_intent_id );
 		} else {
 			WC()->session = null;
 		}

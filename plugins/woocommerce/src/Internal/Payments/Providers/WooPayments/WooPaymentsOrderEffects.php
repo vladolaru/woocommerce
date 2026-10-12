@@ -268,7 +268,7 @@ class WooPaymentsOrderEffects {
 	 * @param bool                 $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
 	 * @return array<string,string>
 	 */
-	public static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
+	private static function authorized_charge_meta( array $intent, array $charge, array $settlement_meta = array(), bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
 		$meta = $settlement_meta;
 		if ( isset( $charge['outcome']['risk_level'] ) ) {
 			$meta['_charge_risk_level'] = (string) $charge['outcome']['risk_level'];
@@ -380,7 +380,7 @@ class WooPaymentsOrderEffects {
 	 * @param bool                $entering_review_hold Whether a review outcome is placing the order in fraud review right now.
 	 * @return array<string,string>
 	 */
-	public static function fraud_outcome_meta( array $intent, array $charge, bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
+	private static function fraud_outcome_meta( array $intent, array $charge, bool $was_held_for_review = false, bool $entering_review_hold = false ): array {
 		$metadata      = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$fraud_outcome = isset( $metadata['fraud_outcome'] ) ? (string) $metadata['fraud_outcome'] : '';
 		$is_card       = self::is_card_charge( $charge );

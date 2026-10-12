@@ -28,6 +28,11 @@ use WC_Order;
  */
 class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 
+	/**
+	 * WC session key that proves this session completed a WooPayments PaymentIntent.
+	 */
+	public const PAID_INTENT_ID_SESSION_KEY = 'wcpay_paid_intent_id';
+
 	private const ASSET_HANDLE = 'wc-woopayments-order-success';
 
 	private const MULTIBANCO_REFERENCE_META_KEY = '_wcpay_multibanco_reference';
@@ -240,7 +245,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		}
 
 		$intent_id         = (string) $order->get_meta( '_intent_id', true );
-		$session_intent_id = (string) WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY, '' );
+		$session_intent_id = (string) WC()->session->get( self::PAID_INTENT_ID_SESSION_KEY, '' );
 		if ( '' === $intent_id || '' === $session_intent_id || ! hash_equals( $intent_id, $session_intent_id ) ) {
 			return $required;
 		}
