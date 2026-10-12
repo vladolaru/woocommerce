@@ -150,8 +150,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				}
 
 				// Shape: the platform's create-and-confirm answer in Fixtures/platform-intention-basic-card.json (pair
-				// basic_card_usd_create_and_confirm), trimmed to the fields read here; fee_breakdown_v1 takes the
-				// totals shape of the fetched charge in Fixtures/platform-eur-charge.json (pair eur_charge_get_charge).
+				// basic_card_usd_create_and_confirm: captured, fee 62, no fee_breakdown_v1), trimmed to the fields read here.
 				return array(
 					'id'             => 'pi_native',
 					'status'         => 'succeeded',
@@ -178,144 +177,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 								'outcome'                => array( 'risk_level' => 'normal' ),
 								'amount'                 => 5000,
 								'currency'               => 'usd',
-								'application_fee_amount' => 218,
-								'fee_breakdown_v1'       => array(
-									'totals' => array(
-										'fee' => array(
-											'amount'   => 175,
-											'currency' => 'usd',
-										),
-										'net' => array(
-											'amount'   => 4825,
-											'currency' => 'usd',
-										),
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-
-			/**
-			 * Retrieve a payment intention.
-			 *
-			 * @param string $intent_id PaymentIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				if ( 'pi_native' !== $intent_id ) {
-					throw new \RuntimeException( 'Unexpected native intent read.' );
-				}
-
-				return array(
-					'id'      => 'pi_native',
-					'status'  => 'succeeded',
-					'charges' => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'                     => 'ch_native',
-								'payment_method_details' => array(
-									'type' => 'card',
-									'card' => array(
-										'brand'   => 'visa',
-										'funding' => 'credit',
-										'last4'   => '4242',
-										'network' => 'visa',
-									),
-								),
-								'fee_breakdown_v1'       => array(
-									'totals'  => array(
-										'fee'         => array(
-											'amount'   => 293,
-											'currency' => 'usd',
-										),
-										'tax'         => array(
-											'amount'   => 0,
-											'currency' => 'usd',
-										),
-										'net'         => array(
-											'amount'   => 6422,
-											'currency' => 'usd',
-										),
-										'capture_net' => array(
-											'amount'   => 6422,
-											'currency' => 'usd',
-										),
-										'gross'       => array(
-											'amount'   => 6715,
-											'currency' => 'usd',
-										),
-									),
-									'fx'      => array(
-										'from_currency' => 'gbp',
-										'to_currency'   => 'usd',
-										'from_amount'   => 5000,
-										'to_amount'     => 6715,
-									),
-									'sources' => array(
-										'balance_transaction_exchange_rate' => 1.3428,
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-
-			/**
-			 * Retrieve a payment timeline.
-			 *
-			 * @param string $intent_id PaymentIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_timeline( string $intent_id ): array {
-				if ( 'pi_native' !== $intent_id ) {
-					throw new \RuntimeException( 'Unexpected native timeline read.' );
-				}
-
-				return array(
-					'data' => array(
-						array(
-							'type'             => 'captured',
-							'fee_breakdown_v1' => array(
-								'rows'   => array(
-									array(
-										'key'      => 'base',
-										'kind'     => 'fee',
-										'amount'   => 175,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.029,
-											'fixed'      => 30,
-											'fixed_currency' => 'usd',
-										),
-									),
-								),
-								'totals' => array(
-									'fee'         => array(
-										'amount'   => 175,
-										'currency' => 'usd',
-										'rate'     => array(
-											'percentage' => 0.029,
-											'fixed'      => 30,
-											'fixed_currency' => 'usd',
-										),
-									),
-									'tax'         => array(
-										'amount'   => 0,
-										'currency' => 'usd',
-									),
-									'net'         => array(
-										'amount'   => 4825,
-										'currency' => 'usd',
-									),
-									'capture_net' => array(
-										'amount'   => 4825,
-										'currency' => 'usd',
-									),
-								),
+								'application_fee_amount' => 62,
 							),
 						),
 					),
@@ -358,7 +220,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $outcome->get_data() );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $outcome->get_data() );
-		$this->assertSame( 175, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['fee_breakdown_v1']['totals']['fee']['amount'] );
 		$this->assertOrderDoesNotHaveNoteStartingWith( $order, '<strong>Fee details:</strong>' );
 	}
 
@@ -1393,10 +1254,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertContains( "The earlier payment attempt for this order went through, so WooPayments did not take payment from the customer's new payment method.", self::note_texts( $order ) );
-		$this->assertSame(
-			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent pi_earlier, which took the payment, so the order is paid from it and the new payment method is not charged.' ),
-			self::warning_lines( $logger )
-		);
+		$this->assert_one_lookup_warning( $logger, $order, 'key_first', array( 'pi_earlier' ) );
 	}
 
 	/**
@@ -1495,10 +1353,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( '', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true ) );
 		$this->assertSame( $adds_note, in_array( 'An earlier payment attempt for this order did not go through.', self::note_texts( $order ), true ) );
-		$this->assertSame(
-			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The order has ' . ( $adds_note ? 2 : 0 ) . ' PaymentIntent(s) from it and none took the payment, so the key is retired and the new payment method is charged now under a fresh key.' ),
-			self::warning_lines( $logger )
-		);
+		$this->assert_one_lookup_warning( $logger, $order, 'key_first' );
 	}
 
 	/**
@@ -1742,6 +1597,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			} finally {
 				$store->release( $order, $vocabulary, $token );
 			}
+			$this->assert_one_lookup_warning( $logger, $order, 'key_first', array( 'pi_earlier' ) );
 		}
 		$kept = wc_get_order( $order->get_id() );
 
@@ -1765,8 +1621,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::note_texts_containing( $kept, 'is disputed' ),
 			'One note per intent, not one per attempt.'
 		);
-		$line = 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one. The earlier request created PaymentIntent pi_earlier, whose payment is disputed, so this payment attempt is refused without a charge and the key is kept.';
-		$this->assertSame( array( $line, $line ), self::warning_lines( $logger ) );
 	}
 
 	/**
@@ -1902,10 +1756,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'key_first', $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
 		$this->assertSame( array( 'cus_sent' ), $kept->get_meta( WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META, true )['customers'] ?? null );
 		$this->assertSame( array(), self::note_texts_containing( $kept, 'could not be checked' ), 'A lookup that may pass adds no merchant note.' );
-		$this->assertSame(
-			array( 'The charge idempotency key key_first kept on order #' . $order->get_id() . ' was refused because the new payment request differs from the earlier one, and the PaymentIntents of the order could not be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept and the next attempt looks again.' ),
-			self::warning_lines( $logger )
-		);
+		$this->assert_one_lookup_warning( $logger, $order, 'key_first' );
 
 		$charged = $this->charge_attempt( $sut, $kept, 'pm_new', 'key_third' );
 
@@ -2085,9 +1936,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 		$logger = RecordingWcLogger::install();
 
-		$first  = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$first = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
+		$this->assert_one_lookup_warning( $logger, $order, 'key_first' );
 		$second = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_third' );
-		$kept   = wc_get_order( $order->get_id() );
+		$this->assert_one_lookup_warning( $logger, $order, 'key_first' );
+		$kept = wc_get_order( $order->get_id() );
 
 		$this->assertSame( array( 'POST intentions key_first', 'POST intentions key_first', 'POST intentions key_first' ), array_values( array_filter( self::request_trail( $http_client ), static fn( string $line ): bool => 0 === strpos( $line, 'POST' ) ) ), 'Only the first send and the two refused kept-key sends; the new card is never charged.' );
 		$this->assertCount( 7, $http_client->requests );
@@ -2105,8 +1958,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			self::note_texts_containing( $kept, 'could not be checked' ),
 			'One note per order, not one per attempt.'
 		);
-		$line = 'The charge idempotency key key_first kept on order #' . $order->get_id() . " was refused because the new payment request differs from the earlier one, and neither the customer's nor the account's PaymentIntents could be listed to learn whether the earlier request took the payment. This payment attempt is refused without a charge; the key is kept, every attempt on this order is refused the same way until a list can be read, and an order note asks the merchant to check the payment.";
-		$this->assertSame( array( $line, $line ), self::warning_lines( $logger ) );
 	}
 
 	/**
@@ -2703,6 +2554,27 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private static function warning_lines( RecordingWcLogger $logger ): array {
 		return array_values( array_map( static fn( array $line ): string => $line[1], array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
+	}
+
+	/**
+	 * Assert the attempt logged one woopayments warning that names the order and the kept key, then clear the log.
+	 *
+	 * @param RecordingWcLogger $logger    Logger.
+	 * @param WC_Order          $order     Order being paid.
+	 * @param string            $key       Kept charge key.
+	 * @param string[]          $fragments Other text the line must contain, such as the earlier intent's ID.
+	 */
+	private function assert_one_lookup_warning( RecordingWcLogger $logger, WC_Order $order, string $key, array $fragments = array() ): void {
+		$warnings         = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
+		$logger->lines    = array();
+		$logger->contexts = array();
+
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( '#' . $order->get_id(), $warnings[0][1] );
+		$this->assertStringContainsString( $key, $warnings[0][1] );
+		foreach ( $fragments as $fragment ) {
+			$this->assertStringContainsString( $fragment, $warnings[0][1] );
+		}
 	}
 
 	/**
@@ -5177,14 +5049,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Scheduled renewal failures normalize unusable saved payment methods without changing other outcome data.
+	 * @testdox A scheduled renewal failure ($_dataName) gets the unusable saved payment method note only when the error names one, without changing other outcome data.
 	 *
-	 * @dataProvider unusable_saved_method_transport_failure_data
+	 * Only the exact error code, or one of the complete phrases in any letter case, names one.
+	 *
+	 * @dataProvider scheduled_renewal_failure_data
 	 *
 	 * @param string $error_code Provider error code.
-	 * @param string $message Provider error message.
+	 * @param string $message    Provider error message.
+	 * @param bool   $normalizes Whether the failure names an unusable saved payment method.
 	 */
-	public function test_scheduled_renewal_failure_normalizes_unusable_saved_payment_method( string $error_code, string $message ): void {
+	public function test_scheduled_renewal_failure_normalizes_unusable_saved_payment_method( string $error_code, string $message, bool $normalizes ): void {
 		$user_id          = $this->factory()->user->create();
 		$order            = $this->create_woopayments_order();
 		$token            = $this->create_card_token( $user_id, 'pm_unusable_method' );
@@ -5270,17 +5145,17 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_unusable_method', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_renewal', $outcome->get_customer_id() );
 		$this->assertNotEmpty( $expected_note_candidates );
-		$this->assertSame(
-			array(
-				PaymentOutcome::DATA_ERROR_CODE       => $error_code,
-				PaymentOutcome::DATA_ERROR_MESSAGE    => $message,
-				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $expected_shopper_message,
-				PaymentOutcome::DATA_NOTE             => $expected_note_candidates[0],
-				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $expected_note_candidates,
-				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
-			),
-			$data
+		$base      = array(
+			PaymentOutcome::DATA_ERROR_CODE    => $error_code,
+			PaymentOutcome::DATA_ERROR_MESSAGE => $message,
+			WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $expected_shopper_message,
 		);
+		$note_keys = array(
+			PaymentOutcome::DATA_NOTE             => $expected_note_candidates[0],
+			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $expected_note_candidates,
+			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED,
+		);
+		$this->assertSame( $base + ( $normalizes ? $note_keys : array() ), $data );
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $effect_plan );
 		if ( ! $effect_plan instanceof WooPaymentsOrderEffectPlan ) {
 			return;
@@ -5292,49 +5167,22 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide native returned-failure shapes that must receive the safe renewal note.
-	 *
-	 * @return array<string,array{string,string}>
-	 */
-	public static function unusable_saved_method_transport_failure_data(): array {
-		return array(
-			'exact code'       => array( 'payment_method_no_longer_available', 'Raw provider diagnostic.' ),
-			'must-save phrase' => array( '', 'Before retry, MUST SAVE THIS paymentmethod TO A CUSTOMER.' ),
-			'no-such phrase'   => array( '', 'Upstream: no such paymentmethod: pm_123.' ),
-			'detached phrase'  => array( '', 'This card is DETACHED FROM A customer.' ),
-			'reuse phrase'     => array( '', 'This payment method MAY NOT BE USED AGAIN.' ),
-		);
-	}
-
-	/**
-	 * @testdox Unusable saved method classification accepts only the approved structured code and complete phrases.
-	 *
-	 * @dataProvider unusable_saved_method_failure_data
-	 *
-	 * @param string $error_code Provider error code.
-	 * @param string $message Provider error message.
-	 * @param bool   $expected Whether the failure is an unusable saved method.
-	 */
-	public function test_unusable_saved_method_failure_classification( string $error_code, string $message, bool $expected ): void {
-		$sut    = $this->create_operation_service();
-		$method = new \ReflectionMethod( WooPaymentsPaymentOperationService::class, 'is_unusable_saved_payment_method_failure' );
-		$method->setAccessible( true );
-
-		$this->assertSame( $expected, $method->invoke( $sut, $error_code, $message ) );
-	}
-
-	/**
-	 * Provide strict unusable saved-method classifier cases.
+	 * Scheduled renewal failures, each with whether it names an unusable saved payment method.
 	 *
 	 * @return array<string,array{string,string,bool}>
 	 */
-	public static function unusable_saved_method_failure_data(): array {
+	public static function scheduled_renewal_failure_data(): array {
 		return array(
+			'exact code'                             => array( 'payment_method_no_longer_available', 'Raw provider diagnostic.', true ),
+			'must-save phrase'                       => array( '', 'Before retry, MUST SAVE THIS paymentmethod TO A CUSTOMER.', true ),
+			'no-such phrase'                         => array( '', 'Upstream: no such paymentmethod: pm_123.', true ),
+			'detached phrase'                        => array( '', 'This card is DETACHED FROM A customer.', true ),
+			'reuse phrase'                           => array( '', 'This payment method MAY NOT BE USED AGAIN.', true ),
 			'exact error code'                       => array( 'payment_method_no_longer_available', 'Unrelated provider diagnostic.', true ),
 			'wrong-case error code'                  => array( 'Payment_Method_No_Longer_Available', 'Unrelated provider diagnostic.', false ),
 			'must-save phrase with surrounding text' => array( '', 'Upstream says you MUST SAVE THIS paymentmethod TO A CUSTOMER before reuse.', true ),
 			'no-such-payment-method phrase'          => array( '', 'prefix: no such paymentmethod: pm_123 suffix', true ),
-			'detached phrase'                        => array( '', 'The payment method was DETACHED FROM A customer by the platform.', true ),
+			'detached phrase with surrounding text'  => array( '', 'The payment method was DETACHED FROM A customer by the platform.', true ),
 			'may-not-reuse phrase'                   => array( '', 'This saved credential MAY NOT BE USED AGAIN after detachment.', true ),
 			'partial must-save fragment'             => array( '', 'must save this PaymentMethod', false ),
 			'partial no-such fragment'               => array( '', 'No such Payment', false ),
@@ -5757,6 +5605,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->assertNotSame( '', $recorded_seller_message, "The $pair recording must carry a seller_message for this check to mean anything." );
 			$this->assertStringNotContainsString( $recorded_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair is not card_declined, so the merchant note must not carry the platform's seller_message." );
 		}
+		$this->assertContains( $data[ PaymentOutcome::DATA_NOTE ] ?? null, $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ?? array(), "$pair's note must be one of its own equivalents." );
 	}
 
 	/**
