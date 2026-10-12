@@ -2596,6 +2596,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
 		);
+		$this->assertSame( array( 'Payment method updated for all your current subscriptions.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
 	}
 
 	/**
@@ -2607,6 +2608,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
 		$this->ensure_wcs_change_payment_gateway_double();
+		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		WooCommerceSubscriptionsDoubles::load_order_detector();
@@ -2728,6 +2730,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
 		);
+		$this->assertSame( array( 'Payment method updated.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
 	}
 
 	/**

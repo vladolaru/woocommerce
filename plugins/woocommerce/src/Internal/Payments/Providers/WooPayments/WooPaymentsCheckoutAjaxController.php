@@ -368,13 +368,17 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 		}
 
 		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		// Client 11.1.0 trait-wc-payment-gateway-wcpay-subscriptions.php:1473-1479: the shopper is told which subscriptions changed.
+		$notice = __( 'Payment method updated.', 'woocommerce' );
 
 		$will_update_all_callback = array( 'WC_Subscriptions_Change_Payment_Gateway', 'will_subscription_update_all_payment_methods' );
 		$update_all_callback      = array( 'WC_Subscriptions_Change_Payment_Gateway', 'update_all_payment_methods_from_subscription' );
 
-		if ( is_callable( $will_update_all_callback ) && is_callable( $update_all_callback ) && (bool) call_user_func( $will_update_all_callback, $order ) ) {
-			call_user_func( $update_all_callback, $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		if ( is_callable( $will_update_all_callback ) && is_callable( $update_all_callback ) && (bool) call_user_func( $will_update_all_callback, $order ) && (bool) call_user_func( $update_all_callback, $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) ) {
+			$notice = __( 'Payment method updated for all your current subscriptions.', 'woocommerce' );
 		}
+
+		wc_add_notice( $notice );
 	}
 
 	/**
