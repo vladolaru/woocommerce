@@ -155,26 +155,38 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 * @testdox Redirect next actions map to provider redirect outcomes.
 	 */
 	public function test_outcome_from_intention_maps_provider_redirect(): void {
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: next_action.redirect_to_url.url, the field client 11.1.0 class-wc-payment-gateway-wcpay.php:2094 reads.
-			array(
-				'id'          => 'pi_ideal',
-				'status'      => 'requires_action',
-				'next_action' => array(
-					'type'            => 'redirect_to_url',
-					'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
+		// A filter that rewrites every URL: the outcome must carry the context's URL as it is, filtered once by its caller.
+		$clean_url = static function ( string $url ): string {
+			unset( $url );
+
+			return 'https://filtered.example/should-not-run';
+		};
+		add_filter( 'clean_url', $clean_url );
+
+		try {
+			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+				// Shape: next_action.redirect_to_url.url, the field client 11.1.0 class-wc-payment-gateway-wcpay.php:2094 reads.
+				array(
+					'id'          => 'pi_ideal',
+					'status'      => 'requires_action',
+					'next_action' => array(
+						'type'            => 'redirect_to_url',
+						'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
+					),
 				),
-			),
-			new WooPaymentsIntentMappingContext(
-				42,
-				'https://example.test/order-received/42',
-				'',
-				'',
-				'',
-				'pi',
-				'https://sanitized.example/redirect/ideal'
-			),
-		);
+				new WooPaymentsIntentMappingContext(
+					42,
+					'https://example.test/order-received/42',
+					'',
+					'',
+					'',
+					'pi',
+					'https://sanitized.example/redirect/ideal'
+				),
+			);
+		} finally {
+			remove_filter( 'clean_url', $clean_url );
+		}
 
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
 		$this->assertSame( 'https://sanitized.example/redirect/ideal', $outcome->get_redirect_url() );

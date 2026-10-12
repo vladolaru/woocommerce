@@ -91,6 +91,10 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @return array<string,array<int,mixed>>
 	 */
 	public function provider_platform_request_contracts(): array {
+		// Synthetic transport fixtures: the client returns each decoded answer as it comes, so these rows check that the
+		// answer comes back unchanged, not the platform's shapes. Field names follow the object each one stands for where
+		// there is one (Stripe PaymentMethod and list objects, the Apple Pay domain, a PaymentIntent); $export carries
+		// export_id, the field the admin export flow reads.
 		$account_link      = array(
 			'url'   => 'https://connect.stripe.com/setup/session',
 			'state' => 'state_test',
@@ -1742,7 +1746,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				static fn( WooPaymentsApiClient $sut ) => $sut->refund_charge( 'ch_test', null, 'Customer requested a full refund', 'merchant_dashboard', 'idem_full_refund' ),
 				're_full',
 				'/sites/123/wcpay/refunds',
-				'/^idem_full_refund$/',
+				'/^idem_full_refund\z/',
 				array(
 					'test_mode' => false,
 					'charge'    => 'ch_test',
@@ -1800,7 +1804,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				),
 				'pi_test',
 				'/sites/123/wcpay/intentions',
-				'/^idem_charge$/',
+				'/^idem_charge\z/',
 				array(
 					'test_mode'            => false,
 					'amount'               => 1000,
@@ -1825,7 +1829,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				),
 				'seti_test',
 				'/sites/123/wcpay/setup_intents',
-				'/^idem_setup$/',
+				'/^idem_setup\z/',
 				array(
 					'test_mode'            => false,
 					'customer'             => 'cus_test',
@@ -1846,7 +1850,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				),
 				'seti_unconfirmed',
 				'/sites/123/wcpay/setup_intents',
-				'/^idem_setup_unconfirmed$/',
+				'/^idem_setup_unconfirmed\z/',
 				array(
 					'test_mode'            => false,
 					'customer'             => 'cus_test',
@@ -2784,6 +2788,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_platform_error_envelopes(): array {
 		return array(
+			// The nested error object (client 11.1.0 class-wc-payments-api-client.php:2852-2872).
 			'structured card error'                   => array(
 				array(
 					'error' => array(
@@ -2802,6 +2807,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_http_code'    => 402,
 				),
 			),
+			// The top-level amount_too_small envelope with its data (client :2845-2851).
 			'top-level amount_too_small with data'    => array(
 				array(
 					'code'    => 'amount_too_small',
@@ -2822,6 +2828,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_http_code'  => 400,
 				),
 			),
+			// The nested error object's param (client :2872).
 			'error object param'                      => array(
 				array(
 					'error' => array(
@@ -2836,6 +2843,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_error_data' => array( 'param' => 'statement_descriptor' ),
 				),
 			),
+			// The decline's seller message, read for card_declined only (client :2914-2915).
 			'card_declined seller message'            => array(
 				array(
 					'error' => array(
@@ -2858,6 +2866,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_decline_code'      => 'do_not_honor',
 				),
 			),
+			// The same seller message on another code, which the client does not read (client :2914).
 			'seller message ignored for expired_card' => array(
 				array(
 					'error' => array(
@@ -2876,6 +2885,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_payment_intent_id' => 'pi_failed_test',
 				),
 			),
+			// The fraud-rule block with its ruleset results (client :2920-2925).
 			'fraud ruleset results data'              => array(
 				array(
 					'error' => array(
@@ -2890,6 +2900,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'get_error_data' => array( 'ruleset_results' => array( 'international_ip_address' => 'block' ) ),
 				),
 			),
+			// amount_too_large on an intent awaiting capture, rewritten (client :2859-2864).
 			'amount_too_large awaiting capture'       => array(
 				array(
 					'error' => array(
@@ -2908,6 +2919,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 					'getMessage'     => 'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
 				),
 			),
+			// amount_too_large on any other intent, kept as sent (client :2859).
 			'amount_too_large not awaiting capture'   => array(
 				array(
 					'error' => array(
@@ -2919,6 +2931,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				400,
 				array( 'getMessage' => 'Error: Amount must be no more than $999,999.99 usd.' ),
 			),
+			// A nested error with message_code instead of code (client :2853).
 			'code from message_code'                  => array(
 				array(
 					'error' => array(
@@ -2929,6 +2942,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				400,
 				array( 'get_error_code' => 'wcpay_platform_message_code' ),
 			),
+			// A nested error with only a type (client :2869).
 			'code from the error type'                => array(
 				array(
 					'error' => array(
@@ -5558,7 +5572,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A platform fraud-flagged decline or card-testing error rotates the card-testing prevention token; ordinary declines leave it alone.
 	 *
-	 * Client 11.1.0 rotates on both codes, as a decline code or as the error code (wc-payment-api/class-wc-payments-api-client.php:2950).
+	 * Client 11.1.0 rotates on a nested error's decline code and on a top-level error code (wc-payment-api/class-wc-payments-api-client.php:2867, :2873-2874).
 	 */
 	public function test_platform_fraud_decline_rotates_the_fraud_prevention_token(): void {
 		// A connected store: without a connection the account read returns no account, like the client.
@@ -5604,13 +5618,12 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$rotated_token = $fraud_prevention_service->get_token();
 		$this->assertNotSame( $original_token, $rotated_token );
 
-		// The platform's card-testing error code rotates it again, with no decline code.
+		// The platform's own card-testing refusal, a top-level code and message, rotates it again (client 11.1.0
+		// class-wc-payments-api-client.php:2873-2874; the fraudulent decline code above is :2867).
 		$this->capture_api_error(
 			array(
-				'error' => array(
-					'code'    => 'wcpay_card_testing_prevention',
-					'message' => 'blocked',
-				),
+				'code'    => 'wcpay_card_testing_prevention',
+				'message' => 'blocked',
 			),
 			402
 		);

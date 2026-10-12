@@ -103,9 +103,12 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->run_payments_bootstrap_and_init();
 
+		// The controller's own methods at priority 10, as client 11.1.0 attaches them
+		// (trait-wc-payment-gateway-wcpay-subscriptions.php:296-297).
+		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
-			$this->assertTrue( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "The $gateway_id renewal handler must be attached." );
-			$this->assertTrue( has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id ), "The $gateway_id failing-method handler must be attached." );
+			$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $controller, 'scheduled_subscription_payment' ) ), "The $gateway_id renewal handler must be attached." );
+			$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $controller, 'update_failing_payment_method' ) ), "The $gateway_id failing-method handler must be attached." );
 		}
 		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
 
