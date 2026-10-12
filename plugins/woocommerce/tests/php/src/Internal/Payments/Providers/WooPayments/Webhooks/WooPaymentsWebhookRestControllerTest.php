@@ -213,9 +213,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox A failed $event_type push gets the $expected_status reply and is kept and scheduled to run again only when its failure is retried ($kept).
 	 *
-	 * A passing failure of a retried type is kept and retried, a refund event gets one attempt as with the WooPayments
-	 * extension, a fraud warning refused by the order payment lock is retried although the type gets one attempt after other
-	 * failures, and a malformed event is not kept.
+	 * A passing failure of a retried type, a refund event included, is kept and retried, since the platform counts the error
+	 * reply as delivered; a fraud warning refused by the order payment lock is retried although the type gets one attempt
+	 * after other failures, and a malformed event is not kept.
 	 *
 	 * @dataProvider provider_failed_push_outcomes
 	 *
@@ -274,7 +274,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				},
 				500,
 				'error',
-				false,
+				true,
 			),
 			'fraud warning, lock refusal'   => array(
 				'radar.early_fraud_warning.created',

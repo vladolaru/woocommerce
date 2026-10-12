@@ -551,6 +551,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'refund'          => array( 'charge.refunded' ),
 			'refund updated'  => array( 'charge.refund.updated' ),
 			'dispute created' => array( 'charge.dispute.created' ),
+			'dispute updated' => array( 'charge.dispute.updated' ),
 			'dispute closed'  => array( 'charge.dispute.closed' ),
 		);
 	}
@@ -751,14 +752,48 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund event that fails gets one attempt, as with the WooPayments extension: no retry is scheduled.
+	 * @testdox A failed $event_type delivery is kept and its retry scheduled, since the platform never sends an event the store answered with an error again.
+	 * @dataProvider refund_and_dispute_event_types
+	 *
+	 * @param string $event_type Refund or dispute event type.
+	 */
+	public function test_failed_refund_or_dispute_delivery_is_kept_and_retried( string $event_type ): void {
+		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$scheduler = new RecordingActionSchedulerService();
+		$event     = array(
+			'id'   => 'evt_money',
+			'type' => $event_type,
+		);
+		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+
+		$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+
+		$this->assertSame( $event, $store->get_event( 'evt_money' ) );
+		$this->assertCount( 1, $scheduler->scheduled_jobs );
+		$this->assertSame( WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( array( 'event_id' => 'evt_money' ), $scheduler->scheduled_jobs[0]['args'] );
+	}
+
+	/** @return array<string,array{string}> */
+	public static function refund_and_dispute_event_types(): array {
+		return array(
+			'refund'          => array( 'charge.refunded' ),
+			'refund updated'  => array( 'charge.refund.updated' ),
+			'dispute created' => array( 'charge.dispute.created' ),
+			'dispute updated' => array( 'charge.dispute.updated' ),
+			'dispute closed'  => array( 'charge.dispute.closed' ),
+		);
+	}
+
+	/**
+	 * @testdox An event type off the retry list that fails gets one attempt, as with the WooPayments extension: no retry is scheduled.
 	 */
 	public function test_process_event_does_not_retry_an_event_type_off_the_list(): void {
 		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_refund',
-			'type' => 'charge.refunded',
+			'type' => 'charge.expired',
 		);
 		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 		$store->set_event( 'evt_refund', $event );

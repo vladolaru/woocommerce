@@ -57,14 +57,30 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
 	 *
-	 * Other types get one attempt: running the refund, dispute or fraud warning handlers again can
-	 * duplicate a refund or apply an older event over a newer one.
+	 * Other types get one attempt: running the fraud warning handlers again can apply an older event over a newer one.
 	 *
 	 * @var string[]
 	 */
 	private const RETRIED_EVENT_TYPES = array(
 		'payment_intent.succeeded',
 		'payment_intent.payment_failed',
+	);
+
+	/**
+	 * Refund and dispute event types retried after a processing failure, but not after a lock refusal.
+	 *
+	 * The platform counts the store's error reply as delivered and never sends the event again, so without a retry a
+	 * refund or dispute update that failed once is lost. A lock refusal keeps its one attempt and the note on the order
+	 * ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
+	 *
+	 * @var string[]
+	 */
+	private const REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES = array(
+		'charge.refunded',
+		'charge.refund.updated',
+		'charge.dispute.created',
+		'charge.dispute.updated',
+		'charge.dispute.closed',
 	);
 
 	/**
@@ -317,7 +333,7 @@ class WooPaymentsEventIngestor {
 			return false;
 		}
 
-		if ( in_array( $event_type, self::RETRIED_EVENT_TYPES, true ) ) {
+		if ( in_array( $event_type, self::RETRIED_EVENT_TYPES, true ) || in_array( $event_type, self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES, true ) ) {
 			return true;
 		}
 
@@ -327,8 +343,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Tell whether an event the order payment lock refused is processed again later.
 	 *
-	 * Events retried after any passing failure are, and so are the types that are safe to apply late
-	 * ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
+	 * Events retried after any passing failure are, except refund and dispute events, and so are the types that are safe
+	 * to apply late ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
 	 *
 	 * @since 11.2.0
 	 *
@@ -336,6 +352,10 @@ class WooPaymentsEventIngestor {
 	 * @return bool
 	 */
 	public function is_retried_lock_refusal( array $event ): bool {
+		if ( isset( $event['type'] ) && in_array( $event['type'], self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES, true ) ) {
+			return false;
+		}
+
 		if ( $this->is_retried_event( $event ) ) {
 			return true;
 		}

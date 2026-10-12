@@ -3100,7 +3100,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only succeeded and failed intents, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
+	 * @testdox Succeeded and failed intents, refund and dispute events, and invoice.paid while Stripe Billing is loaded, are retried after a failure.
 	 */
 	public function test_retried_event_types(): void {
 		$module = $this->getMockBuilder( WooPaymentsStripeBillingModule::class )
@@ -3117,15 +3117,16 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$retried = fn( string $type ): bool => $this->sut->is_retried_event( array( 'type' => $type ) );
 
-		$this->assertTrue( $retried( 'payment_intent.succeeded' ) );
-		$this->assertTrue( $retried( 'payment_intent.payment_failed' ) );
-		foreach ( array( 'charge.refunded', 'charge.refund.updated', 'charge.dispute.closed', 'radar.early_fraud_warning.created', 'invoice.paid' ) as $type ) {
+		foreach ( array( 'payment_intent.succeeded', 'payment_intent.payment_failed', 'charge.refunded', 'charge.refund.updated', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed' ) as $type ) {
+			$this->assertTrue( $retried( $type ), "$type must be retried." );
+		}
+		foreach ( array( 'charge.expired', 'radar.early_fraud_warning.created', 'invoice.paid' ) as $type ) {
 			$this->assertFalse( $retried( $type ), "$type must get one attempt." );
 		}
 
 		$loaded = true;
 		$this->assertTrue( $retried( 'invoice.paid' ), 'invoice.paid is retried while Stripe Billing is loaded.' );
-		foreach ( array( 'invoice.payment_failed', 'invoice.upcoming', 'charge.refunded' ) as $type ) {
+		foreach ( array( 'invoice.payment_failed', 'invoice.upcoming' ) as $type ) {
 			$this->assertFalse( $retried( $type ), "$type must get one attempt: its handler is not safe to run twice." );
 		}
 	}
