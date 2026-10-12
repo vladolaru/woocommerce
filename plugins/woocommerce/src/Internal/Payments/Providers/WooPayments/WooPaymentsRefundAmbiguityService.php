@@ -502,7 +502,7 @@ class WooPaymentsRefundAmbiguityService {
 			'last_failed_at'  => max( $failed_at, (int) ( $stored['last_failed_at'] ?? 0 ) ),
 			'found_refund_id' => (string) ( $stored['found_refund_id'] ?? '' ),
 			'found_amount'    => (int) ( $stored['found_amount'] ?? 0 ),
-			'found_currency'  => strtolower( (string) ( $stored['found_currency'] ?? ( $stored['currency'] ?? '' ) ) ),
+			'found_currency'  => strtolower( (string) ( $stored['found_currency'] ?? '' ) ),
 		);
 	}
 
@@ -567,7 +567,7 @@ class WooPaymentsRefundAmbiguityService {
 		);
 		$other_minor  = array_sum( array_map( static fn( WC_Order_Refund $refund ): int => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $refund->get_amount(), $currency ), $settled_rows ) );
 		if ( $found_minor > WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ) - $other_minor ) {
-			$manual_row = strtolower( $currency ) === (string) ( $record['found_currency'] ?? '' ) && ! $this->is_recorded_on_order( $order, $found_id )
+			$manual_row = strtolower( $currency ) === (string) $record['found_currency'] && ! $this->is_recorded_on_order( $order, $found_id )
 				? self::find_manual_record_row( $rows, $currency, $found_minor, (int) $record['failed_at'] )
 				: null;
 			if ( null !== $manual_row ) {
