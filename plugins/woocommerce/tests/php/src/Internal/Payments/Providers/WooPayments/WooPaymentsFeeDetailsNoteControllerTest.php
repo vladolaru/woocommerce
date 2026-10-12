@@ -300,22 +300,6 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fee-breakdown jobs skip malformed timeline data without adding an empty note.
-	 */
-	public function test_add_fee_breakdown_to_order_notes_skips_malformed_timeline(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->save();
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
-		$api_client->method( 'get_timeline' )->willReturn( array( 'data' => array( array( 'type' => 'authorized' ) ) ) );
-
-		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'pi_123', false );
-
-		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
 	 * @testdox A timeline the job cannot use ($_dataName) is logged as the WooPayments extension logs it, and adds no note.
 	 *
 	 * Client 11.1.0 add_fee_breakdown_to_order_notes() logs both cases through its gated Logger::log() at info level

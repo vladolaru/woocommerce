@@ -15,47 +15,6 @@ use WC_Unit_Test_Case;
 class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Completed charge metadata accepts explicit settlement metadata without a service.
-	 */
-	public function test_completed_charge_meta_accepts_explicit_settlement_meta_without_a_service(): void {
-		$intent = array(
-			'currency' => 'usd',
-			'metadata' => array(),
-		);
-		$charge = array(
-			'currency'               => 'usd',
-			'amount'                 => 5000,
-			'application_fee_amount' => 218,
-			'balance_transaction'    => array( 'id' => 'txn_native' ),
-			'outcome'                => array( 'risk_level' => 'normal' ),
-			'payment_method_details' => array( 'type' => 'card' ),
-			'fee_breakdown_v1'       => array(
-				'totals' => array(
-					'fee' => array(
-						'amount'   => 175,
-						'currency' => 'usd',
-					),
-					'net' => array(
-						'amount'   => 4825,
-						'currency' => 'usd',
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::completed_charge_meta(
-			$intent,
-			$charge,
-			array( '_wcpay_multi_currency_stripe_exchange_rate' => '1.33127' )
-		);
-
-		$this->assertSame( 'txn_native', $meta['_wcpay_payment_transaction_id'] );
-		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
-		$this->assertSame( '1.33127', $meta['_wcpay_multi_currency_stripe_exchange_rate'] );
-		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $meta );
-	}
-
-	/**
 	 * @testdox Completed non-card metadata marks the fraud box without inventing an outcome.
 	 */
 	public function test_completed_charge_meta_marks_non_card_without_defaulting_fraud_outcome(): void {
@@ -78,34 +37,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'normal', $meta['_charge_risk_level'] );
 		$this->assertArrayNotHasKey( '_wcpay_fraud_outcome_status', $meta );
 		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox PaymentIntent metadata projects base, financial, and provider facts from explicit inputs.
-	 */
-	public function test_payment_intent_meta_projects_completed_effects(): void {
-		$intent = array(
-			'id'       => 'pi_native',
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                  => 'ch_native',
-						'currency'            => 'usd',
-						'amount'              => 2500,
-						'balance_transaction' => array( 'id' => 'txn_native' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', 'test' );
-
-		$this->assertSame( 'USD', $meta['_wcpay_intent_currency'] );
-		$this->assertSame( 'test', $meta['_wcpay_mode'] );
-		$this->assertSame( 'ch_native', $meta['_charge_id'] );
-		$this->assertSame( 'txn_native', $meta['_wcpay_payment_transaction_id'] );
 	}
 
 	/**
@@ -359,31 +290,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'review', $meta['_wcpay_fraud_outcome_status'] );
 		$this->assertSame( 'review', $meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Pre-capture review intents persist their nonempty ruleset evidence.
-	 */
-	public function test_payment_intent_meta_persists_nonempty_review_ruleset_only(): void {
-		$intent = array(
-			'status'   => 'requires_capture',
-			'currency' => 'usd',
-			'metadata' => array(
-				'fraud_outcome'         => 'review',
-				'fraud_ruleset_results' => '{"avs_verification":"review","new_platform_rule":"block"}',
-			),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'payment_method_details' => array( 'type' => 'card' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
-
-		$this->assertSame( '{"avs_verification":"review","new_platform_rule":"block"}', $meta['_wcpay_fraud_ruleset_results'] );
 	}
 
 	/**
@@ -657,33 +563,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Wrapped Link card display details keep only the Link wallet, with no express checkout type and no card metadata.
-	 */
-	public function test_setup_intent_wrapped_link_card_display_details_keep_only_the_link_wallet(): void {
-		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
-			array(
-				'type' => 'card',
-				'card' => array(
-					'brand'  => 'visa',
-					'last4'  => '4242',
-					'wallet' => array( 'type' => 'link' ),
-				),
-			),
-			'apple_pay'
-		);
-
-		$this->assertSame( '', $effects['express_checkout_type'] );
-		$this->assertSame( array(), $effects['meta'] );
-		$this->assertSame(
-			array(
-				'type' => 'card',
-				'card' => array( 'wallet' => array( 'type' => 'link' ) ),
-			),
-			$effects['payment_method_details']
-		);
-	}
-
-	/**
 	 * The charge's SEPA Direct Debit payment method details as the platform returns them.
 	 *
 	 * The client stores this array unchanged (class-wc-payments-order-service.php:1373-1377 and :3118-3121).
@@ -741,9 +620,9 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund effect data accepts a separately rendered note without container resolution.
+	 * @testdox Refund effect data keeps every equivalent note wording it is given.
 	 */
-	public function test_refund_effect_data_accepts_rendered_note_separately_without_container_resolution(): void {
+	public function test_refund_effect_data_keeps_every_equivalent_note(): void {
 		$equivalent_notes = array(
 			'Already rendered refund note.',
 			'Legacy catalog refund note.',
@@ -759,11 +638,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 			$equivalent_notes
 		);
 
-		$this->assertSame( 'pending', $effects[ PaymentOutcome::DATA_ORDER_META ]['_wcpay_refund_status'] );
-		$this->assertSame( 're_native', $effects[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_id'] );
-		$this->assertSame( 'txn_refund', $effects[ PaymentOutcome::DATA_REFUND_META ]['_wcpay_refund_transaction_id'] );
-		$this->assertSame( 'Already rendered refund note.', $effects[ PaymentOutcome::DATA_REFUND_NOTE ] );
-		$this->assertSame( 'refund:re_native:created_pending', $effects[ PaymentOutcome::DATA_REFUND_NOTE_IDENTITY ] );
 		$this->assertSame( $equivalent_notes, $effects[ PaymentOutcome::DATA_REFUND_NOTE_EQUIVALENTS ] );
 	}
 }

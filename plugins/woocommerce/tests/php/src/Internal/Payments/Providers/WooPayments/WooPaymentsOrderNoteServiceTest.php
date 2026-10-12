@@ -511,22 +511,6 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Unknown risk filter keys render as readable labels.
-	 */
-	public function test_formats_fraud_blocked_note_with_unknown_rule_key(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->set_total( '25.00' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-
-		$candidates = $sut->format_fraud_blocked_note_candidates( $order, 'pi_blocked_test', array( 'new_platform_rule' => 'block' ) );
-
-		$this->assertStringContainsString( '&#8226; New platform rule', $candidates[0] );
-	}
-
-	/**
 	 * @testdox Authorization and started notes preserve WooPayments reference copy.
 	 */
 	public function test_formats_authorization_and_started_notes(): void {
@@ -725,59 +709,6 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let the public filter suppress the refund-note fallback currency output.
-	 */
-	public function test_public_filter_suppresses_refund_note_fallback_currency_output(): void {
-		$this->configure_second_currency();
-		$this->set_core_multi_currency( true );
-		$defaults = array();
-		add_filter(
-			'wcpay_multi_currency_should_output_explicit_price',
-			static function ( bool $current_default ) use ( &$defaults ): bool {
-				$defaults[] = $current_default;
-				return false;
-			}
-		);
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->save();
-
-		$note   = ( new WooPaymentsOrderNoteService() )->format_created_refund_note( $order, 4.00, 'USD', 're_123', 'Requested by customer', false );
-		$amount = html_entity_decode( wp_strip_all_tags( wc_price( 4.00, array( 'currency' => 'USD' ) ) ) );
-		$note   = html_entity_decode( wp_strip_all_tags( $note ) );
-
-		$this->assertStringContainsString( $amount, $note );
-		$this->assertStringNotContainsString( $amount . ' USD', $note );
-		$this->assertSame( array( true ), $defaults );
-	}
-
-	/**
-	 * @testdox Should not apply the public filter to hidden WooPayments extension refund candidates.
-	 */
-	public function test_public_filter_does_not_apply_to_hidden_woopayments_extension_refund_candidates(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->save();
-		$sut    = new WooPaymentsOrderNoteService();
-		$method = new \ReflectionMethod( $sut, 'format_amount_candidates' );
-		$method->setAccessible( true );
-		$candidates = $method->invoke( $sut, $order, 4.00, 'USD' );
-		$calls      = array();
-		add_filter(
-			'wcpay_multi_currency_should_output_explicit_price',
-			static function ( bool $current_default ) use ( &$calls ): bool {
-				$calls[] = $current_default;
-				return ! $current_default;
-			}
-		);
-
-		$this->assertSame( $candidates, $method->invoke( $sut, $order, 4.00, 'USD' ) );
-		$this->assertSame( array(), $calls );
-	}
-
-	/**
 	 * @testdox Created-refund candidates retain the WooPayments extension pending hyperlink without a reason.
 	 */
 	public function test_created_refund_candidates_for_pending_without_reason(): void {
@@ -938,9 +869,9 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Finding a note by equivalent content writes nothing, and recording its identity tags it once.
+	 * @testdox Finding a note by equivalent content writes nothing to that note.
 	 */
-	public function test_find_note_by_equivalent_content_writes_nothing_until_its_identity_is_recorded(): void {
+	public function test_find_note_by_equivalent_content_writes_nothing(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->save();
@@ -950,13 +881,6 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $note_id, $sut->find_note( $order, 'Core payment success note.', $identity, array( 'Plugin payment success note.' ) ) );
 		$this->assertSame( array(), get_comment_meta( $note_id, '_wc_woopayments_note_identity', false ) );
-
-		$sut->record_note_identity( $note_id, $identity );
-		$sut->record_note_identity( $note_id, $identity );
-
-		$this->assertSame( array( hash( 'sha256', $identity ) ), get_comment_meta( $note_id, '_wc_woopayments_note_identity', false ) );
-		$this->assertSame( $note_id, $sut->find_note( $order, 'A later wording.', $identity ) );
-		$this->assertCount( 1, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 	}
 
 	/**

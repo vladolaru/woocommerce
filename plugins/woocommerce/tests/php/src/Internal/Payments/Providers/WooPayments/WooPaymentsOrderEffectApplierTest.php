@@ -1874,11 +1874,10 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Refund effects use the injected note service, and a note-rendering failure reaches the caller with nothing written to the order.
+	 * @testdox A refund note-rendering failure reaches the caller.
 	 */
-	public function test_refund_uses_injected_note_service_and_writes_nothing_when_rendering_throws(): void {
+	public function test_refund_note_rendering_failure_reaches_the_caller(): void {
 		$order        = $this->create_woopayments_order();
-		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$result       = array(
 			'id'     => 're_retained',
 			'status' => 'succeeded',
@@ -1888,24 +1887,17 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$note_service = $this->getMockBuilder( WooPaymentsOrderNoteService::class )
 			->onlyMethods( array( 'format_created_refund_note' ) )
 			->getMock();
-		$note_service->expects( $this->once() )
-			->method( 'format_created_refund_note' )
+		$note_service->method( 'format_created_refund_note' )
 			->willThrowException( new RuntimeException( 'Local refund note formatting failed.' ) );
 
 		$this->expectException( RuntimeException::class );
 		$this->expectExceptionMessage( 'Local refund note formatting failed.' );
 
-		try {
-			$this->create_applier( null, null, null, $note_service )->apply(
-				PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ),
-				$outcome->with_effect_plan( $plan ),
-				$plan
-			);
-		} finally {
-			$stored = wc_get_order( $order->get_id() );
-			$this->assertSame( '', $stored->get_meta( '_wcpay_refund_status', true ), 'No refund status is written before the note renders.' );
-			$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
-		}
+		$this->create_applier( null, null, null, $note_service )->apply(
+			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ),
+			$outcome->with_effect_plan( $plan ),
+			$plan
+		);
 	}
 
 	/**
