@@ -2099,6 +2099,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'sig'                    => 'leak-sig',
 			'secret'                 => 'leak-secret',
 			'webhook_signing_secret' => 'leak-suffix-secret',
+			'webhook_secret'         => 'leak-webhook-secret',
 			'publishable_key'        => 'leak-suffix-key',
 			'Authorization'          => 'leak-authorization',
 			'Cookie'                 => 'leak-cookie',
@@ -6686,7 +6687,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform fraud-flagged decline rotates the card-testing prevention token; ordinary declines leave it alone.
+	 * @testdox A platform fraud-flagged decline or card-testing error rotates the card-testing prevention token; ordinary declines leave it alone.
+	 *
+	 * Client 11.1.0 rotates on both codes, as a decline code or as the error code (wc-payment-api/class-wc-payments-api-client.php:2950).
 	 */
 	public function test_platform_fraud_decline_rotates_the_fraud_prevention_token(): void {
 		// A connected store: without a connection the account read returns no account, like the client.
@@ -6704,46 +6707,45 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$fraud_prevention_service = wc_get_container()->get( WooPaymentsFraudPreventionService::class );
 		$original_token           = $fraud_prevention_service->get_token();
 
-		$client = new WooPaymentsApiClient();
-		$client->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
-		$throw_method = new \ReflectionMethod( $client, 'throw_api_error' );
-		$throw_method->setAccessible( true );
-
+		// Each platform error reaches the client through a public request, as a 402 answer to a refund.
 		// An ordinary decline must not rotate.
-		try {
-			$throw_method->invoke(
-				$client,
-				array(
-					'error' => array(
-						'code'         => 'card_declined',
-						'decline_code' => 'insufficient_funds',
-						'message'      => 'declined',
-					),
+		$this->capture_api_error(
+			array(
+				'error' => array(
+					'code'         => 'card_declined',
+					'decline_code' => 'insufficient_funds',
+					'message'      => 'declined',
 				),
-				402
-			);
-			$this->fail( 'throw_api_error must throw.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( $original_token, $fraud_prevention_service->get_token() );
-		}
+			),
+			402
+		);
+		$this->assertSame( $original_token, $fraud_prevention_service->get_token() );
 
 		// A fraud-flagged decline must rotate.
-		try {
-			$throw_method->invoke(
-				$client,
-				array(
-					'error' => array(
-						'code'         => 'card_declined',
-						'decline_code' => 'fraudulent',
-						'message'      => 'declined',
-					),
+		$this->capture_api_error(
+			array(
+				'error' => array(
+					'code'         => 'card_declined',
+					'decline_code' => 'fraudulent',
+					'message'      => 'declined',
 				),
-				402
-			);
-			$this->fail( 'throw_api_error must throw.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertNotSame( $original_token, $fraud_prevention_service->get_token() );
-		}
+			),
+			402
+		);
+		$rotated_token = $fraud_prevention_service->get_token();
+		$this->assertNotSame( $original_token, $rotated_token );
+
+		// The platform's card-testing error code rotates it again, with no decline code.
+		$this->capture_api_error(
+			array(
+				'error' => array(
+					'code'    => 'wcpay_card_testing_prevention',
+					'message' => 'blocked',
+				),
+			),
+			402
+		);
+		$this->assertNotSame( $rotated_token, $fraud_prevention_service->get_token() );
 
 		// The container's account service memoizes the account cache per
 		// instance; reset the shared instance to a non-eligible payload so the
