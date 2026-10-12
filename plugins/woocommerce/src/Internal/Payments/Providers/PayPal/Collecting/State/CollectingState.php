@@ -327,7 +327,7 @@ class CollectingState {
 		delete_option( Options::SELLER_STATUS );
 
 		/** This action is documented in src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/WCGatewayModule.php */
-		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
+		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment -- Documented in WCGatewayModule.php.
 	}
 
 	/**
