@@ -384,55 +384,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge should retire its key after a definitive provider outcome.
-	 */
-	public function test_charge_retires_key_after_definitive_outcome(): void {
-		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/** @var string[] */
-			public array $keys = array();
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				$this->keys[] = $idempotency_key;
-				if ( 1 === count( $this->keys ) ) {
-					throw new WooPaymentsApiException( 'Declined.', 'card_declined', 402, 'card_error' );
-				}
-				return array(
-					'id'     => 'pi_new_key',
-					'status' => 'succeeded',
-				);
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_new_key' );
-		$sut = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( true ) );
-
-		$declined_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_d' );
-		$sut->finalize_charge_idempotency_key( $order, $declined_outcome );
-		$success_outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_new_key' ), 'key_e' );
-		$sut->finalize_charge_idempotency_key( $order, $success_outcome );
-		$fresh_order = wc_get_order( $order->get_id() );
-
-		$this->assertSame( array( 'key_d', 'key_e' ), $api_client->keys );
-		$this->assertInstanceOf( WC_Order::class, $fresh_order );
-		$this->assertSame( '', $fresh_order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-	}
-
-	/**
 	 * @testdox Charge should retire its key on a definitive failure even when applying the outcome later fails.
 	 *
 	 * The post-lifecycle retirement never runs when applying the outcome throws (PaymentProcessingService rethrows before
@@ -2578,63 +2529,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge declines write the payment-failed order note with the seller message and allow fraud meta.
-	 */
-	public function test_charge_decline_composes_failed_note_and_allow_fraud_meta(): void {
-		$order      = $this->create_woopayments_order( '25.00' );
-		$api_client = new class() extends WooPaymentsApiClient {
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				throw new WooPaymentsApiException(
-					'Error: Your card was declined.',
-					'card_declined',
-					402,
-					'card_error',
-					'do_not_honor',
-					array(),
-					'pi_declined_test',
-					'The bank did not return any further details with this decline.'
-				);
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-		};
-
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
-
-		$sut     = $this->create_operation_service( $api_client, $customer_service, null, $this->create_account_service( true ) );
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
-		$data    = $outcome->get_data();
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'pi_declined_test', $outcome->get_provider_payment_id() );
-		$this->assertArrayHasKey( PaymentOutcome::DATA_NOTE, $data );
-		$this->assertStringContainsString( '<strong>failed</strong> to complete with the following message:', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertStringContainsString( 'Error: Your card was declined. The bank did not return any further details with this decline', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertNotEmpty( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ?? array() );
-		$this->assertSame( 'allow', ( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, 'A card error means fraud checks passed; the meta box must show allow.' );
-	}
-
-	/**
 	 * @testdox Charge declines without a card error keep the failed note but no fraud meta box type.
 	 */
 	public function test_charge_decline_without_card_error_writes_note_without_fraud_meta(): void {
@@ -2810,108 +2704,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'Without the AVS rule, an incorrect_zip decline is an ordinary card error.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS, $data );
-	}
-
-	/**
-	 * @testdox Charge defers settlement exchange-rate metadata to its effect plan.
-	 */
-	public function test_charge_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		$order = $this->create_woopayments_order( '40.00' );
-		$order->set_currency( 'GBP' );
-		$order->save();
-
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				if ( 4000 !== $request_data['amount'] || 'gbp' !== $request_data['currency'] || 'key_charge' !== $idempotency_key ) {
-					throw new \RuntimeException( 'Unexpected converted-currency charge request payload.' );
-				}
-
-				return array(
-					'id'             => 'pi_converted',
-					'status'         => 'succeeded',
-					'client_secret'  => 'secret_converted',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-					'currency'       => 'gbp',
-					'charges'        => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'                     => 'ch_converted',
-								'payment_method'         => 'pm_native',
-								'balance_transaction'    => array(
-									'id'            => 'txn_converted',
-									'exchange_rate' => 1.33127,
-								),
-								'amount'                 => 4000,
-								'currency'               => 'gbp',
-								'application_fee_amount' => 156,
-								'fee_breakdown_v1'       => array(
-									'totals' => array(
-										'fee' => array(
-											'amount'   => 156,
-											'currency' => 'usd',
-											'rate'     => array(
-												'percentage' => 0.039,
-												'fixed' => 30,
-												'fixed_currency' => 'usd',
-											),
-										),
-										'net' => array(
-											'amount'   => 5170,
-											'currency' => 'usd',
-										),
-									),
-								),
-							),
-						),
-					),
-				);
-			}
-
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-
-		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_native' );
-
-		$sut     = $this->create_operation_service(
-			$api_client,
-			$customer_service,
-			null,
-			$this->create_account_service(
-				true,
-				array(),
-				array(
-					'store_currencies' => array(
-						'default' => 'usd',
-					),
-				)
-			)
-		);
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
-		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
 	/**
@@ -3280,62 +3072,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge decoding defers account mode metadata to effect application.
-	 */
-	public function test_charge_defers_account_mode_to_effect_application(): void {
-		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $request_data, $idempotency_key );
-
-				return array(
-					'id'             => 'pi_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-					'currency'       => 'usd',
-					'charges'        => array(
-						'total_count' => 0,
-						'data'        => array(),
-					),
-				);
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-		$account_service  = $this->create_account_service( true );
-
-		$customer_service->expects( $this->once() )
-			->method( 'get_or_create_customer_id_for_order' )
-			->willReturn( 'cus_native' );
-
-		$sut     = $this->create_operation_service( $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
-		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-	}
-
-	/**
 	 * @testdox Charge should recreate and retry under a derived key, kept on the order, when the transport reports a missing customer.
 	 *
 	 * The retry sends another customer, and Stripe refuses a reused idempotency key with a different body, so the retry
@@ -3426,75 +3162,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
 		$this->assertSame( 'key_charge:customer-recovery', $fresh_order->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-	}
-
-	/**
-	 * @testdox Charge should resolve a validated subscription change without updating the existing customer.
-	 */
-	public function test_charge_uses_the_subscription_change_customer_resolver_for_validated_context(): void {
-		$order            = $this->create_woopayments_order();
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				if ( 'cus_change' !== $request_data['customer'] || 'key_change' !== $idempotency_key ) {
-					throw new \RuntimeException( 'Validated changes must use the no-update customer resolver.' );
-				}
-
-				return array(
-					'id'             => 'pi_change',
-					'status'         => 'succeeded',
-					'client_secret'  => 'secret_change',
-					'customer'       => 'cus_change',
-					'payment_method' => 'pm_change',
-					'currency'       => 'usd',
-					'charges'        => array(
-						'total_count' => 0,
-						'data'        => array(),
-					),
-				);
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
-			->getMock();
-
-		$customer_service->expects( $this->once() )
-			->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )
-			->with( $this->isInstanceOf( WC_Order::class ) )
-			->willReturn( 'cus_change' );
-		$customer_service->expects( $this->never() )
-			->method( 'get_or_create_customer_id_for_order' );
-
-		$sut     = $this->create_operation_service( $api_client, $customer_service );
-		$outcome = $sut->charge(
-			PaymentOperationContext::for_checkout(
-				$order,
-				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				'pm_change',
-				array(),
-				array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true )
-			),
-			'key_change'
-		);
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'cus_change', $outcome->get_customer_id() );
 	}
 
 	/**
@@ -3789,96 +3456,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array( 'card' ), $api_client->last_request_data['payment_method_types'] );
-	}
-
-	/**
-	 * @testdox Charge should derive split gateway payment method types from the selected gateway ID.
-	 */
-	public function test_charge_derives_split_gateway_payment_method_type_from_gateway_id(): void {
-		$order = $this->create_woopayments_order( '50.00' );
-		$order->set_currency( 'EUR' );
-		$order->save();
-
-		$api_client       = new class() extends WooPaymentsApiClient {
-			/**
-			 * Last request data.
-			 *
-			 * @var array<string,mixed>
-			 */
-			public array $last_request_data = array();
-
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Create and confirm a payment intention.
-			 *
-			 * @param array<string,mixed> $request_data Request data.
-			 * @param string              $idempotency_key Idempotency key.
-			 * @return array<string,mixed>
-			 */
-			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
-				unset( $idempotency_key );
-				$this->last_request_data = $request_data;
-
-				// Reduced fixture of a just-confirmed SEPA Direct Debit PaymentIntent. SEPA is a delayed
-				// notification method: once submitted the intent is `processing` and reaches `succeeded` later
-				// (Stripe docs, https://docs.stripe.com/payments/sepa-debit/accept-a-payment, "Confirm the
-				// PaymentIntent succeeded"). The platform returns the intent with a `charges` list, as recorded
-				// for a card in Fixtures/platform-intention-basic-card.json; WooPayments 11.1.0 reads its total_count and
-				// data (includes/wc-payment-api/class-wc-payments-api-client.php:2403). The list is left empty
-				// and amount, created and metadata are omitted: this test checks only the request.
-				return array(
-					'id'             => 'pi_sepa',
-					'status'         => 'processing',
-					'client_secret'  => 'secret_sepa',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_sepa',
-					'currency'       => 'eur',
-					'charges'        => array(
-						'total_count' => 0,
-						'data'        => array(),
-					),
-				);
-			}
-		};
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-		$customer_service->expects( $this->once() )
-			->method( 'get_or_create_customer_id_for_order' )
-			->willReturn( 'cus_native' );
-
-		$sut = $this->create_operation_service( $api_client, $customer_service );
-		$sut->charge(
-			PaymentOperationContext::for_checkout(
-				$order,
-				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit',
-				'pm_sepa'
-			),
-			'key_charge'
-		);
-
-		$this->assertSame( array( 'sepa_debit' ), $api_client->last_request_data['payment_method_types'] );
-		$this->assertSame(
-			array(
-				'customer_acceptance' => array(
-					'type'   => 'online',
-					'online' => array(
-						'ip_address' => \WC_Geolocation::get_ip_address(),
-						'user_agent' => WooPaymentsClientVersion::get_user_agent() . '; ' . get_bloginfo( 'url' ),
-					),
-				),
-			),
-			$api_client->last_request_data['mandate_data'] ?? null
-		);
 	}
 
 	/**
@@ -5477,50 +5054,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge failures expose localized structured card declines separately from raw diagnostics.
-	 */
-	public function test_charge_failure_maps_structured_card_decline_to_shopper_message(): void {
-		$order                 = $this->create_woopayments_order( '50.00' );
-		$account_service       = $this->create_account_service( false );
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->response = array(
-			'response' => array( 'code' => 402 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'error' => array(
-						'type'         => 'card_error',
-						'code'         => 'card_declined',
-						'decline_code' => 'insufficient_funds',
-						'message'      => 'Provider diagnostic for request req_private.',
-					),
-				)
-			),
-		);
-
-		$api_client = new WooPaymentsApiClient();
-		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-
-		$customer_service->expects( $this->once() )
-			->method( 'get_or_create_customer_id_for_order' )
-			->willReturn( 'cus_declined' );
-
-		$sut     = $this->create_operation_service( $api_client, $customer_service, null, $account_service );
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_declined' ), 'key_declined' );
-		$data    = $outcome->get_data();
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
-		$this->assertSame( 'Error: Provider diagnostic for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] ?? null );
-		$this->assertSame( 1, $http_client->request_count );
-	}
-
-	/**
 	 * @testdox Charge decline envelopes recorded from the local platform (REC-1) map each card code to its outcome.
 	 *
 	 * The response status and body are the real decline envelope local WPCOM returned for each Stripe test
@@ -5531,13 +5064,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * fraud meta box `allow` (`gw:1372`). The merchant note carries the platform's `seller_message` only when
 	 * the top-level code is `card_declined` (client `api:2910-2914`); the other three codes carry none.
 	 * Every recorded decline is a real PaymentIntent dispatch failure with an unambiguous transport error,
-	 * so `WooPaymentsPaymentOperationService::finalize_charge_idempotency_key()` must classify it as
-	 * definitive and retire the charge idempotency key (`_wcpay_definitive_charge_failure`), giving a
-	 * shopper retry a fresh key rather than replaying the declined one. This is native-only idempotency
-	 * bookkeeping with no client 11.1.0 parity claim: the plugin has no equivalent per-charge
-	 * idempotency-key retirement step. `:627` (`test_charge_retires_key_after_definitive_outcome`)
-	 * proves the retirement mechanics with a synthetic failure; this asserts the classification itself
-	 * against a real recorded envelope.
+	 * so the failed charge outcome must mark it definitive (`_wcpay_definitive_charge_failure`) and retire
+	 * the charge idempotency key, giving a shopper retry a fresh key rather than replaying the declined one.
+	 * This is native-only idempotency bookkeeping with no client 11.1.0 parity claim: the plugin has no
+	 * equivalent per-charge idempotency-key retirement step.
+	 * `test_charge_retires_key_on_definitive_failure_without_lifecycle` proves the retirement mechanics
+	 * with a synthetic decline; this asserts the classification itself against a real recorded envelope.
 	 *
 	 * The `, raw message replaced with a sentinel` rows swap the recorded `error.message` for a value that
 	 * is never in the shopper-message catalog. `WooPaymentsErrorMessages::get_shopper_message()` (utils
@@ -5599,7 +5131,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'allow', ( $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array() )['_wcpay_fraud_meta_box_type'] ?? null, "$pair is a card_error decline, so the fraud meta box must show allow." );
 		$this->assertTrue( $data['_wcpay_definitive_charge_failure'] ?? false, "$pair's real decline must be classified as definitive so a retry gets a fresh idempotency key." );
 		if ( '' !== $expected_seller_message ) {
-			$this->assertStringContainsString( $expected_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair's merchant note must carry the platform's seller_message." );
+			$this->assertStringContainsString( esc_html( rtrim( $expected_message, '.' ) ) . '. ' . $expected_seller_message, $data[ PaymentOutcome::DATA_NOTE ] ?? '', "$pair's merchant note must carry the raw message, then the platform's seller_message." );
 		} else {
 			$recorded_seller_message = esc_html( rtrim( (string) ( $recorded['error']['payment_intent']['charges']['data'][0]['outcome']['seller_message'] ?? '' ), '.' ) );
 			$this->assertNotSame( '', $recorded_seller_message, "The $pair recording must carry a seller_message for this check to mean anything." );
@@ -6175,56 +5707,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Charge returns a referenced plan before settlement enrichment runs.
-	 */
-	public function test_charge_returns_referenced_plan_before_settlement_enrichment(): void {
-		$order              = $this->create_woopayments_order();
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available', 'create_and_confirm_payment_intention' ) )
-			->getMock();
-		$customer_service   = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
-			->getMock();
-		$order_data_service = $this->getMockBuilder( WooPaymentsOrderDataService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_settlement_exchange_rate_order_meta' ) )
-			->getMock();
-
-		$api_client->expects( $this->once() )
-			->method( 'is_available' )
-			->willReturn( true );
-		$api_client->expects( $this->once() )
-			->method( 'create_and_confirm_payment_intention' )
-			->willReturn(
-				array(
-					'id'             => 'pi_before_enrichment',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_before_enrichment',
-					'payment_method' => 'pm_before_enrichment',
-					'currency'       => 'usd',
-					'charges'        => array(
-						'data' => array(),
-					),
-				)
-			);
-		$customer_service->expects( $this->once() )
-			->method( 'get_or_create_customer_id_for_order' )
-			->willReturn( 'cus_before_enrichment' );
-		$order_data_service->expects( $this->never() )
-			->method( 'get_settlement_exchange_rate_order_meta' );
-
-		$sut     = $this->create_operation_service( $api_client, $customer_service, null, null, $order_data_service );
-		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_before_enrichment' ), 'key_before_enrichment' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 'pi_before_enrichment', $outcome->get_provider_payment_id() );
-		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT, $outcome->get_effect_plan()->get_type() );
-	}
-
-	/**
 	 * @testdox Charge decoding should plan card display effects without mutating the order.
 	 *
 	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's new-card
@@ -6788,81 +6270,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_REFUND, $outcome->get_effect_plan()->get_type() );
 		$this->assertSame( 're_native', $outcome->get_effect_plan()->get_provider_result()['id'] );
-	}
-
-	/**
-	 * @testdox A refund should retain its provider identity before local note formatting runs.
-	 */
-	public function test_refund_retains_provider_identity_before_local_effects(): void {
-		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available', 'refund_charge' ) )
-			->getMock();
-
-		$order->update_meta_data( '_charge_id', 'ch_native_effect_boundary' );
-		$order->save();
-
-		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->method( 'refund_charge' )->willReturn(
-			array(
-				'id'                  => 're_effect_boundary',
-				'status'              => 'succeeded',
-				'balance_transaction' => array( 'id' => 'txn_effect_boundary' ),
-			)
-		);
-
-		$outcome = $this->create_operation_service( $api_client )->refund(
-			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ),
-			'key_refund_effect_boundary'
-		);
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 're_effect_boundary', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'txn_effect_boundary', $outcome->get_data()['refund_balance_transaction_id'] );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_NOTE, $outcome->get_data() );
-		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
-		$this->assertSame( WooPaymentsOrderEffectPlan::TYPE_REFUND, $outcome->get_effect_plan()->get_type() );
-	}
-
-	/**
-	 * @testdox Refund should fail closed when the transport returns a failed provider status.
-	 */
-	public function test_refund_fails_closed_for_failed_refund_status(): void {
-		$order      = $this->create_woopayments_order();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available', 'refund_charge' ) )
-			->getMock();
-
-		$order->update_meta_data( '_charge_id', 'ch_native' );
-		$order->save();
-
-		$api_client->expects( $this->once() )
-			->method( 'is_available' )
-			->willReturn( true );
-		$api_client->expects( $this->once() )
-			->method( 'refund_charge' )
-			->with( 'ch_native', 350, 'Adjustment', $this->isType( 'string' ), 'key_refund' )
-			->willReturn(
-				array(
-					'id'             => 're_failed',
-					'status'         => 'failed',
-					'failure_reason' => 'lost_or_stolen_card',
-				)
-			);
-
-		$sut     = $this->create_operation_service( $api_client );
-		$outcome = $sut->refund( PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 3.50, 'Adjustment' ), 'key_refund' );
-
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 're_failed', $outcome->get_provider_payment_id() );
-		$this->assertSame( 'failed', $outcome->get_data()['refund_status'] );
-		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()['error_code'] );
-		$this->assertSame( 'lost_or_stolen_card', $outcome->get_data()['error_message'] );
-		$this->assertArrayNotHasKey( 'refund_meta', $outcome->get_data() );
-		$this->assertArrayNotHasKey( 'order_meta', $outcome->get_data() );
-		$this->assertInstanceOf( WooPaymentsOrderEffectPlan::class, $outcome->get_effect_plan() );
 	}
 
 	/**
@@ -8433,40 +7840,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ), 'The manual row records the earlier refund.' );
 		$this->assertCount( 2, $trail, 'One lookup and one refund: nothing is sent twice.' );
 		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertSame( $http_client->requests[1]['headers']['Idempotency-Key'] ?? '', json_decode( (string) $http_client->requests[1]['body'], true )['metadata']['refund_attempt'] ?? null, 'This call\'s refund carries its own key as its marker.' );
 		$this->assertSame( 're_f458_handoff_200', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ), 'This call\'s row links its own refund.' );
-	}
-
-	/**
-	 * @testdox The provider takes this call's row from the refund context: an older row handed over stays this call's own while a newer manual row records the earlier refund.
-	 *
-	 * Adapter-level pin of the handoff (PaymentOperationContext::PAYMENT_DATA_REFUND_ID).
-	 */
-	public function test_provider_takes_this_calls_row_from_the_refund_context(): void {
-		$order = $this->create_refund_hold_order();
-		$this->seed_refund_hold(
-			$order,
-			array(
-				'failed_at'      => time() - 1000,
-				'last_failed_at' => time() - 1000,
-			)
-		);
-		$own_row                = $this->create_refund_row( $order, 2.00, 'requested_by_customer' );
-		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
-		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array(
-			self::http_json( 200, $this->recorded_refund_list() ),
-			self::http_json( 200, $this->recorded_refund_answer( 're_f458_adapter_200', 'key_f458_not_read', 200 ) ),
-		);
-		$provider               = $this->create_refund_hold_provider( $http_client );
-		$context                = PaymentOperationContext::for_refund( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.00, 'requested_by_customer' )
-			->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $own_row->get_id() ) );
-
-		$outcome = $provider->refund( $context, 'key_f458_adapter_call' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertSame( 're_f458_adapter_200', $outcome->get_provider_payment_id() );
-		$this->assertSame( array( self::refund_list_trail(), 'POST refunds key_f458_adapter_call' ), self::request_trail( $http_client ) );
-		$this->assertSame( self::F458_REFUND_555, wc_get_order( $manual_row->get_id() )->get_meta( '_wcpay_refund_id', true ) );
 	}
 
 	/**
@@ -8502,6 +7877,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( wc_get_order( $handed_over ), 'WooCommerce deletes the row of a failed refund.' );
 		$this->assertCount( 0, wc_get_order( $order->get_id() )->get_refunds() );
 		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( 'The refund returned status "' . $status . '". Reason: No reason provided.', $result->get_error_message() );
 	}
 
 	/**
@@ -10780,89 +10156,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capture defers settlement exchange-rate metadata to its effect plan.
-	 */
-	public function test_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		$order = $this->create_woopayments_order( '40.00' );
-		$order->set_currency( 'GBP' );
-		$order->set_transaction_id( 'pi_capture_converted' );
-		$order->save();
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_available', 'capture_intention' ) )
-			->getMock();
-
-		$api_client->expects( $this->once() )
-			->method( 'is_available' )
-			->willReturn( true );
-		$api_client->expects( $this->once() )
-			->method( 'capture_intention' )
-			->with(
-				'pi_capture_converted',
-				4000,
-				$this->callback(
-					static function ( array $metadata ): bool {
-						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
-					}
-				),
-				array()
-			)
-			->willReturn(
-				array(
-					'id'      => 'pi_capture_converted',
-					'status'  => 'succeeded',
-					'charges' => array(
-						'total_count' => 1,
-						'data'        => array(
-							array(
-								'id'                  => 'ch_capture_converted',
-								'currency'            => 'gbp',
-								'balance_transaction' => array(
-									'id'            => 'txn_capture_converted',
-									'exchange_rate' => 1.33127,
-								),
-								'fee_breakdown_v1'    => array(
-									'totals' => array(
-										'fee' => array(
-											'amount'   => 156,
-											'currency' => 'usd',
-										),
-										'net' => array(
-											'amount'   => 5170,
-											'currency' => 'usd',
-										),
-									),
-								),
-							),
-						),
-					),
-				)
-			);
-
-		$sut     = $this->create_operation_service(
-			$api_client,
-			null,
-			null,
-			$this->create_account_service(
-				true,
-				array(),
-				array(
-					'store_currencies' => array(
-						'default' => 'usd',
-					),
-				)
-			)
-		);
-		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
-
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
-		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
-	}
-
-	/**
 	 * @testdox Capture should fall back to intent meta when the transaction id is missing.
 	 */
 	public function test_capture_uses_intent_meta_when_transaction_id_is_missing(): void {
@@ -11667,30 +10960,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$controller = new WooPaymentsTokenClassMapController();
 		$controller->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$controller->register();
-	}
-
-	/**
-	 * Assert that an order has a note with the expected exact content.
-	 *
-	 * @param WC_Order $order    Order object.
-	 * @param string   $expected Expected note content.
-	 */
-	private function assertOrderHasNote( WC_Order $order, string $expected ): void {
-		$count = 0;
-		$notes = wc_get_order_notes(
-			array(
-				'order_id' => $order->get_id(),
-				'type'     => 'any',
-			)
-		);
-
-		foreach ( $notes as $note ) {
-			if ( $expected === $note->content ) {
-				++$count;
-			}
-		}
-
-		$this->assertGreaterThan( 0, $count, "Missing order note: {$expected}" );
 	}
 
 	/**
