@@ -376,11 +376,22 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox A failed live remediation batch does not advance the cursor past the failed order.
+	 * @testdox A live remediation batch counts an order that fails as an error, remediates the other order and moves the cursor past both ($_dataName).
+	 * @testWith ["failed order first", true]
+	 *           ["failed order last", false]
+	 *
+	 * Client 11.1.0 counts the error and advances the cursor after every order
+	 * (includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:463-478).
+	 *
+	 * @param string $label        Case label.
+	 * @param bool   $failed_first Whether the order that fails comes first in the batch.
 	 */
-	public function test_process_batch_does_not_advance_cursor_after_refund_deletion_failure(): void {
-		$failed_order = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
-		$next_order   = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
+	public function test_process_batch_moves_past_an_order_that_fails( string $label, bool $failed_first ): void {
+		unset( $label );
+		$first        = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
+		$second       = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
+		$failed_order = $failed_first ? $first : $second;
+		$good_order   = $failed_first ? $second : $first;
 		$refund       = $this->create_refund( $failed_order, 'WooPayments refund', 're_wcpay' );
 		$filter       = static function ( $check, $data_object ) use ( $refund ) {
 			if ( $data_object instanceof WC_Order_Refund && $refund->get_id() === $data_object->get_id() ) {
@@ -399,11 +410,12 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 
 		$stats = $this->sut->get_stats();
 
-		$this->assertSame( 1, $stats['processed'] );
-		$this->assertSame( 0, $stats['remediated'] );
+		$this->assertSame( 2, $stats['processed'] );
+		$this->assertSame( 1, $stats['remediated'] );
 		$this->assertSame( 1, $stats['errors'] );
-		$this->assertSame( 0, $this->sut->get_last_order_id() );
-		$this->assertSame( '1.50', wc_get_order( $next_order->get_id() )->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( $second->get_id(), $this->sut->get_last_order_id() );
+		$this->assertSame( '', wc_get_order( $good_order->get_id() )->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '1.50', wc_get_order( $failed_order->get_id() )->get_meta( '_wcpay_transaction_fee', true ) );
 	}
 
 	/**

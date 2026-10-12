@@ -333,15 +333,17 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					sprintf( 'Remediated order %d', $order->get_id() ),
 					array( 'source' => 'wcpay-fee-remediation' )
 				);
-				$this->update_last_order_id( $order->get_id() );
 			} else {
 				$this->increment_stat( 'errors' );
 				wc_get_logger()->warning(
-					sprintf( 'Stopping WooPayments canceled-authorization remediation batch after order %d failed. The order will be retried in the next batch.', $order->get_id() ),
+					sprintf( 'WooPayments canceled-authorization remediation failed for order %d. The order is counted as an error and skipped.', $order->get_id() ),
 					array( 'source' => 'wcpay-fee-remediation' )
 				);
-				break;
 			}
+
+			// The cursor moves past a failed order too, so one order that keeps failing cannot stall the job (client 11.1.0
+			// includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:463-478).
+			$this->update_last_order_id( $order->get_id() );
 		}
 
 		$execution_time = microtime( true ) - $start_time;
