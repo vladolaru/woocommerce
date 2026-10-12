@@ -1693,40 +1693,168 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send null amount and provider reason defaults for a full free-text refund.
+	 * @testdox The $_dataName request posts its exact body to its path with the caller's or a minted idempotency key, and returns the platform's answer.
+	 * @dataProvider provider_intent_request_bodies
 	 *
-	 * Pinned WooPayments 11.1.0: Refund_Charge::DEFAULT_PARAMS and Request::get_params().
+	 * @param callable            $send        Makes the one call on the client and returns its result.
+	 * @param string              $result_id   ID the platform answers with.
+	 * @param string              $path        Expected path.
+	 * @param string              $key_pattern Pattern the Idempotency-Key header must match.
+	 * @param array<string,mixed> $body        Expected decoded body, exactly.
 	 */
-	public function test_refund_charge_sends_null_defaults_for_full_free_text_refund(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 're_full' ) ),
+	public function test_intent_request_body( callable $send, string $result_id, string $path, string $key_pattern, array $body ): void {
+		list( $sut, $http_client ) = $this->make_sut( false, array( 'id' => $result_id ) );
+
+		$result = $send( $sut );
+
+		$this->assertSame( $result_id, $result['id'] );
+		$this->assertSame( $path, $http_client->last_path );
+		$this->assertSame( 'POST', $http_client->last_method );
+		$this->assertMatchesRegularExpression( $key_pattern, $http_client->last_headers['Idempotency-Key'] ?? '' );
+		$this->assertSame( $body, json_decode( (string) $http_client->last_body, true ) );
+	}
+
+	/**
+	 * One row per intent request: send, result ID, path, Idempotency-Key pattern, exact body. A request with no caller key
+	 * gets a UUIDv4. Pinned WooPayments 11.1.0: Refund_Charge, Capture_Intention, Cancel_Intention,
+	 * Create_And_Confirm_Intention, Create_And_Confirm_Setup_Intention and Create_Setup_Intention DEFAULT_PARAMS and
+	 * get_api(). The confirm flag goes on the wire as the string "true" or "false".
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provider_intent_request_bodies(): array {
+		$minted_key = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/';
+		$level3     = array(
+			'merchant_reference' => 'order_123',
+			'line_items'         => array(
+				array(
+					'product_code'    => 'sku_123',
+					'quantity'        => 1,
+					'unit_cost'       => 975,
+					'tax_amount'      => 0,
+					'discount_amount' => 0,
+				),
+			),
 		);
 
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-		$result = $sut->refund_charge( 'ch_test', null, 'Customer requested a full refund', 'merchant_dashboard', 'idem_full_refund' );
-
-		$this->assertSame( 're_full', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/refunds', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'idem_full_refund', $http_client->last_headers['Idempotency-Key'] );
-		$this->assertSame(
-			array(
-				'test_mode' => false,
-				'charge'    => 'ch_test',
-				'metadata'  => array(
-					'refund_source'          => 'merchant_dashboard',
-					'merchant_refund_reason' => 'Customer requested a full refund',
-					'refund_attempt'         => 'idem_full_refund',
+		return array(
+			'full free-text refund'            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->refund_charge( 'ch_test', null, 'Customer requested a full refund', 'merchant_dashboard', 'idem_full_refund' ),
+				're_full',
+				'/sites/123/wcpay/refunds',
+				'/^idem_full_refund$/',
+				array(
+					'test_mode' => false,
+					'charge'    => 'ch_test',
+					'metadata'  => array(
+						'refund_source'          => 'merchant_dashboard',
+						'merchant_refund_reason' => 'Customer requested a full refund',
+						'refund_attempt'         => 'idem_full_refund',
+					),
+					'amount'    => null,
+					'reason'    => null,
 				),
-				'amount'    => null,
-				'reason'    => null,
 			),
-			json_decode( (string) $http_client->last_body, true )
+			'capture with metadata and level3' => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->capture_intention( 'pi_test', 975, array( 'order_id' => '123' ), $level3 ),
+				'pi_test',
+				'/sites/123/wcpay/intentions/pi_test/capture',
+				$minted_key,
+				array(
+					'test_mode'         => false,
+					'amount_to_capture' => 975,
+					'metadata'          => array( 'order_id' => '123' ),
+					'level3'            => $level3,
+				),
+			),
+			'capture with empty metadata'      => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->capture_intention( 'pi_test', 975, array(), array() ),
+				'pi_test',
+				'/sites/123/wcpay/intentions/pi_test/capture',
+				$minted_key,
+				array(
+					'test_mode'         => false,
+					'amount_to_capture' => 975,
+					'metadata'          => array(),
+					'level3'            => array(),
+				),
+			),
+			'cancel'                           => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->cancel_intention( 'pi_test' ),
+				'pi_test',
+				'/sites/123/wcpay/intentions/pi_test/cancel',
+				$minted_key,
+				array( 'test_mode' => false ),
+			),
+			'create and confirm payment'       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_and_confirm_payment_intention(
+					array(
+						'amount'               => 1000,
+						'currency'             => 'usd',
+						'customer'             => 'cus_test',
+						'metadata'             => array( 'order_id' => '123' ),
+						'payment_method'       => 'pm_test',
+						'payment_method_types' => array( 'card' ),
+					),
+					'idem_charge'
+				),
+				'pi_test',
+				'/sites/123/wcpay/intentions',
+				'/^idem_charge$/',
+				array(
+					'test_mode'            => false,
+					'amount'               => 1000,
+					'currency'             => 'usd',
+					'customer'             => 'cus_test',
+					'metadata'             => array( 'order_id' => '123' ),
+					'payment_method'       => 'pm_test',
+					'payment_method_types' => array( 'card' ),
+					'confirm'              => 'true',
+					'capture_method'       => 'automatic',
+				),
+			),
+			'create and confirm setup'         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_and_confirm_setup_intention(
+					array(
+						'customer'             => 'cus_test',
+						'metadata'             => array( 'order_id' => '123' ),
+						'payment_method'       => 'pm_test',
+						'payment_method_types' => array( 'sepa_debit' ),
+					),
+					'idem_setup'
+				),
+				'seti_test',
+				'/sites/123/wcpay/setup_intents',
+				'/^idem_setup$/',
+				array(
+					'test_mode'            => false,
+					'customer'             => 'cus_test',
+					'metadata'             => array( 'order_id' => '123' ),
+					'payment_method'       => 'pm_test',
+					'payment_method_types' => array( 'sepa_debit' ),
+					'confirm'              => 'true',
+				),
+			),
+			'unconfirmed setup'                => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_setup_intention(
+					array(
+						'customer'             => 'cus_test',
+						'metadata'             => array( 'order_id' => '123' ),
+						'payment_method_types' => array( 'card' ),
+					),
+					'idem_setup_unconfirmed'
+				),
+				'seti_unconfirmed',
+				'/sites/123/wcpay/setup_intents',
+				'/^idem_setup_unconfirmed$/',
+				array(
+					'test_mode'            => false,
+					'customer'             => 'cus_test',
+					'metadata'             => array( 'order_id' => '123' ),
+					'payment_method_types' => array( 'card' ),
+					'confirm'              => 'false',
+				),
+			),
 		);
 	}
 
@@ -2276,132 +2404,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send the full capture body and a transport idempotency key.
-	 *
-	 * Pinned WooPayments 11.1.0: Capture_Intention::get_api() and ::set_metadata().
-	 */
-	public function test_capture_intention_sends_amount_metadata_and_level3(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'     => 'pi_test',
-					'status' => 'succeeded',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->capture_intention(
-			'pi_test',
-			975,
-			array( 'order_id' => '123' ),
-			array(
-				'merchant_reference' => 'order_123',
-				'line_items'         => array(
-					array(
-						'product_code'    => 'sku_123',
-						'quantity'        => 1,
-						'unit_cost'       => 975,
-						'tax_amount'      => 0,
-						'discount_amount' => 0,
-					),
-				),
-			)
-		);
-
-		$this->assertSame( 'pi_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/intentions/pi_test/capture', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
-		$this->assertSame(
-			array(
-				'test_mode'         => false,
-				'amount_to_capture' => 975,
-				'metadata'          => array( 'order_id' => '123' ),
-				'level3'            => array(
-					'merchant_reference' => 'order_123',
-					'line_items'         => array(
-						array(
-							'product_code'    => 'sku_123',
-							'quantity'        => 1,
-							'unit_cost'       => 975,
-							'tax_amount'      => 0,
-							'discount_amount' => 0,
-						),
-					),
-				),
-			),
-			json_decode( (string) $http_client->last_body, true )
-		);
-	}
-
-	/**
-	 * @testdox Should keep explicitly empty capture metadata and default Level 3 on the wire.
-	 *
-	 * Pinned WooPayments 11.1.0: Capture_Intention::DEFAULT_PARAMS and ::set_metadata().
-	 */
-	public function test_capture_intention_sends_explicit_empty_metadata_and_default_level3(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 'pi_test' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-		$sut->capture_intention( 'pi_test', 975, array(), array() );
-
-		$this->assertSame(
-			array(
-				'test_mode'         => false,
-				'amount_to_capture' => 975,
-				'metadata'          => array(),
-				'level3'            => array(),
-			),
-			json_decode( (string) $http_client->last_body, true )
-		);
-	}
-
-	/**
-	 * @testdox Should send only the transport mode when canceling an intention.
-	 *
-	 * Pinned WooPayments 11.1.0: Cancel_Intention::get_api() and ::get_method().
-	 */
-	public function test_cancel_intention_sends_only_transport_mode(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'     => 'pi_test',
-					'status' => 'canceled',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->cancel_intention( 'pi_test' );
-
-		$this->assertSame( 'pi_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/intentions/pi_test/cancel', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertNotEmpty( $http_client->last_headers['Idempotency-Key'] ?? '' );
-		$this->assertSame( array( 'test_mode' => false ), json_decode( (string) $http_client->last_body, true ) );
-	}
-
-	/**
 	 * @testdox Should generate reference transport headers for non-GET requests without caller idempotency keys.
 	 */
 	public function test_post_request_generates_transport_headers_without_caller_idempotency_key(): void {
@@ -2677,42 +2679,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve structured card error details from failed transport requests.
-	 */
-	public function test_request_preserves_structured_card_error_details(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 402 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'error' => array(
-						'type'         => 'card_error',
-						'code'         => 'card_declined',
-						'decline_code' => 'insufficient_funds',
-						'message'      => 'Card declined for request req_private.',
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
-			$this->fail( 'Expected the native transport request to surface a WooPaymentsApiException.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'card_declined', $exception->get_error_code() );
-			$this->assertSame( 'card_error', $exception->get_error_type() );
-			$this->assertSame( 'insufficient_funds', $exception->get_decline_code() );
-			$this->assertSame( 'Error: Card declined for request req_private.', $exception->getMessage() );
-			$this->assertSame( 402, $exception->get_http_code() );
-		}
-	}
-
-	/**
 	 * @testdox Should ignore malformed structured error metadata without warnings or diagnostic loss.
 	 */
 	public function test_request_ignores_malformed_structured_error_metadata(): void {
@@ -2794,197 +2760,186 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the platform data payload on API errors so amount_too_small keeps its minimum.
+	 * @testdox The $_dataName platform error reaches the caller as an exception carrying its details.
+	 * @dataProvider provider_platform_error_envelopes
+	 *
+	 * @param array<string,mixed> $response_body Decoded platform error body.
+	 * @param int                 $status        HTTP status of the platform answer.
+	 * @param array<string,mixed> $expected      Exception getter name => expected value.
 	 */
-	public function test_api_error_preserves_top_level_amount_too_small_data(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'code'    => 'amount_too_small',
-				'message' => 'Amount must be at least $0.50 usd',
-				'data'    => array(
-					'minimum_amount' => 50,
-					'currency'       => 'usd',
-				),
-			)
-		);
+	public function test_platform_error_envelope_maps_to_the_exception( array $response_body, int $status, array $expected ): void {
+		$exception = $this->capture_api_error( $response_body, $status );
 
-		$this->assertSame( 'amount_too_small', $exception->get_error_code() );
-		$this->assertSame( 'Amount must be at least $0.50 usd', $exception->getMessage(), 'The plugin throws the platform message unwrapped for amount_too_small.' );
-		$this->assertSame(
-			array(
-				'minimum_amount' => 50,
-				'currency'       => 'usd',
+		foreach ( $expected as $getter => $value ) {
+			$this->assertSame( $value, $exception->$getter(), $getter );
+		}
+	}
+
+	/**
+	 * One row per platform error shape: body, status, exception getter => expected value. The top-level amount_too_small
+	 * message is thrown unwrapped, as the client does; the seller message is kept for card_declined only, and
+	 * amount_too_large on an uncaptured intent is rewritten so the merchant is not told to contact support.
+	 *
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provider_platform_error_envelopes(): array {
+		return array(
+			'structured card error'                   => array(
+				array(
+					'error' => array(
+						'type'         => 'card_error',
+						'code'         => 'card_declined',
+						'decline_code' => 'insufficient_funds',
+						'message'      => 'Card declined for request req_private.',
+					),
+				),
+				402,
+				array(
+					'get_error_code'   => 'card_declined',
+					'get_error_type'   => 'card_error',
+					'get_decline_code' => 'insufficient_funds',
+					'getMessage'       => 'Error: Card declined for request req_private.',
+					'get_http_code'    => 402,
+				),
 			),
-			$exception->get_error_data()
-		);
-		$this->assertSame( 400, $exception->get_http_code() );
-	}
-
-	/**
-	 * @testdox Should capture the error-object param so account-field rejections keep their attribution.
-	 */
-	public function test_api_error_captures_error_object_param(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'    => 'invalid_request_error',
-					'message' => 'Invalid statement descriptor.',
-					'param'   => 'statement_descriptor',
+			'top-level amount_too_small with data'    => array(
+				array(
+					'code'    => 'amount_too_small',
+					'message' => 'Amount must be at least $0.50 usd',
+					'data'    => array(
+						'minimum_amount' => 50,
+						'currency'       => 'usd',
+					),
 				),
-			)
-		);
-
-		$this->assertSame( 'invalid_request_error', $exception->get_error_code() );
-		$this->assertSame( 'statement_descriptor', $exception->get_error_data()['param'] );
-	}
-
-	/**
-	 * @testdox Should preserve the failed payment intent id and the card_declined seller message from the error envelope.
-	 */
-	public function test_api_error_preserves_intent_id_and_seller_message(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'           => 'card_declined',
-					'message'        => 'Your card was declined.',
-					'type'           => 'card_error',
-					'decline_code'   => 'do_not_honor',
-					'payment_intent' => array(
-						'id'      => 'pi_failed_test',
-						'status'  => 'requires_payment_method',
-						'charges' => array(
-							'data' => array(
-								array(
-									'outcome' => array(
-										'seller_message' => 'The bank did not return any further details with this decline.',
-									),
-								),
-							),
+				400,
+				array(
+					'get_error_code' => 'amount_too_small',
+					'getMessage'     => 'Amount must be at least $0.50 usd',
+					'get_error_data' => array(
+						'minimum_amount' => 50,
+						'currency'       => 'usd',
+					),
+					'get_http_code'  => 400,
+				),
+			),
+			'error object param'                      => array(
+				array(
+					'error' => array(
+						'code'    => 'invalid_request_error',
+						'message' => 'Invalid statement descriptor.',
+						'param'   => 'statement_descriptor',
+					),
+				),
+				400,
+				array(
+					'get_error_code' => 'invalid_request_error',
+					'get_error_data' => array( 'param' => 'statement_descriptor' ),
+				),
+			),
+			'card_declined seller message'            => array(
+				array(
+					'error' => array(
+						'code'           => 'card_declined',
+						'message'        => 'Your card was declined.',
+						'type'           => 'card_error',
+						'decline_code'   => 'do_not_honor',
+						'payment_intent' => array(
+							'id'      => 'pi_failed_test',
+							'status'  => 'requires_payment_method',
+							'charges' => array( 'data' => array( array( 'outcome' => array( 'seller_message' => 'The bank did not return any further details with this decline.' ) ) ) ),
 						),
 					),
 				),
+				402,
+				array(
+					'get_payment_intent_id' => 'pi_failed_test',
+					'get_merchant_message'  => 'The bank did not return any further details with this decline.',
+					'get_error_code'        => 'card_declined',
+					'get_decline_code'      => 'do_not_honor',
+				),
 			),
-			402
-		);
-
-		$this->assertSame( 'pi_failed_test', $exception->get_payment_intent_id() );
-		$this->assertSame( 'The bank did not return any further details with this decline.', $exception->get_merchant_message() );
-		$this->assertSame( 'card_declined', $exception->get_error_code() );
-		$this->assertSame( 'do_not_honor', $exception->get_decline_code() );
-	}
-
-	/**
-	 * @testdox Should keep the seller message for card_declined only, matching the WooPayments extension's extraction guard.
-	 */
-	public function test_api_error_ignores_seller_message_for_other_decline_codes(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'           => 'expired_card',
-					'message'        => 'Your card has expired.',
-					'type'           => 'card_error',
-					'payment_intent' => array(
-						'id'      => 'pi_failed_test',
-						'charges' => array(
-							'data' => array(
-								array(
-									'outcome' => array(
-										'seller_message' => 'The card has expired.',
-									),
-								),
-							),
+			'seller message ignored for expired_card' => array(
+				array(
+					'error' => array(
+						'code'           => 'expired_card',
+						'message'        => 'Your card has expired.',
+						'type'           => 'card_error',
+						'payment_intent' => array(
+							'id'      => 'pi_failed_test',
+							'charges' => array( 'data' => array( array( 'outcome' => array( 'seller_message' => 'The card has expired.' ) ) ) ),
 						),
 					),
 				),
-			),
-			402
-		);
-
-		$this->assertSame( '', $exception->get_merchant_message() );
-		$this->assertSame( 'pi_failed_test', $exception->get_payment_intent_id() );
-	}
-
-	/**
-	 * @testdox Should preserve top-level data alongside an error envelope, so fraud ruleset results survive.
-	 */
-	public function test_api_error_preserves_fraud_ruleset_results_data(): void {
-		$ruleset_results = array( 'international_ip_address' => 'block' );
-		$exception       = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'    => 'wcpay_blocked_by_fraud_rule',
-					'message' => 'Transaction blocked by fraud rules.',
+				402,
+				array(
+					'get_merchant_message'  => '',
+					'get_payment_intent_id' => 'pi_failed_test',
 				),
-				'data'  => array( 'ruleset_results' => $ruleset_results ),
-			)
-		);
-
-		$this->assertSame( 'wcpay_blocked_by_fraud_rule', $exception->get_error_code() );
-		$this->assertSame( array( 'ruleset_results' => $ruleset_results ), $exception->get_error_data() );
-	}
-
-	/**
-	 * @testdox Should rewrite the amount_too_large capture error so the merchant is not told to contact support.
-	 */
-	public function test_api_error_rewrites_amount_too_large_for_uncaptured_intents(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'           => 'amount_too_large',
-					'message'        => 'Amount must be no more than $999,999.99 usd. If you need to process larger amounts, contact support.',
-					'type'           => 'invalid_request_error',
-					'payment_intent' => array(
-						'id'     => 'pi_auth_test',
-						'status' => 'requires_capture',
+			),
+			'fraud ruleset results data'              => array(
+				array(
+					'error' => array(
+						'code'    => 'wcpay_blocked_by_fraud_rule',
+						'message' => 'Transaction blocked by fraud rules.',
+					),
+					'data'  => array( 'ruleset_results' => array( 'international_ip_address' => 'block' ) ),
+				),
+				400,
+				array(
+					'get_error_code' => 'wcpay_blocked_by_fraud_rule',
+					'get_error_data' => array( 'ruleset_results' => array( 'international_ip_address' => 'block' ) ),
+				),
+			),
+			'amount_too_large awaiting capture'       => array(
+				array(
+					'error' => array(
+						'code'           => 'amount_too_large',
+						'message'        => 'Amount must be no more than $999,999.99 usd. If you need to process larger amounts, contact support.',
+						'type'           => 'invalid_request_error',
+						'payment_intent' => array(
+							'id'     => 'pi_auth_test',
+							'status' => 'requires_capture',
+						),
 					),
 				),
-			)
-		);
-
-		$this->assertSame( 'amount_too_large', $exception->get_error_code() );
-		$this->assertSame( 'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.', $exception->getMessage() );
-	}
-
-	/**
-	 * @testdox Should pass the amount_too_large message through untouched when the intent is not awaiting capture.
-	 */
-	public function test_api_error_keeps_raw_amount_too_large_message_without_requires_capture(): void {
-		$exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'code'    => 'amount_too_large',
-					'message' => 'Amount must be no more than $999,999.99 usd.',
-					'type'    => 'invalid_request_error',
+				400,
+				array(
+					'get_error_code' => 'amount_too_large',
+					'getMessage'     => 'Error: The payment could not be captured because the requested capture amount is greater than the amount you can capture for this charge.',
 				),
-			)
-		);
-
-		$this->assertSame( 'Error: Amount must be no more than $999,999.99 usd.', $exception->getMessage() );
-	}
-
-	/**
-	 * @testdox Should fall back to message_code and then the error type when the envelope carries no code.
-	 */
-	public function test_api_error_code_falls_back_to_message_code_then_type(): void {
-		$message_code_exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'message_code' => 'wcpay_platform_message_code',
-					'message'      => 'Platform-coded failure.',
+			),
+			'amount_too_large not awaiting capture'   => array(
+				array(
+					'error' => array(
+						'code'    => 'amount_too_large',
+						'message' => 'Amount must be no more than $999,999.99 usd.',
+						'type'    => 'invalid_request_error',
+					),
 				),
-			)
-		);
-		$this->assertSame( 'wcpay_platform_message_code', $message_code_exception->get_error_code() );
-
-		$type_exception = $this->capture_api_error(
-			array(
-				'error' => array(
-					'type'    => 'invalid_request_error',
-					'message' => 'Typed failure without a code.',
+				400,
+				array( 'getMessage' => 'Error: Amount must be no more than $999,999.99 usd.' ),
+			),
+			'code from message_code'                  => array(
+				array(
+					'error' => array(
+						'message_code' => 'wcpay_platform_message_code',
+						'message'      => 'Platform-coded failure.',
+					),
 				),
-			)
+				400,
+				array( 'get_error_code' => 'wcpay_platform_message_code' ),
+			),
+			'code from the error type'                => array(
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'message' => 'Typed failure without a code.',
+					),
+				),
+				400,
+				array( 'get_error_code' => 'invalid_request_error' ),
+			),
 		);
-		$this->assertSame( 'invalid_request_error', $type_exception->get_error_code() );
 	}
 
 	/**
@@ -3968,218 +3923,39 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create and confirm WooPayments PaymentIntents with one payment credential and lifted idempotency.
+	 * @testdox Should require explicit payment method types for the $_dataName SetupIntent.
+	 * @dataProvider provider_setup_intents_without_payment_method_types
 	 *
-	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Intention::DEFAULT_PARAMS and ::get_api().
+	 * @param callable $send Makes the one call on the client.
 	 */
-	public function test_create_and_confirm_payment_intention_lifts_idempotency_and_preserves_request_shape(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'      => 'pi_test',
-					'status'  => 'succeeded',
-					'charges' => array(
-						'total_count' => 0,
-						'data'        => array(),
+	public function test_setup_intention_requires_explicit_payment_method_types( callable $send ): void {
+		$sut = new WooPaymentsApiClient();
+		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
+
+		try {
+			$send( $sut );
+			$this->fail( 'Expected missing payment method types to be rejected.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 400, $exception->get_http_code() );
+		}
+	}
+
+	/**
+	 * @return array<string,array{0:callable}>
+	 */
+	public function provider_setup_intents_without_payment_method_types(): array {
+		return array(
+			'confirmed'   => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_and_confirm_setup_intention(
+					array(
+						'customer'       => 'cus_test',
+						'payment_method' => 'pm_test',
 					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->create_and_confirm_payment_intention(
-			array(
-				'amount'               => 1000,
-				'currency'             => 'usd',
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method'       => 'pm_test',
-				'payment_method_types' => array( 'card' ),
-			),
-			'idem_charge'
-		);
-
-		$this->assertSame( 'pi_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/intentions', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'idem_charge', $http_client->last_headers['Idempotency-Key'] );
-
-		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "true" on the wire for server compatibility.
-		$this->assertStringContainsString( '"confirm":"true"', (string) $http_client->last_body );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame(
-			array(
-				'test_mode'            => false,
-				'amount'               => 1000,
-				'currency'             => 'usd',
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method'       => 'pm_test',
-				'payment_method_types' => array( 'card' ),
-				'confirm'              => 'true',
-				'capture_method'       => 'automatic',
-			),
-			$body
-		);
-	}
-
-	/**
-	 * @testdox Should create and confirm WooPayments SetupIntents through the setup_intents endpoint.
-	 *
-	 * Pinned WooPayments 11.1.0: Create_And_Confirm_Setup_Intention::DEFAULT_PARAMS and ::get_api().
-	 */
-	public function test_create_and_confirm_setup_intention_posts_to_setup_intents_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'            => 'seti_test',
-					'status'        => 'succeeded',
-					'client_secret' => 'seti_test_secret_abc',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->create_and_confirm_setup_intention(
-			array(
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method'       => 'pm_test',
-				'payment_method_types' => array( 'sepa_debit' ),
-			),
-			'idem_setup'
-		);
-
-		$this->assertSame( 'seti_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/setup_intents', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'idem_setup', $http_client->last_headers['Idempotency-Key'] );
-
-		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "true" on the wire for server compatibility.
-		$this->assertStringContainsString( '"confirm":"true"', (string) $http_client->last_body );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame(
-			array(
-				'test_mode'            => false,
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method'       => 'pm_test',
-				'payment_method_types' => array( 'sepa_debit' ),
-				'confirm'              => 'true',
-			),
-			$body
-		);
-	}
-
-	/**
-	 * @testdox Should require explicit payment method types when confirming WooPayments SetupIntents.
-	 */
-	public function test_create_and_confirm_setup_intention_requires_explicit_payment_method_types(): void {
-		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->create_and_confirm_setup_intention(
-				array(
-					'customer'       => 'cus_test',
-					'payment_method' => 'pm_test',
+					'idem_setup'
 				),
-				'idem_setup'
-			);
-			$this->fail( 'Expected missing payment method types to be rejected.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 400, $exception->get_http_code() );
-		}
-	}
-
-	/**
-	 * @testdox Should create unconfirmed WooPayments SetupIntents with the server-compatible confirm flag.
-	 *
-	 * Pinned WooPayments 11.1.0: Create_Setup_Intention::DEFAULT_PARAMS and ::get_api().
-	 */
-	public function test_create_setup_intention_serializes_confirm_as_false_string(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'            => 'seti_unconfirmed',
-					'status'        => 'requires_confirmation',
-					'client_secret' => 'seti_unconfirmed_secret_abc',
-				)
 			),
+			'unconfirmed' => array( static fn( WooPaymentsApiClient $sut ) => $sut->create_setup_intention( array( 'customer' => 'cus_test' ), 'idem_setup_unconfirmed' ) ),
 		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->create_setup_intention(
-			array(
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method_types' => array( 'card' ),
-			),
-			'idem_setup_unconfirmed'
-		);
-
-		$this->assertSame( 'seti_unconfirmed', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/setup_intents', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'idem_setup_unconfirmed', $http_client->last_headers['Idempotency-Key'] );
-
-		// Intentional wire-serialization check: the boolean confirm flag must be coerced to the string "false" on the wire for server compatibility.
-		$this->assertStringContainsString( '"confirm":"false"', (string) $http_client->last_body );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame(
-			array(
-				'test_mode'            => false,
-				'customer'             => 'cus_test',
-				'metadata'             => array( 'order_id' => '123' ),
-				'payment_method_types' => array( 'card' ),
-				'confirm'              => 'false',
-			),
-			$body
-		);
-	}
-
-	/**
-	 * @testdox Should require explicit payment method types when creating WooPayments SetupIntents.
-	 */
-	public function test_create_setup_intention_requires_explicit_payment_method_types(): void {
-		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->create_setup_intention(
-				array(
-					'customer' => 'cus_test',
-				),
-				'idem_setup_unconfirmed'
-			);
-			$this->fail( 'Expected missing payment method types to be rejected.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 400, $exception->get_http_code() );
-		}
 	}
 
 	/**
@@ -4225,20 +4001,51 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Listing payment intents refuses an invalid customer ID before sending anything.
+	 * @testdox The $_dataName call refuses its invalid route parameter with a 400 before sending anything.
+	 * @dataProvider provider_invalid_route_parameters
+	 *
+	 * @param callable $send Makes the one call on the client.
+	 * @param string   $code Expected error code.
 	 */
-	public function test_list_payment_intentions_rejects_invalid_customer_id(): void {
+	public function test_invalid_route_parameter_is_refused_before_transport( callable $send, string $code ): void {
 		$http_client = new FakeWooPaymentsHttpClient();
 		$sut         = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
 		try {
-			$sut->list_payment_intentions( 'cus&customer=cus_other' );
-			$this->fail( 'Expected an invalid customer ID to be rejected.' );
+			$send( $sut );
+			$this->fail( 'Expected the invalid route parameter to be refused.' );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
-			$this->assertSame( 0, $http_client->request_count );
+			$this->assertSame( $code, $exception->get_error_code() );
+			$this->assertSame( 400, $exception->get_http_code() );
 		}
+
+		$this->assertSame( 0, $http_client->request_count );
+	}
+
+	/**
+	 * One row per call that puts a caller value in the request path or query: send, expected error code.
+	 *
+	 * @return array<string,array{0:callable,1:string}>
+	 */
+	public function provider_invalid_route_parameters(): array {
+		$route = 'wcpay_route_validation_failure';
+
+		return array(
+			'list_payment_intentions'     => array( static fn( WooPaymentsApiClient $sut ) => $sut->list_payment_intentions( 'cus&customer=cus_other' ), $route ),
+			'list_charge_refunds'         => array( static fn( WooPaymentsApiClient $sut ) => $sut->list_charge_refunds( 'ch_a&charge=ch_b' ), $route ),
+			'get_payment_methods'         => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_payment_methods( 'cus-test', 'card' ), $route ),
+			'get_dispute_summary'         => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_dispute_summary( '../du_test' ), $route ),
+			'get_charge'                  => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_charge( '' ), $route ),
+			'get_deposit'                 => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_deposit( '../po_test' ), $route ),
+			'get_authorization'           => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_authorization( '../pi_auth' ), $route ),
+			'get_transactions_export_url' => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_transactions_export_url( '../txexp_test' ), $route ),
+			'get_fraud_outcomes'          => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_fraud_outcomes( array( 'status' => 'invalid' ) ), 'invalid_fraud_outcome_status' ),
+			'get_latest_fraud_outcome'    => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_latest_fraud_outcome( 'pi-test' ), $route ),
+			'get_disputes_export_url'     => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_disputes_export_url( 'dpexp%2Ftest' ), $route ),
+			'get_document'                => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_document( '../vat_invoice-123' ), $route ),
+			'get_payouts_export_url'      => array( static fn( WooPaymentsApiClient $sut ) => $sut->get_payouts_export_url( '../poexp_test' ), $route ),
+		);
 	}
 
 	/**
@@ -4357,23 +4164,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Listing a charge's refunds refuses an invalid charge ID before sending anything.
-	 */
-	public function test_list_charge_refunds_rejects_invalid_charge_id(): void {
-		$http_client = new FakeWooPaymentsHttpClient();
-		$sut         = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->list_charge_refunds( 'ch_a&charge=ch_b' );
-			$this->fail( 'Expected an invalid charge ID to be rejected.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
-			$this->assertSame( 0, $http_client->request_count );
-		}
-	}
-
-	/**
 	 * Load one recorded F458 (a) refund list entry by pair key.
 	 *
 	 * @param string $pair Fixture pair key.
@@ -4393,22 +4183,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		}
 
 		$this->fail( "REC F458 (a) fixture has no entry for pair '$pair'." );
-	}
-
-	/**
-	 * @testdox Should reject invalid customer IDs before interpolating customer payment method requests.
-	 */
-	public function test_get_payment_methods_rejects_invalid_customer_id(): void {
-		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->get_payment_methods( 'cus-test', 'card' );
-			$this->fail( 'Expected invalid customer IDs to be rejected.' );
-		} catch ( WooPaymentsApiException $exception ) {
-			$this->assertSame( 'wcpay_route_validation_failure', $exception->get_error_code() );
-			$this->assertSame( 400, $exception->get_http_code() );
-		}
 	}
 
 	/**
@@ -4528,53 +4302,76 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should initialize onboarding through the platform onboarding endpoint.
+	 * @testdox Should start $_dataName onboarding through its platform endpoint with the account payload, the user token and the store identity.
+	 * @dataProvider provider_onboarding_init_requests
+	 *
+	 * @param callable            $send          Makes the one call on the client and returns its result.
+	 * @param array<string,mixed> $response_body Decoded body the platform answers with, returned as is.
+	 * @param string              $path          Expected path.
+	 * @param array<string,mixed> $body_values   Expected body values, a dot naming a key one level down.
 	 */
-	public function test_initialize_onboarding_posts_account_payload(): void {
+	public function test_onboarding_init_request( callable $send, array $response_body, string $path, array $body_values ): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'url'   => 'https://connect.example.test',
-					'state' => 'state_test',
-				)
-			),
+			'body'     => wp_json_encode( $response_body ),
 		);
 
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ), $this->transport_log() );
 
-		$result = $sut->initialize_onboarding(
-			false,
-			'https://example.test/return',
-			array( 'site_locale' => 'en_US' ),
-			array( 'email' => 'merchant@example.com' ),
-			array( 'business_type' => 'individual' ),
-			array( 'wcpay-promo-test' ),
-			false,
-			'ref_test'
-		);
+		$result = $send( $sut );
+		$body   = json_decode( (string) $http_client->last_body, true );
 
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'state_test', $result['state'] );
-		$this->assertSame( '/sites/123/wcpay/onboarding/init', $http_client->last_path );
+		$this->assertSame( $response_body, $result );
+		$this->assertSame( $path, $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
 		$this->assertIsArray( $body );
-		$this->assertSame( 'https://example.test/return', $body['return_url'] );
-		$this->assertFalse( $body['create_live_account'] );
-		$this->assertSame( 'en_US', $body['site_data']['site_locale'] );
-		$this->assertSame( 'merchant@example.com', $body['user_data']['email'] );
-		$this->assertSame( 'individual', $body['account_data']['business_type'] );
-		$this->assertSame( array( 'wcpay-promo-test' ), $body['actioned_notes'] );
-		$this->assertFalse( $body['collect_payout_requirements'] );
-		$this->assertSame( 'ref_test', $body['referral_code'] );
-		$this->assertTrue( $body['test_mode'] );
+		foreach ( $body_values as $key => $value ) {
+			$this->assertSame( array( true, $value ), self::param_at( $body, $key ), $key );
+		}
 		$this->assertTrue( $http_client->last_use_user_token );
 		$this->assert_store_identity_in_onboarding_payload( $body );
+	}
+
+	/**
+	 * @return array<string,array<int,mixed>>
+	 */
+	public function provider_onboarding_init_requests(): array {
+		$caller_payload = array(
+			'site_data.site_locale'      => 'en_US',
+			'user_data.email'            => 'merchant@example.com',
+			'account_data.business_type' => 'individual',
+			'actioned_notes'             => array( 'wcpay-promo-test' ),
+			'test_mode'                  => true,
+		);
+
+		return array(
+			'hosted'       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->initialize_onboarding( false, 'https://example.test/return', array( 'site_locale' => 'en_US' ), array( 'email' => 'merchant@example.com' ), array( 'business_type' => 'individual' ), array( 'wcpay-promo-test' ), false, 'ref_test' ),
+				array(
+					'url'   => 'https://connect.example.test',
+					'state' => 'state_test',
+				),
+				'/sites/123/wcpay/onboarding/init',
+				$caller_payload + array(
+					'return_url'                  => 'https://example.test/return',
+					'create_live_account'         => false,
+					'collect_payout_requirements' => false,
+					'referral_code'               => 'ref_test',
+				),
+			),
+			'embedded KYC' => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->initialize_onboarding_embedded_kyc( true, array( 'site_locale' => 'en_US' ), array( 'email' => 'merchant@example.com' ), array( 'business_type' => 'individual' ), array( 'wcpay-promo-test' ) ),
+				array(
+					'client_secret'   => 'secret_test',
+					'publishable_key' => 'pk_test',
+				),
+				'/sites/123/wcpay/onboarding/embedded',
+				$caller_payload + array( 'create_live_account' => true ),
+			),
+		);
 	}
 
 	/**
@@ -4592,39 +4389,26 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the existing onboarding payload filter.
+	 * @testdox Should pass the $_dataName onboarding payload, store identity included, through the existing onboarding payload filter and send what it returns.
+	 * @dataProvider provider_onboarding_data_args_filter
+	 *
+	 * @param callable            $send        Makes the one call on the client.
+	 * @param array<string,mixed> $seen_values Values the filter callback must see.
+	 * @param array<string,mixed> $body_values Expected body values besides the ones the callback set.
 	 */
-	public function test_initialize_onboarding_applies_onboarding_data_args_filter(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'url' => false ) ),
-		);
-		$filtered_args         = array();
-		$filter                = static function ( array $args ) use ( &$filtered_args ): array {
-			$filtered_args                                = $args;
-			$args['compatibility_data']                   = array( 'woocommerce' => '11.0.0' );
+	public function test_onboarding_data_args_filter( callable $send, array $seen_values, array $body_values ): void {
+		list( $sut, $http_client ) = $this->make_sut( true );
+		$seen                      = array();
+		$filter                    = static function ( array $args ) use ( &$seen ): array {
+			$seen                       = $args;
+			$args['compatibility_data'] = array( 'woocommerce' => '11.0.0' );
 			$args['account_data']['woocommerce_store_id'] = 'store_123';
 			return $args;
 		};
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
 		add_filter( 'wc_payments_get_onboarding_data_args', $filter );
 
 		try {
-			$sut->initialize_onboarding(
-				false,
-				'https://example.test/return',
-				array( 'site_locale' => 'en_US' ),
-				array( 'email' => 'merchant@example.com' ),
-				array( 'business_type' => 'individual' ),
-				array(),
-				true,
-				'ref_test'
-			);
+			$send( $sut );
 		} finally {
 			remove_filter( 'wc_payments_get_onboarding_data_args', $filter );
 		}
@@ -4632,98 +4416,38 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$body = json_decode( (string) $http_client->last_body, true );
 
 		$this->assertIsArray( $body );
-		$this->assertSame( 'https://example.test/return', $body['return_url'] );
-		$this->assertTrue( $filtered_args['collect_payout_requirements'] );
-		$this->assertArrayHasKey( 'woocommerce_store_id', $filtered_args, 'Filter callbacks see the store ID.' );
-		$this->assertArrayHasKey( 'compatibility_data', $filtered_args, 'Filter callbacks see the compatibility data.' );
-		$this->assertTrue( $body['collect_payout_requirements'] );
+		$this->assertArrayHasKey( 'woocommerce_store_id', $seen, 'Filter callbacks see the store ID.' );
+		$this->assertArrayHasKey( 'compatibility_data', $seen, 'Filter callbacks see the compatibility data.' );
+		foreach ( $seen_values as $key => $value ) {
+			$this->assertSame( array( true, $value ), self::param_at( $seen, $key ), $key );
+		}
 		$this->assertSame( array( 'woocommerce' => '11.0.0' ), $body['compatibility_data'] );
 		$this->assertSame( 'store_123', $body['account_data']['woocommerce_store_id'] );
-		$this->assertSame( 'ref_test', $body['referral_code'] );
+		foreach ( $body_values as $key => $value ) {
+			$this->assertSame( array( true, $value ), self::param_at( $body, $key ), $key );
+		}
 	}
 
 	/**
-	 * @testdox Should initialize embedded KYC through the platform onboarding endpoint.
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_initialize_onboarding_embedded_kyc_posts_account_payload(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
+	public function provider_onboarding_data_args_filter(): array {
+		return array(
+			'hosted'       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->initialize_onboarding( false, 'https://example.test/return', array( 'site_locale' => 'en_US' ), array( 'email' => 'merchant@example.com' ), array( 'business_type' => 'individual' ), array(), true, 'ref_test' ),
+				array( 'collect_payout_requirements' => true ),
 				array(
-					'client_secret'   => 'secret_test',
-					'publishable_key' => 'pk_test',
-				)
+					'return_url'                  => 'https://example.test/return',
+					'collect_payout_requirements' => true,
+					'referral_code'               => 'ref_test',
+				),
+			),
+			'embedded KYC' => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->initialize_onboarding_embedded_kyc( true, array( 'site_locale' => 'en_US' ), array( 'email' => 'merchant@example.com' ), array( 'business_type' => 'individual' ), array() ),
+				array( 'create_live_account' => true ),
+				array( 'create_live_account' => true ),
 			),
 		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, null, 'store_123' ), $this->transport_log() );
-
-		$result = $sut->initialize_onboarding_embedded_kyc(
-			true,
-			array( 'site_locale' => 'en_US' ),
-			array( 'email' => 'merchant@example.com' ),
-			array( 'business_type' => 'individual' ),
-			array( 'wcpay-promo-test' )
-		);
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'secret_test', $result['client_secret'] );
-		$this->assertSame( '/sites/123/wcpay/onboarding/embedded', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['create_live_account'] );
-		$this->assertSame( 'en_US', $body['site_data']['site_locale'] );
-		$this->assertSame( 'merchant@example.com', $body['user_data']['email'] );
-		$this->assertSame( 'individual', $body['account_data']['business_type'] );
-		$this->assertSame( array( 'wcpay-promo-test' ), $body['actioned_notes'] );
-		$this->assertTrue( $body['test_mode'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-		$this->assert_store_identity_in_onboarding_payload( $body );
-	}
-
-	/**
-	 * @testdox Should preserve the existing onboarding payload filter for embedded KYC.
-	 */
-	public function test_initialize_onboarding_embedded_kyc_applies_onboarding_data_args_filter(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'client_secret' => 'secret_test' ) ),
-		);
-		$filter                = static function ( array $args ): array {
-			$args['compatibility_data']                   = array( 'woocommerce' => '11.0.0' );
-			$args['account_data']['woocommerce_store_id'] = 'store_123';
-			return $args;
-		};
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-		add_filter( 'wc_payments_get_onboarding_data_args', $filter );
-
-		try {
-			$sut->initialize_onboarding_embedded_kyc(
-				true,
-				array( 'site_locale' => 'en_US' ),
-				array( 'email' => 'merchant@example.com' ),
-				array( 'business_type' => 'individual' ),
-				array()
-			);
-		} finally {
-			remove_filter( 'wc_payments_get_onboarding_data_args', $filter );
-		}
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertIsArray( $body );
-		$this->assertSame( array( 'woocommerce' => '11.0.0' ), $body['compatibility_data'] );
-		$this->assertSame( 'store_123', $body['account_data']['woocommerce_store_id'] );
 	}
 
 	/**
@@ -4853,70 +4577,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject invalid dispute summary route identifiers.
-	 */
-	public function test_get_dispute_summary_rejects_invalid_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_dispute_summary( '../du_test' );
-	}
-
-	/**
-	 * @testdox Should reject empty route identifiers before path interpolation.
-	 */
-	public function test_get_charge_rejects_empty_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_charge( '' );
-	}
-
-	/**
-	 * @testdox Should reject unsafe payout identifiers.
-	 */
-	public function test_get_deposit_uses_preserved_detail_endpoint_and_validates_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id' => 'po_test',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_deposit( '../po_test' );
-	}
-
-	/**
 	 * @testdox Should retrieve authorizations through the preserved list endpoint and request hook.
 	 */
 	public function test_get_authorizations_preserves_list_endpoint_and_request_hook(): void {
@@ -5013,10 +4673,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'GET', $observed_request->get_method() );
 		$this->assertSame( '/sites/123/wcpay/authorizations/pi_auth?test_mode=0', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_authorization( '../pi_auth' );
 	}
 
 	/**
@@ -5379,86 +5035,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject unsafe transaction export identifiers.
-	 */
-	public function test_get_transactions_export_url_rejects_invalid_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_transactions_export_url( '../txexp_test' );
-	}
-
-	/**
-	 * @testdox Should reject invalid fraud outcome statuses.
-	 */
-	public function test_get_fraud_outcomes_rejects_invalid_status(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_fraud_outcomes( array( 'status' => 'invalid' ) );
-	}
-
-	/**
-	 * @testdox Should reject unsafe latest fraud outcome identifiers.
-	 */
-	public function test_get_latest_fraud_outcome_rejects_invalid_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_latest_fraud_outcome( 'pi-test' );
-	}
-
-	/**
-	 * @testdox Should reject unsafe dispute export identifiers.
-	 */
-	public function test_get_disputes_export_url_rejects_invalid_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_disputes_export_url( 'dpexp%2Ftest' );
-	}
-
-	/**
 	 * @testdox Should preserve admin badge count request filters.
 	 */
 	public function test_admin_badge_count_methods_preserve_request_filters(): void {
@@ -5772,18 +5348,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject unsafe document identifiers.
-	 */
-	public function test_get_document_rejects_invalid_route_identifier(): void {
-		$sut = new WooPaymentsApiClient();
-		$sut->init( new FakeWooPaymentsHttpClient(), $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_document( '../vat_invoice-123' );
-	}
-
-	/**
 	 * @testdox Should validate VAT through the preserved VAT request filter.
 	 */
 	public function test_validate_vat_preserves_request_filter_contract(): void {
@@ -5842,26 +5406,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/vat/CHE%20123%2F4?test_mode=0', $http_client->last_path );
 		$this->assertStringNotContainsString( 'CHE 123', $http_client->last_path );
 		$this->assertStringNotContainsString( '%2520', $http_client->last_path );
-	}
-
-	/**
-	 * @testdox Should reject unsafe payout export identifiers.
-	 */
-	public function test_get_payouts_export_url_rejects_invalid_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->get_payouts_export_url( '../poexp_test' );
 	}
 
 	/**
