@@ -19,8 +19,8 @@ jest.mock( '../../app/hooks/useNavigation', () => ( {
 } ) );
 
 /**
- * The Disconnect button's seam: a store the platform serves has `ppcpSettings.collecting`, and WooCommerce manages its
- * connection, so the settings app offers no Disconnect.
+ * A store the platform serves has `ppcpSettings.collecting`, and its Disconnect leaves the served state on the server
+ * (R275), so the settings app offers Disconnect as it does for any other store.
  */
 describe( 'DisconnectButton on a store the platform serves', () => {
 	afterEach( () => {
@@ -28,15 +28,15 @@ describe( 'DisconnectButton on a store the platform serves', () => {
 	} );
 
 	it.each( [ 'collecting', 'platform_connected' ] )(
-		'is hidden while %s',
+		'is shown while %s',
 		( state ) => {
 			window.ppcpSettings = { collecting: { state } };
 
 			render( <DisconnectButton /> );
 
 			expect(
-				screen.queryByRole( 'button', { name: 'Disconnect' } )
-			).not.toBeInTheDocument();
+				screen.getByRole( 'button', { name: 'Disconnect' } )
+			).toBeInTheDocument();
 		}
 	);
 

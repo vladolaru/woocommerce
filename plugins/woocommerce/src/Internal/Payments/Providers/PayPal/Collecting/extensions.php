@@ -155,7 +155,7 @@ return array(
 			$c->get( 'settings.service.seller-type-resolver' )
 		);
 	},
-	// The settings app always shows Disconnect; while served it writes nothing, so no woocommerce-ppcp-* data is deleted.
+	// Disconnect runs the wallet's own disconnect and then leaves the served state, as a first-party connect does.
 	'settings.rest.authentication'                     => static function ( AuthenticationRestEndpoint $previous, ContainerInterface $c ): AuthenticationRestEndpoint {
 		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
 			return $previous;
@@ -165,6 +165,8 @@ return array(
 			$c->get( 'settings.service.authentication_manager' ),
 			$c->get( 'settings.service.data-manager' ),
 			$c->get( 'collecting.connection-state' ),
+			$c->get( 'collecting.state' ),
+			$c->get( 'wcgateway.helper.dcc-product-status' ),
 			$c->get( 'woocommerce.logger.woocommerce' )
 		);
 	},
