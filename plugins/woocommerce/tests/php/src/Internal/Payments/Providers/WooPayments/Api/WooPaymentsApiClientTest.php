@@ -42,75 +42,1410 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create account links through the site-scoped user-token endpoint.
+	 * @testdox The $_dataName platform call sends the expected method, path, query, body and token and blocking flags, and returns the expected value.
+	 * @dataProvider provider_platform_request_contracts
+	 *
+	 * @param callable                 $send                 Makes the one call on the client and returns its result.
+	 * @param bool                     $test_mode            Whether the account is in test mode.
+	 * @param bool                     $test_mode_onboarding Whether the account is onboarding in test mode.
+	 * @param mixed                    $response_body        Decoded body the platform answers with.
+	 * @param string                   $method               Expected HTTP method.
+	 * @param string                   $path                 Expected path, without the query string.
+	 * @param array<string,mixed>      $query                Expected parsed query string.
+	 * @param array<string,mixed>|null $body                 Expected decoded body, or null when no body is sent.
+	 * @param bool                     $body_is_subset       Whether $body lists only some of the body's keys.
+	 * @param bool                     $use_user_token       Whether the request is signed with the user token.
+	 * @param bool                     $blocking             Whether the request waits for the answer.
+	 * @param mixed                    $result               Expected return value.
 	 */
-	public function test_create_account_link_posts_forwarded_arguments_with_user_token(): void {
+	public function test_platform_request_contract( callable $send, bool $test_mode, bool $test_mode_onboarding, $response_body, string $method, string $path, array $query, ?array $body, bool $body_is_subset, bool $use_user_token, bool $blocking, $result ): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'url'   => 'https://connect.stripe.com/setup/session',
-					'state' => 'state_test',
-				)
-			),
+			'body'     => wp_json_encode( $response_body ),
 		);
 
 		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+		$sut->init( $http_client, $this->create_account_service( $test_mode, $test_mode_onboarding ), $this->transport_log() );
 
-		$result = $sut->create_account_link(
-			array(
-				'type'       => 'complete_kyc_link',
-				'return_url' => 'https://example.com/return',
-			)
-		);
+		$actual = $send( $sut );
 
-		$this->assertSame( 'https://connect.stripe.com/setup/session', $result['url'] );
-		$this->assertSame( '/sites/123/wcpay/links', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertTrue( $http_client->last_use_user_token );
-		$this->assertSame(
-			array(
-				'test_mode'  => false,
-				'type'       => 'complete_kyc_link',
-				'return_url' => 'https://example.com/return',
-			),
-			json_decode( (string) $http_client->last_body, true )
-		);
+		$sent_query = array();
+		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $sent_query );
+		$sent_body = null === $http_client->last_body ? null : json_decode( $http_client->last_body, true );
+
+		$this->assertSame( $method, $http_client->last_method );
+		$this->assertSame( $path, explode( '?', $http_client->last_path, 2 )[0] );
+		$this->assertSame( $query, $sent_query );
+		$this->assertSame( $body, $body_is_subset ? array_intersect_key( (array) $sent_body, (array) $body ) : $sent_body );
+		$this->assertSame( $use_user_token, $http_client->last_use_user_token );
+		$this->assertSame( $blocking, $http_client->last_blocking );
+		$this->assertSame( $result, $actual );
 	}
 
 	/**
-	 * @testdox Should create dashboard login links with the user token and the onboarding test-mode flag.
+	 * One row per platform call: send, test mode, onboarding test mode, platform answer, method, path, query, body,
+	 * body is a subset, user token, blocking, result. The token and blocking flags follow client 11.1.0.
 	 *
-	 * Pinned WooPayments 11.1.0: Get_Account_Login_Data (`accounts/login_links`, POST, user token, test mode only when onboarding in test mode).
+	 * @return array<string,array<int,mixed>>
 	 */
-	public function test_create_login_link_posts_redirect_url_with_user_token(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'url' => 'https://connect.stripe.com/express/login_test' ) ),
+	public function provider_platform_request_contracts(): array {
+		$account_link      = array(
+			'url'   => 'https://connect.stripe.com/setup/session',
+			'state' => 'state_test',
 		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true, false ), $this->transport_log() );
-
-		$result = $sut->create_login_link( home_url( '/overview' ) );
-
-		$this->assertSame( 'https://connect.stripe.com/express/login_test', $result['url'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/login_links', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertTrue( $http_client->last_use_user_token );
-		$this->assertSame(
-			array(
-				'test_mode'    => false,
-				'redirect_url' => home_url( '/overview' ),
+		$login_link        = array( 'url' => 'https://connect.stripe.com/express/login_test' );
+		$embedded_session  = array(
+			'client_secret'   => 'cs_test',
+			'expires_at'      => 1781740800,
+			'account_id'      => 'acct_native',
+			'is_live'         => false,
+			'publishable_key' => 'pk_test_native',
+		);
+		$payment_method    = array(
+			'id'   => 'pm_test',
+			'type' => 'card',
+			'card' => array(
+				'brand'     => 'visa',
+				'last4'     => '4242',
+				'exp_month' => 12,
+				'exp_year'  => 2030,
 			),
-			json_decode( (string) $http_client->last_body, true )
+		);
+		$payment_methods   = array(
+			'data' => array(
+				array(
+					'id'   => 'pm_card',
+					'type' => 'card',
+				),
+			),
+		);
+		$apple_pay_domain  = array(
+			'id'        => 'domain_123',
+			'apple_pay' => array( 'status' => 'active' ),
+		);
+		$timeline          = array( 'data' => array( array( 'type' => 'captured' ) ) );
+		$woopay_compat     = array(
+			'incompatible_extensions' => array( 'bad-extension' ),
+			'adapted_extensions'      => array( 'woocommerce-points-and-rewards' ),
+			'available_countries'     => array( 'US', 'BR' ),
+		);
+		$onboarding_fields = array(
+			'business_types' => array(
+				array(
+					'key'  => 'individual',
+					'name' => 'Individual',
+				),
+			),
+		);
+		$fraud_ruleset     = array(
+			array(
+				'key'     => 'avs_verification',
+				'outcome' => 'block',
+			),
+		);
+		$account           = array(
+			'account_id'           => 'acct_native_123',
+			'test_publishable_key' => 'pk_test_native',
+			'is_live'              => false,
+		);
+		$failed_events     = array(
+			'data'     => array(
+				array(
+					'id'   => 'evt_failed_1',
+					'type' => 'payment_intent.succeeded',
+				),
+			),
+			'has_more' => true,
+		);
+		$terminal_intent   = array(
+			'id'     => 'pi_terminal',
+			'status' => 'requires_capture',
+		);
+		// The platform answers with the PaymentIntent, which it prepares only before confirmation (wpcom class-intentions-controller.php:626, :660).
+		$prepared_intent = array(
+			'id'     => 'pi_terminal',
+			'object' => 'payment_intent',
+			'status' => 'requires_confirmation',
+		);
+		$empty_list      = array( 'data' => array() );
+		$counted_list    = array(
+			'data'        => array(),
+			'total_count' => 0,
+		);
+		$export          = array( 'export_id' => 'exp_test' );
+		$fraud_outcome   = array(
+			'id'      => 'fo_latest',
+			'outcome' => 'review',
+		);
+		$dispute         = array(
+			'id'     => 'dp_test',
+			'reason' => 'fraudulent',
+		);
+		$success         = array( 'success' => true );
+
+		return array(
+			'create_account_link'                    => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_account_link(
+					array(
+						'type'       => 'complete_kyc_link',
+						'return_url' => 'https://example.com/return',
+					)
+				),
+				false,
+				false,
+				$account_link,
+				'POST',
+				'/sites/123/wcpay/links',
+				array(),
+				array(
+					'test_mode'  => false,
+					'type'       => 'complete_kyc_link',
+					'return_url' => 'https://example.com/return',
+				),
+				false,
+				true,
+				true,
+				$account_link,
+			),
+			// Pinned WooPayments 11.1.0: Get_Account_Login_Data sends test mode only when onboarding in test mode.
+			'create_login_link'                      => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_login_link( home_url( '/overview' ) ),
+				true,
+				false,
+				$login_link,
+				'POST',
+				'/sites/123/wcpay/accounts/login_links',
+				array(),
+				array(
+					'test_mode'    => false,
+					'redirect_url' => home_url( '/overview' ),
+				),
+				false,
+				true,
+				true,
+				$login_link,
+			),
+			'create_embedded_account_session'        => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_embedded_account_session(),
+				false,
+				false,
+				$embedded_session,
+				'POST',
+				'/sites/123/wcpay/accounts/embedded/session',
+				array(),
+				array( 'test_mode' => false ),
+				true,
+				true,
+				true,
+				$embedded_session,
+			),
+			'create_customer'                        => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_customer(
+					array(
+						'name'  => 'Ada Lovelace',
+						'email' => 'ada@example.com',
+					)
+				),
+				false,
+				false,
+				array( 'id' => 'cus_test' ),
+				'POST',
+				'/sites/123/wcpay/customers',
+				array(),
+				array( 'name' => 'Ada Lovelace' ),
+				true,
+				false,
+				true,
+				'cus_test',
+			),
+			'update_customer'                        => array(
+				static function ( WooPaymentsApiClient $sut ) {
+					$sut->update_customer( 'cus_test', array( 'email' => 'ada@example.com' ) );
+					return null;
+				},
+				false,
+				false,
+				array(),
+				'POST',
+				'/sites/123/wcpay/customers/cus_test',
+				array(),
+				array( 'email' => 'ada@example.com' ),
+				true,
+				false,
+				true,
+				null,
+			),
+			'get_payment_method'                     => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_payment_method( 'pm_test' ),
+				false,
+				false,
+				$payment_method,
+				'GET',
+				'/sites/123/wcpay/payment_methods/pm_test',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				$payment_method,
+			),
+			'get_payment_methods'                    => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_payment_methods( 'cus_test', 'card' ),
+				true,
+				true,
+				$payment_methods,
+				'GET',
+				'/sites/123/wcpay/payment_methods',
+				array(
+					'test_mode' => '1',
+					'customer'  => 'cus_test',
+					'type'      => 'card',
+					'limit'     => '100',
+				),
+				null,
+				false,
+				false,
+				true,
+				$payment_methods,
+			),
+			'register_apple_pay_domain'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->register_apple_pay_domain( 'example.test' ),
+				true,
+				true,
+				$apple_pay_domain,
+				'POST',
+				'/sites/123/wcpay/payment_method_domains',
+				array(),
+				array(
+					'test_mode'   => true,
+					'domain_name' => 'example.test',
+					'enabled'     => 'true',
+				),
+				true,
+				false,
+				true,
+				$apple_pay_domain,
+			),
+			'track_order'                            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->track_order(
+					array(
+						'id'                 => 42,
+						'_payment_method_id' => 'pm_test',
+					),
+					true
+				),
+				true,
+				true,
+				array( 'result' => 'success' ),
+				'POST',
+				'/sites/123/wcpay/tracking/order',
+				array(),
+				array(
+					'test_mode'  => true,
+					'order_data' => array(
+						'id'                 => 42,
+						'_payment_method_id' => 'pm_test',
+					),
+					'update'     => true,
+				),
+				true,
+				false,
+				true,
+				array( 'result' => 'success' ),
+			),
+			'update_payment_method'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->update_payment_method( 'pm_test', array( 'billing_details' => array( 'email' => 'ada@example.com' ) ) ),
+				true,
+				true,
+				array( 'id' => 'pm_test' ),
+				'POST',
+				'/sites/123/wcpay/payment_methods/pm_test',
+				array(),
+				array(
+					'test_mode'       => true,
+					'billing_details' => array( 'email' => 'ada@example.com' ),
+				),
+				true,
+				false,
+				true,
+				array( 'id' => 'pm_test' ),
+			),
+			'detach_payment_method'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->detach_payment_method( 'pm_test' ),
+				true,
+				true,
+				array( 'id' => 'pm_test' ),
+				'POST',
+				'/sites/123/wcpay/payment_methods/pm_test/detach',
+				array(),
+				array( 'test_mode' => true ),
+				true,
+				false,
+				true,
+				array( 'id' => 'pm_test' ),
+			),
+			'get_timeline'                           => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_timeline( 'pi_test' ),
+				false,
+				false,
+				$timeline,
+				'GET',
+				'/sites/123/wcpay/timeline/pi_test',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				$timeline,
+			),
+			'update_compatibility_data'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->update_compatibility_data( array( 'woocommerce_version' => '11.0.0' ) ),
+				false,
+				false,
+				array( 'result' => 'ok' ),
+				'POST',
+				'/sites/123/wcpay/compatibility',
+				array(),
+				array(
+					'test_mode'          => false,
+					'compatibility_data' => array( 'woocommerce_version' => '11.0.0' ),
+				),
+				true,
+				false,
+				true,
+				array( 'result' => 'ok' ),
+			),
+			'get_woopay_compatibility'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_woopay_compatibility(),
+				false,
+				false,
+				$woopay_compat,
+				'GET',
+				'/sites/123/wcpay/woopay/compatibility',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				$woopay_compat,
+			),
+			'get_onboarding_fields_data'             => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_onboarding_fields_data( 'en_US' ),
+				true,
+				true,
+				$onboarding_fields,
+				'GET',
+				'/wcpay/onboarding/fields_data',
+				array(
+					'test_mode' => '1',
+					'locale'    => 'en_US',
+				),
+				null,
+				false,
+				true,
+				true,
+				$onboarding_fields,
+			),
+			'finalize_onboarding_embedded_kyc'       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->finalize_onboarding_embedded_kyc( 'en_US', 'wcadmin-settings-page', array( 'wcpay-promo-test' ) ),
+				false,
+				false,
+				array(
+					'success' => true,
+					'mode'    => 'live',
+				),
+				'POST',
+				'/sites/123/wcpay/onboarding/embedded/finalize',
+				array(),
+				array(
+					'test_mode'      => false,
+					'locale'         => 'en_US',
+					'source'         => 'wcadmin-settings-page',
+					'actioned_notes' => array( 'wcpay-promo-test' ),
+				),
+				true,
+				true,
+				true,
+				array(
+					'success' => true,
+					'mode'    => 'live',
+				),
+			),
+			'delete_account'                         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->delete_account( true ),
+				false,
+				false,
+				array( 'result' => 'success' ),
+				'POST',
+				'/sites/123/wcpay/accounts/delete',
+				array(),
+				array( 'test_mode' => true ),
+				true,
+				true,
+				true,
+				array( 'result' => 'success' ),
+			),
+			'update_account'                         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->update_account(
+					array(
+						'statement_descriptor'   => 'NATIVE STORE',
+						'business_support_email' => 'support@example.test',
+					)
+				),
+				true,
+				true,
+				$success,
+				'POST',
+				'/sites/123/wcpay/accounts',
+				array(),
+				array(
+					'test_mode'              => true,
+					'statement_descriptor'   => 'NATIVE STORE',
+					'business_support_email' => 'support@example.test',
+				),
+				true,
+				true,
+				true,
+				$success,
+			),
+			'add_account_tos_agreement'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->add_account_tos_agreement( 'settings-popup', 'merchant_admin' ),
+				false,
+				false,
+				$success,
+				'POST',
+				'/sites/123/wcpay/accounts/tos_agreements',
+				array(),
+				array(
+					'test_mode' => false,
+					'source'    => 'settings-popup',
+					'user_name' => 'merchant_admin',
+				),
+				true,
+				true,
+				true,
+				$success,
+			),
+			'request_capability'                     => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->request_capability( 'link_payments', true ),
+				true,
+				true,
+				array( 'status' => 'active' ),
+				'POST',
+				'/sites/123/wcpay/accounts/capabilities',
+				array(),
+				array(
+					'capability_id' => 'link_payments',
+					'requested'     => true,
+				),
+				true,
+				true,
+				true,
+				array( 'status' => 'active' ),
+			),
+			'get_file'                               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_file( 'file_logo', false ),
+				false,
+				false,
+				array(
+					'id'      => 'file_logo',
+					'purpose' => 'business_logo',
+				),
+				'GET',
+				'/sites/123/wcpay/files/file_logo',
+				array(
+					'test_mode'  => '0',
+					'as_account' => '0',
+				),
+				null,
+				false,
+				false,
+				true,
+				array(
+					'id'      => 'file_logo',
+					'purpose' => 'business_logo',
+				),
+			),
+			'get_file_contents'                      => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_file_contents( 'file_logo', false ),
+				false,
+				false,
+				array(
+					'content_type' => 'image/png',
+					'file_content' => 'TE9HTw==',
+				),
+				'GET',
+				'/sites/123/wcpay/files/file_logo/contents',
+				array(
+					'test_mode'  => '0',
+					'as_account' => '0',
+				),
+				null,
+				false,
+				false,
+				true,
+				array(
+					'content_type' => 'image/png',
+					'file_content' => 'TE9HTw==',
+				),
+			),
+			'save_fraud_ruleset'                     => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->save_fraud_ruleset( $fraud_ruleset ),
+				false,
+				false,
+				$success,
+				'POST',
+				'/sites/123/wcpay/fraud_ruleset',
+				array(),
+				array( 'ruleset_config' => $fraud_ruleset ),
+				true,
+				false,
+				true,
+				$success,
+			),
+			'get_latest_fraud_ruleset'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_latest_fraud_ruleset(),
+				false,
+				false,
+				array( 'ruleset_config' => $fraud_ruleset ),
+				'GET',
+				'/sites/123/wcpay/fraud_ruleset',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'ruleset_config' => $fraud_ruleset ),
+			),
+			'get_account'                            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_account( 'store_123' ),
+				false,
+				true,
+				$account,
+				'GET',
+				'/sites/123/wcpay/accounts',
+				array(
+					'test_mode'            => '1',
+					'woocommerce_store_id' => 'store_123',
+				),
+				null,
+				false,
+				false,
+				true,
+				$account,
+			),
+			'get_failed_webhook_events'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_failed_webhook_events(),
+				true,
+				true,
+				$failed_events,
+				'POST',
+				'/sites/123/wcpay/webhook/failed_events',
+				array(),
+				array( 'test_mode' => true ),
+				true,
+				false,
+				true,
+				$failed_events,
+			),
+			'create_terminal_connection_token'       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_terminal_connection_token(),
+				true,
+				true,
+				array( 'secret' => 'cnctok_test_secret' ),
+				'POST',
+				'/sites/123/wcpay/terminal/connection_tokens',
+				array(),
+				array( 'test_mode' => true ),
+				true,
+				false,
+				true,
+				array( 'secret' => 'cnctok_test_secret' ),
+			),
+			'get_address_autocomplete_token'         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_address_autocomplete_token(),
+				false,
+				false,
+				array( 'token' => 'address.jwt.token' ),
+				'POST',
+				'/sites/123/wcpay/address-autocomplete-token',
+				array(),
+				array( 'test_mode' => false ),
+				true,
+				false,
+				true,
+				array( 'token' => 'address.jwt.token' ),
+			),
+			'create_terminal_payment_intention'      => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_terminal_payment_intention(
+					array(
+						'amount'               => 1234,
+						'currency'             => 'usd',
+						'capture_method'       => 'manual',
+						'metadata'             => array( 'order_number' => '100' ),
+						'payment_method_types' => array( 'card_present' ),
+					)
+				),
+				false,
+				false,
+				$terminal_intent,
+				'POST',
+				'/sites/123/wcpay/intentions',
+				array(),
+				array(
+					'amount'               => 1234,
+					'capture_method'       => 'manual',
+					'payment_method_types' => array( 'card_present' ),
+				),
+				true,
+				false,
+				true,
+				$terminal_intent,
+			),
+			'prepare_terminal_payment'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->prepare_terminal_payment( 'pi_terminal', 42 ),
+				false,
+				false,
+				$prepared_intent,
+				'POST',
+				'/sites/123/wcpay/intentions/pi_terminal/prepare_terminal_payment',
+				array(),
+				array( 'order_id' => 42 ),
+				true,
+				false,
+				true,
+				$prepared_intent,
+			),
+			'register_terminal_reader'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->register_terminal_reader( 'tml_test', 'code_123', 'Counter', array( 'channel' => 'pos' ) ),
+				false,
+				false,
+				array( 'id' => 'tmr_test' ),
+				'POST',
+				'/sites/123/wcpay/terminal/readers',
+				array(),
+				array(
+					'location'          => 'tml_test',
+					'registration_code' => 'code_123',
+					'label'             => 'Counter',
+					'metadata'          => array( 'channel' => 'pos' ),
+				),
+				true,
+				false,
+				true,
+				array( 'id' => 'tmr_test' ),
+			),
+			'create_terminal_location'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_terminal_location(
+					'Store',
+					array(
+						'country' => 'US',
+						'line1'   => '123 Main',
+					),
+					array( 'source' => 'native' )
+				),
+				false,
+				false,
+				array( 'id' => 'tml_test' ),
+				'POST',
+				'/sites/123/wcpay/terminal/locations',
+				array(),
+				array(
+					'display_name' => 'Store',
+					'address'      => array(
+						'country' => 'US',
+						'line1'   => '123 Main',
+					),
+					'metadata'     => array( 'source' => 'native' ),
+				),
+				true,
+				false,
+				true,
+				array( 'id' => 'tml_test' ),
+			),
+			'get_terminal_readers'                   => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_terminal_readers(),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/terminal/readers',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'get_terminal_locations'                 => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_terminal_locations(),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/terminal/locations',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'get_terminal_location'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_terminal_location( 'tml_test' ),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/terminal/locations/tml_test',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'get_readers_charge_summary'             => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_readers_charge_summary( '2026-06-17', 'txn_test' ),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/reader-charges/summary',
+				array(
+					'test_mode'      => '1',
+					'charge_date'    => '2026-06-17',
+					'transaction_id' => 'txn_test',
+				),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'get_transaction'                        => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_transaction( 'txn_test' ),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/transactions/txn_test',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'update_terminal_location'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->update_terminal_location( 'tml_test', 'Updated', array( 'line1' => '456 Market' ) ),
+				false,
+				false,
+				array( 'id' => 'tml_test' ),
+				'POST',
+				'/sites/123/wcpay/terminal/locations/tml_test',
+				array(),
+				array(
+					'display_name' => 'Updated',
+					'address'      => array( 'line1' => '456 Market' ),
+				),
+				true,
+				false,
+				true,
+				array( 'id' => 'tml_test' ),
+			),
+			'get_dispute_summary'                    => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_dispute_summary( 'du_test' ),
+				true,
+				true,
+				array(
+					'disputed_amount' => 500,
+					'currency'        => 'usd',
+				),
+				'GET',
+				'/sites/123/wcpay/disputes/du_test/summary',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				array(
+					'disputed_amount' => 500,
+					'currency'        => 'usd',
+				),
+			),
+			'get_charge, hyphenated id'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_charge( 'ch_abc-123' ),
+				false,
+				false,
+				array( 'id' => 'ch_abc-123' ),
+				'GET',
+				'/sites/123/wcpay/charges/ch_abc-123',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'id' => 'ch_abc-123' ),
+			),
+			'get_deposits_overview'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_deposits_overview(),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/deposits/overview-all',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_deposits'                           => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_deposits(
+					array(
+						'page'              => 2,
+						'pagesize'          => 25,
+						'sort'              => 'date',
+						'direction'         => 'desc',
+						'store_currency_is' => 'usd',
+						'status_is'         => 'paid',
+					)
+				),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/deposits',
+				array(
+					'test_mode'         => '1',
+					'page'              => '2',
+					'pagesize'          => '25',
+					'sort'              => 'date',
+					'direction'         => 'desc',
+					'store_currency_is' => 'usd',
+					'status_is'         => 'paid',
+				),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_deposits_summary'                   => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_deposits_summary(
+					array(
+						'store_currency_is' => 'usd',
+						'status_is_not'     => 'failed',
+					)
+				),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/deposits/summary',
+				array(
+					'test_mode'         => '1',
+					'store_currency_is' => 'usd',
+					'status_is_not'     => 'failed',
+				),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_deposit'                            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_deposit( 'po_test' ),
+				false,
+				false,
+				array( 'id' => 'po_test' ),
+				'GET',
+				'/sites/123/wcpay/deposits/po_test',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'id' => 'po_test' ),
+			),
+			'start_deposits_export'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->start_deposits_export(
+					array(
+						'status_is'         => 'paid',
+						'store_currency_is' => 'usd',
+					),
+					'merchant@example.com',
+					'en_US'
+				),
+				true,
+				true,
+				$export,
+				'POST',
+				'/sites/123/wcpay/deposits/download',
+				array(),
+				array(
+					'test_mode'         => true,
+					'status_is'         => 'paid',
+					'store_currency_is' => 'usd',
+					'user_email'        => 'merchant@example.com',
+					'locale'            => 'en_US',
+				),
+				true,
+				false,
+				true,
+				$export,
+			),
+			'get_payouts_export_url'                 => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_payouts_export_url( 'poexp_test' ),
+				true,
+				true,
+				array( 'exported_deposits' => 42 ),
+				'GET',
+				'/sites/123/wcpay/deposits/download/poexp_test',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'exported_deposits' => 42 ),
+			),
+			'manual_deposit'                         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->manual_deposit( 'instant', 'usd' ),
+				true,
+				true,
+				array( 'exported_deposits' => 42 ),
+				'POST',
+				'/sites/123/wcpay/deposits',
+				array(),
+				array(
+					'type'     => 'instant',
+					'currency' => 'usd',
+				),
+				true,
+				false,
+				true,
+				array( 'exported_deposits' => 42 ),
+			),
+			'get_capital_active_loan_summary'        => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_capital_active_loan_summary(),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/capital/active_loan_summary',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'get_capital_loans'                      => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_capital_loans(),
+				true,
+				true,
+				$empty_list,
+				'GET',
+				'/sites/123/wcpay/capital/loans',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$empty_list,
+			),
+			'create_capital_link'                    => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_capital_link(
+					'https://example.test/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
+					'https://example.test/wp-admin/admin.php?wcpay-loan-offer'
+				),
+				true,
+				true,
+				array( 'url' => 'https://capital.example.test/view-offer' ),
+				'POST',
+				'/sites/123/wcpay/accounts/capital_links',
+				array( 'test_mode' => '1' ),
+				array(
+					'type'        => 'capital_financing_offer',
+					'return_url'  => 'https://example.test/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
+					'refresh_url' => 'https://example.test/wp-admin/admin.php?wcpay-loan-offer',
+				),
+				false,
+				true,
+				true,
+				array( 'url' => 'https://capital.example.test/view-offer' ),
+			),
+			'get_transactions'                       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_transactions(
+					array(
+						'page'       => 2,
+						'pagesize'   => 25,
+						'deposit_id' => 'po_test',
+					)
+				),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/transactions',
+				array(
+					'test_mode'  => '1',
+					'page'       => '2',
+					'pagesize'   => '25',
+					'deposit_id' => 'po_test',
+				),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_transactions_summary'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_transactions_summary( array( 'store_currency_is' => 'usd' ), 'po_test' ),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/transactions/summary',
+				array(
+					'test_mode'         => '1',
+					'store_currency_is' => 'usd',
+					'deposit_id'        => 'po_test',
+				),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_transactions_search_autocomplete'   => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_transactions_search_autocomplete( 'Ada' ),
+				true,
+				true,
+				array(
+					array(
+						'customer_name'  => 'Ada Lovelace',
+						'customer_email' => 'ada@example.com',
+					),
+				),
+				'GET',
+				'/sites/123/wcpay/transactions/search',
+				array(
+					'test_mode'   => '1',
+					'search_term' => 'Ada',
+				),
+				null,
+				false,
+				false,
+				true,
+				array( array( 'label' => 'Ada Lovelace (ada@example.com)' ) ),
+			),
+			'get_latest_fraud_outcome'               => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_latest_fraud_outcome( 'pi_test' ),
+				true,
+				true,
+				array(
+					$fraud_outcome,
+					array(
+						'id'      => 'fo_previous',
+						'outcome' => 'allow',
+					),
+				),
+				'GET',
+				'/sites/123/wcpay/fraud_outcomes/order_id/pi_test',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$fraud_outcome,
+			),
+			'get_latest_fraud_outcome, empty answer' => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_latest_fraud_outcome( 'pi_test' ),
+				true,
+				true,
+				array(),
+				'GET',
+				'/sites/123/wcpay/fraud_outcomes/order_id/pi_test',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				array(),
+			),
+			'start_transactions_export'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->start_transactions_export( array( 'type_is' => 'charge' ), 'merchant@example.com', 'po_test', 'en_US' ),
+				true,
+				true,
+				$export,
+				'POST',
+				'/sites/123/wcpay/transactions/download',
+				array(),
+				array(
+					'type_is'    => 'charge',
+					'user_email' => 'merchant@example.com',
+					'deposit_id' => 'po_test',
+					'locale'     => 'en_US',
+				),
+				true,
+				false,
+				true,
+				$export,
+			),
+			'get_transactions_export_url'            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_transactions_export_url( 'txexp-test.01==' ),
+				true,
+				true,
+				$counted_list,
+				'GET',
+				'/sites/123/wcpay/transactions/download/txexp-test.01==',
+				array( 'test_mode' => '1' ),
+				null,
+				false,
+				false,
+				true,
+				$counted_list,
+			),
+			'get_disputes'                           => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_disputes( array( 'status_is' => 'needs_response' ) ),
+				false,
+				false,
+				$dispute,
+				'GET',
+				'/sites/123/wcpay/disputes',
+				array(
+					'test_mode' => '0',
+					'status_is' => 'needs_response',
+				),
+				null,
+				false,
+				false,
+				true,
+				$dispute,
+			),
+			// The exact query also proves the filters are not wrapped in a list (no `0[currency_is]`).
+			'get_disputes_summary'                   => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_disputes_summary( array( 'currency_is' => 'usd' ) ),
+				false,
+				false,
+				$dispute,
+				'GET',
+				'/sites/123/wcpay/disputes/summary',
+				array(
+					'test_mode'   => '0',
+					'currency_is' => 'usd',
+				),
+				null,
+				false,
+				false,
+				true,
+				$dispute,
+			),
+			'get_dispute'                            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_dispute( 'dp_test' ),
+				false,
+				false,
+				$dispute,
+				'GET',
+				'/sites/123/wcpay/disputes/dp_test',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				$dispute,
+			),
+			'start_disputes_export'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->start_disputes_export( array( 'status_is' => 'needs_response' ), 'merchant@example.com', 'en_US' ),
+				false,
+				false,
+				$export,
+				'POST',
+				'/sites/123/wcpay/disputes/download',
+				array(),
+				array(
+					'status_is'  => 'needs_response',
+					'user_email' => 'merchant@example.com',
+					'locale'     => 'en_US',
+				),
+				true,
+				false,
+				true,
+				$export,
+			),
+			'get_disputes_export_url'                => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_disputes_export_url( 'dpexp-test.01==' ),
+				false,
+				false,
+				$dispute,
+				'GET',
+				'/sites/123/wcpay/disputes/download/dpexp-test.01==',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				$dispute,
+			),
+			'get_dispute_status_counts'              => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_dispute_status_counts(),
+				false,
+				false,
+				array( 'count' => 3 ),
+				'GET',
+				'/sites/123/wcpay/disputes/status_counts',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'count' => 3 ),
+			),
+			'get_authorizations_summary'             => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_authorizations_summary(),
+				false,
+				false,
+				array( 'count' => 3 ),
+				'GET',
+				'/sites/123/wcpay/authorizations/summary',
+				array( 'test_mode' => '0' ),
+				null,
+				false,
+				false,
+				true,
+				array( 'count' => 3 ),
+			),
+			'activate_pm_promotion'                  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->activate_pm_promotion( 'klarna-promo__spotlight' ),
+				false,
+				false,
+				$success,
+				'POST',
+				'/sites/123/wcpay/payment_method_promotions/klarna-promo__spotlight/activate',
+				array(),
+				array( 'test_mode' => false ),
+				false,
+				false,
+				true,
+				$success,
+			),
+			'save_vat_details'                       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->save_vat_details( 'RO123456', 'ACME SRL', '1 Market Street' ),
+				false,
+				false,
+				$success,
+				'POST',
+				'/sites/123/wcpay/vat',
+				array(),
+				array(
+					'name'       => 'ACME SRL',
+					'address'    => '1 Market Street',
+					'vat_number' => 'RO123456',
+				),
+				true,
+				false,
+				true,
+				$success,
+			),
+			// A non-blocking request returns nothing, whatever the platform would answer.
+			'send_store_setup'                       => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->send_store_setup( array( 'gateway' => array( 'enabled' => true ) ) ),
+				false,
+				true,
+				array( 'result' => 'ok' ),
+				'POST',
+				'/sites/123/wcpay/accounts/store_setup',
+				array(),
+				array(
+					'test_mode' => true,
+					'snapshot'  => array( 'gateway' => array( 'enabled' => true ) ),
+				),
+				true,
+				false,
+				false,
+				array(),
+			),
+			'get_currency_rates'                     => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_currency_rates( 'usd' ),
+				false,
+				false,
+				array(),
+				'GET',
+				'/sites/123/transact/currency/rates',
+				array(
+					'test_mode'     => '0',
+					'currency_from' => 'usd',
+				),
+				null,
+				false,
+				false,
+				true,
+				array(),
+			),
+			'get_currency_rates, targets'            => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_currency_rates( 'usd', array( 'eur', 'gbp' ) ),
+				false,
+				false,
+				array(
+					'eur' => 0.92,
+					'gbp' => 0.79,
+				),
+				'GET',
+				'/sites/123/transact/currency/rates',
+				array(
+					'test_mode'     => '0',
+					'currency_from' => 'usd',
+					'currencies_to' => array( 'eur', 'gbp' ),
+				),
+				null,
+				false,
+				false,
+				true,
+				array(
+					'eur' => 0.92,
+					'gbp' => 0.79,
+				),
+			),
+			'get_currency_rates, no targets'         => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->get_currency_rates( 'usd' ),
+				true,
+				true,
+				array( 'eur' => 0.92 ),
+				'GET',
+				'/sites/123/transact/currency/rates',
+				array(
+					'test_mode'     => '1',
+					'currency_from' => 'usd',
+				),
+				null,
+				false,
+				false,
+				true,
+				array( 'eur' => 0.92 ),
+			),
+			// Test mode comes from onboarding test mode, as in client 11.1.0's update_woopay().
+			'update_woopay'                          => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->update_woopay( array( 'webhook_secret' => 'woopay_webhook_signing_secret_value' ) ),
+				true,
+				false,
+				array( 'result' => 'success' ),
+				'POST',
+				'/sites/123/wcpay/accounts/platform_checkout',
+				array(),
+				array(
+					'test_mode'      => false,
+					'webhook_secret' => 'woopay_webhook_signing_secret_value',
+				),
+				false,
+				false,
+				true,
+				array( 'result' => 'success' ),
+			),
 		);
 	}
 
@@ -1838,37 +3173,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redact the WooPay webhook secret from transport logs.
-	 */
-	public function test_transport_logs_redact_woopay_webhook_secret(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$logger = $this->install_recording_logger();
-
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'result' => 'success' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->update_woopay( array( 'webhook_secret' => 'woopay_webhook_signing_secret_value' ) );
-		} finally {
-			remove_all_filters( 'woocommerce_logging_class' );
-			delete_option( 'woocommerce_woocommerce_payments_settings' );
-		}
-
-		$request_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ) );
-
-		$this->assertCount( 1, $request_entries );
-		$this->assertSame( '(redacted)', $request_entries[0]['context']['body']['webhook_secret'] ?? null, 'The WooPay webhook signing secret must never be logged in cleartext.' );
-	}
-
-	/**
 	 * @testdox Should redact GET query strings in transport logs and keep the lifted idempotency key out of logged bodies.
 	 */
 	public function test_transport_logs_redact_query_strings_and_lifted_idempotency_key(): void {
@@ -2629,41 +3933,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create an embedded account session through the account-scoped user-token endpoint.
-	 */
-	public function test_create_embedded_account_session_posts_to_account_scoped_user_token_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'client_secret'   => 'cs_test',
-					'expires_at'      => 1781740800,
-					'account_id'      => 'acct_native',
-					'is_live'         => false,
-					'publishable_key' => 'pk_test_native',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->create_embedded_account_session();
-
-		$this->assertSame( 'cs_test', $result['client_secret'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/embedded/session', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertTrue( $http_client->last_use_user_token, 'Embedded account sessions must use the connection-owner user token.' );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertFalse( $body['test_mode'] );
-	}
-
-	/**
 	 * @testdox Should fail the embedded account session once, without retrying, on the platform's session failure (wcpay_server_error, HTTP 500).
 	 */
 	public function test_create_embedded_account_session_throws_on_platform_server_error(): void {
@@ -2695,67 +3964,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$this->assertSame( 500, $exception->get_http_code() );
 		}
 		$this->assertSame( 1, $http_client->request_count );
-	}
-
-	/**
-	 * @testdox Should create a customer through the platform customers endpoint.
-	 */
-	public function test_create_customer_posts_to_customers_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 'cus_test' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$customer_id = $sut->create_customer(
-			array(
-				'name'  => 'Ada Lovelace',
-				'email' => 'ada@example.com',
-			)
-		);
-
-		$this->assertSame( 'cus_test', $customer_id );
-		$this->assertSame( '/sites/123/wcpay/customers', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'Ada Lovelace', $body['name'] );
-	}
-
-	/**
-	 * @testdox Should update an existing customer through the platform customer resource endpoint.
-	 */
-	public function test_update_customer_posts_to_customer_resource(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array() ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$sut->update_customer(
-			'cus_test',
-			array(
-				'email' => 'ada@example.com',
-			)
-		);
-
-		$this->assertSame( '/sites/123/wcpay/customers/cus_test', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'ada@example.com', $body['email'] );
 	}
 
 	/**
@@ -2971,80 +4179,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		} catch ( WooPaymentsApiException $exception ) {
 			$this->assertSame( 400, $exception->get_http_code() );
 		}
-	}
-
-	/**
-	 * @testdox Should retrieve payment method details through the platform payment methods endpoint.
-	 */
-	public function test_get_payment_method_reads_payment_methods_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'   => 'pm_test',
-					'type' => 'card',
-					'card' => array(
-						'brand'     => 'visa',
-						'last4'     => '4242',
-						'exp_month' => 12,
-						'exp_year'  => 2030,
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->get_payment_method( 'pm_test' );
-
-		$this->assertSame( 'pm_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/payment_methods/pm_test?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-	}
-
-	/**
-	 * @testdox Should retrieve customer payment methods through the platform payment methods list endpoint.
-	 */
-	public function test_get_payment_methods_reads_customer_payment_methods_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data' => array(
-						array(
-							'id'   => 'pm_card',
-							'type' => 'card',
-						),
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->get_payment_methods( 'cus_test', 'card' );
-
-		$this->assertSame( 'pm_card', $result['data'][0]['id'] );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/payment_methods?', $http_client->last_path );
-		$query = array();
-		wp_parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( 'cus_test', $query['customer'] );
-		$this->assertSame( 'card', $query['type'] );
-		$this->assertSame( '100', $query['limit'] );
-		$this->assertSame( '1', $query['test_mode'] );
 	}
 
 	/**
@@ -3277,259 +4411,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the Apple Pay payment-method domain registration endpoint and body shape.
-	 */
-	public function test_register_apple_pay_domain_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'id'        => 'domain_123',
-				'apple_pay' => array( 'status' => 'active' ),
-			)
-		);
-
-		$result = $sut->register_apple_pay_domain( 'example.test' );
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'domain_123', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/payment_method_domains', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'example.test', $body['domain_name'] );
-		$this->assertSame( 'true', $body['enabled'] );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should track order payloads through the platform tracking endpoint.
-	 */
-	public function test_track_order_posts_to_tracking_order_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'result' => 'success',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->track_order(
-			array(
-				'id'                 => 42,
-				'_payment_method_id' => 'pm_test',
-			),
-			true
-		);
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( '/sites/123/wcpay/tracking/order', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 42, $body['order_data']['id'] );
-		$this->assertSame( 'pm_test', $body['order_data']['_payment_method_id'] );
-		$this->assertTrue( $body['update'] );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should update payment method billing details through the platform API.
-	 */
-	public function test_update_payment_method_posts_billing_details(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 'pm_test' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->update_payment_method(
-			'pm_test',
-			array(
-				'billing_details' => array(
-					'email' => 'ada@example.com',
-				),
-			)
-		);
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'pm_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/payment_methods/pm_test', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'ada@example.com', $body['billing_details']['email'] );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should detach payment methods through the platform API.
-	 */
-	public function test_detach_payment_method_posts_to_payment_method_detach_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 'pm_test' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->detach_payment_method( 'pm_test' );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'pm_test', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/payment_methods/pm_test/detach', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should retrieve timeline events through the platform API.
-	 */
-	public function test_get_timeline_reads_timeline_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data' => array(
-						array(
-							'type' => 'captured',
-						),
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->get_timeline( 'pi_test' );
-
-		$this->assertSame( 'captured', $result['data'][0]['type'] );
-		$this->assertSame( '/sites/123/wcpay/timeline/pi_test?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-	}
-
-	/**
-	 * @testdox Should send store setup snapshots through the platform API.
-	 */
-	public function test_send_store_setup_posts_snapshot(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'result' => 'ok' ) ),
-		);
-
-		$account_service = $this->create_account_service( false, true );
-		$sut             = new WooPaymentsApiClient();
-		$sut->init( $http_client, $account_service, $this->transport_log() );
-
-		$result = $sut->send_store_setup(
-			array(
-				'gateway' => array(
-					'enabled' => true,
-				),
-			)
-		);
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( array(), $result );
-		$this->assertSame( '/sites/123/wcpay/accounts/store_setup', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertFalse( $http_client->last_blocking );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['snapshot']['gateway']['enabled'] );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should update compatibility data through the platform API.
-	 */
-	public function test_update_compatibility_data_posts_compatibility_payload(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'result' => 'ok' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->update_compatibility_data(
-			array(
-				'woocommerce_version' => '11.0.0',
-			)
-		);
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'ok', $result['result'] );
-		$this->assertSame( '/sites/123/wcpay/compatibility', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( '11.0.0', $body['compatibility_data']['woocommerce_version'] );
-		$this->assertFalse( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should retrieve WooPay compatibility data through the platform API.
-	 */
-	public function test_get_woopay_compatibility_reads_woopay_compatibility_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'incompatible_extensions' => array( 'bad-extension' ),
-					'adapted_extensions'      => array( 'woocommerce-points-and-rewards' ),
-					'available_countries'     => array( 'US', 'BR' ),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'get_woopay_compatibility' ), 'WooPaymentsApiClient should expose get_woopay_compatibility().' );
-
-		$result = $sut->get_woopay_compatibility();
-
-		$this->assertSame( array( 'bad-extension' ), $result['incompatible_extensions'] );
-		$this->assertSame( array( 'woocommerce-points-and-rewards' ), $result['adapted_extensions'] );
-		$this->assertSame( array( 'US', 'BR' ), $result['available_countries'] );
-		$this->assertSame( '/sites/123/wcpay/woopay/compatibility?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertFalse( $http_client->last_use_user_token );
-	}
-
-	/**
 	 * @testdox Should retrieve recommended payment methods through the public recommendations endpoint.
 	 */
 	public function test_get_recommended_payment_methods_reads_public_recommendations_endpoint(): void {
@@ -3643,39 +4524,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertStringStartsWith( 'http://wpcom.localhost:30001/wpcom/v2/wcpay/payment_methods/recommended?', $captured_url );
-	}
-
-	/**
-	 * @testdox Should retrieve onboarding field data through the platform onboarding endpoint.
-	 */
-	public function test_get_onboarding_fields_data_reads_onboarding_fields_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'business_types' => array(
-						array(
-							'key'  => 'individual',
-							'name' => 'Individual',
-						),
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->get_onboarding_fields_data( 'en_US' );
-
-		$this->assertSame( 'individual', $result['business_types'][0]['key'] );
-		$this->assertSame( '/wcpay/onboarding/fields_data?test_mode=1&locale=en_US', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-		$this->assertTrue( $http_client->last_use_user_token );
 	}
 
 	/**
@@ -3878,162 +4726,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should finalize embedded KYC through the platform onboarding endpoint.
-	 */
-	public function test_finalize_onboarding_embedded_kyc_posts_locale_source_and_notes(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'success' => true,
-					'mode'    => 'live',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->finalize_onboarding_embedded_kyc( 'en_US', 'wcadmin-settings-page', array( 'wcpay-promo-test' ) );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( '/sites/123/wcpay/onboarding/embedded/finalize', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'en_US', $body['locale'] );
-		$this->assertSame( 'wcadmin-settings-page', $body['source'] );
-		$this->assertSame( array( 'wcpay-promo-test' ), $body['actioned_notes'] );
-		$this->assertFalse( $body['test_mode'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-	}
-
-	/**
-	 * @testdox Should delete the connected account through the platform accounts endpoint.
-	 */
-	public function test_delete_account_posts_to_accounts_delete_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'result' => 'success',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->delete_account( true );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/delete', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['test_mode'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-	}
-
-	/**
-	 * @testdox Should update connected account settings through the platform accounts endpoint.
-	 */
-	public function test_update_account_posts_to_accounts_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->update_account(
-			array(
-				'statement_descriptor'   => 'NATIVE STORE',
-				'business_support_email' => 'support@example.test',
-			)
-		);
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( '/sites/123/wcpay/accounts', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'NATIVE STORE', $body['statement_descriptor'] );
-		$this->assertSame( 'support@example.test', $body['business_support_email'] );
-		$this->assertTrue( $body['test_mode'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-	}
-
-	/**
-	 * @testdox Should add account ToS agreements through the user-token accounts endpoint.
-	 */
-	public function test_add_account_tos_agreement_posts_to_accounts_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'add_account_tos_agreement' ), 'WooPaymentsApiClient should expose add_account_tos_agreement().' );
-
-		$result = $sut->add_account_tos_agreement( 'settings-popup', 'merchant_admin' );
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/tos_agreements', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'settings-popup', $body['source'] );
-		$this->assertSame( 'merchant_admin', $body['user_name'] );
-		$this->assertFalse( $body['test_mode'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-	}
-
-	/**
-	 * @testdox Should request account capabilities through the user-token platform endpoint.
-	 */
-	public function test_request_capability_posts_to_capabilities_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'status' => 'active' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->request_capability( 'link_payments', true );
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'active', $result['status'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/capabilities', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'link_payments', $body['capability_id'] );
-		$this->assertTrue( $body['requested'] );
-		$this->assertTrue( $http_client->last_use_user_token );
-	}
-
-	/**
 	 * @testdox Should forward valid file uploads larger than the WooPay logo UI limit.
 	 */
 	public function test_upload_file_forwards_valid_files_larger_than_woopay_logo_ui_limit(): void {
@@ -4138,478 +4830,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch file details and contents through the platform file endpoints.
-	 */
-	public function test_get_file_details_and_contents_use_file_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'      => 'file_logo',
-					'purpose' => 'business_logo',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$file  = $sut->get_file( 'file_logo', false );
-		$query = array();
-		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( 'file_logo', $file['id'] );
-		$this->assertSame( '/sites/123/wcpay/files/file_logo', strtok( $http_client->last_path, '?' ) );
-		$this->assertSame( '0', $query['as_account'] );
-		$this->assertSame( '0', $query['test_mode'] );
-		$this->assertSame( 'GET', $http_client->last_method );
-
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'content_type' => 'image/png',
-					'file_content' => 'TE9HTw==',
-				)
-			),
-		);
-
-		$contents = $sut->get_file_contents( 'file_logo', false );
-		$query    = array();
-		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( 'image/png', $contents['content_type'] );
-		$this->assertSame( 'TE9HTw==', $contents['file_content'] );
-		$this->assertSame( '/sites/123/wcpay/files/file_logo/contents', strtok( $http_client->last_path, '?' ) );
-		$this->assertSame( '0', $query['as_account'] );
-		$this->assertSame( '0', $query['test_mode'] );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should save fraud rulesets through the platform fraud ruleset endpoint.
-	 */
-	public function test_save_fraud_ruleset_posts_to_fraud_ruleset_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->save_fraud_ruleset(
-			array(
-				array(
-					'key'     => 'avs_verification',
-					'outcome' => 'block',
-				),
-			)
-		);
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( '/sites/123/wcpay/fraud_ruleset', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'avs_verification', $body['ruleset_config'][0]['key'] );
-	}
-
-	/**
-	 * @testdox Should read the latest fraud ruleset through the platform fraud ruleset endpoint.
-	 */
-	public function test_get_latest_fraud_ruleset_reads_from_fraud_ruleset_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'ruleset_config' => array(
-						array(
-							'key'     => 'avs_verification',
-							'outcome' => 'block',
-						),
-					),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->get_latest_fraud_ruleset();
-
-		$this->assertSame(
-			array(
-				array(
-					'key'     => 'avs_verification',
-					'outcome' => 'block',
-				),
-			),
-			$result['ruleset_config']
-		);
-		$this->assertSame( '/sites/123/wcpay/fraud_ruleset?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should fetch account data through the platform accounts endpoint with the WooCommerce store ID.
-	 */
-	public function test_get_account_fetches_accounts_endpoint_with_store_id(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'account_id'           => 'acct_native_123',
-					'test_publishable_key' => 'pk_test_native',
-					'is_live'              => false,
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false, true ), $this->transport_log() );
-
-		$result = $sut->get_account( 'store_123' );
-
-		$query = array();
-		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( 'acct_native_123', $result['account_id'] );
-		$this->assertSame( '/sites/123/wcpay/accounts', strtok( $http_client->last_path, '?' ) );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( 'store_123', $query['woocommerce_store_id'] );
-		$this->assertSame( '1', $query['test_mode'] );
-		$this->assertFalse( $http_client->last_use_user_token );
-		$this->assertNull( $http_client->last_body );
-	}
-
-	/**
-	 * @testdox Should fetch failed webhook events through the WooPayments endpoint.
-	 */
-	public function test_get_failed_webhook_events_posts_to_failed_events_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data'     => array(
-						array(
-							'id'   => 'evt_failed_1',
-							'type' => 'payment_intent.succeeded',
-						),
-					),
-					'has_more' => true,
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->get_failed_webhook_events();
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/webhook/failed_events', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['test_mode'] );
-		$this->assertSame( 'evt_failed_1', $result['data'][0]['id'] );
-		$this->assertTrue( $result['has_more'] );
-	}
-
-	/**
-	 * @testdox Should create terminal connection tokens through the preserved WPCOM endpoint.
-	 */
-	public function test_create_terminal_connection_token_posts_to_terminal_connection_tokens_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'secret' => 'cnctok_test_secret',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->create_terminal_connection_token();
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/connection_tokens', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'cnctok_test_secret', $result['secret'] );
-		$this->assertIsArray( $body );
-		$this->assertTrue( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should create address autocomplete tokens through the preserved WPCOM endpoint.
-	 */
-	public function test_get_address_autocomplete_token_posts_to_address_autocomplete_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'token' => 'address.jwt.token',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'get_address_autocomplete_token' ), 'WooPaymentsApiClient should expose get_address_autocomplete_token().' );
-
-		$result = $sut->get_address_autocomplete_token();
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/address-autocomplete-token', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertSame( 'address.jwt.token', $result['token'] );
-		$this->assertIsArray( $body );
-		$this->assertFalse( $body['test_mode'] );
-	}
-
-	/**
-	 * @testdox Should create terminal intents through the platform intentions endpoint.
-	 */
-	public function test_create_terminal_payment_intention_posts_terminal_payment_payload(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id'     => 'pi_terminal',
-					'status' => 'requires_capture',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->create_terminal_payment_intention(
-			array(
-				'amount'               => 1234,
-				'currency'             => 'usd',
-				'capture_method'       => 'manual',
-				'metadata'             => array( 'order_number' => '100' ),
-				'payment_method_types' => array( 'card_present' ),
-			)
-		);
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'pi_terminal', $result['id'] );
-		$this->assertSame( '/sites/123/wcpay/intentions', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 1234, $body['amount'] );
-		$this->assertSame( 'manual', $body['capture_method'] );
-		$this->assertSame( array( 'card_present' ), $body['payment_method_types'] );
-	}
-
-	/**
-	 * @testdox Should prepare terminal payments through the preserved intent subresource.
-	 */
-	public function test_prepare_terminal_payment_posts_to_intent_prepare_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			// The platform answers with the PaymentIntent, which it prepares only before confirmation (wpcom class-intentions-controller.php:626, :660).
-			'body'     => wp_json_encode(
-				array(
-					'id'     => 'pi_terminal',
-					'object' => 'payment_intent',
-					'status' => 'requires_confirmation',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->prepare_terminal_payment( 'pi_terminal', 42 );
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/intentions/pi_terminal/prepare_terminal_payment', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $body );
-		$this->assertSame( 42, $body['order_id'] );
-		$this->assertSame( 'requires_confirmation', $result['status'] );
-	}
-
-	/**
-	 * @testdox Should proxy terminal reader registration and location operations through preserved endpoints.
-	 */
-	public function test_terminal_reader_and_location_methods_use_preserved_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id' => 'tmr_test',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$sut->register_terminal_reader( 'tml_test', 'code_123', 'Counter', array( 'channel' => 'pos' ) );
-		$reader_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/readers', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $reader_body );
-		$this->assertSame( 'tml_test', $reader_body['location'] );
-		$this->assertSame( 'code_123', $reader_body['registration_code'] );
-		$this->assertSame( 'Counter', $reader_body['label'] );
-		$this->assertSame( array( 'channel' => 'pos' ), $reader_body['metadata'] );
-
-		$sut->create_terminal_location(
-			'Store',
-			array(
-				'country' => 'US',
-				'line1'   => '123 Main',
-			),
-			array( 'source' => 'native' )
-		);
-		$location_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/locations', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $location_body );
-		$this->assertSame( 'Store', $location_body['display_name'] );
-		$this->assertSame( 'US', $location_body['address']['country'] );
-		$this->assertSame( array( 'source' => 'native' ), $location_body['metadata'] );
-	}
-
-	/**
-	 * @testdox Should retrieve terminal readers through the preserved GET endpoint.
-	 */
-	public function test_get_terminal_readers_uses_preserved_get_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
-
-		$sut->get_terminal_readers();
-
-		$this->assertSame( '/sites/123/wcpay/terminal/readers?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve terminal locations through the preserved GET endpoint.
-	 */
-	public function test_get_terminal_locations_uses_preserved_get_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
-
-		$sut->get_terminal_locations();
-
-		$this->assertSame( '/sites/123/wcpay/terminal/locations?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve a single terminal location through the preserved GET endpoint.
-	 */
-	public function test_get_terminal_location_uses_preserved_get_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
-
-		$sut->get_terminal_location( 'tml_test' );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve the readers charge summary through the preserved GET endpoint with query names.
-	 */
-	public function test_get_readers_charge_summary_uses_preserved_get_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
-
-		$sut->get_readers_charge_summary( '2026-06-17', 'txn_test' );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/reader-charges/summary?', $http_client->last_path );
-		$this->assertStringContainsString( 'test_mode=1', $http_client->last_path );
-		$this->assertStringContainsString( 'charge_date=2026-06-17', $http_client->last_path );
-		$this->assertStringContainsString( 'transaction_id=txn_test', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve a single transaction through the preserved GET endpoint.
-	 */
-	public function test_get_transaction_uses_preserved_get_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'data' => array() ) );
-
-		$sut->get_transaction( 'txn_test' );
-
-		$this->assertSame( '/sites/123/wcpay/transactions/txn_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should update and delete terminal locations through preserved resource endpoints.
-	 */
-	public function test_terminal_location_mutations_use_preserved_resource_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'id' => 'tml_test',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$sut->update_terminal_location( 'tml_test', 'Updated', array( 'line1' => '456 Market' ) );
-		$update_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $update_body );
-		$this->assertSame( 'Updated', $update_body['display_name'] );
-		$this->assertSame( '456 Market', $update_body['address']['line1'] );
-
-		$sut->delete_terminal_location( 'tml_test' );
-
-		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'DELETE', $http_client->last_method );
-	}
-
-	/**
 	 * @testdox Should send DELETE parameters in the query string with no request body, so the Jetpack signature verifies.
 	 */
 	public function test_delete_request_sends_params_in_query_string_without_body(): void {
@@ -4629,34 +4849,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertSame( '/sites/123/wcpay/terminal/locations/tml_test?test_mode=1', $http_client->last_path );
 		$this->assertSame( 'DELETE', $http_client->last_method );
 		$this->assertNull( $http_client->last_body, 'A DELETE body would be signed with a body-hash the platform rejects for non-POST/PUT/PATCH methods.' );
-	}
-
-	/**
-	 * @testdox Should retrieve dispute summary through the preserved disputes endpoint.
-	 */
-	public function test_get_dispute_summary_uses_preserved_disputes_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'disputed_amount' => 500,
-					'currency'        => 'usd',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$result = $sut->get_dispute_summary( 'du_test' );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/du_test/summary?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( 500, $result['disputed_amount'] );
-		$this->assertSame( 'usd', $result['currency'] );
 	}
 
 	/**
@@ -4680,28 +4872,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should accept hyphenated route identifiers when interpolating resource paths.
-	 */
-	public function test_get_charge_accepts_hyphenated_route_identifier(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 'ch_abc-123' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->get_charge( 'ch_abc-123' );
-
-		$this->assertSame( '/sites/123/wcpay/charges/ch_abc-123?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( 'ch_abc-123', $result['id'] );
-	}
-
-	/**
 	 * @testdox Should reject empty route identifiers before path interpolation.
 	 */
 	public function test_get_charge_rejects_empty_route_identifier(): void {
@@ -4722,85 +4892,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve the payouts overview through the preserved deposits endpoint.
-	 */
-	public function test_get_deposits_overview_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_deposits_overview();
-
-		$this->assertSame( '/sites/123/wcpay/deposits/overview-all?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve the payouts list through the preserved deposits endpoint with query names.
-	 */
-	public function test_get_deposits_uses_preserved_endpoint_and_query_names(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_deposits(
-			array(
-				'page'              => 2,
-				'pagesize'          => 25,
-				'sort'              => 'date',
-				'direction'         => 'desc',
-				'store_currency_is' => 'usd',
-				'status_is'         => 'paid',
-			)
-		);
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/deposits?', $http_client->last_path );
-		$this->assertStringContainsString( 'test_mode=1', $http_client->last_path );
-		$this->assertStringContainsString( 'page=2', $http_client->last_path );
-		$this->assertStringContainsString( 'pagesize=25', $http_client->last_path );
-		$this->assertStringContainsString( 'sort=date', $http_client->last_path );
-		$this->assertStringContainsString( 'direction=desc', $http_client->last_path );
-		$this->assertStringContainsString( 'store_currency_is=usd', $http_client->last_path );
-		$this->assertStringContainsString( 'status_is=paid', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve the payouts summary through the preserved deposits endpoint with query names.
-	 */
-	public function test_get_deposits_summary_uses_preserved_endpoint_and_query_names(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_deposits_summary(
-			array(
-				'store_currency_is' => 'usd',
-				'status_is_not'     => 'failed',
-			)
-		);
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/deposits/summary?', $http_client->last_path );
-		$this->assertStringContainsString( 'test_mode=1', $http_client->last_path );
-		$this->assertStringContainsString( 'store_currency_is=usd', $http_client->last_path );
-		$this->assertStringContainsString( 'status_is_not=failed', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should retrieve payout details and reject unsafe payout identifiers.
+	 * @testdox Should reject unsafe payout identifiers.
 	 */
 	public function test_get_deposit_uses_preserved_detail_endpoint_and_validates_identifier(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
@@ -4818,69 +4910,9 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
-		$result = $sut->get_deposit( 'po_test' );
-
-		$this->assertSame( '/sites/123/wcpay/deposits/po_test?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( 'po_test', $result['id'] );
-
 		$this->expectException( WooPaymentsApiException::class );
 
 		$sut->get_deposit( '../po_test' );
-	}
-
-	/**
-	 * @testdox Should preserve the deposits export endpoint and body fields.
-	 */
-	public function test_start_deposits_export_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
-
-		$sut->start_deposits_export(
-			array(
-				'status_is'         => 'paid',
-				'store_currency_is' => 'usd',
-			),
-			'merchant@example.com',
-			'en_US'
-		);
-		$export_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/deposits/download', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $export_body );
-		$this->assertTrue( $export_body['test_mode'] );
-		$this->assertSame( 'paid', $export_body['status_is'] );
-		$this->assertSame( 'usd', $export_body['store_currency_is'] );
-		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
-		$this->assertSame( 'en_US', $export_body['locale'] );
-	}
-
-	/**
-	 * @testdox Should preserve the payouts export URL endpoint.
-	 */
-	public function test_get_payouts_export_url_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
-
-		$sut->get_payouts_export_url( 'poexp_test' );
-
-		$this->assertSame( '/sites/123/wcpay/deposits/download/poexp_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the manual payout endpoint and body fields.
-	 */
-	public function test_manual_deposit_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array( 'exported_deposits' => 42 ) );
-
-		$sut->manual_deposit( 'instant', 'usd' );
-		$deposit_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/deposits', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $deposit_body );
-		$this->assertSame( 'instant', $deposit_body['type'] );
-		$this->assertSame( 'usd', $deposit_body['currency'] );
 	}
 
 	/**
@@ -5032,79 +5064,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retrieve Capital active loan summary and loans through preserved endpoints.
-	 */
-	public function test_capital_admin_methods_use_preserved_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data' => array(),
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$sut->get_capital_active_loan_summary();
-
-		$this->assertSame( '/sites/123/wcpay/capital/active_loan_summary?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-
-		$sut->get_capital_loans();
-
-		$this->assertSame( '/sites/123/wcpay/capital/loans?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertNull( $http_client->last_body );
-	}
-
-	/**
-	 * @testdox Should create Capital financing offer links through the preserved accounts endpoint.
-	 */
-	public function test_create_capital_link_posts_financing_offer_payload_to_capital_links_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'url' => 'https://capital.example.test/view-offer',
-				)
-			),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'create_capital_link' ), 'WooPaymentsApiClient should expose create_capital_link().' );
-
-		$result = $sut->create_capital_link(
-			'https://example.test/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
-			'https://example.test/wp-admin/admin.php?wcpay-loan-offer'
-		);
-		$body   = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( 'https://capital.example.test/view-offer', $result['url'] );
-		$this->assertSame( '/sites/123/wcpay/accounts/capital_links?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertTrue( $http_client->last_use_user_token );
-		$this->assertSame(
-			array(
-				'type'        => 'capital_financing_offer',
-				'return_url'  => 'https://example.test/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',
-				'refresh_url' => 'https://example.test/wp-admin/admin.php?wcpay-loan-offer',
-			),
-			$body
-		);
-	}
-
-	/**
 	 * @testdox Should preserve the Capital link request filter object.
 	 */
 	public function test_create_capital_link_preserves_request_filter_object(): void {
@@ -5216,75 +5175,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the transactions list endpoint and query names.
-	 */
-	public function test_get_transactions_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_transactions(
-			array(
-				'page'       => 2,
-				'pagesize'   => 25,
-				'deposit_id' => 'po_test',
-			)
-		);
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/transactions?', $http_client->last_path );
-		$this->assertStringContainsString( 'test_mode=1', $http_client->last_path );
-		$this->assertStringContainsString( 'page=2', $http_client->last_path );
-		$this->assertStringContainsString( 'pagesize=25', $http_client->last_path );
-		$this->assertStringContainsString( 'deposit_id=po_test', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the transactions summary endpoint and query names.
-	 */
-	public function test_get_transactions_summary_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_transactions_summary( array( 'store_currency_is' => 'usd' ), 'po_test' );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/transactions/summary?', $http_client->last_path );
-		$this->assertStringContainsString( 'store_currency_is=usd', $http_client->last_path );
-		$this->assertStringContainsString( 'deposit_id=po_test', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the transactions search autocomplete endpoint.
-	 */
-	public function test_get_transactions_search_autocomplete_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				array(
-					'customer_name'  => 'Ada Lovelace',
-					'customer_email' => 'ada@example.com',
-				),
-			)
-		);
-
-		$sut->get_transactions_search_autocomplete( 'Ada' );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/transactions/search?', $http_client->last_path );
-		$this->assertStringContainsString( 'search_term=Ada', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
 	 * @testdox Should preserve the fraud outcomes endpoint and move status into the path.
 	 */
 	public function test_get_fraud_outcomes_uses_preserved_endpoint(): void {
@@ -5306,147 +5196,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertStringStartsWith( '/sites/123/wcpay/fraud_outcomes/status/review?', $http_client->last_path );
 		$this->assertStringContainsString( 'search_term=Ada', $http_client->last_path );
 		$this->assertStringNotContainsString( 'status=review', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the latest fraud outcome endpoint and unwrap the first response item.
-	 */
-	public function test_get_latest_fraud_outcome_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				array(
-					'id'      => 'fo_latest',
-					'outcome' => 'review',
-				),
-				array(
-					'id'      => 'fo_previous',
-					'outcome' => 'allow',
-				),
-			)
-		);
-
-		$response = $sut->get_latest_fraud_outcome( 'pi_test' );
-
-		$this->assertSame( '/sites/123/wcpay/fraud_outcomes/order_id/pi_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame(
-			array(
-				'id'      => 'fo_latest',
-				'outcome' => 'review',
-			),
-			$response
-		);
-	}
-
-	/**
-	 * @testdox Should preserve empty latest fraud outcome responses.
-	 */
-	public function test_get_latest_fraud_outcome_preserves_empty_response(): void {
-		list( $sut, $http_client ) = $this->make_sut( true, array() );
-
-		$response = $sut->get_latest_fraud_outcome( 'pi_test' );
-
-		$this->assertSame( '/sites/123/wcpay/fraud_outcomes/order_id/pi_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertSame( array(), $response );
-	}
-
-	/**
-	 * @testdox Should preserve the transactions export endpoint and body fields.
-	 */
-	public function test_start_transactions_export_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->start_transactions_export( array( 'type_is' => 'charge' ), 'merchant@example.com', 'po_test', 'en_US' );
-		$export_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/transactions/download', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $export_body );
-		$this->assertSame( 'charge', $export_body['type_is'] );
-		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
-		$this->assertSame( 'po_test', $export_body['deposit_id'] );
-		$this->assertSame( 'en_US', $export_body['locale'] );
-	}
-
-	/**
-	 * @testdox Should preserve the transactions export URL endpoint.
-	 */
-	public function test_get_transactions_export_url_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_transactions_export_url( 'txexp-test.01==' );
-
-		$this->assertSame( '/sites/123/wcpay/transactions/download/txexp-test.01==?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * Build a fresh API client and fake transport for disputes admin endpoint tests.
-	 *
-	 * @return array{0: WooPaymentsApiClient, 1: FakeWooPaymentsHttpClient}
-	 */
-	private function make_disputes_sut(): array {
-		return $this->make_sut(
-			false,
-			array(
-				'id'     => 'dp_test',
-				'reason' => 'fraudulent',
-			)
-		);
-	}
-
-	/**
-	 * @testdox Should preserve the disputes list endpoint and query names.
-	 */
-	public function test_get_disputes_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->get_disputes( array( 'status_is' => 'needs_response' ) );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/disputes?', $http_client->last_path );
-		$this->assertStringContainsString( 'test_mode=0', $http_client->last_path );
-		$this->assertStringContainsString( 'status_is=needs_response', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the disputes summary endpoint and query names.
-	 */
-	public function test_get_disputes_summary_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->get_disputes_summary( array( 'currency_is' => 'usd' ) );
-
-		$this->assertStringStartsWith( '/sites/123/wcpay/disputes/summary?', $http_client->last_path );
-		$this->assertStringContainsString( 'currency_is=usd', $http_client->last_path );
-		$this->assertStringNotContainsString( '0%5Bcurrency_is%5D', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the single-dispute detail endpoint.
-	 */
-	public function test_get_dispute_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->get_dispute( 'dp_test' );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/dp_test?test_mode=0', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
 	}
 
@@ -5629,35 +5378,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the disputes export endpoint and body fields.
-	 */
-	public function test_start_disputes_export_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->start_disputes_export( array( 'status_is' => 'needs_response' ), 'merchant@example.com', 'en_US' );
-		$export_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/download', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $export_body );
-		$this->assertSame( 'needs_response', $export_body['status_is'] );
-		$this->assertSame( 'merchant@example.com', $export_body['user_email'] );
-		$this->assertSame( 'en_US', $export_body['locale'] );
-	}
-
-	/**
-	 * @testdox Should preserve the disputes export URL endpoint.
-	 */
-	public function test_get_disputes_export_url_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->get_disputes_export_url( 'dpexp-test.01==' );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/download/dpexp-test.01==?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
 	 * @testdox Should reject unsafe transaction export identifiers.
 	 */
 	public function test_get_transactions_export_url_rejects_invalid_route_identifier(): void {
@@ -5735,32 +5455,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->expectException( WooPaymentsApiException::class );
 
 		$sut->get_disputes_export_url( 'dpexp%2Ftest' );
-	}
-
-	/**
-	 * @testdox Should call preserved admin badge count endpoints.
-	 */
-	public function test_gets_preserved_admin_badge_count_endpoints(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'count' => 3 ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$sut->get_dispute_status_counts();
-
-		$this->assertSame( '/sites/123/wcpay/disputes/status_counts?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-
-		$sut->get_authorizations_summary();
-
-		$this->assertSame( '/sites/123/wcpay/authorizations/summary?test_mode=0', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
 	}
 
 	/**
@@ -5901,28 +5595,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->expectExceptionMessage( 'Unable to decode response from WooPayments.' );
 
 		$sut->get_pm_promotions( array( 'locale' => 'en_US' ) );
-	}
-
-	/**
-	 * @testdox Should activate payment method promotions through the preserved platform endpoint.
-	 */
-	public function test_activate_pm_promotion_uses_preserved_platform_endpoint(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->activate_pm_promotion( 'klarna-promo__spotlight' );
-
-		$this->assertTrue( $result['success'] );
-		$this->assertSame( '/sites/123/wcpay/payment_method_promotions/klarna-promo__spotlight/activate', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
 	}
 
 	/**
@@ -6172,34 +5844,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should save VAT details with optional VAT number, name, and address.
-	 */
-	public function test_save_vat_details_posts_optional_vat_payload(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$result = $sut->save_vat_details( 'RO123456', 'ACME SRL', '1 Market Street' );
-
-		$this->assertSame( array( 'success' => true ), $result );
-		$this->assertSame( '/sites/123/wcpay/vat', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-
-		$body = json_decode( (string) $http_client->last_body, true );
-		$this->assertIsArray( $body );
-		$this->assertSame( 'RO123456', $body['vat_number'] );
-		$this->assertSame( 'ACME SRL', $body['name'] );
-		$this->assertSame( '1 Market Street', $body['address'] );
-	}
-
-	/**
 	 * @testdox Should reject unsafe payout export identifiers.
 	 */
 	public function test_get_payouts_export_url_rejects_invalid_route_identifier(): void {
@@ -6295,72 +5939,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( '', $http_client->last_path );
-	}
-
-	/**
-	 * @testdox Should retrieve currency rates through the Transact API endpoint.
-	 */
-	public function test_get_currency_rates_uses_transact_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut( false );
-
-		$sut->get_currency_rates( 'usd' );
-
-		$this->assertSame( '/sites/123/transact/currency/rates', strtok( $http_client->last_path, '?' ) );
-	}
-
-	/**
-	 * @testdox Should preserve currency rates response and request semantics.
-	 */
-	public function test_get_currency_rates_preserves_response_and_request_semantics(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			false,
-			array(
-				'eur' => 0.92,
-				'gbp' => 0.79,
-			)
-		);
-
-		$result = $sut->get_currency_rates( 'usd', array( 'eur', 'gbp' ) );
-
-		$this->assertSame(
-			array(
-				'eur' => 0.92,
-				'gbp' => 0.79,
-			),
-			$result
-		);
-		$this->assertSame( 'GET', $http_client->last_method );
-		$this->assertArrayNotHasKey( 'Idempotency-Key', $http_client->last_headers );
-
-		$query = array();
-		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '0', $query['test_mode'] );
-		$this->assertSame( 'usd', $query['currency_from'] );
-		$this->assertSame( array( 'eur', 'gbp' ), $query['currencies_to'] );
-	}
-
-	/**
-	 * @testdox Should omit target currencies when requesting all supported rates.
-	 */
-	public function test_get_currency_rates_omits_target_currencies_when_none_requested(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'eur' => 0.92,
-			)
-		);
-
-		$result = $sut->get_currency_rates( 'usd' );
-
-		$this->assertSame( array( 'eur' => 0.92 ), $result );
-
-		$query = array();
-		parse_str( (string) wp_parse_url( $http_client->last_path, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '1', $query['test_mode'] );
-		$this->assertSame( 'usd', $query['currency_from'] );
-		$this->assertArrayNotHasKey( 'currencies_to', $query );
 	}
 
 	/**
