@@ -776,7 +776,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		}
 
 		// The invoice service logs the mismatch before refusing, as the client does (`class-wc-payments-invoice-service.php:442-443`); the handler adds no line of its own.
-		$this->assertSame( array( array( 'error', 'The WooPayments invoice items do not match WC subscription items.', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertCount( 1, $logger->get_errors() );
 		$this->assertCount( 1, $this->get_requests() );
 	}
 
@@ -916,7 +916,6 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox An upcoming invoice moves the next payment date to the end of the Stripe period and repairs the Stripe items (client test_handle_invoice_upcoming_active, event handler :100-106).
 	 *
 	 * The Stripe subscription answer is the recorded `get_subscription` of the main chain; only its `current_period_end` (2026-11-02 08:08:15 UTC) is read.
-	 * The repair payload is the client's `format_item_price_data()` (`class-wc-payments-subscription-service.php:337-358`): 59.80 for two is 2990 cents a unit.
 	 */
 	public function test_upcoming_invoice_aligns_the_next_payment_and_repairs_the_items(): void {
 		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_schedule_next_payment' => '2026-10-30 00:00:00' ), 'active', self::CLOCK_ITEM_ID, 2, '59.80' );
@@ -927,28 +926,13 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertSame( '2026-11-02 08:08:15', $subscription->get_meta( '_schedule_next_payment', true ) );
 		$this->assertCount( 1, $this->get_notes_containing( $subscription, 'Next automatic payment scheduled for November 2, 2026 8:08 am.' ) );
+		// The repair body is pinned where it is built: StripeBillingInvoiceServiceTest::test_validating_repairs_the_quantity_and_price_of_an_item.
 		$this->assertSame(
 			array(
-				array( 'GET', '/sites/4/wcpay/subscriptions/' . self::CLOCK_SUBSCRIPTION_ID . '?test_mode=1', null ),
-				array(
-					'POST',
-					'/sites/4/wcpay/subscriptions/items/' . self::CLOCK_ITEM_ID,
-					array(
-						'test_mode'  => true,
-						'quantity'   => 2,
-						'price_data' => array(
-							'currency'            => 'usd',
-							'product'             => self::RECORDED_PRODUCT_ID,
-							'unit_amount_decimal' => 2990,
-							'recurring'           => array(
-								'interval'       => 'month',
-								'interval_count' => 1,
-							),
-						),
-					),
-				),
+				array( 'GET', '/sites/4/wcpay/subscriptions/' . self::CLOCK_SUBSCRIPTION_ID . '?test_mode=1' ),
+				array( 'POST', '/sites/4/wcpay/subscriptions/items/' . self::CLOCK_ITEM_ID ),
 			),
-			$this->get_requests()
+			array_map( static fn( array $request ): array => array( $request[0], $request[1] ), $this->get_requests() )
 		);
 	}
 

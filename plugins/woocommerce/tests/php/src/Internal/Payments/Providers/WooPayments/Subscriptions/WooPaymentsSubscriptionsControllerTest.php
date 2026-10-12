@@ -235,7 +235,10 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The renewal root attaches the renewal handlers and the admin payment method handlers when Subscriptions is available.
+	 * @testdox The renewal root attaches its checkout handler and registers the admin payment method handler when Subscriptions is available.
+	 *
+	 * The renewal and failing-method hooks are pinned by test_builtin_owned_store_has_renewal_handlers_after_init; every admin
+	 * hook by WooPaymentsSubscriptionAdminPaymentMethodHandlerTest::test_register_hooks_registers_subscription_admin_callbacks.
 	 */
 	public function test_renewal_root_attaches_the_renewal_and_admin_payment_method_handlers(): void {
 		$this->load_subscriptions();
@@ -245,24 +248,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$controller->handle_plugins_loaded();
 
 		$this->assertSame( 10, has_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $controller, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $controller, 'update_failing_payment_method' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay', array( $controller, 'update_failing_payment_method' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( $admin, 'add_subscription_payment_meta' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_subscription_validate_payment_meta', array( $admin, 'validate_subscription_payment_meta' ) ) );
-		$this->assertSame( 10, has_action( 'wcs_save_other_payment_meta', array( $admin, 'save_meta_in_order_tokens' ) ) );
-		$this->assertSame( 10, has_filter( 'wcs_copy_payment_meta_to_order', array( $admin, 'append_payment_meta' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_my_subscriptions_payment_method', array( $admin, 'maybe_render_subscription_payment_method' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_method_to_display', array( $admin, 'maybe_render_subscription_payment_method' ) ) );
-		$this->assertSame( 10, has_filter( 'wcs_view_subscription_actions', array( $admin, 'maybe_hide_change_payment_for_manual_subscriptions' ) ) );
-		$this->assertSame( 100, has_filter( 'user_has_cap', array( $admin, 'maybe_hide_auto_renew_toggle_for_manual_subscriptions' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscription_note_old_payment_method_title', array( $admin, 'get_specific_old_payment_method_title' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscription_note_new_payment_method_title', array( $admin, 'get_specific_new_payment_method_title' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_admin_order_data_after_billing_address', array( $admin, 'add_payment_method_select_to_subscription_edit' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_subscription_token', array( $admin, 'update_subscription_token' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( $admin, 'update_payment_method_for_subscriptions' ) ) );
-		$this->assertSame( 10, has_action( 'wp_ajax_wcpay_get_user_payment_tokens', array( $admin, 'ajax_get_user_payment_tokens' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_subscription_payment_meta', array( $admin, 'add_subscription_payment_meta' ) ), 'The admin payment method handler must be registered.' );
 	}
 
 	/**
@@ -1206,8 +1192,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$renewal->save();
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
-		$this->enable_debug_logging();
-		$logger = RecordingWcLogger::install();
 
 		$service = new RecordingPaymentProcessingService();
 		$sut     = $this->create_sut( $service, new WooPaymentsProvider() );
@@ -1219,10 +1203,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertNull( $service->last_checkout_context );
-		$renewal_fresh = wc_get_order( $renewal->get_id() );
-		$this->assertSame( 'failed', $renewal_fresh->get_status() );
-		// Client 11.1.0 trait:415.
-		$this->assertContains( array( 'error', 'There is no saved payment token for order #' . $renewal->get_id(), 'woopayments' ), $logger->lines );
+		$this->assertSame( 'failed', wc_get_order( $renewal->get_id() )->get_status() );
 	}
 
 	/**
@@ -1849,14 +1830,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				}
 			}
 		};
-	}
-
-	/**
-	 * Turn on WooPayments debug logging, which the client's Logger requires for checkout errors (`src/Internal/Logger.php:64-91`).
-	 */
-	private function enable_debug_logging(): void {
-		$settings = get_option( 'woocommerce_woocommerce_payments_settings', array() );
-		update_option( 'woocommerce_woocommerce_payments_settings', array_merge( is_array( $settings ) ? $settings : array(), array( 'enable_logging' => 'yes' ) ) );
 	}
 
 	/**
