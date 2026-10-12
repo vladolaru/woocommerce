@@ -4,8 +4,8 @@
 |------|-------|
 | Source | `woocommerce/woocommerce-paypal-payments`, branch `poc/wallet-in-core-build` at `0083204e7` (local, never pushed): `dev/develop` at `85d6179b7` plus five commits (module availability contract, guarded reads, main-file constant guards, webhook skip filter, Pay Later capability status) |
 | Forked on | 2026-10-02 (`bin/paypal-wallet-fork/fork.php` in the plugin's source tree, run once; `supplement.py` added stubs and copies of dropped-module classes that have since been removed, see below) |
-| Kept | 19 module directories plus the plugin root; see `Wallet/modules.php` |
-| Not forked | ppcp-applepay, ppcp-googlepay, ppcp-axo, ppcp-axo-block, ppcp-card-fields, ppcp-local-alternative-payment-methods, ppcp-order-tracking, ppcp-store-sync, ppcp-paypal-subscriptions, ppcp-fraud-protection, ppcp-abilities, ppcp-status-report, ppcp-uninstall |
+| Kept | 19 module directories plus the plugin root, and the Pay with Crypto slice of a twentieth, `ppcp-local-alternative-payment-methods`, in `Wallet/PayWithCrypto/`; see `Wallet/modules.php` |
+| Not forked | ppcp-applepay, ppcp-googlepay, ppcp-axo, ppcp-axo-block, ppcp-card-fields, ppcp-local-alternative-payment-methods (except its Pay with Crypto slice, restored 2026-10-12, see "Pay with Crypto" below), ppcp-order-tracking, ppcp-store-sync, ppcp-paypal-subscriptions, ppcp-fraud-protection, ppcp-abilities, ppcp-status-report, ppcp-uninstall |
 | Namespace | `WooCommerce\PayPalCommerce\` → `Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\`; `…\Vendor\` → `Automattic\WooCommerce\Vendor\`. Prefixed in `lib/packages/` by Mozart: `inpsyde/modularity` 1.12.0, `psr/container` 1.1 and `psr/log` 1.1.4 (the extension's unprefixed PSR-3, rewritten to the prefixed name in the forked code) |
 | JS | The wallet JS is part of core's two JS clients; there is no package of its own. The admin client (`client/admin/`, built to `assets/client/admin/`) has the settings app (ppcp-settings) in `client/admin/client/paypal-wallet/app/`, which the `/paypal-wallet` route loads as a lazy chunk, so the app ships once. Two scripts are discovered as `wp-admin-scripts`: `paypal-wallet-settings`, a data carrier that PHP registers as the kept `ppcp-admin-settings` handle (it carries the localized `ppcpSettings` and the app's stylesheet, and no app code), and `paypal-wallet-notices`, the admin notices script. The blocks client (`client/blocks/`, built to `assets/client/blocks/`) has the rest: the storefront, checkout and admin-page scripts and styles in `assets/js/extensions/payment-methods/paypal-wallet/` (`blocks/`, `button/`, `sdk/`, `gateway/`, `save-payment-methods/`, `vault/`, and the gateway images in `images/`) and the five blocks in `assets/js/blocks/paypal-wallet/` (`product-smart-buttons/`, `product-pay-later-messages/`, `pay-later-messages/`, `cart-pay-later-messages/`, `checkout-pay-later-messages/`), each with its `block.json`. The blocks webpack's `paypalWallet` entries build every file under the extension's compiled name (`<module>-<type>-<path>`, the name `AssetGetter` asks for) into the subdirectory `assets/client/blocks/paypal-wallet/`, and `WalletProperties` points the base path and URL there. The subdirectory keeps the wallet's files out of core code that scans the top level of the blocks build (the deprecated editor-handle shim in `Blocks\AssetsController`, which would otherwise register a placeholder handle for each wallet editor script). The blocks build copies the five `block.json` files to `paypal-wallet/<block name>/block.json`, and the images to `paypal-wallet/static/ppcp-wc-gateway/images/`. The legacy gateway-settings script (`gateway/gateway-settings.js`) is an admin-page script that the blocks webpack builds, because the only code it imports (the button code) lives there. One thing in core's blocks tooling treats the wallet specially while the wallet in core is a proof of concept: `client/blocks/tsconfig.json` excludes the wallet JS from the blocks type check, pending a TypeScript pass (the check is not a CI gate, because `lint:lang:types` ignores its own exit status, and the wallet files alone raise over 2,000 checkJs errors). `bin/paypal-wallet-fork/path-map.json` has every file's path; the extension's `package.json` and `webpack.config.js` map to the blocks client's `package.json` and `bin/webpack-entries.js` (the settings app's dependencies and entry are in the admin client). The debounce helper exists as two copies, one in the settings app (`app/utils/debounce.js` in the admin client) and one in the blocks client (`Helper/debounce.js` next to the checkout blocks code). `path-map.json` maps the extension's `ppcp-blocks` `Helper/debounce.js` only to the blocks copy, so the drift report never names the admin copy: when the extension changes that helper, port the change to `app/utils/debounce.js` by hand as well |
 | Shared with the extension | gateway IDs, options, `woocommerce_paypal_payments_*` hooks, `paypal/v1` routes, `ppcp-*` handles, inbox note source, constants, and the stored class names below; the list is `contract-appendix.md` beside this file |
@@ -36,7 +36,7 @@ The three stored DTO files are always marked as contract: any upstream change to
 
 ## Kept from dropped modules: none since plan B
 
-At the fork, kept wallet code still reached a few classes of dropped modules (gateway ID stubs, helper copies and two card-fields JS files), which `bin/paypal-wallet-fork/supplement.py` added under the extension's own namespace paths. Every reader was cut and the pieces were deleted, in the commits `2630e8b0f9..79349b32ca`. No class, trait or JS file of a dropped module is kept now, and the script's lists are empty, so re-running it adds nothing. Gateway IDs that kept code still recognises in shared state live in `Wallet/WcGateway/Helper/GatewayIds.php`.
+At the fork, kept wallet code still reached a few classes of dropped modules (gateway ID stubs, helper copies and two card-fields JS files), which `bin/paypal-wallet-fork/supplement.py` added under the extension's own namespace paths. Every reader was cut and the pieces were deleted, in the commits `2630e8b0f9..79349b32ca`. No class, trait or JS file of a dropped module is kept now, except the Pay with Crypto slice of `ppcp-local-alternative-payment-methods`, restored by hand and not by `supplement.py` (see "Pay with Crypto"). The script's lists are empty, so re-running it adds nothing. Gateway IDs that kept code still recognises in shared state live in `Wallet/WcGateway/Helper/GatewayIds.php`.
 
 ## Names stopped in core
 
@@ -47,7 +47,6 @@ The shared names below were fired, read, written or served by the extension's co
 - Local payment methods and Pay upon Invoice: the filter `is_valid_product_for_pui`; the `separate_buttons` script-data key; core's listener on `toggle_payment_gateways_apms`; the REST fields `puiBrandName`, `puiLogoUrl` and `puiCustomerServiceInstructions` and the merchant features `alternative_payment_methods` and `pay_upon_invoice`; the APM and Pay upon Invoice `gateway_migrate` closures, which core no longer runs; the onboarding payment-options step view and its select event, with `final_payment_options` always `no_cards`. Legacy pending Pay upon Invoice or OXXO orders placed through the extension are no longer skipped by the PayPal webhook flow. The REST route `wc/v3/wc_paypal/payment` stays, and the stored `pui_*` values stay. The read of the option `woocommerce_ppcp-oxxo-gateway_settings` stopped with the deleted Pay upon Invoice and OXXO migration closure.
 - PayPal-hosted subscriptions: the wc-ajax route `ppc-approve-subscription`; the webhook event types `BILLING.SUBSCRIPTION.CANCELLED`, `BILLING.PLAN.PRICING-CHANGE.ACTIVATED`, `CATALOG.PRODUCT.UPDATED` and `BILLING.PLAN.UPDATED` (no longer registered for new webhooks); the subscription features that `paypal_gateway_supports` added when vaulting is off; the script-data keys `paypal_subscriptions_enabled`, `approve_subscription`, `subscription_plan_id`, `subscription_custom_id` and the variable-plan keys; the `intent=subscription` parameter of the SDK URL; the `configure_paypal_subscription` todo. The hosted-plan product meta stopped with the four deleted webhook handlers and the plan payment preferences: the writes of `_subscription_price`, `_subscription_sign_up_fee` and `_ppcp_subscription_plan_name`, and the reads of `ppcp_subscription_product`.
 - Fastlane: core's listener on `toggle_payment_gateways` for Fastlane; the filters `axo_gateway_should_update_enabled`, `axo_gateway_title`, `axo_gateway_description` and `is_eligible_for_axo`; the REST fields `canUseFastlane` and `fastlaneDisplayWatermark`; the `fastlane` script-data subtree; the `enable_fastlane` todo.
-- Pay with Crypto: the `pwc` merchant feature and REST features field; the `products_pwc_enabled` entry that core no longer writes or clears in the shared product-status transient; the `enable_pwc` and `apply_for_pwc` todos and the `pwc` feature card.
 - Order tracking and agentic modules: the filters `sync_shiptastic_tracking`, `sync_wc_shipment_tracking`, `sync_wc_shipping_tax` and `shipment_tracking_enabled`; the script handles `ppcp-tracking-compat` and `ppcp-settings-settings`; the REST route prefix `/wc/v3/wc_paypal/ext/` and the option prefix `woocommerce-ppcp-ext-`.
 - Level 2 and 3 payment data, which carried card-only supplementary data: the filters `level_processing_eligible`, `level_processing_countries`, `level_processing_currencies`, `level_processing_payment_methods`, `level2_invoice_id`, `level3_duty_amount`, `level3_ships_from_postal_code`, `level3_commodity_code`, `level3_upc`, `level3_line_item_discount` and `level3_unit_of_measure`.
 - Leftovers of the card and recaptcha cuts: the `override_acdc_status_with_bcdc` filter, which nothing answered; the `is_acdc_active` listener, which nothing fired; the option `woocommerce_ppcp-recaptcha_settings`, no longer read; the `enable_recaptcha_protection` todo.
@@ -55,6 +54,177 @@ The shared names below were fired, read, written or served by the extension's co
 - The settings route: the hook `woocommerce_paypal_payments_gateway_admin_options_wrapper` no longer fires in practice. `PayPalGateway::admin_options()` still contains it, but the legacy `section=ppcp-gateway` URL redirects to the route before WooCommerce renders the section, and WooCommerce's REST API does not call `admin_options()`.
 
 Hooks and filters in this list carry the prefix `woocommerce_paypal_payments_`.
+
+## Pay with Crypto (restored 2026-10-12)
+
+Pay with Crypto was cut with the rest of the local payment methods group and is back, as the extension has it. The commits are `ee819d2fc1` (the gateway), `2aba33241c` (the capability read), `4f2e8356c2` (the settings app) and `e3c312996f` (the rule for a collecting store). Every restored name, string and shared option is the extension's; the only core-owned code is the collecting rule (the guard, the two drops in `PlatformServedGates` and the clear on `complete()`), and its only new name is the `PayWithCryptoGuard` class.
+
+**What came back and where.**
+
+- `Wallet/PayWithCrypto/` (`PayWithCryptoModule`, `PWCGateway`, `PWCPaymentMethod`, `services.php`) is the Pay with Crypto slice of the extension's `ppcp-local-alternative-payment-methods` module. The other local payment methods of that module stay cut, and `module-map.json` maps the module to `PayWithCrypto` for this slice alone. `Wallet/modules.php` loads it behind the extension's `woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled` filter, which is on unless the `PCP_PWC_ENABLED` environment variable is `0`.
+- `Wallet/WcGateway/Helper/PWCProductStatus.php` reads the `CRYPTO_PYMTS` capability from the seller status and caches it in the shared `products_pwc_enabled` transient entry. `WCGatewayModule` clears it with the other product statuses on `woocommerce_paypal_payments_clear_apm_product_status` and reports it as the `pwc` merchant feature.
+- The settings definitions and services carry the `pwc` feature card, the `enable_pwc` to-do, the `ppcp-pwc` entry of the alternative payment methods group (which depends on `ppcp-gateway`), the `pwc` capability row and the eligibility checks that read them.
+- The settings app has the Alternative Payment Methods card and the Pay with Crypto onboarding tile, the three admin icons (`icon-button-payment-method-pwc.svg`, `icon-checkout-alternative-methods.svg` and `icon-payment-method-crypto.svg`), the checkout icon `pwc.svg` and the block checkout script `pay-with-crypto/pwc-payment-method.js` (with its entry in `client/blocks/bin/webpack-entries.js`). `data/sync/todo-state-sync.js` is the extension's to-do sync, restored verbatim, with its `initTodoSync()` call in `data/payment/index.js`: without it, enabling the method leaves the `enable_pwc` to-do open until the page reloads.
+
+**When it registers.** The gateway registers when the module flag is on, the wallet gateway is enabled and, on a connected store, the eligibility check passes: the merchant holds an active `CRYPTO_PYMTS` capability, in the first-party and the platform-connected state alike, and the merchant country is not one of the extension's ineligible APM countries (`RU`, `BR`, `JP`). At checkout the gateway is offered for a USD store only, and `PWCGateway` refuses a non-USD order. The settings card and the to-do use the same country and currency rule.
+
+**The collecting rule.** A collecting store has no PayPal account, so it cannot hold the capability. The wallet's own check says no, but its answer sits in a transient the extension shares and never expires, so a "yes" written earlier would still register the gateway. Three pieces keep Pay with Crypto off a collecting store and leave a platform-connected one to the capability check:
+
+- `Collecting/Gating/PayWithCryptoGuard` removes `ppcp-pwc` from `woocommerce_payment_gateways`, after the wallet's filter added it, while the state is collecting.
+- `Collecting/Gating/PlatformServedGates` drops the `pwc` card and the `enable_pwc` to-do while the state is collecting. Both stay once the platform connects the merchant.
+- `CollectingState::complete()` fires the wallet's own `woocommerce_paypal_payments_clear_apm_product_status` action, so the capability read while collecting is read again for the new account. It runs the wallet's clear listeners synchronously in the completion request, and the wallet's priority-20 listener that refills the card-payment status may make one seller-status request there. Both callers of `complete()` catch `Throwable`.
+
+**Deviation: the application to-do.** The extension's "Start your Pay with Crypto application" to-do (`apply_for_pwc`) is not restored: it opens a placeholder URL. The feature card's "Sign up" button (PayPal's add-product page for `CRYPTO_PYMTS`) is the application path. The platform referral asks PayPal only for `EXPRESS_CHECKOUT`, so a platform merchant adds Pay with Crypto through the card's "Sign up" and PayPal's review.
+
+**The platform half.** Whether a platform-connected merchant can sell with Pay with Crypto was not observed. The probe (Task 0) found `CRYPTO_PYMTS` absent for all three merchants it read, among them a first-party store and the platform-connected one, and its order step was not run. Vlad's decision on 2026-10-12 is **(b) on**: the gateway, card and to-do work for a platform-connected store whenever the capability is active. The basis is PayPal's documentation, not an observed order: "Partners using the Connected integration can onboard merchants to accept Pay with crypto … Embedded and Managed (MAM) integrations are not supported at this time." (developer.paypal.com/docs/multiparty/checkout/apm/crypto/orders-api). The probe record is `.agents/scratchpad/sessions/2026-09-30-paypal-wallet-in-core-poc/data/pay-with-crypto/probe.md` (git-ignored session folder). If a platform merchant turns out not to qualify, the change is to move the three conditions above from "collecting" to "served by the platform" (`ConnectionState::is_served_by_platform()`).
+
+**Shared names.** The gateway ID `ppcp-pwc`, the block script handle `ppcp-pwc-payment-method`, the localized `ppcp-pwc_data` setting, the transient entry `products_pwc_enabled`, the `pwc_enabled` flag filter and the `woocommerce_paypal_payments_local_apm_payment_methods` filter are the extension's. `contract-appendix.md` lists only `products_pwc_enabled` among them: `contract-list.sh` scans the kept modules, and `ppcp-local-alternative-payment-methods` is not one, so the generator does not see this slice (adding the module would also list the names of the other local payment methods, which stay cut). The drift report maps the slice's files through `path-map.json`, so a later extension change to them is listed.
+
+### Removing Pay with Crypto
+
+The restore is one deletion and one revert, and it leaves the rest of the collecting state alone. The base is `d53549e199`, the head before the restore; the restore changed 23 created files and 36 modified ones, not counting the three Markdown documents this commit touches (this file, the tooling README and `contract-appendix.md`, which the restore left unchanged). Remove the created files, revert the modified ones to the base, and the tree equals `d53549e199` except for those documents.
+
+Do this removal before "Removing the collecting state". Nine paths in the lists below are also in that removal: the guard and its test (`git rm`), `CollectingModule.php`, `PlatformServedGates.php` and `CollectingState.php` with their three tests (`git checkout d53549e199`), and `PayPalWalletBootstrapTest.php`, which that removal reverts to `3fab045d24`. Nothing else in the lists touches `Collecting/`. If `Collecting/` is already gone, leave those nine paths out of both blocks: their hunks went with the directory, `git rm` of the guard fails on the missing file, and `git checkout d53549e199 --` of a `Collecting/` path would bring the deleted file back from the base. `PayPalWalletBootstrapTest.php` is already at `3fab045d24`, before any Pay with Crypto change, so it needs nothing.
+
+These reverts take each file whole. Before running them, run `git diff --stat e3c312996f HEAD -- <the 36 modified paths>` from the repository root. If it prints anything, a file changed after the restore: revert the hunks of the table below by hand for that file instead of checking it out.
+
+Created files, `git rm` (23), from the repository root:
+
+```bash
+P=plugins/woocommerce
+# PHP source, 6
+git rm -q \
+  $P/src/Internal/Payments/Providers/PayPal/Collecting/Gating/PayWithCryptoGuard.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PWCGateway.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PWCPaymentMethod.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PayWithCryptoModule.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/services.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Helper/PWCProductStatus.php
+# Tests, 8
+git rm -q \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Collecting/Gating/PayWithCryptoGuardTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PWCGatewayTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PWCPaymentMethodTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/PayWithCryptoModuleTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/PayWithCrypto/ServicesTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/PaymentMethodsDependenciesDefinitionTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/TodosDefinitionTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Helper/PWCProductStatusTest.php
+# Admin JS (the settings app), 7
+git rm -q \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Onboarding/Components/PaymentOptions/Crypto.js \
+  $P/client/admin/client/paypal-wallet/app/data/payment/hooks.test.js \
+  $P/client/admin/client/paypal-wallet/app/data/sync/todo-state-sync.js \
+  $P/client/admin/client/paypal-wallet/app/data/sync/todo-state-sync.test.js \
+  $P/client/admin/client/paypal-wallet/app/images/icon-button-payment-method-pwc.svg \
+  $P/client/admin/client/paypal-wallet/app/images/icon-checkout-alternative-methods.svg \
+  $P/client/admin/client/paypal-wallet/app/images/icon-payment-method-crypto.svg
+# Blocks JS, 2
+git rm -q \
+  $P/client/blocks/assets/js/extensions/payment-methods/paypal-wallet/images/pwc.svg \
+  $P/client/blocks/assets/js/extensions/payment-methods/paypal-wallet/pay-with-crypto/pwc-payment-method.js
+```
+
+Modified files, revert to the base (36), in the same shell (the block uses `$P`):
+
+```bash
+# PHP source, 15
+git checkout d53549e199 -- \
+  $P/src/Internal/Payments/Providers/PayPal/Collecting/CollectingModule.php \
+  $P/src/Internal/Payments/Providers/PayPal/Collecting/Gating/PlatformServedGates.php \
+  $P/src/Internal/Payments/Providers/PayPal/Collecting/State/CollectingState.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/FeaturesDefinition.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/PaymentMethodsDefinition.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/PaymentMethodsDependenciesDefinition.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/TodosDefinition.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Service/FeaturesEligibilityService.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Service/PaymentMethodsEligibilityService.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Service/TodosEligibilityService.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/Settings/services.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/Helper/GatewayIds.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/WCGatewayModule.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/services.php \
+  $P/src/Internal/Payments/Providers/PayPal/Wallet/modules.php
+# Tests, 10
+git checkout d53549e199 -- \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Collecting/CollectingModuleTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Collecting/Gating/PlatformServedGatesTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Collecting/State/CollectingStateTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/PayPalWalletBootstrapTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/FeaturesDefinitionTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Data/Definition/PaymentMethodsDefinitionTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/OptionalModulesServicesTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/Settings/Service/PaymentMethodsEligibilityServiceTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/MerchantFeaturesFilterTest.php \
+  $P/tests/php/src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/WCGatewayModuleTest.php
+# Admin JS (the settings app), 8
+git checkout d53549e199 -- \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Onboarding/Components/PaymentOptions/index.js \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Onboarding/hooks/usePaymentConfig.js \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Onboarding/hooks/usePaymentConfig.test.js \
+  $P/client/admin/client/paypal-wallet/app/Components/Screens/Settings/Tabs/TabPaymentMethods.js \
+  $P/client/admin/client/paypal-wallet/app/data/payment/hooks.js \
+  $P/client/admin/client/paypal-wallet/app/data/payment/index.js \
+  $P/client/admin/client/paypal-wallet/app/data/payment/reducer.js \
+  $P/client/admin/client/paypal-wallet/app/utils/countryInfoLinks.js
+# Blocks JS, 1
+git checkout d53549e199 -- \
+  $P/client/blocks/bin/webpack-entries.js
+# Tooling, 2
+git checkout d53549e199 -- \
+  $P/bin/paypal-wallet-fork/module-map.json \
+  $P/bin/paypal-wallet-fork/path-map.json
+```
+
+After the reverts, rebuild the clients, because the built bundles under `assets/client/` are git-ignored and keep serving Pay with Crypto otherwise. From `plugins/woocommerce`, run `pnpm build:admin`. From the repository root, run `pnpm --filter=@woocommerce/block-library build`. Then run the three checks from `plugins/woocommerce`; each returns the counts of `d53549e199`:
+
+```bash
+pnpm test:php:env -- --group paypal-wallet
+# OK (2654 tests, 8085 assertions)
+pnpm test:php:env -- --filter 'PaymentsProvidersTest|PaymentsRestControllerTest|PaymentsSettingsTest|WC_Tests_Payment_Gateways|PayPalWalletBootstrapTest|DormantPayPalGatewayTest|PayPalTest|ForkPlacementTest|WalletPropertiesTest'
+# OK (459 tests)
+pnpm --filter=@woocommerce/admin-library test:js -- paypal-wallet settings-payments
+# Tests: 371 passed
+```
+
+What each revert takes out, by area. This is also the by-hand fallback for a file that changed since the restore. In the PHP source rows `PP/` stands for `plugins/woocommerce/src/Internal/Payments/Providers/PayPal/`, in the Tests rows `TPP/` for `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/PayPal/`, and in the Admin JS rows `APP/` for `plugins/woocommerce/client/admin/client/paypal-wallet/app/`; the Blocks JS and Tooling rows are under `plugins/woocommerce/`.
+
+| Area | File | Hunks | What goes |
+|------|------|------:|-----------|
+| PHP source | `PP/Collecting/CollectingModule.php` | 3 | The `PayWithCryptoGuard` import, a docblock sentence and the guard's `woocommerce_payment_gateways` registration. |
+| PHP source | `PP/Collecting/Gating/PlatformServedGates.php` | 4 | The `pwc` card drop, the `enable_pwc` to-do drop and two docblock sentences. |
+| PHP source | `PP/Collecting/State/CollectingState.php` | 2 | The clear action in `complete()` and its docblock sentence. |
+| PHP source | `PP/Wallet/Settings/Data/Definition/FeaturesDefinition.php` | 2 | `FEATURE_PAY_WITH_CRYPTO` and the `pwc` card. |
+| PHP source | `PP/Wallet/Settings/Data/Definition/PaymentMethodsDefinition.php` | 2 | The `PWCGateway` import, the `group_apms()` entry and `get_apm_defaults()`. |
+| PHP source | `PP/Wallet/Settings/Data/Definition/PaymentMethodsDependenciesDefinition.php` | 2 | The import and the `ppcp-pwc` dependency. |
+| PHP source | `PP/Wallet/Settings/Data/Definition/TodosDefinition.php` | 1 | The `enable_pwc` to-do. |
+| PHP source | `PP/Wallet/Settings/Service/FeaturesEligibilityService.php` | 2 | The property, the fourth constructor argument and the `pwc` check. |
+| PHP source | `PP/Wallet/Settings/Service/PaymentMethodsEligibilityService.php` | 3 | The two constructor arguments, their properties, the `ppcp-pwc` check and `has_pwc_capability()`. |
+| PHP source | `PP/Wallet/Settings/Service/TodosEligibilityService.php` | 5 | The tenth constructor argument, its property and the `enable_pwc` check. |
+| PHP source | `PP/Wallet/Settings/services.php` | 9 | The `pwc` capability rows, the `settings.service.gateways_status` service and the wiring of the three eligibility services. |
+| PHP source | `PP/Wallet/WcGateway/Helper/GatewayIds.php` | 1 | A docblock wording. |
+| PHP source | `PP/Wallet/WcGateway/WCGatewayModule.php` | 4 | The `PWCProductStatus` import, the clear and the `pwc` merchant feature. |
+| PHP source | `PP/Wallet/WcGateway/services.php` | 2 | The import and `wcgateway.pwc-product-status`. |
+| PHP source | `PP/Wallet/modules.php` | 2 | The import and the flagged `PayWithCryptoModule`. |
+| Tests | `TPP/Collecting/CollectingModuleTest.php`, `TPP/Collecting/Gating/PlatformServedGatesTest.php`, `TPP/Collecting/State/CollectingStateTest.php`, `TPP/PayPalWalletBootstrapTest.php` | 3, 6, 3, 4 | The Pay with Crypto cases and fixtures, and the bootstrap test's APM group assertion (it expects an empty group again). |
+| Tests | `TPP/Wallet/Settings/Data/Definition/FeaturesDefinitionTest.php`, `TPP/Wallet/Settings/Data/Definition/PaymentMethodsDefinitionTest.php`, `TPP/Wallet/Settings/OptionalModulesServicesTest.php`, `TPP/Wallet/Settings/Service/PaymentMethodsEligibilityServiceTest.php` | 5, 4, 15, 2 | The `pwc` cases and fixtures. |
+| Tests | `TPP/Wallet/WcGateway/MerchantFeaturesFilterTest.php`, `TPP/Wallet/WcGateway/WCGatewayModuleTest.php` | 6, 5 | The `pwc` feature and clear cases. |
+| Admin JS | `APP/Components/Screens/Onboarding/Components/PaymentOptions/index.js` | 1 | The `Crypto` export. |
+| Admin JS | `APP/Components/Screens/Onboarding/hooks/usePaymentConfig.js` and `usePaymentConfig.test.js` | 2, 1 | The `Crypto` import and the US `includedMethods` entry, and the test's expectation. |
+| Admin JS | `APP/Components/Screens/Settings/Tabs/TabPaymentMethods.js` | 3 | The Alternative Payment Methods card. |
+| Admin JS | `APP/data/payment/hooks.js` | 1 | The `ppcp-pwc` read and `usePaymentMethods()` returning `apm` and the longer `all`. |
+| Admin JS | `APP/data/payment/index.js` | 2 | The `initTodoSync` import and call. |
+| Admin JS | `APP/data/payment/reducer.js` | 1 | The `ppcp-pwc` default. |
+| Admin JS | `APP/utils/countryInfoLinks.js` | 1 | The `Crypto` link. |
+| Blocks JS | `client/blocks/bin/webpack-entries.js` | 1 | The `ppcp-local-alternative-payment-methods-js-pwc-payment-method` entry. |
+| Tooling | `bin/paypal-wallet-fork/module-map.json` | 1 | The `ppcp-local-alternative-payment-methods` row. |
+| Tooling | `bin/paypal-wallet-fork/path-map.json` | 8 | Eight rows set back to `null` (below) and four rows deleted (below). |
+
+`path-map.json` rows set back to `null`, which is what the revert does: `modules/ppcp-local-alternative-payment-methods/src/PWCGateway.php`, `modules/ppcp-settings/assets/images/icon-button-payment-method-pwc.svg`, `.../icon-checkout-alternative-methods.svg`, `.../icon-payment-method-crypto.svg`, `modules/ppcp-settings/resources/js/Components/Screens/Onboarding/Components/PaymentOptions/Crypto.js`, `modules/ppcp-settings/resources/js/data/sync/todo-state-sync.js`, `modules/ppcp-wc-gateway/assets/images/pwc.svg` and `modules/ppcp-wc-gateway/src/Helper/PWCProductStatus.php`. Rows deleted, which is also what the revert does: `modules/ppcp-local-alternative-payment-methods/resources/js/pwc-payment-method.js`, `.../services.php`, `.../src/LocalAlternativePaymentMethodsModule.php` and `.../src/PWCPaymentMethod.php`. The module-map row is `"ppcp-local-alternative-payment-methods": "PayWithCrypto"`.
+
+The removal was tried on 2026-10-12 on a scratch branch from `e3c312996f`, with exactly the two command blocks above. The `paypal-wallet` group gave 2,654 tests and 8,085 assertions, the mixed run (`PaymentsProvidersTest|PaymentsRestControllerTest|PaymentsSettingsTest|WC_Tests_Payment_Gateways|PayPalWalletBootstrapTest|DormantPayPalGatewayTest|PayPalTest|ForkPlacementTest|WalletPropertiesTest`) 459 tests and Jest (`paypal-wallet settings-payments`) 371, the counts of `d53549e199`. `git diff d53549e199 --stat` then showed only this file and the tooling README. The dry run was undone with `git checkout HEAD -- <the same paths>`.
+
+Hand edits on removal: this section and the other Pay with Crypto sentences of this file (the "Not forked" and "Kept" rows, the "Kept from dropped modules" exception, the seams note, the `PlatformServedGates` sentence of the POC hacks and the `apply_for_pwc` follow-up), and the module-map sentence of the tooling README. Restore the "Not forked" and "Kept" rows and the "Pay with Crypto" bullet of "Names stopped in core" to their base form: `git show d53549e199:plugins/woocommerce/src/Internal/Payments/Providers/PayPal/FORK.md` has the text. A store that has the gateway enabled when the removal ships keeps its `woocommerce_ppcp-pwc_settings` option and the `products_pwc_enabled` entry, both inert, and the checkout loses the method. `PWCGateway` declares refund support, so an order already paid with `ppcp-pwc` can no longer be refunded through PayPal from WooCommerce once the gateway is gone; refund it by hand in PayPal. To turn the method off without a removal, return false from the `woocommerce.feature-flags.woocommerce_paypal_payments.pwc_enabled` filter or set `PCP_PWC_ENABLED=0`: the module is then not loaded, and with it the gateway, so refunds for existing orders are lost in the same way.
 
 ## Stored class names (compatibility shim)
 
@@ -87,7 +257,7 @@ The collecting state is a store that sells with PayPal before its merchant has a
 
 ### The seams: five in PHP, four in JS (Rulings 65 and 67, R186, R188, R214 and K11)
 
-`git diff 3fab045d24 HEAD -- <file> | grep -c '^@@'` is 1 for each file.
+`git diff 3fab045d24 HEAD -- <file> | grep -c '^@@'` is 1 for each file except seam 9 (`TabPayLaterMessaging.js`), which has three.
 
 | # | File (under `src/Internal/Payments/Providers/PayPal/Wallet/` unless noted) | Hunk | What the seam does | The closest existing point, and why it is not enough | What would remove it |
 |---|------|------|--------------------|------------------------------------------------------|----------------------|
@@ -102,6 +272,8 @@ The collecting state is a store that sells with PayPal before its merchant has a
 | 9 | `client/admin/client/paypal-wallet/app/Components/Screens/Settings/Tabs/TabPayLaterMessaging.js` (in `plugins/woocommerce/`) | three hunks, +12 −2: the `useMerchant()` read, the configurator call and the effect's dependencies (K11) | Passes `merchantIdentifier: merchantClientId \|\| merchantId` to PayPal's `merchantConfigurators.Messaging()`. A store the platform serves has no client ID of its own (`PlatformServedCommonRestEndpoint` reports it empty), so the configurator sent an empty `merchant_identifier` and showed "merchant_identifier is invalid"; PayPal's library takes a 13-character identifier as a payer ID, so the platform merchant ID works. A store with its own client ID sends it as before. It is the only seam that is not one hunk: the three edits sit 30 lines apart in one effect. | None: the configurator's inputs are built inside the tab. | The extension passing the merchant ID when it has no client ID, or a server value in `PcpPayLaterConfigurator` the tab reads. |
 
 Seams 2 to 4 share a hook, so the module re-enters the order's own app on every call (Ruling 83). It resets after `OrderProcessor` through the fork's existing `woocommerce_paypal_payments_after_order_processor`; refunds have no after-hook, so a PayPal call made later in the same request inherits the last order's app. That costs a wrong-app call only in a request that mixes orders pinned to different apps; while a store collects every pick is the merchant app, and the production design has one app. The void endpoint's order fetch has no seam (Ruling 86): void applies to authorizations, which are unreachable while the intent is forced to `CAPTURE` for a served store. If `AUTHORIZE` is ever allowed there, a void goes out with the wrong app.
+
+The Pay with Crypto guard is not a seam: it hooks WooCommerce's own `woocommerce_payment_gateways` filter and edits no forked file (see "Pay with Crypto" above).
 
 The order screen's PayPal order fetch has no seam either (K5). The wallet's void button (`WcGateway/Assets/VoidButtonAssets::should_register()`) reads the edited order's PayPal order on `admin_enqueue_scripts` at priority 10, outside any order context, so once the store is platform connected it went through the platform app, which cannot see an order the merchant app created, and logged "Could not retrieve order" on every order screen load. The module listens on the same WordPress action at priority 9 (`OrderListeners::handle_admin_enqueue_scripts()`, admin requests only, not AJAX) and enters the app pinned on the global `$theorder` through the same handler as seams 2 to 4; an order with no pin goes back to the pick. The context is not reset after it: the order screen makes its PayPal calls for that one order.
 
@@ -137,7 +309,7 @@ These are core's, not forked, and the removal reverts them. The shell wires `Col
 
 ## Removing the collecting state
 
-The removal was tried on a scratch branch (`scratch/collecting-removal`) of the main checkout at `55f45e04db`, with the uncommitted documentation work stashed (`git stash push --include-untracked`) and restored afterwards (`git stash pop --index`). It is one deletion, one revert and the trims staying as they are. Every path of `git diff --name-status 3fab045d24 HEAD`, ignoring `.agents/`, falls in one of five classes (178 paths after the K9 fix: 140 + 2 + 23 + 8 + 5; the dry run was at 158 paths, and the counts in the table include the demo fixes since).
+The removal was tried on a scratch branch (`scratch/collecting-removal`) of the main checkout at `55f45e04db`, with the uncommitted documentation work stashed (`git stash push --include-untracked`) and restored afterwards (`git stash pop --index`). It is one deletion, one revert and the trims staying as they are. This was measured at `55f45e04db`; the Pay with Crypto files added later are outside these classes and stay, see "Removing Pay with Crypto". Every path of `git diff --name-status 3fab045d24 HEAD` at that commit, ignoring `.agents/`, falls in one of five classes (178 paths after the K9 fix: 140 + 2 + 23 + 8 + 5; the dry run was at 158 paths, and the counts in the table include the demo fixes since).
 
 | Class | Paths | Action |
 |-------|------:|--------|
@@ -203,7 +375,7 @@ The `git diff --cached 3fab045d24 --stat` output of the dry run, verbatim: only 
 
 The JS reverts were not run through Jest or the type check in the dry run; the removal is checked for PHP only.
 
-What a real removal also needs. The Markdown goes by hand: the three collecting sections of this file (and the convention bullets above), the "Core-owned names" section of `contract-appendix.md` (regenerate it with `contract-list.sh`, which then ends without it), and the collecting sentences of `bin/paypal-wallet-fork/README.md`; the `contract-list.sh` section and the `drift-report.sh` exclusion go with it. A store that is collecting when the removal ships keeps data the code no longer reads: the options and order and user meta listed under "The collecting state's stored and public names", the Inbox note row `wc-paypal-wallet-setup-required`, the task ID `wc-paypal-wallet-setup` in core's task-list options, a recurring `woocommerce_paypal_wallet_reconcile` Action Scheduler action (group `wc-paypal-wallet`, with any pending continuation) with no handler, PayPal webhook subscriptions on the platform app that deliver to an endpoint that no longer verifies them, and the gateway left at `enabled = yes`. Before shipping, run `unsubscribe_webhooks()` on such stores, and decide whether a one-time update routine deletes the options and unschedules the action or the rows stay as inert data.
+What a real removal also needs. The Markdown goes by hand: the three collecting sections of this file (and the convention bullets above), the "Core-owned names" section of `contract-appendix.md` (regenerate it with `contract-list.sh`, which then ends without it), the collecting rule and platform-half paragraphs of "Pay with Crypto", and the collecting sentences of `bin/paypal-wallet-fork/README.md`; the `contract-list.sh` section and the `drift-report.sh` exclusion go with it. A store that is collecting when the removal ships keeps data the code no longer reads: the options and order and user meta listed under "The collecting state's stored and public names", the Inbox note row `wc-paypal-wallet-setup-required`, the task ID `wc-paypal-wallet-setup` in core's task-list options, a recurring `woocommerce_paypal_wallet_reconcile` Action Scheduler action (group `wc-paypal-wallet`, with any pending continuation) with no handler, PayPal webhook subscriptions on the platform app that deliver to an endpoint that no longer verifies them, and the gateway left at `enabled = yes`. Before shipping, run `unsubscribe_webhooks()` on such stores, and decide whether a one-time update routine deletes the options and unschedules the action or the rows stay as inert data.
 
 ## The collecting state's stored and public names
 
@@ -263,13 +435,14 @@ Everything is core-owned and listed, generated, in the last section of `contract
 
 - `html-order-items.php` (Ruling 107): the `isset( $order )` guard stays because dropping it grows the PHPStan baseline; `$refund_locked` and the duplicated tooltip string stay. The locked button points `aria-describedby` at a `screen-reader-text` span (`wc-paypal-wallet-refund-locked`) that repeats the tooltip, printed on the same line as the button so a regular order's markup does not change. Follow-up: a proper refund-lock API in core, then delete the guard and the copy.
 - The NOX `_notice` slot (the provider row and `PaymentsProviderNotice`): a notice array on a provider entity, with no registry. The demo found that the providers route dropped it, so `PaymentsRestController.php` carries a `_notice` entry in its provider schema, one hunk in a core file outside `Collecting/`. Follow-up: a notices API on providers, and a proper extension point for provider data in that controller, then delete the schema entry.
-- While the platform serves the store, `Collecting/Gating/PlatformServedGates` drops the cards and to-dos that send the payee to a PayPal sign-up or account, through the wallet's existing `woocommerce_paypal_payments_features_list` and `_todos_list` filters: Save PayPal and Venmo and Installments (features), Working Capital and Installments (to-dos). Pay Later messaging and its to-dos stay once the platform connects the merchant, because they open the settings app's own tab and have no sign-up. While the store only collects there is no merchant for PayPal's configurator to load, so `Collecting/extensions.php` turns `paylater-configurator.is-available` off, which hides the Pay Later Messaging tab and the wallet's own Pay Later task and its configurator endpoints, and the gate drops every to-do whose action opens that tab ("Enable Pay Later messaging" and the "Add Pay Later messaging to …" items) (K11). The Pay Later feature card stays; its "Configure" button, shown only when the feature reports enabled, opens the same tab. Follow-up: none needed; a store with first-party credentials is unchanged.
+- While the platform serves the store, `Collecting/Gating/PlatformServedGates` drops the cards and to-dos that send the payee to a PayPal sign-up or account, through the wallet's existing `woocommerce_paypal_payments_features_list` and `_todos_list` filters: Save PayPal and Venmo and Installments (features), Working Capital and Installments (to-dos). Pay Later messaging and its to-dos stay once the platform connects the merchant, because they open the settings app's own tab and have no sign-up. While the store only collects there is no merchant for PayPal's configurator to load, so `Collecting/extensions.php` turns `paylater-configurator.is-available` off, which hides the Pay Later Messaging tab and the wallet's own Pay Later task and its configurator endpoints, and the gate drops every to-do whose action opens that tab ("Enable Pay Later messaging" and the "Add Pay Later messaging to …" items) (K11). The Pay Later feature card stays; its "Configure" button, shown only when the feature reports enabled, opens the same tab. The `pwc` card and the `enable_pwc` to-do are dropped only while the store collects (see "Pay with Crypto"). Follow-up: none needed; a store with first-party credentials is unchanged.
 - Plugins.tsx "Included" (Rulings 120, 121 and 127): `NoPermissions.tsx` is not covered, so a user who cannot install plugins sees the card as a disabled checkbox; "shown" means "served", so the record is written even when the profiler page is skipped; and the profiler's Tracks events list `paypal-wallet`. Follow-up: an `is_included` field in the profiler's data model, covering all three.
 - The profiler card goes through `rest_post_dispatch` (Ruling 118), limited to the obw and core-profiler free-extensions routes. Follow-up: a free-extensions filter in core.
 - Order Intent is hidden by an inline style pinned to the forked app's `ppcp--order-intent` class (Ruling 116), with a test that pins the class. Follow-up: hide it through settings-app data.
 
 **Follow-ups.**
 
+- `apply_for_pwc` (Pay with Crypto): the extension's "Start your Pay with Crypto application" to-do is not restored, because its URL is a placeholder. Restore it, with its eligibility wiring, when the extension ships a real URL; until then the feature card's "Sign up" is the application path.
 - Ruling 124: `check-status` now checks onboarding first and settles one batch of at most 25 held orders (finding I6); an onboarding-only check stays a possible follow-up.
 - Ruling 128: a quick second "Complete setup" click can fetch a second referral, and the state is announced twice to a screen reader.
 - Ruling 146 (M2): no code calls `subscribe_webhooks()` or `unsubscribe_webhooks()`; subscribing is an operator step (`wp eval`). A store that entered the collecting state through the profiler or the panel gets no PayPal events, so completion and settlement wait for the daily reconcile or "Check status", while the settings app's Troubleshooting note says WooCommerce manages the webhooks. Abandon, completion and takeover leave the subscriptions delivering.
