@@ -4997,11 +4997,22 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				'uncategorized_text'  => 'winning_evidence',
 			),
 			true,
-			array( '__product_type' => 'offline_service' )
+			// An integer metadata value, as the dispute REST controller passes the order ID, travels as an integer.
+			array(
+				'__product_type' => 'offline_service',
+				'order_id'       => 123,
+			)
 		);
 
 		$sent = json_decode( (string) $http_client->requests[1]['body'], true );
 		$this->assertIsArray( $sent );
+		$this->assertSame(
+			array(
+				'__product_type' => 'offline_service',
+				'order_id'       => 123,
+			),
+			$sent['metadata']
+		);
 		$this->assertSame(
 			array(
 				'visa_compliance' => array(

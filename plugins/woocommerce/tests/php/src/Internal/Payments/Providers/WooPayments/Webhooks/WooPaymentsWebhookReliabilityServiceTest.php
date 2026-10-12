@@ -701,7 +701,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		try {
 			$service->process_event( 'evt_exhausted' );
-		} catch ( \RuntimeException $exception ) {
+			$this->fail( 'The last failure must still reach Action Scheduler.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			// Only the platform error the ingestor threw: PHPUnit's own failure is a RuntimeException too.
 			unset( $exception );
 		}
 

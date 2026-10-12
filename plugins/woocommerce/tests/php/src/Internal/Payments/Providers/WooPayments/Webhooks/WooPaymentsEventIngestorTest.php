@@ -3668,31 +3668,32 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A delivery hook callback that throws $_dataName is logged by the platform's status and code, never a message.
+	 * @testdox A delivery hook callback that throws $_dataName is logged at error level by the platform's status and code, never a message.
 	 *
-	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text.
+	 * A callback can call the platform and let its error out, directly or wrapped, so the message is not native text. A
+	 * failing callback on either hook fails neither the event nor the other hook.
 	 *
 	 * @dataProvider delivery_hook_platform_failures
 	 *
-	 * @param bool $wrapped Whether the callback wraps the platform error in its own exception.
+	 * @param bool   $wrapped      Whether the callback wraps the platform error in its own exception.
+	 * @param string $failing_hook The hook whose callback throws.
 	 */
-	public function test_delivery_hook_failure_log_leaves_out_platform_text( bool $wrapped ): void {
+	public function test_delivery_hook_failure_log_leaves_out_platform_text( bool $wrapped, string $failing_hook ): void {
 		$platform_error = self::make_provider_error();
 		$thrown         = $wrapped ? new RuntimeException( 'Sync failed: ' . $platform_error->getMessage(), 0, $platform_error ) : $platform_error;
 		$hook_calls     = array();
-		add_action(
-			'woocommerce_payments_before_webhook_delivery',
-			static function ( string $event_type ) use ( $thrown, &$hook_calls ): void {
-				$hook_calls[] = array( 'before', $event_type );
-				throw $thrown;
-			}
-		);
-		add_action(
-			'woocommerce_payments_after_webhook_delivery',
-			static function ( string $event_type ) use ( &$hook_calls ): void {
-				$hook_calls[] = array( 'after', $event_type );
-			}
-		);
+		foreach ( array( 'before', 'after' ) as $position ) {
+			$hook = "woocommerce_payments_{$position}_webhook_delivery";
+			add_action(
+				$hook,
+				static function ( string $event_type ) use ( $thrown, &$hook_calls, $position, $hook, $failing_hook ): void {
+					$hook_calls[] = array( $position, $event_type );
+					if ( $hook === $failing_hook ) {
+						throw $thrown;
+					}
+				}
+			);
+		}
 		$logger = RecordingWcLogger::install();
 
 		$this->sut->process( $this->create_payment_intent_event( 'customer.created', $this->create_woopayments_order() ) );
@@ -3700,19 +3701,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( array( 'before', 'customer.created' ), array( 'after', 'customer.created' ) ), $hook_calls, 'The failure stops neither the event nor the next hook.' );
 		$context = $this->get_logged_context( $logger, 'A WooPayments webhook delivery hook callback failed.' );
 		$this->assertSame( array( get_class( $thrown ), 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
-		$this->assertSame( array( 'woocommerce_payments_before_webhook_delivery', 'woopayments' ), array( $context['hook'], $context['source'] ) );
+		$this->assertSame( array( $failing_hook, 'woopayments' ), array( $context['hook'], $context['source'] ) );
+		$this->assertSame(
+			array( 'error' ),
+			array_values( array_column( array_filter( $logger->lines, static fn( array $line ): bool => 'A WooPayments webhook delivery hook callback failed.' === $line[1] ), 0 ) )
+		);
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
-	 * Platform errors a delivery hook callback can throw.
+	 * Platform errors a delivery hook callback can throw, and the hook that throws.
 	 *
-	 * @return array<string,array{bool}>
+	 * @return array<string,array{0:bool,1:string}>
 	 */
 	public function delivery_hook_platform_failures(): array {
 		return array(
-			'a platform error'               => array( false ),
-			'its own exception wrapping one' => array( true ),
+			'a platform error'                     => array( false, 'woocommerce_payments_before_webhook_delivery' ),
+			'its own exception wrapping one'       => array( true, 'woocommerce_payments_before_webhook_delivery' ),
+			'a platform error from the after hook' => array( false, 'woocommerce_payments_after_webhook_delivery' ),
 		);
 	}
 
@@ -4575,13 +4581,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Build an early fraud warning event.
 	 *
-	 * @param string $event_id Provider event ID.
+	 * @param string $event_id   Provider event ID.
+	 * @param string $event_type Event type.
 	 * @return array<string,mixed>
 	 */
-	private function create_early_fraud_warning_event( string $event_id ): array {
+	private function create_early_fraud_warning_event( string $event_id, string $event_type = 'radar.early_fraud_warning.created' ): array {
 		return array(
 			'id'       => $event_id,
-			'type'     => 'radar.early_fraud_warning.created',
+			'type'     => $event_type,
 			'livemode' => false,
 			'data'     => array(
 				'object' => array(
@@ -4595,9 +4602,14 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve delivery hook order and arguments around early fraud warning handling.
+	 * @testdox Should route $event_type to the early fraud warning handler and preserve delivery hook order and arguments around it.
+	 *
+	 * @testWith ["radar.early_fraud_warning.created"]
+	 *           ["radar.early_fraud_warning.updated"]
+	 *
+	 * @param string $event_type Early fraud warning event type.
 	 */
-	public function test_early_fraud_warning_preserves_delivery_hook_order_and_arguments(): void {
+	public function test_early_fraud_warning_preserves_delivery_hook_order_and_arguments( string $event_type ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$sequence   = array();
 		$handler    = $this->create_recording_early_fraud_warning_handler( $sequence );
@@ -4607,7 +4619,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			new class() extends WooPaymentsApiClient {},
 			$handler
 		);
-		$event      = $this->create_early_fraud_warning_event( 'evt_early_warning_hooks' );
+		$event      = $this->create_early_fraud_warning_event( 'evt_early_warning_hooks', $event_type );
 		$hook_calls = array();
 		add_action(
 			'woocommerce_payments_before_webhook_delivery',
@@ -4633,12 +4645,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'before', 'handler', 'after' ), $sequence );
 		$this->assertSame(
 			array(
-				array( 'radar.early_fraud_warning.created', $event ),
-				array( 'radar.early_fraud_warning.created', $event ),
+				array( $event_type, $event ),
+				array( $event_type, $event ),
 			),
 			$hook_calls
 		);
-		$this->assertSame( array( array( 'radar.early_fraud_warning.created', $event['data']['object'] ) ), $handler->processed_events );
+		$this->assertSame( array( array( $event_type, $event['data']['object'] ) ), $handler->processed_events );
 	}
 
 	/**

@@ -171,6 +171,30 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With Multi-Currency on and a second currency, the charge.refunded note names the amount with its currency code.
+	 *
+	 * Client 11.1.0 writes the refund amount through its explicit-price formatter (class-wc-payments-order-service.php
+	 * :1979-1999, class-wc-payments-explicit-price-formatter.php:55-74). The event writes the first of its note candidates,
+	 * the one with the code; the other wording is only for recognising a note the extension wrote.
+	 */
+	public function test_charge_refunded_note_carries_the_currency_code_with_multi_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$this->set_core_multi_currency( true );
+		$order                    = $this->create_refundable_order();
+		$charge                   = $this->get_successful_refund_charge();
+		$charge['payment_intent'] = 'pi_123';
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$notes = $this->get_notes_containing( wc_get_order( $order->get_id() ), 're_123' );
+		$this->assertCount( 1, $notes );
+		$this->assertStringContainsString( 'A refund of $4.00 USD', html_entity_decode( wp_strip_all_tags( $notes[0]->content ) ) );
+	}
+
+	/**
 	 * Make core Multi-Currency own the runtime, or not.
 	 *
 	 * @param bool $enabled Whether core Multi-Currency should own the runtime.

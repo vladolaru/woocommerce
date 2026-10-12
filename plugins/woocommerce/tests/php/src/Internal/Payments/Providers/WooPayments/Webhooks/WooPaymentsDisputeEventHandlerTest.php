@@ -121,6 +121,53 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.dispute.created event escapes the reason and the due date in the $_dataName note it writes.
+	 *
+	 * The reason is a translated label and the due date follows the store's date format, so markup can only come from a
+	 * translation or that setting. Client 11.1.0 escapes both around the link (class-wc-payments-order-service.php:2455-2504).
+	 *
+	 * @dataProvider provider_dispute_created_note_kinds
+	 *
+	 * @param string $status Dispute status.
+	 * @param string $note   Fragment that finds the created note.
+	 */
+	public function test_dispute_created_note_escapes_reason_and_due_by( string $status, string $note ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_escape' );
+		$order->save();
+		add_filter(
+			'gettext',
+			static fn( string $translation, string $text ): string => 'Transaction unauthorized' === $text ? '<b>reason</b>' : $translation,
+			10,
+			2
+		);
+		add_filter( 'woocommerce_date_format', static fn(): string => '\<\i\>Y\<\/\i\>' );
+		$event           = $this->get_created_event_object( 'dp_escape', $status );
+		$event['charge'] = 'ch_escape';
+
+		$this->sut->process( 'charge.dispute.created', $event );
+
+		$notes = $this->find_order_note( wc_get_order( $order->get_id() ), $note );
+		$this->assertCount( 1, $notes );
+		$this->assertStringNotContainsString( '<b>reason</b>', $notes[0]->content, 'The raw reason markup must not appear in the created note.' );
+		$this->assertStringNotContainsString( '<i>', $notes[0]->content, 'The raw due date markup must not appear in the created note.' );
+		$this->assertStringContainsString( '&lt;b&gt;reason&lt;/b&gt;', $notes[0]->content, 'The reason must be HTML-escaped in the created note.' );
+		$this->assertStringContainsString( '&lt;i&gt;', $notes[0]->content, 'The due date must be HTML-escaped in the created note.' );
+	}
+
+	/**
+	 * Dispute statuses for the two created notes and the fragment that finds each.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provider_dispute_created_note_kinds(): array {
+		return array(
+			'dispute' => array( 'needs_response', 'Payment has been disputed for' ),
+			'inquiry' => array( 'warning_needs_response', 'A payment inquiry has been raised for' ),
+		);
+	}
+
+	/**
 	 * @testdox The amount in a charge.dispute.created note follows the WooPayments extension's explicit-price rule.
 	 *
 	 * Source: client 11.1.0 class-wc-payments-webhook-processing-service.php:726-730 (dispute amount) and
