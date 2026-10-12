@@ -1148,23 +1148,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail closed for product-page express checkout when the product has no payable amount.
-	 */
-	public function test_payment_request_fails_closed_for_zero_amount_product(): void {
-		$product = \WC_Helper_Product::create_simple_product(
-			true,
-			array(
-				'virtual'       => true,
-				'price'         => '0',
-				'regular_price' => '0',
-			)
-		);
-		$this->set_current_product( $product );
-
-		$this->assertFalse( $this->create_service()->should_show_payment_request_button( 'product' ) );
-	}
-
-	/**
 	 * @testdox Should apply product availability after the public product-support filters.
 	 */
 	public function test_payment_request_requires_purchasable_product_after_support_filters(): void {

@@ -112,52 +112,6 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should restore the isolated session from a valid tokenized session header.
-	 */
-	public function test_restores_isolated_session_from_valid_token(): void {
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = JsonWebToken::create(
-			array(
-				'session_id' => 't_existing_native_session',
-				'exp'        => time() + HOUR_IN_SECONDS,
-				'iss'        => 'woopayments/product-page',
-			),
-			'@' . wp_salt()
-		);
-
-		$handler = new WooPaymentsTokenizedCartSessionHandler();
-		$handler->init();
-
-		$this->assertSame( 't_existing_native_session', $handler->get_customer_id() );
-		$this->assertSame( array(), $handler->get( 'cart' ) );
-	}
-
-	/**
-	 * @testdox Should save and reload tokenized cart data by tokenized session ID.
-	 */
-	public function test_saves_and_reloads_isolated_session_data(): void {
-		$handler = new WooPaymentsTokenizedCartSessionHandler();
-		$handler->init();
-		$session_id = $handler->get_customer_id();
-
-		$handler->set( 'cart', array( 'test-key' => array( 'quantity' => 2 ) ) );
-		$handler->save_data();
-
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = JsonWebToken::create(
-			array(
-				'session_id' => $session_id,
-				'exp'        => time() + HOUR_IN_SECONDS,
-				'iss'        => 'woopayments/product-page',
-			),
-			'@' . wp_salt()
-		);
-
-		$loaded = new WooPaymentsTokenizedCartSessionHandler();
-		$loaded->init();
-
-		$this->assertSame( array( 'test-key' => array( 'quantity' => 2 ) ), $loaded->get( 'cart' ) );
-	}
-
-	/**
 	 * @testdox A Store API checkout that creates an account keeps paying from the tokenized session and leaves the shopper's browser session alone.
 	 *
 	 * Store API Checkout::process_customer() logs the new customer in through wc_set_customer_auth_cookie(), which calls

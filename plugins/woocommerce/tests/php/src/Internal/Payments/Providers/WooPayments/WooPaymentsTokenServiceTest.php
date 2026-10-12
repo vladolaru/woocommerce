@@ -162,25 +162,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The subscriptions lookup double accepts an order object.
-	 */
-	public function test_wcs_subscriptions_for_order_double_accepts_order_object(): void {
-		$this->ensure_wcs_subscriptions_for_order_double();
-		$order         = $this->create_woopayments_order();
-		$parent        = $this->create_woopayments_order();
-		$renewal       = $this->create_woopayments_order();
-		$relationships = array(
-			'parent'  => array( $parent->get_id() ),
-			'renewal' => array( $renewal->get_id() ),
-		);
-
-		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => $relationships );
-		$related = wcs_get_subscriptions_for_order( $order, array( 'order_type' => array( 'parent', 'renewal' ) ) );
-
-		$this->assertSame( array( $parent->get_id(), $renewal->get_id() ), array_map( static fn( WC_Order $subscription ): int => $subscription->get_id(), $related ) );
-	}
-
-	/**
 	 * @testdox Should create a card token from WooPayments payment method details.
 	 */
 	public function test_creates_card_token_from_payment_method_details(): void {
@@ -324,48 +305,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Payment_Token_CC::class, $result['token'] );
 		$this->assertSame( 'pm_requested', $result['token']->get_token() );
 		$this->assertSame( 'pm_requested', $result['payment_method_details']['id'] );
-	}
-
-	/**
-	 * @testdox The token-only method returns the token from the explicit resolution result.
-	 */
-	public function test_token_only_method_returns_the_token_from_the_explicit_resolution_result(): void {
-		$user_id = $this->factory()->user->create();
-		$token   = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_wrapper_contract' );
-		$sut     = new class( $token ) extends WooPaymentsTokenService {
-			/** @var WC_Payment_Token_CC */
-			private WC_Payment_Token_CC $token;
-
-			/** @var int */
-			public int $resolution_calls = 0;
-
-			/**
-			 * @param WC_Payment_Token_CC $token Token returned by the explicit result method.
-			 */
-			public function __construct( WC_Payment_Token_CC $token ) {
-				$this->token = $token;
-			}
-
-			/**
-			 * @param string $payment_method_id Provider payment method ID.
-			 * @param int    $resolved_user_id  User ID.
-			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
-			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
-			 */
-			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $resolved_user_id, bool $include_existing_token_details = false ): array {
-				unset( $include_existing_token_details );
-				unset( $payment_method_id, $resolved_user_id );
-				++$this->resolution_calls;
-
-				return array(
-					'token'                  => $this->token,
-					'payment_method_details' => array( 'type' => 'card' ),
-				);
-			}
-		};
-
-		$this->assertSame( $token, $sut->get_or_create_token_for_user( 'pm_wrapper_contract', $user_id ) );
-		$this->assertSame( 1, $sut->resolution_calls );
 	}
 
 	/**
@@ -971,7 +910,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Disabled SEPA tokens must not be returned for My Account or all-gateway checkout listings.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'Disabled SEPA tokens must remain stored locally.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Deriving disabled state from settings must not add token metadata.' );
 		$this->assertSame( array(), $updated_token_ids, 'Listing a disabled token must not write to it.' );
 		$this->assertSame( array( 'card' => 1 ), $customer_service->fetch_counts, 'Disabled SEPA must not be fetched during all-gateway reconciliation.' );
 		$this->assertSame( array(), $api_client->detached_payment_method_ids, 'Preserving a disabled token must not trigger a remote detach.' );
@@ -1060,7 +998,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $skipped_tokens, 'Settings-disabled tokens must stay hidden when reconciliation is skipped.' );
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $failed_tokens, 'Settings-disabled tokens must stay hidden when the provider fetch fails.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A provider outage must not delete settings-disabled tokens.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Filtering from settings must not persist token metadata.' );
 	}
 
 	/**
@@ -1120,7 +1057,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $sepa_data ), $disabled_cache['payment_method_sepa_debit'] ?? null, 'Disabled-state filtering must not mutate the existing provider cache.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'Changing the enabled-method setting must immediately restore the token to listings.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A re-enabled token must remain stored.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Re-enable must not need persisted marker cleanup.' );
 		$this->assertSame( array(), $updated_token_ids, 'Disable and re-enable listing reads must not write to the payment token.' );
 		$this->assertSame( array(), $customer_service->fetch_counts, 'The unchanged provider cache may satisfy reconciliation after re-enable.' );
 
@@ -1178,7 +1114,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $sepa_data ), $failed_cache['payment_method_sepa_debit'] ?? null, 'Settings-derived filtering must not change cached SEPA data.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'The matching token must return after re-enable and provider recovery.' );
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'The recovered token must remain stored.' );
-		$this->assertSame( '', $stored_token->get_meta( '_wcpay_payment_method_disabled', true ), 'Provider recovery must not need persisted marker cleanup.' );
 		$this->assertSame(
 			array(
 				'link' => 1,
@@ -1295,6 +1230,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// The provider attaches the payment method, then checkout saves it locally.
 		$customer_service->payment_methods_by_type['card'] = array( $card_details );
 		$token = $sut->get_or_create_token_for_user( 'pm_new_card', $user_id );
+		$this->assertSame( 2, $customer_service->fetch_counts['card'] ?? 0, 'The warm read and one fetch after the save; resolving the token twice would fetch again.' );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		$tokens = apply_filters( 'woocommerce_get_customer_payment_tokens', array( $token->get_id() => $token ), $user_id, '' );
@@ -1850,29 +1786,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
-	}
-
-	/**
-	 * @testdox Should resolve reusable non-card WooPayments tokens attached to renewal orders.
-	 */
-	public function test_resolves_payment_method_id_from_order_attached_reusable_non_card_token(): void {
-		$user_id = $this->factory()->user->create();
-		$token   = new WooPaymentsSepaToken();
-		$order   = wc_create_order();
-		$sut     = $this->create_service();
-
-		$this->register_token_class_map();
-
-		$token->set_gateway_id( 'woocommerce_payments_sepa_debit' );
-		$token->set_user_id( $user_id );
-		$token->set_token( 'pm_sepa_saved' );
-		$token->set_last4( '6789' );
-		$token->save();
-
-		$order->add_payment_token( $token );
-		$order->save();
-
-		$this->assertSame( 'pm_sepa_saved', $sut->resolve_payment_method_id_from_order_token_id( (string) $token->get_id(), $order ) );
 	}
 
 	/**

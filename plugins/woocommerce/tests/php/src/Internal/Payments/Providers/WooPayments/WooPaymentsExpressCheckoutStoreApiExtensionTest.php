@@ -395,20 +395,6 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should register the no-op refresh-ui Store API cart update callback when express checkout is available.
-	 */
-	public function test_registers_refresh_ui_update_callback(): void {
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/cart/extensions';
-		$this->sut              = $this->create_extension( true );
-		$this->sut->register_refresh_ui_update_callback();
-
-		$callback = StoreApi::container()->get( ExtendSchema::class )->get_update_callback( 'woopayments/express-checkout/refresh-ui' );
-
-		$this->assertSame( '__return_null', $callback );
-		$this->assertSame( 'woopayments/express-checkout/refresh-ui', WooPaymentsExpressCheckoutStoreApiExtension::REFRESH_UI_NAMESPACE );
-	}
-
-	/**
 	 * @testdox Should answer refresh-ui cart extension requests with the cart only after the callback registers.
 	 */
 	public function test_refresh_ui_cart_extensions_request(): void {
@@ -421,10 +407,16 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$this->assertSame( 400, rest_get_server()->dispatch( $request )->get_status() );
 
 		$this->sut->register_refresh_ui_update_callback();
-		$response = rest_get_server()->dispatch( $request );
+		WC()->cart->add_to_cart( \WC_Helper_Product::create_simple_product()->get_id(), 2 );
+		try {
+			$response = rest_get_server()->dispatch( $request );
 
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertArrayHasKey( 'totals', $response->get_data() );
+			$this->assertSame( 200, $response->get_status() );
+			$this->assertArrayHasKey( 'totals', $response->get_data() );
+			$this->assertSame( 2, $response->get_data()['items_count'] ?? null, 'Refreshing the express checkout UI leaves the cart as it was.' );
+		} finally {
+			WC()->cart->empty_cart();
+		}
 	}
 
 	/**

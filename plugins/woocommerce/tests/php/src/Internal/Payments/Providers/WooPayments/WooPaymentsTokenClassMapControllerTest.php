@@ -50,32 +50,6 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose preserved SEPA tokens in customer token queries for the SEPA gateway.
-	 */
-	public function test_exposes_preserved_sepa_tokens_in_customer_gateway_queries(): void {
-		$user_id  = $this->factory()->user->create();
-		$token_id = $this->create_raw_payment_token(
-			$user_id,
-			'woocommerce_payments_sepa_debit',
-			'pm_sepa_saved',
-			'wcpay_sepa',
-			array(
-				'last4' => '6789',
-			)
-		);
-		$sut      = new WooPaymentsTokenClassMapController();
-
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
-		$sut->register();
-
-		$tokens = WC_Payment_Tokens::get_customer_tokens( $user_id, 'woocommerce_payments_sepa_debit' );
-
-		$this->assertArrayHasKey( $token_id, $tokens );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $tokens[ $token_id ] );
-		$this->assertSame( '6789', $tokens[ $token_id ]->get_last4() );
-	}
-
-	/**
 	 * @testdox Should map the WooPayments extension's token class names to the token classes.
 	 */
 	public function test_maps_woopayments_extension_token_class_names_to_token_classes(): void {

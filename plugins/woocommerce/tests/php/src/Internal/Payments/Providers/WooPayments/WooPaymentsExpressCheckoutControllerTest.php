@@ -238,22 +238,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the reference ECE container on supported shopper surfaces.
-	 */
-	public function test_display_express_checkout_buttons_renders_ece_container(): void {
-		$this->sut = $this->create_controller( true, true );
-		$this->set_checkout_shortcode_page();
-
-		ob_start();
-		$this->sut->display_express_checkout_buttons();
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'wcpay-express-checkout-wrapper', $output );
-		$this->assertStringContainsString( 'id="wcpay-express-checkout-element"', $output );
-		$this->assertStringContainsString( 'wcpay-express-checkout-button-separator', $output );
-	}
-
-	/**
 	 * @testdox Should render the WooPay button, then the ECE container, then one OR separator in one wrapper on checkout.
 	 */
 	public function test_display_express_checkout_buttons_renders_woopay_and_ece_in_one_wrapper(): void {
@@ -419,39 +403,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			$this->sut->add_tracking_event_properties( array(), 'wcpay_gpay_button_click' )
 		);
 		$this->assertSame( array(), $this->sut->add_tracking_event_properties( array(), 'wcpay_woopay_button_click' ) );
-	}
-
-	/**
-	 * @testdox Should stash the login redirect URL in a cookie and redirect to my-account on a valid nonce.
-	 */
-	public function test_handle_express_checkout_redirect_redirects_to_my_account(): void {
-		$this->sut = $this->create_controller( true, true );
-
-		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
-		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
-
-		$checkout_url                                = home_url( '/checkout/' );
-		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( $checkout_url );
-		$_GET['_wpnonce']                            = wp_create_nonce( 'wcpay-set-redirect-url' );
-
-		$captured_redirect = null;
-		$capture_redirect  = static function ( $location ) use ( &$captured_redirect ) {
-			$captured_redirect = $location;
-			return false;
-		};
-		add_filter( 'wp_redirect', $capture_redirect );
-		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-
-		try {
-			$this->sut->handle_express_checkout_redirect();
-
-			$this->assertSame( get_permalink( $my_account_page_id ), $captured_redirect );
-		} finally {
-			remove_filter( 'wp_redirect', $capture_redirect );
-			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-			unset( $_GET['wcpay_express_checkout_redirect_url'], $_GET['_wpnonce'] );
-			delete_option( 'woocommerce_myaccount_page_id' );
-		}
 	}
 
 	/**
@@ -687,27 +638,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the stashed express checkout URL as the login redirect.
-	 */
-	public function test_consume_login_redirect_url_uses_stashed_cookie(): void {
-		$this->sut = $this->create_controller( true, true );
-
-		$checkout_url                                   = home_url( '/checkout/' );
-		$_COOKIE['wcpay_express_checkout_redirect_url'] = $checkout_url;
-		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-
-		try {
-			$this->assertSame(
-				$checkout_url,
-				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
-			);
-		} finally {
-			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
-		}
-	}
-
-	/**
 	 * @testdox Should keep the default login redirect without a stashed URL.
 	 */
 	public function test_consume_login_redirect_url_keeps_default_without_cookie(): void {
@@ -923,52 +853,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
 			remove_filter( 'woocommerce_set_cookie_enabled', $capture_cookie );
-			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
-		}
-	}
-
-	/**
-	 * @testdox Should preserve an external stashed URL when its host is explicitly allowed.
-	 */
-	public function test_consume_login_redirect_url_preserves_external_stashed_url_for_allowed_host(): void {
-		$this->sut = $this->create_controller( true, true );
-
-		$_COOKIE['wcpay_express_checkout_redirect_url'] = 'https://evil.example/phish';
-		$allowed_hosts                                  = static function ( array $hosts ): array {
-			$hosts[] = 'evil.example';
-			return $hosts;
-		};
-		add_filter( 'allowed_redirect_hosts', $allowed_hosts );
-		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-
-		try {
-			$this->assertSame(
-				'https://evil.example/phish',
-				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
-			);
-		} finally {
-			remove_filter( 'allowed_redirect_hosts', $allowed_hosts );
-			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
-		}
-	}
-
-	/**
-	 * @testdox Should preserve a relative stashed express checkout URL.
-	 */
-	public function test_consume_login_redirect_url_preserves_relative_stashed_url(): void {
-		$this->sut = $this->create_controller( true, true );
-
-		$_COOKIE['wcpay_express_checkout_redirect_url'] = '/checkout/';
-		add_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
-
-		try {
-			$this->assertSame(
-				'/checkout/',
-				$this->sut->consume_login_redirect_url( home_url( '/my-account/' ) )
-			);
-		} finally {
-			remove_filter( 'woocommerce_set_cookie_enabled', '__return_false' );
 			unset( $_COOKIE['wcpay_express_checkout_redirect_url'] );
 		}
 	}

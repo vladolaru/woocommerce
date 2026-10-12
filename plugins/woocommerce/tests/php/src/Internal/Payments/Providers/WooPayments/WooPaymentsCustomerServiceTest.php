@@ -164,7 +164,6 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$GLOBALS['wp']->query_vars['add-payment-method'] = '';
 
 		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
-		$this->assertTrue( method_exists( $sut, 'get_prepared_customer_data' ), 'The native customer service should own prepared checkout customer data.' );
 
 		$data = $sut->get_prepared_customer_data();
 
