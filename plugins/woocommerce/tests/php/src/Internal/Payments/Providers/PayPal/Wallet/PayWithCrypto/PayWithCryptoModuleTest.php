@@ -158,7 +158,8 @@ class PayWithCryptoModuleTest extends WalletTestCase {
 		$this->run_module( false, true );
 
 		$this->assertSame( array(), apply_filters( 'woocommerce_payment_gateways', array() ) );
-		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $this->module, 'handle_cancelled_local_apm' ) ), 'The return-path handler is not registered' );
+		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $this->module, 'handle_cancelled_local_apm' ) ), 'The thank-you hook does not carry the return-path handler' );
+		$this->assertFalse( has_action( 'template_redirect', array( $this->module, 'handle_cancelled_local_apm_on_order_received' ) ), 'The return-path handler is not registered' );
 		$this->assertFalse( has_action( 'template_redirect', array( $this->module, 'handle_pwc_order_received_redirect' ) ), 'The order-received redirect is not registered' );
 	}
 
@@ -295,20 +296,76 @@ class PayWithCryptoModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should fail an on-hold Pay with Crypto order when the shopper comes back from a cancelled payment.
+	 * Make the main request the order-received page of the order, coming back from PayPal with the given arguments.
+	 *
+	 * @param \WC_Order $order The order.
+	 * @param string    $query The query string of the URL, without the question mark.
 	 */
-	public function test_fails_an_on_hold_order_after_a_cancelled_payment(): void {
-		$this->run_module( true, true );
-		add_filter( 'wp_doing_ajax', '__return_true' );
+	private function request_order_received( \WC_Order $order, string $query ): void {
+		$_SERVER['REQUEST_URI']                      = '/checkout/order-received/' . $order->get_id() . '/?' . $query;
+		$GLOBALS['wp']->query_vars['order-received'] = (string) $order->get_id();
+	}
+
+	/**
+	 * Create an on-hold order paid with the given gateway.
+	 *
+	 * @param string $payment_method The payment method ID.
+	 * @return \WC_Order The order.
+	 */
+	private function create_on_hold_order( string $payment_method ): \WC_Order {
 		$order = wc_create_order();
-		$order->set_payment_method( PWCGateway::ID );
+		$order->set_payment_method( $payment_method );
 		$order->set_status( 'on-hold' );
 		$order->save();
-		$_SERVER['REQUEST_URI'] = '/checkout/order-received/' . $order->get_id() . '/?cancelled=true&key=' . $order->get_order_key();
 
-		$this->module->handle_cancelled_local_apm( $order->get_id() );
+		return $order;
+	}
+
+	/**
+	 * Run the return-path handler of the module and say where it sent the shopper.
+	 *
+	 * @return string|null The redirect location, null when the handler did not redirect.
+	 */
+	private function redirect_target_of_cancel_handler(): ?string {
+		add_filter(
+			'wp_redirect',
+			static function ( $location ) {
+				throw new \RuntimeException( 'redirect:' . (string) $location ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double.
+			}
+		);
+
+		try {
+			$this->module->handle_cancelled_local_apm_on_order_received();
+		} catch ( \RuntimeException $e ) {
+			return substr( $e->getMessage(), strlen( 'redirect:' ) );
+		}
+
+		return null;
+	}
+
+	/**
+	 * @testdox Should run the return-path handler on template_redirect, before any output, and not on the thank-you hook.
+	 */
+	public function test_registers_the_return_path_handler_before_output(): void {
+		$this->run_module( true, true );
+
+		$this->assertNotFalse( has_action( 'template_redirect', array( $this->module, 'handle_cancelled_local_apm_on_order_received' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $this->module, 'handle_cancelled_local_apm' ) ) );
+	}
+
+	/**
+	 * @testdox Should fail an on-hold Pay with Crypto order and send the shopper to the clean order-received URL when they come back from a cancelled payment.
+	 */
+	public function test_fails_an_on_hold_order_and_redirects_after_a_cancelled_payment(): void {
+		$this->run_module( true, true );
+		$order = $this->create_on_hold_order( PWCGateway::ID );
+		$this->request_order_received( $order, 'cancelled=true&key=' . $order->get_order_key() );
+
+		$target = $this->redirect_target_of_cancel_handler();
 
 		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( $order->get_checkout_order_received_url(), $target );
+		$this->assertStringNotContainsString( 'cancelled', (string) $target );
 	}
 
 	/**
@@ -319,24 +376,11 @@ class PayWithCryptoModuleTest extends WalletTestCase {
 		$home = static fn(): string => 'http://example.org/shop';
 		add_filter( 'option_home', $home );
 		add_filter( 'option_siteurl', $home );
-		$order = wc_create_order();
-		$order->set_payment_method( PWCGateway::ID );
-		$order->set_status( 'on-hold' );
-		$order->save();
-		$_SERVER['REQUEST_URI'] = '/shop/checkout/order-received/' . $order->get_id() . '/?cancelled=true&key=' . $order->get_order_key();
-		add_filter(
-			'wp_redirect',
-			static function ( $location ) {
-				throw new \RuntimeException( 'redirect:' . (string) $location ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double.
-			}
-		);
+		$order = $this->create_on_hold_order( PWCGateway::ID );
+		$this->request_order_received( $order, 'cancelled=true&key=' . $order->get_order_key() );
+		$_SERVER['REQUEST_URI'] = '/shop' . $_SERVER['REQUEST_URI']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Test input.
 
-		$target = null;
-		try {
-			$this->module->handle_cancelled_local_apm( $order->get_id() );
-		} catch ( \RuntimeException $e ) {
-			$target = substr( $e->getMessage(), strlen( 'redirect:' ) );
-		}
+		$target = $this->redirect_target_of_cancel_handler();
 
 		$this->assertNotNull( $target, 'The handler redirects' );
 		$this->assertSame( $order->get_checkout_order_received_url(), $target );
@@ -350,14 +394,47 @@ class PayWithCryptoModuleTest extends WalletTestCase {
 	 */
 	public function test_keeps_the_order_when_the_key_does_not_match(): void {
 		$this->run_module( true, true );
-		$order = wc_create_order();
-		$order->set_payment_method( PWCGateway::ID );
-		$order->set_status( 'on-hold' );
-		$order->save();
-		$_SERVER['REQUEST_URI'] = '/checkout/order-received/' . $order->get_id() . '/?cancelled=true&key=wc_order_other';
+		$order = $this->create_on_hold_order( PWCGateway::ID );
+		$this->request_order_received( $order, 'cancelled=true&key=wc_order_other' );
 
-		$this->module->handle_cancelled_local_apm( $order->get_id() );
+		$this->assertNull( $this->redirect_target_of_cancel_handler() );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+	}
 
+	/**
+	 * @testdox Should leave an on-hold order of another gateway alone when the shopper comes back with the cancelled argument.
+	 */
+	public function test_keeps_the_order_of_another_gateway(): void {
+		$this->run_module( true, true );
+		$order = $this->create_on_hold_order( 'ppcp-gateway' );
+		$this->request_order_received( $order, 'cancelled=true&key=' . $order->get_order_key() );
+
+		$this->assertNull( $this->redirect_target_of_cancel_handler() );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox Should leave an on-hold Pay with Crypto order alone when the order-received URL has no cancelled argument.
+	 */
+	public function test_keeps_the_order_without_the_cancelled_argument(): void {
+		$this->run_module( true, true );
+		$order = $this->create_on_hold_order( PWCGateway::ID );
+		$this->request_order_received( $order, 'key=' . $order->get_order_key() );
+
+		$this->assertNull( $this->redirect_target_of_cancel_handler() );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+	}
+
+	/**
+	 * @testdox Should do nothing when the request is not the order-received page.
+	 */
+	public function test_does_nothing_outside_the_order_received_page(): void {
+		$this->run_module( true, true );
+		$order = $this->create_on_hold_order( PWCGateway::ID );
+		$this->request_order_received( $order, 'cancelled=true&key=' . $order->get_order_key() );
+		unset( $GLOBALS['wp']->query_vars['order-received'] );
+
+		$this->assertNull( $this->redirect_target_of_cancel_handler() );
 		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
 	}
 }

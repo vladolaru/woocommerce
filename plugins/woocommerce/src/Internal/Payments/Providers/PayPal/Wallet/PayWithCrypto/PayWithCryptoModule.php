@@ -228,7 +228,7 @@ class PayWithCryptoModule implements ServiceModule, ExecutableModule {
 			}
 		);
 
-		add_action( 'woocommerce_before_thankyou', array( $this, 'handle_cancelled_local_apm' ) );
+		add_action( 'template_redirect', array( $this, 'handle_cancelled_local_apm_on_order_received' ) );
 		add_action( 'template_redirect', array( $this, 'handle_pwc_order_received_redirect' ) );
 
 		add_action(
@@ -247,6 +247,27 @@ class PayWithCryptoModule implements ServiceModule, ExecutableModule {
 			10,
 			2
 		);
+	}
+
+	/**
+	 * Handle cancelled local APM payments on the order-received page, before any output.
+	 *
+	 * A classic theme prints its header before 'woocommerce_before_thankyou', too late for the redirect.
+	 *
+	 * @return void
+	 */
+	public function handle_cancelled_local_apm_on_order_received(): void {
+		if ( ! is_wc_endpoint_url( 'order-received' ) ) {
+			return;
+		}
+
+		global $wp;
+		$order_id = isset( $wp->query_vars['order-received'] ) ? absint( $wp->query_vars['order-received'] ) : 0;
+		if ( ! $order_id ) {
+			return;
+		}
+
+		$this->handle_cancelled_local_apm( $order_id );
 	}
 
 	/**
