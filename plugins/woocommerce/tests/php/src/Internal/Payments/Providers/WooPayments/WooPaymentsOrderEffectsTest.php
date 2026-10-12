@@ -220,141 +220,57 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Completed charge metadata stamps review_allowed when the order was held for review.
+	 * @testdox Fraud metadata stamps the meta box type and the outcome status: $_dataName.
+	 * @dataProvider provider_fraud_meta_box_type
+	 *
+	 * @param string           $composer         WooPaymentsOrderEffects method that builds the meta.
+	 * @param array<int,mixed> $args             Arguments for that method.
+	 * @param string           $expected_box     Expected fraud meta box type.
+	 * @param string           $expected_outcome Expected fraud outcome status.
 	 */
-	public function test_completed_charge_meta_stamps_review_allowed_when_held_for_review(): void {
-		$intent = array(
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'allow' ),
-		);
-		$charge = array(
+	public function test_fraud_meta_stamps_box_type_and_outcome( string $composer, array $args, string $expected_box, string $expected_outcome ): void {
+		$meta = call_user_func_array( array( WooPaymentsOrderEffects::class, $composer ), $args );
+
+		$this->assertSame( $expected_box, $meta['_wcpay_fraud_meta_box_type'] );
+		$this->assertSame( $expected_outcome, $meta['_wcpay_fraud_outcome_status'] );
+	}
+
+	/**
+	 * Fraud review histories and the meta box and outcome each one stamps.
+	 *
+	 * @return array<string,array{string,array<int,mixed>,string,string}>
+	 */
+	public function provider_fraud_meta_box_type(): array {
+		$card_charge = array(
+			'id'                     => 'ch_fraud',
 			'currency'               => 'usd',
 			'payment_method_details' => array( 'type' => 'card' ),
 		);
-
-		$held_meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge, array(), true, true );
-		$this->assertSame( 'allow', $held_meta['_wcpay_fraud_outcome_status'] );
-		$this->assertSame( 'review_allowed', $held_meta['_wcpay_fraud_meta_box_type'] );
-
-		$plain_meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge );
-		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_outcome_status'] );
-		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Completed capture metadata threads the held-for-review flag to the fraud meta box.
-	 */
-	public function test_completed_capture_meta_stamps_review_allowed_when_held_for_review(): void {
-		$intent = array(
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'allow' ),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                     => 'ch_review_capture',
-						'currency'               => 'usd',
-						'payment_method_details' => array( 'type' => 'card' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION, array(), true );
-		$this->assertSame( 'review_allowed', $meta['_wcpay_fraud_meta_box_type'] );
-
-		$plain_meta = WooPaymentsOrderEffects::completed_capture_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
-		$this->assertSame( 'allow', $plain_meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Pre-capture intents with a review outcome stamp the review fraud meta box.
-	 */
-	public function test_payment_intent_meta_stamps_review_box_when_holding_for_review(): void {
-		$intent = array(
-			'status'   => 'requires_capture',
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'review' ),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                     => 'ch_review_hold',
-						'currency'               => 'usd',
-						'payment_method_details' => array( 'type' => 'card' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
-
-		$this->assertSame( 'review', $meta['_wcpay_fraud_outcome_status'] );
-		$this->assertSame( 'review', $meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Pre-capture intents with an allow outcome keep the allow fraud meta box.
-	 */
-	public function test_payment_intent_meta_keeps_allow_box_for_allowed_authorizations(): void {
-		$intent = array(
-			'status'   => 'requires_capture',
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'allow' ),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                     => 'ch_allow_hold',
-						'currency'               => 'usd',
-						'payment_method_details' => array( 'type' => 'card' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
-
-		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Completed intents with a review outcome do not stamp the review box.
-	 */
-	public function test_payment_intent_meta_does_not_stamp_review_box_on_completion(): void {
-		$intent = array(
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'review' ),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                     => 'ch_review_done',
-						'currency'               => 'usd',
-						'payment_method_details' => array( 'type' => 'card' ),
-					),
-				),
-			),
-		);
-
-		$meta = WooPaymentsOrderEffects::payment_intent_meta( $intent, 'USD', WooPaymentsOrderMode::PRODUCTION );
-
-		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] );
-	}
-
-	/**
-	 * @testdox Non-card charges stay not_card even when held for review.
-	 */
-	public function test_fraud_outcome_meta_keeps_not_card_for_held_non_card_charges(): void {
-		$intent = array(
-			'currency' => 'usd',
-			'metadata' => array( 'fraud_outcome' => 'allow' ),
-		);
-		$charge = array(
+		$sepa_charge = array(
 			'currency'               => 'usd',
 			'payment_method_details' => array( 'type' => 'sepa_debit' ),
 		);
+		$intent      = static function ( string $status, string $fraud_outcome ) use ( $card_charge ): array {
+			return array(
+				'status'   => $status,
+				'currency' => 'usd',
+				'metadata' => array( 'fraud_outcome' => $fraud_outcome ),
+				'charges'  => array( 'data' => array( $card_charge ) ),
+			);
+		};
+		$allowed     = $intent( 'succeeded', 'allow' );
+		$production  = WooPaymentsOrderMode::PRODUCTION;
 
-		$meta = WooPaymentsOrderEffects::completed_charge_meta( $intent, $charge, array(), true, true );
-		$this->assertSame( 'not_card', $meta['_wcpay_fraud_meta_box_type'] );
+		return array(
+			'completed charge held for review'  => array( 'completed_charge_meta', array( $allowed, $card_charge, array(), true, true ), 'review_allowed', 'allow' ),
+			'completed charge not held'         => array( 'completed_charge_meta', array( $allowed, $card_charge ), 'allow', 'allow' ),
+			'completed capture held for review' => array( 'completed_capture_meta', array( $allowed, 'USD', $production, array(), true ), 'review_allowed', 'allow' ),
+			'completed capture not held'        => array( 'completed_capture_meta', array( $allowed, 'USD', $production ), 'allow', 'allow' ),
+			'authorization under review'        => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'review' ), 'USD', $production ), 'review', 'review' ),
+			'authorization allowed'             => array( 'payment_intent_meta', array( $intent( 'requires_capture', 'allow' ), 'USD', $production ), 'allow', 'allow' ),
+			'succeeded after review'            => array( 'payment_intent_meta', array( $intent( 'succeeded', 'review' ), 'USD', $production ), 'allow', 'review' ),
+			'held non-card charge'              => array( 'completed_charge_meta', array( $allowed, $sepa_charge, array(), true, true ), 'not_card', 'allow' ),
+		);
 	}
 
 	/**
@@ -429,24 +345,6 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox SetupIntent card display details require the provider's exact raw card type.
-	 */
-	public function test_setup_intent_display_details_require_exact_raw_card_type(): void {
-		$effects = WooPaymentsOrderEffects::compose_setup_intent_payment_method_display_details(
-			array(
-				'type' => 'Card',
-				'card' => array(
-					'brand'    => 'visa',
-					'last4'    => '4242',
-					'customer' => 'cus_must_not_be_cached',
-				),
-			)
-		);
-
-		$this->assertSame( array(), $effects );
-	}
-
-	/**
 	 * @testdox SetupIntent card display details reject incoherent card identity details.
 	 * @dataProvider incoherent_setup_intent_card_details_data
 	 *
@@ -475,6 +373,7 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 		);
 
 		return array(
+			'type not exactly card'        => array( array_replace( $valid, array( 'type' => 'Card' ) ) ),
 			'brand only'                   => array(
 				array(
 					'type' => 'card',

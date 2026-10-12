@@ -318,10 +318,20 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Manual capture should delegate the full order total, retain shared success effects and add no failure note.
+	 * A capture on the status change to completed schedules the Fee details job even when no new capture note is
+	 * written; the order action leaves scheduling to the capture note (class-wc-payments-order-service.php:1668, :1862-1874).
+	 * Only the status-change capture is flagged, as the client writes no fee meta on it (class-wc-payments-order-service.php:1847-1886).
+	 *
+	 * @testdox Capture triggers delegate the full order total, keep the shared success effects and add no failure note: $_dataName.
+	 * @dataProvider capture_triggers_and_job_scheduling
+	 *
+	 * @param string             $order_status       Order status before the hook fires.
+	 * @param string             $hook               Hook that triggers the capture.
+	 * @param array<string,bool> $status_change_flag Expected status-change flag in the capture's provider data.
+	 * @param bool               $schedules          Whether the job is scheduled without a new capture note.
 	 */
-	public function test_manual_capture_delegates_full_order_total_and_retains_success_effects(): void {
-		$order                = $this->create_authorized_order();
+	public function test_status_change_capture_schedules_the_fee_details_job( string $order_status, string $hook, array $status_change_flag, bool $schedules ): void {
+		$order                = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
 		$last_capture_context = null;
 		$processing_service   = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
@@ -333,118 +343,22 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 					$context->get_order()->update_meta_data( '_intention_status', 'succeeded' );
 					$context->get_order()->save_meta_data();
 
-					return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture' );
+					return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_status_capture' );
 				}
 			);
 		$this->sut = $this->create_controller( true, $processing_service );
 		$this->sut->register();
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
-		do_action( 'woocommerce_order_action_capture_charge', $order );
+		$this->fire_order_hook( $hook, $order );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $last_capture_context );
 		$this->assertSame( $order->get_id(), $last_capture_context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_capture_context->get_gateway_id() );
 		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
-		$this->assertArrayNotHasKey( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
+		$this->assertSame( $status_change_flag, array_intersect_key( $last_capture_context->get_provider_data(), array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ) ) );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'Shared capture success note.' );
 		$this->assertNotContains( 'Capture authorization <strong>failed</strong> to complete.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
-	}
-
-	/**
-	 * @testdox Manual cancellation should delegate through the shared cancel context.
-	 */
-	public function test_manual_cancel_delegates_through_shared_processing(): void {
-		$order               = $this->create_authorized_order();
-		$last_cancel_context = null;
-		$processing_service  = $this->createMock( PaymentProcessingService::class );
-		$processing_service->expects( $this->once() )
-			->method( 'cancel' )
-			->willReturnCallback(
-				static function ( PaymentOperationContext $context ) use ( &$last_cancel_context ): PaymentOutcome {
-					$last_cancel_context = $context;
-
-					return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_cancel' );
-				}
-			);
-		$this->sut = $this->create_controller( true, $processing_service );
-		$this->sut->register();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
-		do_action( 'woocommerce_order_action_cancel_authorization', $order );
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $last_cancel_context );
-		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_cancel_context->get_gateway_id() );
-	}
-
-	/**
-	 * @testdox Completing an authorized order should trigger the same full-total capture path.
-	 */
-	public function test_completed_status_triggers_capture(): void {
-		$order                = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'completed' );
-		$last_capture_context = null;
-		$processing_service   = $this->createMock( PaymentProcessingService::class );
-		$processing_service->expects( $this->once() )
-			->method( 'capture' )
-			->willReturnCallback(
-				static function ( PaymentOperationContext $context ) use ( &$last_capture_context ): PaymentOutcome {
-					$last_capture_context = $context;
-
-					return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_capture' );
-				}
-			);
-		$this->sut = $this->create_controller( true, $processing_service );
-		$this->sut->register();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
-		do_action(
-			'woocommerce_order_status_completed',
-			$order->get_id(),
-			$order,
-			array(
-				'from' => 'on-hold',
-				'to'   => 'completed',
-			)
-		);
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $last_capture_context );
-		$this->assertSame( (float) $order->get_total(), $last_capture_context->get_amount() );
-		$this->assertTrue( $last_capture_context->get_provider_data()[ WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE ] ?? false, 'The client writes no fee meta on this capture (class-wc-payments-order-service.php:1847-1886).' );
-	}
-
-	/**
-	 * A capture on the status change to completed schedules the Fee details job even when no new capture note is
-	 * written; the order action leaves scheduling to the capture note (class-wc-payments-order-service.php:1668, :1862-1874).
-	 *
-	 * @dataProvider capture_triggers_and_job_scheduling
-	 *
-	 * @param bool $on_status_change Whether the status change triggers the capture.
-	 * @param bool $schedules        Whether the job is scheduled without a new capture note.
-	 */
-	public function test_status_change_capture_schedules_the_fee_details_job( bool $on_status_change, bool $schedules ): void {
-		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $on_status_change ? 'completed' : 'on-hold' );
-		$processing_service = $this->createMock( PaymentProcessingService::class );
-		$processing_service->method( 'capture' )->willReturn( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_status_capture' ) );
-		$this->sut = $this->create_controller( true, $processing_service );
-		$this->sut->register();
-
-		if ( $on_status_change ) {
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
-			do_action(
-				'woocommerce_order_status_completed',
-				$order->get_id(),
-				$order,
-				array(
-					'from' => 'on-hold',
-					'to'   => 'completed',
-				)
-			);
-		} else {
-			$this->sut->handle_woocommerce_order_action_capture_charge( $order );
-		}
-
 		$this->assertSame(
 			$schedules,
 			as_has_scheduled_action(
@@ -460,22 +374,27 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Capture triggers and whether each schedules the job by itself.
+	 * Capture triggers, the status-change flag each passes and whether each schedules the job by itself.
 	 *
-	 * @return array<string,array{bool,bool}>
+	 * @return array<string,array{string,string,array<string,bool>,bool}>
 	 */
 	public function capture_triggers_and_job_scheduling(): array {
 		return array(
-			'status change to completed' => array( true, true ),
-			'order action'               => array( false, false ),
+			'status change to completed' => array( 'completed', 'woocommerce_order_status_completed', array( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE => true ), true ),
+			'order action'               => array( 'on-hold', 'woocommerce_order_action_capture_charge', array(), false ),
 		);
 	}
 
 	/**
-	 * @testdox Cancelling an authorized order should trigger the shared cancel path.
+	 * @testdox Cancel triggers delegate through the shared cancel context with the base gateway: $_dataName.
+	 * @dataProvider provider_cancel_triggers
+	 *
+	 * @param string $gateway_id   Order payment gateway ID.
+	 * @param string $order_status Order status before the hook fires.
+	 * @param string $hook         Hook that triggers the cancel.
 	 */
-	public function test_cancelled_status_triggers_cancel(): void {
-		$order               = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link', 'requires_capture', 'cancelled' );
+	public function test_cancel_triggers_delegate_through_shared_processing( string $gateway_id, string $order_status, string $hook ): void {
+		$order               = $this->create_authorized_order( $gateway_id, 'requires_capture', $order_status );
 		$last_cancel_context = null;
 		$processing_service  = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
@@ -490,19 +409,23 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $processing_service );
 		$this->sut->register();
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
-		do_action(
-			'woocommerce_order_status_cancelled',
-			$order->get_id(),
-			$order,
-			array(
-				'from' => 'on-hold',
-				'to'   => 'cancelled',
-			)
-		);
+		$this->fire_order_hook( $hook, $order );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $last_cancel_context );
 		$this->assertSame( $order->get_id(), $last_cancel_context->get_order_id() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $last_cancel_context->get_gateway_id() );
+	}
+
+	/**
+	 * Cancel triggers and the order each one acts on.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provider_cancel_triggers(): array {
+		return array(
+			'order action'                             => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'on-hold', 'woocommerce_order_action_cancel_authorization' ),
+			'status change to cancelled, Link gateway' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_link', 'cancelled', 'woocommerce_order_status_cancelled' ),
+		);
 	}
 
 	/**
@@ -665,10 +588,14 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Automatic capture exceptions should add the WooPayments extension's generic note without escaping the status hook.
+	 * @testdox Capture exceptions add the WooPayments extension's generic note without escaping the hook: $_dataName.
+	 * @dataProvider provider_capture_exception_triggers
+	 *
+	 * @param string $order_status Order status before the hook fires.
+	 * @param string $hook         Hook that triggers the capture.
 	 */
-	public function test_automatic_capture_exception_adds_generic_note_without_escaping(): void {
-		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'completed' );
+	public function test_capture_exception_adds_generic_note_without_escaping( string $order_status, string $hook ): void {
+		$order              = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->once() )
 			->method( 'capture' )
@@ -676,28 +603,21 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, $processing_service );
 		$this->sut->register();
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
-		do_action( 'woocommerce_order_status_completed', $order->get_id(), $order, array() );
+		$this->fire_order_hook( $hook, $order );
 
 		$this->assert_order_has_note_containing( $order, 'Capture authorization <strong>failed</strong> to complete.' );
 	}
 
 	/**
-	 * @testdox Manual capture exceptions should leave a generic failure note instead of failing silently.
+	 * Capture triggers whose capture throws.
+	 *
+	 * @return array<string,array{string,string}>
 	 */
-	public function test_manual_capture_exception_adds_generic_note(): void {
-		$order              = $this->create_authorized_order();
-		$processing_service = $this->createMock( PaymentProcessingService::class );
-		$processing_service->expects( $this->once() )
-			->method( 'capture' )
-			->willThrowException( new RuntimeException( 'Simulated capture exception.' ) );
-		$this->sut = $this->create_controller( true, $processing_service );
-		$this->sut->register();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
-		do_action( 'woocommerce_order_action_capture_charge', $order );
-
-		$this->assert_order_has_note_containing( $order, 'Capture authorization <strong>failed</strong> to complete.' );
+	public function provider_capture_exception_triggers(): array {
+		return array(
+			'status change to completed' => array( 'completed', 'woocommerce_order_status_completed' ),
+			'order action'               => array( 'on-hold', 'woocommerce_order_action_capture_charge' ),
+		);
 	}
 
 	/**
@@ -941,6 +861,19 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 				unset( $context, $outcome, $operation );
 			}
 		};
+	}
+
+	/**
+	 * Fire an order action hook with the order, or an order status hook with the order ID, the order and a transition.
+	 *
+	 * @param string   $hook  Hook name.
+	 * @param WC_Order $order Order.
+	 */
+	private function fire_order_hook( string $hook, WC_Order $order ): void {
+		$args = 0 === strpos( $hook, 'woocommerce_order_status_' ) ? array( $order->get_id(), $order, array() ) : array( $order );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order hooks.
+		do_action( $hook, ...$args );
 	}
 
 	/**

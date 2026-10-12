@@ -66,66 +66,57 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox A refunded WooPayments order with a canceled intent is affected even without fee metadata.
+	 * The lookup follows the reference migration's canceled-intent query, not the exact payment method metadata.
+	 *
+	 * @testdox Affected-order lookup finds orders with a canceled intent created after the bug date: $_dataName.
+	 * @dataProvider provider_affected_order_fixtures
+	 *
+	 * @param array<string,mixed> $fixture  Order fixture arguments.
+	 * @param bool                $affected Whether the order is affected.
 	 */
-	public function test_has_affected_orders_detects_refunded_canceled_intent(): void {
-		$this->create_order_fixture(
-			array(
-				'status'           => 'refunded',
-				'with_fee_meta'    => false,
-				'with_refund_meta' => false,
-			)
+	public function test_affected_order_lookup( array $fixture, bool $affected ): void {
+		$order = $this->create_order_fixture( $fixture );
+
+		$order_ids = array_map(
+			static function ( WC_Order $affected_order ): int {
+				return $affected_order->get_id();
+			},
+			$this->sut->get_affected_orders( 10 )
 		);
 
-		$this->assertTrue( $this->sut->has_affected_orders(), 'Refunded canceled WooPayments orders should be affected.' );
+		$this->assertSame( $affected ? array( $order->get_id() ) : array(), $order_ids );
+		$this->assertSame( $affected, $this->sut->has_affected_orders() );
 	}
 
 	/**
-	 * @testdox A cancelled WooPayments order with a canceled intent and fee metadata is affected.
+	 * Order fixtures and whether each is affected.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool}>
 	 */
-	public function test_has_affected_orders_detects_cancelled_canceled_intent_with_fee(): void {
-		$order = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
-
-		$orders = $this->sut->get_affected_orders( 10 );
-
-		$this->assertTrue( $this->sut->has_affected_orders(), 'Cancelled canceled WooPayments orders with fees should be affected.' );
-		$this->assertCount( 1, $orders, 'Only the affected order should be hydrated.' );
-		$this->assertSame( $order->get_id(), $orders[0]->get_id() );
-	}
-
-	/**
-	 * @testdox Clean, non-canceled, and pre-bug-date orders are not affected.
-	 */
-	public function test_has_affected_orders_ignores_unaffected_orders(): void {
-		$this->create_order_fixture(
-			array(
-				'status'           => 'processing',
-				'intent_status'    => null,
-				'with_fee_meta'    => false,
-				'with_refund_meta' => false,
-			)
+	public function provider_affected_order_fixtures(): array {
+		return array(
+			'refunded without fee metadata' => array(
+				array(
+					'status'           => 'refunded',
+					'with_fee_meta'    => false,
+					'with_refund_meta' => false,
+				),
+				true,
+			),
+			'cancelled with fee metadata'   => array( array( 'status' => 'cancelled' ), true ),
+			'nonstandard payment method'    => array( array( 'payment_method' => 'woocommerce_payments_card' ), true ),
+			'clean order without an intent' => array(
+				array(
+					'status'           => 'processing',
+					'intent_status'    => null,
+					'with_fee_meta'    => false,
+					'with_refund_meta' => false,
+				),
+				false,
+			),
+			'intent not canceled'           => array( array( 'intent_status' => 'requires_capture' ), false ),
+			'created before the bug date'   => array( array( 'date_created' => '2023-03-31' ), false ),
 		);
-		$this->create_order_fixture( array( 'intent_status' => 'requires_capture' ) );
-		$this->create_order_fixture( array( 'date_created' => '2023-03-31' ) );
-
-		$this->assertFalse( $this->sut->has_affected_orders(), 'Unaffected orders should not trigger remediation.' );
-	}
-
-	/**
-	 * @testdox Affected-order lookup preserves the reference query even when payment method metadata is nonstandard.
-	 */
-	public function test_has_affected_orders_does_not_filter_by_payment_method(): void {
-		$order = $this->create_order_fixture(
-			array(
-				'payment_method' => 'woocommerce_payments_card',
-				'status'         => 'cancelled',
-			)
-		);
-
-		$orders = $this->sut->get_affected_orders( 10 );
-
-		$this->assertCount( 1, $orders, 'The reference migration uses canceled-intent state rather than exact payment method metadata.' );
-		$this->assertSame( $order->get_id(), $orders[0]->get_id() );
 	}
 
 	/**

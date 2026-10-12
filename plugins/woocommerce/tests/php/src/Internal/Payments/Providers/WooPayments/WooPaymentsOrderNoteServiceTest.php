@@ -330,9 +330,16 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Checkout payment-failure notes carry the error details and the merchant seller message.
+	 * @testdox Checkout payment-failure notes render the decline details: $_dataName.
+	 * @dataProvider provider_checkout_payment_failed_notes
+	 *
+	 * @param string $error_message   Error details.
+	 * @param string $seller_message  Merchant seller message.
+	 * @param string $decline_code    Decline code.
+	 * @param string $expected_format Expected note format, with the price as the first placeholder.
+	 * @param string $expected_detail Expected detail, the second placeholder.
 	 */
-	public function test_formats_checkout_payment_failed_note_with_seller_message(): void {
+	public function test_formats_checkout_payment_failed_note( string $error_message, string $seller_message, string $decline_code, string $expected_format, string $expected_detail ): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_currency( 'USD' );
@@ -340,86 +347,47 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$sut = new WooPaymentsOrderNoteService();
 
-		$candidates = $sut->format_checkout_payment_failed_note_candidates(
-			$order,
-			'Error: Your card was declined.',
-			'The bank did not return any further details with this decline.',
-			'card_error',
-			'card_declined'
-		);
+		$candidates = $sut->format_checkout_payment_failed_note_candidates( $order, $error_message, $seller_message, 'card_error', $decline_code );
 
-		$this->assertSame(
-			sprintf(
-				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ),
-				'Error: Your card was declined. The bank did not return any further details with this decline'
-			),
-			$candidates[0]
-		);
+		$this->assertSame( sprintf( $expected_format, wc_price( 25.00, array( 'currency' => 'USD' ) ), $expected_detail ), $candidates[0] );
 	}
 
 	/**
-	 * @testdox Checkout payment-failure notes without a seller message keep just the error details.
+	 * Checkout decline inputs and the note each one renders.
+	 *
+	 * @return array<string,array{string,string,string,string,string}>
 	 */
-	public function test_formats_checkout_payment_failed_note_without_seller_message(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->set_total( '25.00' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
+	public function provider_checkout_payment_failed_notes(): array {
+		$message_format = 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.';
 
-		$candidates = $sut->format_checkout_payment_failed_note_candidates(
-			$order,
-			'Error: Your card has insufficient funds.',
-			'',
-			'card_error',
-			'card_declined'
-		);
-
-		$this->assertSame(
-			sprintf(
-				'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ),
-				'Error: Your card has insufficient funds'
+		return array(
+			'with a seller message'    => array(
+				'Error: Your card was declined.',
+				'The bank did not return any further details with this decline.',
+				'card_declined',
+				$message_format,
+				'Error: Your card was declined. The bank did not return any further details with this decline',
 			),
-			$candidates[0]
-		);
-	}
-
-	/**
-	 * @testdox Checkout payment-failure notes replace the incorrect_zip diagnostics with the postal-code guidance.
-	 */
-	public function test_formats_checkout_payment_failed_note_for_incorrect_zip(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->set_total( '25.00' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-
-		$candidates = $sut->format_checkout_payment_failed_note_candidates(
-			$order,
-			'Error: Your card\'s zip code failed validation.',
-			'',
-			'card_error',
-			'incorrect_zip'
-		);
-
-		$this->assertSame(
-			sprintf(
+			'without a seller message' => array( 'Error: Your card has insufficient funds.', '', 'card_declined', $message_format, 'Error: Your card has insufficient funds' ),
+			'incorrect zip guidance'   => array(
+				'Error: Your card\'s zip code failed validation.',
+				'',
+				'incorrect_zip',
 				'A payment of %1$s <strong>failed</strong>. %2$s',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ),
-				'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.'
+				'We couldn’t verify the postal code in the billing address. If the issue persists, suggest the customer to reach out to the card issuing bank.',
 			),
-			$candidates[0]
 		);
 	}
 
 	/**
-	 * @testdox Fraud-blocked notes list the fired risk filters with the blocked transaction link.
+	 * @testdox Fraud-blocked notes link the blocked transaction: $_dataName.
+	 * @dataProvider provider_fraud_blocked_notes
+	 *
+	 * @param string               $intent_id       Blocked intent ID.
+	 * @param array<string,string> $ruleset_results Fraud ruleset results.
+	 * @param string               $expected_format Expected note format, with the price and the transaction URL as placeholders.
 	 */
-	public function test_formats_fraud_blocked_note_with_risk_filter_labels(): void {
+	public function test_formats_fraud_blocked_note( string $intent_id, array $ruleset_results, string $expected_format ): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_currency( 'USD' );
@@ -427,50 +395,33 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 		$order->save();
 		$sut = new WooPaymentsOrderNoteService();
 
-		$candidates = $sut->format_fraud_blocked_note_candidates(
-			$order,
-			'pi_blocked_test',
-			array(
-				'international_ip_address' => 'block',
-				'order_items_threshold'    => 'allow',
-			)
-		);
-		$url        = $sut->blocked_transaction_url( 'pi_blocked_test', (string) $order->get_id() );
+		$candidates = $sut->format_fraud_blocked_note_candidates( $order, $intent_id, $ruleset_results );
+		$url        = $sut->blocked_transaction_url( $intent_id, (string) $order->get_id() );
 
 		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
-		$this->assertSame(
-			sprintf(
-				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>%2$s<br><br><a href="%3$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ),
-				'&#8226; Block if the country resolved from customer IP is not listed in your selling countries',
-				$url
-			),
-			$candidates[0],
-			'Allowed rules must not appear in the fired-filter list.'
-		);
+		$this->assertSame( sprintf( $expected_format, wc_price( 25.00, array( 'currency' => 'USD' ) ), $url ), $candidates[0] );
 	}
 
 	/**
-	 * @testdox Fraud-blocked notes without ruleset results fall back to the generic blocked copy.
+	 * Fraud ruleset results and the blocked note each one renders. Allowed rules stay out of the fired-filter list.
+	 *
+	 * @return array<string,array{string,array<string,string>,string}>
 	 */
-	public function test_formats_generic_fraud_blocked_note_without_ruleset_results(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->set_total( '25.00' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-
-		$candidates = $sut->format_fraud_blocked_note_candidates( $order, '', array() );
-		$url        = $sut->blocked_transaction_url( '', (string) $order->get_id() );
-
-		$this->assertSame(
-			sprintf(
-				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
-				wc_price( 25.00, array( 'currency' => 'USD' ) ),
-				$url
+	public function provider_fraud_blocked_notes(): array {
+		return array(
+			'fired risk filters listed'    => array(
+				'pi_blocked_test',
+				array(
+					'international_ip_address' => 'block',
+					'order_items_threshold'    => 'allow',
+				),
+				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by the following risk filters:<br>&#8226; Block if the country resolved from customer IP is not listed in your selling countries<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
 			),
-			$candidates[0]
+			'generic copy without results' => array(
+				'',
+				array(),
+				'&#x1F6AB; A payment of %1$s was <strong>blocked</strong> by one or more risk filters.<br><br><a href="%2$s" target="_blank" rel="noopener noreferrer">View more details</a>.',
+			),
 		);
 	}
 
@@ -673,124 +624,100 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Created-refund candidates retain exact Core and WooPayments extension reason/success renderings.
+	 * @testdox Created-refund candidates keep the exact Core and WooPayments extension renderings: $_dataName.
+	 * @dataProvider provider_created_refund_note_candidates
+	 *
+	 * @param float                              $amount       Refund amount.
+	 * @param string                             $currency     Order and refund currency.
+	 * @param string                             $refund_id    Provider refund ID.
+	 * @param string                             $reason       Refund reason.
+	 * @param bool                               $is_pending   Whether the refund is pending.
+	 * @param array<string,array<string,string>> $translations Test translations keyed by text domain.
+	 * @param string[]                           $present      Substrings the translated extension candidate contains.
+	 * @param string[]                           $absent       Substrings the translated extension candidate omits.
 	 */
-	public function test_created_refund_candidates_for_reason_and_success(): void {
+	public function test_created_refund_note_candidates( float $amount, string $currency, string $refund_id, string $reason, bool $is_pending, array $translations, array $present, array $absent ): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
+		$order->set_currency( $currency );
 		$order->save();
 		$sut = new WooPaymentsOrderNoteService();
 
 		$this->assertCount(
 			1,
-			$sut->format_created_refund_note_candidates( $order, 4.00, 'USD', 're_123', 'Requested by customer', false ),
+			$sut->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending ),
 			'Identical catalog renderings should collapse to one exact candidate.'
 		);
 
-		$this->install_test_translations(
-			array(
-				'woocommerce-payments' => array(
-					'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)' => 'Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)',
-					'was successfully processed' => 'wurde erfolgreich verarbeitet',
-				),
-			)
-		);
+		$this->install_test_translations( $translations );
 		switch_to_locale( 'de_DE' );
 
-		$candidates = $sut->format_created_refund_note_candidates( $order, 4.00, 'USD', 're_123', 'Requested by customer', false );
+		$candidates = $sut->format_created_refund_note_candidates( $order, $amount, $currency, $refund_id, $reason, $is_pending );
 
 		$this->assertCount( 2, $candidates );
-		$this->assertSame( $sut->format_created_refund_note( $order, 4.00, 'USD', 're_123', 'Requested by customer', false ), $candidates[0] );
-		$this->assertStringContainsString( 'Eine Rueckerstattung von', $candidates[1] );
-		$this->assertStringContainsString( 'wurde erfolgreich verarbeitet', $candidates[1] );
-		$this->assertStringContainsString( 'Grund: Requested by customer.', $candidates[1] );
-		$this->assert_refund_amount_candidate_states( $sut, $order, 4.00, 'USD', 're_123', 'Requested by customer', false );
+		$this->assertSame( $sut->format_created_refund_note( $order, $amount, $currency, $refund_id, $reason, $is_pending ), $candidates[0] );
+		foreach ( $present as $substring ) {
+			$this->assertStringContainsString( $substring, $candidates[1] );
+		}
+		foreach ( $absent as $substring ) {
+			$this->assertStringNotContainsString( $substring, $candidates[1] );
+		}
+		$this->assert_refund_amount_candidate_states( $sut, $order, $amount, $currency, $refund_id, $reason, $is_pending );
 	}
 
 	/**
-	 * @testdox Created-refund candidates retain the WooPayments extension pending hyperlink without a reason.
+	 * Refund states, the test translations each needs, and what the translated extension candidate shows.
+	 *
+	 * @return array<string,array{float,string,string,string,bool,array<string,array<string,string>>,string[],string[]}>
 	 */
-	public function test_created_refund_candidates_for_pending_without_reason(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'EUR' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-		$this->install_test_translations(
-			array(
-				'woocommerce-payments' => array(
-					'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).' => 'Eine Rueckerstattung von %1$s %4$s mit %2$s (<code>%3$s</code>).',
-					'is pending' => 'ist ausstehend',
-				),
-			)
+	public function provider_created_refund_note_candidates(): array {
+		$with_reason    = array( 'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)' => 'Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)' );
+		$without_reason = array( 'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).' => 'Eine Rueckerstattung von %1$s %4$s mit %2$s (<code>%3$s</code>).' );
+		$success        = array( 'was successfully processed' => 'wurde erfolgreich verarbeitet' );
+		$pending        = array( 'is pending' => 'ist ausstehend' );
+
+		return array(
+			'success with a reason'    => array(
+				4.00,
+				'USD',
+				're_123',
+				'Requested by customer',
+				false,
+				array( 'woocommerce-payments' => array_merge( $with_reason, $success ) ),
+				array( 'Eine Rueckerstattung von', 'wurde erfolgreich verarbeitet', 'Grund: Requested by customer.' ),
+				array( 'pending-refunds' ),
+			),
+			'pending without a reason' => array(
+				3.50,
+				'EUR',
+				're_pending',
+				'',
+				true,
+				array( 'woocommerce-payments' => array_merge( $without_reason, $pending ) ),
+				array( 'Eine Rueckerstattung von', '<a href="https://woocommerce.com/document/woopayments/managing-money/#pending-refunds" target="_blank" rel="noopener noreferrer">ist ausstehend</a>' ),
+				array( 'Reason:' ),
+			),
+			'success without a reason' => array(
+				2.50,
+				'USD',
+				're_success',
+				'',
+				false,
+				array( 'woocommerce-payments' => array_merge( $without_reason, $success ) ),
+				array( 'wurde erfolgreich verarbeitet' ),
+				array( 'Grund:' ),
+			),
+			'pending with a reason'    => array(
+				6.00,
+				'EUR',
+				're_pending_reason',
+				'Customer request',
+				true,
+				array( 'woocommerce-payments' => array_merge( $with_reason, $pending ) ),
+				array( '>ist ausstehend</a>', 'Grund: Customer request.' ),
+				array( 'successfully processed' ),
+			),
 		);
-		switch_to_locale( 'de_DE' );
-
-		$candidates = $sut->format_created_refund_note_candidates( $order, 3.50, 'EUR', 're_pending', '', true );
-
-		$this->assertCount( 2, $candidates );
-		$this->assertStringContainsString( 'Eine Rueckerstattung von', $candidates[1] );
-		$this->assertStringContainsString(
-			'<a href="https://woocommerce.com/document/woopayments/managing-money/#pending-refunds" target="_blank" rel="noopener noreferrer">ist ausstehend</a>',
-			$candidates[1]
-		);
-		$this->assertStringNotContainsString( 'Reason:', $candidates[1] );
-		$this->assert_refund_amount_candidate_states( $sut, $order, 3.50, 'EUR', 're_pending', '', true );
-	}
-
-	/**
-	 * @testdox Created-refund candidates cover successful refunds without a reason.
-	 */
-	public function test_created_refund_candidates_for_success_without_reason(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'USD' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-		$this->install_test_translations(
-			array(
-				'woocommerce-payments' => array(
-					'A refund of %1$s %4$s using %2$s (<code>%3$s</code>).' => 'Eine Rueckerstattung von %1$s %4$s mit %2$s (<code>%3$s</code>).',
-					'was successfully processed' => 'wurde erfolgreich verarbeitet',
-				),
-			)
-		);
-		switch_to_locale( 'de_DE' );
-
-		$candidates = $sut->format_created_refund_note_candidates( $order, 2.50, 'USD', 're_success', '', false );
-
-		$this->assertCount( 2, $candidates );
-		$this->assertStringContainsString( 'wurde erfolgreich verarbeitet', $candidates[1] );
-		$this->assertStringNotContainsString( 'Grund:', $candidates[1] );
-		$this->assert_refund_amount_candidate_states( $sut, $order, 2.50, 'USD', 're_success', '', false );
-	}
-
-	/**
-	 * @testdox Created-refund candidates cover pending refunds with a reason.
-	 */
-	public function test_created_refund_candidates_for_pending_with_reason(): void {
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_currency( 'EUR' );
-		$order->save();
-		$sut = new WooPaymentsOrderNoteService();
-		$this->install_test_translations(
-			array(
-				'woocommerce-payments' => array(
-					'A refund of %1$s %5$s using %2$s. Reason: %3$s. (<code>%4$s</code>)' => 'Eine Rueckerstattung von %1$s %5$s mit %2$s. Grund: %3$s. (<code>%4$s</code>)',
-					'is pending' => 'ist ausstehend',
-				),
-			)
-		);
-		switch_to_locale( 'de_DE' );
-
-		$candidates = $sut->format_created_refund_note_candidates( $order, 6.00, 'EUR', 're_pending_reason', 'Customer request', true );
-
-		$this->assertCount( 2, $candidates );
-		$this->assertStringContainsString( '>ist ausstehend</a>', $candidates[1] );
-		$this->assertStringContainsString( 'Grund: Customer request.', $candidates[1] );
-		$this->assert_refund_amount_candidate_states( $sut, $order, 6.00, 'EUR', 're_pending_reason', 'Customer request', true );
 	}
 
 	/**
