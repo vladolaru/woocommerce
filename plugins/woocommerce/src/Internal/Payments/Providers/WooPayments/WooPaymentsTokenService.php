@@ -46,8 +46,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 */
 	public const UPDATE_SAVED_PAYMENT_METHOD_ACTION = 'wcpay_update_saved_payment_method';
 
-	private const CACHE_CLEAR_BATCH_SIZE = 500;
-
 	private const PAYMENT_METHOD_TYPE_CARD = 'card';
 
 	private const PAYMENT_METHOD_TYPE_CARD_PRESENT = 'card_present';
@@ -943,9 +941,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$deleted_meta_rows = $wpdb->query(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name comes from WordPress.
-				"DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s LIMIT %d",
-				self::CACHED_PAYMENT_METHODS_META_KEY,
-				self::CACHE_CLEAR_BATCH_SIZE
+				"DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s",
+				self::CACHED_PAYMENT_METHODS_META_KEY
 			)
 		);
 		$this->throw_on_database_error( false === $deleted_meta_rows, 'Failed to clear cached WooPayments payment methods.' );
@@ -953,9 +950,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$option_names = $wpdb->get_col(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name comes from WordPress.
-				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT %d",
-				$wpdb->esc_like( 'wcpay_pm_' ) . '%',
-				self::CACHE_CLEAR_BATCH_SIZE
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( 'wcpay_pm_' ) . '%'
 			)
 		);
 		$this->throw_on_database_error( ! is_array( $option_names ), 'Failed to read cached WooPayments payment-method options.' );
@@ -965,10 +961,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			if ( false !== get_option( $option_name, false ) ) {
 				throw new RuntimeException( 'Failed to delete cached WooPayments payment-method option.' );
 			}
-		}
-
-		if ( self::CACHE_CLEAR_BATCH_SIZE <= (int) $deleted_meta_rows || self::CACHE_CLEAR_BATCH_SIZE <= count( $option_names ) ) {
-			throw new RuntimeException( 'WooPayments payment-method cache cleanup partially completed and should be retried.' );
 		}
 	}
 

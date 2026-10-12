@@ -131,6 +131,39 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox account.updated clears every cached payment method row and acknowledges the webhook on a store with more than 500 of them.
+	 *
+	 * Client 11.1.0 clears all of them in one delete and acknowledges the event (class-wc-payments-token-service.php:168-189, webhook-processing-service.php:205-207).
+	 */
+	public function test_account_updated_clears_every_cached_payment_method_row(): void {
+		global $wpdb;
+
+		$meta_rows   = array();
+		$option_rows = array();
+		for ( $i = 1; $i <= 501; $i++ ) {
+			$meta_rows[]   = $wpdb->prepare( '(%d, %s, %s)', 1000000 + $i, '_wcpay_payment_methods', 'a:0:{}' );
+			$option_rows[] = $wpdb->prepare( '(%s, %s, %s)', 'wcpay_pm_cus_' . $i, 'a:0:{}', 'off' );
+		}
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Each row is prepared above.
+		$wpdb->query( "INSERT INTO {$wpdb->usermeta} (user_id, meta_key, meta_value) VALUES " . implode( ',', $meta_rows ) );
+		$wpdb->query( "INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES " . implode( ',', $option_rows ) );
+		// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'refresh_account_data' ) )
+			->getMock();
+		$account_service->method( 'refresh_account_data' )->willReturn( array( 'account_id' => 'acct_123' ) );
+
+		$sut = $this->create_ingestor_with_account_services( $account_service, new WooPaymentsTokenService() );
+
+		$sut->process( $this->create_account_event( 'account.updated' ) );
+
+		$this->assertSame( '0', $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = %s", '_wcpay_payment_methods' ) ), 'Every cached payment method user meta row should be deleted.' );
+		$this->assertSame( '0', $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s", 'wcpay\_pm\_%' ) ), 'Every cached wcpay_pm_ option should be deleted.' );
+	}
+
+	/**
 	 * @testdox account.deleted resets account state, refreshes account data, and clears preserved payment method caches.
 	 */
 	public function test_account_deleted_cleans_state_refreshes_account_data_and_clears_payment_method_caches(): void {
