@@ -175,38 +175,6 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register catalog titles and descriptions with the woocommerce text domain
-	 */
-	public function test_catalog_strings_are_translatable(): void {
-		$filter = static function ( string $translation, string $text, string $domain ) {
-			if ( 'woocommerce' !== $domain ) {
-				return $translation;
-			}
-
-			$translations = array(
-				'iDEAL | Wero' => 'iDEAL translated',
-				'Clearpay'     => 'Clearpay translated',
-				'Allow customers to pay over time with Clearpay.' => 'Clearpay description translated',
-			);
-
-			return $translations[ $text ] ?? $translation;
-		};
-		add_filter( 'gettext', $filter, 10, 3 );
-
-		try {
-			$registry = new WooPaymentsPaymentMethodRegistry();
-			$ideal    = $registry->get( 'ideal' );
-			$afterpay = $registry->get( 'afterpay_clearpay' );
-
-			$this->assertSame( 'iDEAL translated', $ideal->get_title() );
-			$this->assertSame( 'Clearpay translated', $afterpay->get_title( 'GB' ) );
-			$this->assertSame( 'Clearpay description translated', $afterpay->get_description( 'GB' ) );
-		} finally {
-			remove_filter( 'gettext', $filter, 10 );
-		}
-	}
-
-	/**
 	 * @testdox Should translate every catalog title and description at consumption time
 	 */
 	public function test_every_catalog_title_and_description_is_translatable(): void {

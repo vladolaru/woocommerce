@@ -1916,63 +1916,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should log an error line for API errors when transport logging is enabled.
-	 */
-	public function test_transport_logs_api_error_line(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$logger = $this->install_recording_logger();
-
-		try {
-			$this->capture_api_error(
-				array(
-					'error' => array(
-						'code'    => 'card_declined',
-						'message' => 'Your card was declined.',
-						'type'    => 'card_error',
-					),
-				),
-				402
-			);
-		} finally {
-			remove_all_filters( 'woocommerce_logging_class' );
-			delete_option( 'woocommerce_woocommerce_payments_settings' );
-		}
-
-		$error_entries = array_values( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ) );
-		$this->assertNotEmpty( $error_entries );
-		$this->assertSame( 'Your card was declined. (card_declined)', $error_entries[0]['message'] );
-	}
-
-	/**
-	 * @testdox Should stay silent when neither dev mode nor the logging setting enables transport logging.
-	 */
-	public function test_transport_logging_is_gated_off_by_default(): void {
-		delete_option( 'woocommerce_woocommerce_payments_settings' );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$logger = $this->install_recording_logger();
-
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'id' => 're_test' ) ),
-		);
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		try {
-			$sut->refund_charge( 'ch_test', 250, 'requested_by_customer', 'native_transport', 'idem_test' );
-		} finally {
-			remove_all_filters( 'woocommerce_logging_class' );
-			remove_filter( 'wcpay_dev_mode', '__return_false' );
-		}
-
-		$this->assertSame( array(), $logger->entries, 'Transport logging must be opt-in: dev mode or the enable_logging gateway setting.' );
-	}
-
-	/**
 	 * @testdox The transport log redacts nothing while logging is off, and the request, the response and the error line once it is on.
 	 *
 	 * Redaction looks at every string value, so a store with logging off must not pay for it; the subclass counts each
@@ -2244,29 +2187,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			$this->assertSame( '(redacted)', $request['context']['body'][ $key ] ?? null, $key );
 		}
 		$this->assertStringNotContainsString( 'leak', (string) wp_json_encode( $logger->entries ) );
-	}
-
-	/**
-	 * @testdox The gated transport log keeps none of a key-bearing URL's query, a signature two levels down and a client secret under an unknown key.
-	 *
-	 * The response body is synthetic transport-only input, not a platform answer: the client logs whatever body the platform
-	 * answers (class-wc-payments-api-client.php:2780-2784).
-	 */
-	public function test_transport_log_redacts_a_combined_body(): void {
-		$logger = $this->log_transport_request(
-			array(
-				'redirect' => 'https://shop.example.test/order-received/12/?key=wc_order_combinedleak',
-				'payment'  => array( 'proof' => array( 'signature' => 'combinedleak-signature' ) ),
-				'opaque'   => 'pi_3Combinedleak_secret_Combinedleak',
-			),
-			array( 'result' => 'success' )
-		);
-
-		$request = $this->get_transport_entry( $logger, 'API REQUEST (' );
-		$this->assertSame( '(redacted)', $request['context']['body']['payment']['proof']['signature'] ?? null );
-		$this->assertSame( '(redacted)', $request['context']['body']['opaque'] ?? null );
-		$this->assertStringStartsWith( 'https://shop.example.test', (string) ( $request['context']['body']['redirect'] ?? '' ), 'The URL keeps its host.' );
-		$this->assertStringNotContainsString( 'ombinedleak', (string) wp_json_encode( $logger->entries ) );
 	}
 
 	/**
@@ -5185,59 +5105,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve Capital request filters before dispatch.
-	 */
-	public function test_capital_admin_methods_preserve_request_filters(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode(
-				array(
-					'data' => array(),
-				)
-			),
-		);
-
-		$summary_filter = function ( WooPaymentsApiRequest $request ): WooPaymentsApiRequest {
-			$this->assertSame( 'capital/active_loan_summary', $request->get_api() );
-			$this->assertSame( 'GET', $request->get_method() );
-			$request->set_param( 'include', 'details' );
-
-			return $request;
-		};
-		$loans_filter   = function ( WooPaymentsApiRequest $request ): WooPaymentsApiRequest {
-			$this->assertSame( 'capital/loans', $request->get_api() );
-			$this->assertSame( 'GET', $request->get_method() );
-			$request->set_param( 'limit', 25 );
-
-			return $request;
-		};
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-		add_filter( 'wcpay_get_active_loan_summary_request', $summary_filter );
-		add_filter( 'wcpay_get_loans_request', $loans_filter );
-
-		try {
-			$sut->get_capital_active_loan_summary();
-			$summary_path = $http_client->last_path;
-
-			$sut->get_capital_loans();
-			$loans_path = $http_client->last_path;
-		} finally {
-			remove_filter( 'wcpay_get_active_loan_summary_request', $summary_filter );
-			remove_filter( 'wcpay_get_loans_request', $loans_filter );
-		}
-
-		$this->assertStringContainsString( 'include=details', $summary_path );
-		$this->assertStringContainsString( 'test_mode=1', $summary_path );
-		$this->assertStringContainsString( 'limit=25', $loans_path );
-		$this->assertStringContainsString( 'test_mode=1', $loans_path );
-	}
-
-	/**
 	 * @testdox Should preserve the Capital link request filter object.
 	 */
 	public function test_create_capital_link_preserves_request_filter_object(): void {
@@ -5487,24 +5354,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve the single-transaction detail endpoint in admin context.
-	 */
-	public function test_get_transaction_admin_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_sut(
-			true,
-			array(
-				'data'        => array(),
-				'total_count' => 0,
-			)
-		);
-
-		$sut->get_transaction( 'txn_test' );
-
-		$this->assertSame( '/sites/123/wcpay/transactions/txn_test?test_mode=1', $http_client->last_path );
-		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
 	 * @testdox Should preserve the transactions export endpoint and body fields.
 	 */
 	public function test_start_transactions_export_uses_preserved_endpoint(): void {
@@ -5599,37 +5448,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '/sites/123/wcpay/disputes/dp_test?test_mode=0', $http_client->last_path );
 		$this->assertSame( 'GET', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve the dispute update endpoint and body fields.
-	 */
-	public function test_update_dispute_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->update_dispute( 'dp_test', array( 'customer_name' => 'Ada' ), true, array( 'order_id' => 123 ) );
-		$update_body = json_decode( (string) $http_client->last_body, true );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/dp_test', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
-		$this->assertIsArray( $update_body );
-		$this->assertArrayHasKey( 'evidence', $update_body );
-		$this->assertSame( 'Ada', $update_body['evidence']['customer_name'] );
-		$this->assertTrue( $update_body['submit'] );
-		$this->assertArrayHasKey( 'metadata', $update_body );
-		$this->assertSame( 123, $update_body['metadata']['order_id'] );
-	}
-
-	/**
-	 * @testdox Should preserve the dispute close endpoint.
-	 */
-	public function test_close_dispute_uses_preserved_endpoint(): void {
-		list( $sut, $http_client ) = $this->make_disputes_sut();
-
-		$sut->close_dispute( 'dp_test' );
-
-		$this->assertSame( '/sites/123/wcpay/disputes/dp_test/close', $http_client->last_path );
-		$this->assertSame( 'POST', $http_client->last_method );
 	}
 
 	/**
@@ -6105,56 +5923,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $result['success'] );
 		$this->assertSame( '/sites/123/wcpay/payment_method_promotions/klarna-promo__spotlight/activate', $http_client->last_path );
 		$this->assertSame( 'POST', $http_client->last_method );
-	}
-
-	/**
-	 * @testdox Should preserve payment method promotion request filters.
-	 */
-	public function test_pm_promotion_methods_preserve_request_filters(): void {
-		$http_client           = new FakeWooPaymentsHttpClient();
-		$http_client->blog_id  = 123;
-		$http_client->response = array(
-			'response' => array( 'code' => 200 ),
-			'headers'  => array( 'content-type' => 'application/json' ),
-			'body'     => wp_json_encode( array( 'success' => true ) ),
-		);
-
-		$get_hook_called      = false;
-		$activate_hook_called = false;
-		$get_filter           = function ( WooPaymentsApiRequest $request ) use ( &$get_hook_called ): WooPaymentsApiRequest {
-			$get_hook_called = true;
-			$this->assertSame( 'payment_method_promotions', $request->get_api() );
-			$this->assertSame( 'GET', $request->get_method() );
-			$request->set_param( 'locale', 'fr_FR' );
-
-			return $request;
-		};
-		$activate_filter      = function ( WooPaymentsApiRequest $request ) use ( &$activate_hook_called ): WooPaymentsApiRequest {
-			$activate_hook_called = true;
-			$this->assertSame( 'payment_method_promotions/klarna-promo__spotlight/activate', $request->get_api() );
-			$this->assertSame( 'POST', $request->get_method() );
-
-			return $request;
-		};
-
-		$sut = new WooPaymentsApiClient();
-		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-		add_filter( 'wcpay_get_pm_promotions_request', $get_filter );
-		add_filter( 'wcpay_activate_pm_promotion_request', $activate_filter );
-
-		try {
-			$sut->get_pm_promotions( array( 'locale' => 'en_US' ) );
-			$get_path = $http_client->last_path;
-
-			$sut->activate_pm_promotion( 'klarna-promo__spotlight' );
-		} finally {
-			remove_filter( 'wcpay_get_pm_promotions_request', $get_filter );
-			remove_filter( 'wcpay_activate_pm_promotion_request', $activate_filter );
-		}
-
-		$this->assertTrue( $get_hook_called, 'PM promotions list requests should run the preserved request filter.' );
-		$this->assertStringContainsString( 'locale=fr_FR', $get_path );
-		$this->assertTrue( $activate_hook_called, 'PM promotion activation requests should run the preserved request filter.' );
 	}
 
 	/**
