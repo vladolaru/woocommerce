@@ -294,6 +294,9 @@ class CollectingState {
 	/**
 	 * Record the merchant ID PayPal confirmed: write the platform option and leave the collecting state.
 	 *
+	 * Fires the wallet's product-status clear, so the capability answers cached while collecting are read again for the
+	 * account.
+	 *
 	 * @since 11.3.0
 	 *
 	 * @param string $merchant_id The confirmed merchant ID.
@@ -322,6 +325,9 @@ class CollectingState {
 		);
 		delete_option( Options::COLLECTING );
 		delete_option( Options::SELLER_STATUS );
+
+		/** This action is documented in src/Internal/Payments/Providers/PayPal/Wallet/WcGateway/WCGatewayModule.php */
+		do_action( 'woocommerce_paypal_payments_clear_apm_product_status' ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment
 	}
 
 	/**

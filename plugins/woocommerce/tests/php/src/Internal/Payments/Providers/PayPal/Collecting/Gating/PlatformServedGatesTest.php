@@ -160,6 +160,28 @@ class PlatformServedGatesTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should list no Pay with Crypto card, whose sign-up needs an account, while the store collects, and keep it once the platform connects the merchant.
+	 * @testWith ["collecting", false]
+	 *           ["platform", true]
+	 *
+	 * @param string $state    The fixture.
+	 * @param bool   $expected Whether the card stays.
+	 */
+	public function test_features_list_drops_the_crypto_card_only_while_collecting( string $state, bool $expected ): void {
+		if ( 'collecting' === $state ) {
+			$this->set_collecting();
+		} else {
+			$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+		}
+
+		$features = $this->served_features_list();
+
+		$this->assertSame( $expected, array_key_exists( FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO, $features ) );
+		$this->assertArrayNotHasKey( FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO, $features, 'The other drops stay in both states' );
+		$this->assertArrayNotHasKey( FeaturesDefinition::FEATURE_INSTALLMENTS, $features, 'The other drops stay in both states' );
+	}
+
+	/**
 	 * @testdox Should leave the features list as the wallet built it on a store with first-party credentials or no wallet state.
 	 * @testWith ["first_party"]
 	 *           ["dormant"]
@@ -198,6 +220,7 @@ class PlatformServedGatesTest extends WalletTestCase {
 
 		$this->assertArrayNotHasKey( 'apply_for_working_capital', $todos );
 		$this->assertArrayNotHasKey( 'enable_installments', $todos );
+		$this->assertArrayNotHasKey( 'enable_pwc', $todos, 'Pay with Crypto needs an account to enable' );
 		foreach ( $todos as $id => $todo ) {
 			$this->assertNotSame( 'pay_later_messaging', $todo['action']['tab'] ?? null, "{$id} opens the hidden tab" );
 		}
@@ -216,6 +239,7 @@ class PlatformServedGatesTest extends WalletTestCase {
 		$this->assertArrayNotHasKey( 'apply_for_working_capital', $todos );
 		$this->assertArrayHasKey( 'enable_pay_later_messaging', $todos );
 		$this->assertArrayHasKey( 'add_pay_later_messaging_product_page', $todos );
+		$this->assertArrayHasKey( 'enable_pwc', $todos, 'The Crypto to-do stays once the platform connects the merchant' );
 	}
 
 	/**

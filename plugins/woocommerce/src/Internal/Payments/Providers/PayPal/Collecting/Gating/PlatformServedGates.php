@@ -81,7 +81,8 @@ class PlatformServedGates {
 	 * Drop the feature cards that invite a PayPal sign-up while the platform serves the store.
 	 *
 	 * Save PayPal and Venmo and Installments show a "Sign up" button to a PayPal page for an account the payee does not
-	 * have. Pay Later messaging has no sign-up button and stays.
+	 * have. Pay Later messaging has no sign-up button and stays. While the store only collects, the Pay with Crypto card
+	 * goes too, because its "Sign up" needs an account to add the product to.
 	 *
 	 * @internal
 	 *
@@ -96,6 +97,10 @@ class PlatformServedGates {
 		}
 		unset( $features[ FeaturesDefinition::FEATURE_SAVE_PAYPAL_AND_VENMO ], $features[ FeaturesDefinition::FEATURE_INSTALLMENTS ] );
 
+		if ( ConnectionState::COLLECTING === $this->connection_state->resolve() ) {
+			unset( $features[ FeaturesDefinition::FEATURE_PAY_WITH_CRYPTO ] );
+		}
+
 		return $features;
 	}
 
@@ -104,7 +109,8 @@ class PlatformServedGates {
 	 *
 	 * Working Capital and Installments link to PayPal pages that need an account the payee does not have. The to-dos that
 	 * open a tab of the settings app stay, except, while the store only collects, those that open the Pay Later Messaging
-	 * tab, which the settings app hides until setup completes (K11).
+	 * tab, which the settings app hides until setup completes (K11), and the one that enables Pay with Crypto, which
+	 * needs an account.
 	 *
 	 * @internal
 	 *
@@ -120,6 +126,7 @@ class PlatformServedGates {
 		unset( $todos['apply_for_working_capital'], $todos['enable_installments'] );
 
 		if ( ConnectionState::COLLECTING === $this->connection_state->resolve() ) {
+			unset( $todos['enable_pwc'] );
 			$todos = array_filter(
 				$todos,
 				static fn( $todo ): bool => 'pay_later_messaging' !== ( $todo['action']['tab'] ?? null )

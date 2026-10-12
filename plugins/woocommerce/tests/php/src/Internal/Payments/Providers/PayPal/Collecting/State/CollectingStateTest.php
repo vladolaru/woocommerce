@@ -603,9 +603,24 @@ class CollectingStateTest extends WalletTestCase {
 	public function test_complete_moves_the_state_to_the_platform_option(): void {
 		$this->sut->enter( 'payee@example.com', 'sandbox' );
 		$tracking_id = $this->sut->tracking_id();
+		$before      = did_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
+		$seen        = array();
+		add_action(
+			'woocommerce_paypal_payments_clear_apm_product_status',
+			static function () use ( &$seen ): void {
+				$seen = array(
+					'platform'   => get_option( Options::PLATFORM ),
+					'collecting' => get_option( Options::COLLECTING ),
+				);
+			}
+		);
 
 		$this->sut->complete( 'M2' );
 
+		$this->assertSame( 'M2', $seen['platform']['merchant_id'] ?? null, 'The platform option is written when the clear fires' );
+		$this->assertFalse( $seen['collecting'] ?? null, 'The collecting option is gone when the clear fires' );
+
+		$this->assertSame( $before + 1, did_action( 'woocommerce_paypal_payments_clear_apm_product_status' ), 'The cached capability answers are cleared once' );
 		$platform = get_option( Options::PLATFORM );
 		$this->assertSame( array( 'merchant_id', 'tracking_id', 'payee_email', 'connected_at', 'environment' ), array_keys( $platform ) );
 		$this->assertSame( 'M2', $platform['merchant_id'] );
@@ -625,10 +640,13 @@ class CollectingStateTest extends WalletTestCase {
 	 * @testdox Should refuse to complete when the store is not collecting and write no platform option.
 	 */
 	public function test_complete_refuses_when_not_collecting(): void {
+		$before = did_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
+
 		try {
 			$this->sut->complete( 'M2' );
 			$this->fail( 'complete() must refuse when not collecting' );
 		} catch ( RuntimeException $exception ) {
+			$this->assertSame( $before, did_action( 'woocommerce_paypal_payments_clear_apm_product_status' ) );
 			$this->assertFalse( get_option( Options::PLATFORM ) );
 		}
 	}
@@ -638,11 +656,13 @@ class CollectingStateTest extends WalletTestCase {
 	 */
 	public function test_complete_refuses_an_empty_merchant_id(): void {
 		$this->sut->enter( 'payee@example.com', 'sandbox' );
+		$before = did_action( 'woocommerce_paypal_payments_clear_apm_product_status' );
 
 		try {
 			$this->sut->complete( '' );
 			$this->fail( 'complete() must refuse an empty merchant ID' );
 		} catch ( InvalidArgumentException $exception ) {
+			$this->assertSame( $before, did_action( 'woocommerce_paypal_payments_clear_apm_product_status' ) );
 			$this->assertTrue( $this->sut->is_collecting() );
 			$this->assertFalse( get_option( Options::PLATFORM ) );
 		}

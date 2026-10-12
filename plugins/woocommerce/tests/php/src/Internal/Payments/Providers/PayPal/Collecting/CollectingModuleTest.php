@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CollectCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PayWithCryptoGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
@@ -112,7 +113,7 @@ class CollectingModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report success from run and add the intent, merchant-features, features-list and to-dos-list filters late.
+	 * @testdox Should report success from run and add the intent, merchant-features, features-list, to-dos-list and Pay with Crypto guard filters late.
 	 */
 	public function test_run_adds_the_gate_filters(): void {
 		$container = new ContainerDouble(
@@ -125,19 +126,21 @@ class CollectingModuleTest extends WalletTestCase {
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_rest_common_merchant_features', 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ) );
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_features_list', 'handle_woocommerce_paypal_payments_features_list' ) );
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_todos_list', 'handle_woocommerce_paypal_payments_todos_list' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_payment_gateways', 'handle_woocommerce_payment_gateways', PayWithCryptoGuard::class ) );
 	}
 
 	/**
-	 * The priority at which a PlatformServedGates method is hooked, or null when it is not.
+	 * The priority at which a method of a gate class is hooked, or null when it is not.
 	 *
 	 * @param string $hook   The hook.
 	 * @param string $method The method name.
+	 * @param string $owner  The class of the callback's object; the platform-served gates by default.
 	 * @return int|null
 	 */
-	private function priority_of( string $hook, string $method ): ?int {
+	private function priority_of( string $hook, string $method, string $owner = PlatformServedGates::class ): ?int {
 		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $priority => $callbacks ) {
 			foreach ( $callbacks as $callback ) {
-				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof PlatformServedGates && $method === $callback['function'][1] ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof $owner && $method === $callback['function'][1] ) {
 					return (int) $priority;
 				}
 			}
