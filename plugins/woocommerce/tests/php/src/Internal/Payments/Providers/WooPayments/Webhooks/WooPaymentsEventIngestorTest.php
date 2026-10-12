@@ -4581,6 +4581,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Build an early fraud warning event.
 	 *
+	 * Client 11.1.0 handles the created and updated types alike and reads the charge, id, actionable and created fields
+	 * (class-wc-payments-webhook-processing-service.php:201-203, :867-879).
+	 *
 	 * @param string $event_id   Provider event ID.
 	 * @param string $event_type Event type.
 	 * @return array<string,mixed>

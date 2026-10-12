@@ -2436,6 +2436,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription = $this->create_order();
 		$renewal      = $this->create_order();
 		$renewal->set_customer_id( $user_id );
+		// The relation WooCommerce Subscriptions stores on a renewal order: `_subscription_renewal` holding the subscription
+		// ID (subscriptions-core 6.7.1, as WooPayments 11.1.0 bundles it: wcs-renewal-functions.php:36,
+		// data-stores/class-wcs-related-order-store-cpt.php:28-30, :92-104).
 		$renewal->update_meta_data( '_subscription_renewal', $subscription->get_id() );
 		$renewal->save();
 

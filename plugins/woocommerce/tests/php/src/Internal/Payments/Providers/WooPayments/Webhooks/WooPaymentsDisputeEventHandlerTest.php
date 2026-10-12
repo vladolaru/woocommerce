@@ -124,7 +124,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * @testdox A charge.dispute.created event escapes the reason and the due date in the $_dataName note it writes.
 	 *
 	 * The reason is a translated label and the due date follows the store's date format, so markup can only come from a
-	 * translation or that setting. Client 11.1.0 escapes both around the link (class-wc-payments-order-service.php:2455-2504).
+	 * translation or that setting. This pins native's own escaping of both values: client 11.1.0 escapes only the note
+	 * template and inserts them raw (class-wc-payments-order-service.php:2455-2504, :2471-2472, :2485-2486).
 	 *
 	 * @dataProvider provider_dispute_created_note_kinds
 	 *

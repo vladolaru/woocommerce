@@ -173,9 +173,10 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox With Multi-Currency on and a second currency, the charge.refunded note names the amount with its currency code.
 	 *
-	 * Client 11.1.0 writes the refund amount through its explicit-price formatter (class-wc-payments-order-service.php
-	 * :1979-1999, class-wc-payments-explicit-price-formatter.php:55-74). The event writes the first of its note candidates,
-	 * the one with the code; the other wording is only for recognising a note the extension wrote.
+	 * Client 11.1.0 writes the created refund note with the amount through its explicit-price formatter
+	 * (class-wc-payments-order-service.php:1934-1938, :2629-2631; class-wc-payments-explicit-price-formatter.php:55-74). The
+	 * event writes the first of its note candidates, the one with the code; the other wording is only for recognising a
+	 * note the extension wrote.
 	 */
 	public function test_charge_refunded_note_carries_the_currency_code_with_multi_currency(): void {
 		update_option( 'woocommerce_currency', 'USD' );
