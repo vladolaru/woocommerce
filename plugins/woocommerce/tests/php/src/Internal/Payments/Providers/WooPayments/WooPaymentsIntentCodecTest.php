@@ -223,21 +223,23 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed intent mapping keeps raw diagnostics separate from localized shopper copy.
+	 * @testdox A failed intent ($_dataName) keeps the raw diagnostics apart from the shopper's copy.
+	 *
+	 * Client 11.1.0 `class-wc-payments-utils.php`: a card decline code gets its localized copy, an untyped error keeps its
+	 * message (`:770`), a non-card error type gets the generic copy (`:797-798`).
+	 *
+	 * @dataProvider provider_failed_intent_shopper_messages
+	 *
+	 * @param string              $intent_id          Intent ID.
+	 * @param array<string,mixed> $last_payment_error The intent's last_payment_error.
+	 * @param string              $shopper_message    Expected shopper message.
 	 */
-	public function test_failed_intent_mapping_separates_localized_shopper_message_from_raw_provider_message(): void {
+	public function test_failed_intent_mapping_shopper_message( string $intent_id, array $last_payment_error, string $shopper_message ): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: last_payment_error from Fixtures/platform-intention-declines.json (entries[2]: card_error, card_declined,
-			// insufficient_funds), with a synthetic diagnostic message.
 			array(
-				'id'                 => 'pi_declined',
+				'id'                 => $intent_id,
 				'status'             => 'requires_payment_method',
-				'last_payment_error' => array(
-					'type'         => 'card_error',
-					'code'         => 'card_declined',
-					'decline_code' => 'insufficient_funds',
-					'message'      => 'Provider diagnostic: balance check failed for request req_private.',
-				),
+				'last_payment_error' => $last_payment_error,
 			),
 			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
 		);
@@ -245,62 +247,53 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$data = $outcome->get_data();
 
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'card_declined', $data[ PaymentOutcome::DATA_ERROR_CODE ] );
-		$this->assertSame( 'Provider diagnostic: balance check failed for request req_private.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
+		$this->assertSame( $last_payment_error['code'], $data[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertSame( $last_payment_error['message'], $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
+		$this->assertSame( $shopper_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
 	}
 
 	/**
-	 * @testdox Failed intent mapping preserves a grounded platform message without changing its diagnostic copy.
+	 * Failed intents and the shopper copy each gets.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:string}>
 	 */
-	public function test_failed_intent_mapping_preserves_grounded_platform_message(): void {
-		$platform_message = "Error: We're not able to add this payment method. Please try again later.";
-		$outcome          = WooPaymentsIntentCodec::outcome_from_intention(
-			// Shape: the platform's own card-testing refusal, which carries no Stripe error type; client 11.1.0
-			// class-wc-payments-api-client.php:2952 reads the code, and class-wc-payments-utils.php:770 keeps an untyped error's message.
-			array(
-				'id'                 => 'pi_card_testing_prevention',
-				'status'             => 'requires_payment_method',
-				'last_payment_error' => array(
+	public function provider_failed_intent_shopper_messages(): array {
+		$card_testing = "Error: We're not able to add this payment method. Please try again later.";
+
+		return array(
+			// Shape: last_payment_error from Fixtures/platform-intention-declines.json (entries[2]: card_error, card_declined,
+			// insufficient_funds), with a synthetic diagnostic message.
+			'card decline, insufficient funds' => array(
+				'pi_declined',
+				array(
+					'type'         => 'card_error',
+					'code'         => 'card_declined',
+					'decline_code' => 'insufficient_funds',
+					'message'      => 'Provider diagnostic: balance check failed for request req_private.',
+				),
+				'Error: Your card has insufficient funds.',
+			),
+			// The platform's own card-testing refusal, which carries no Stripe error type; client 11.1.0
+			// class-wc-payments-api-client.php:2952 reads the code.
+			'grounded card-testing message'    => array(
+				'pi_card_testing_prevention',
+				array(
 					'type'    => '',
 					'code'    => 'wcpay_card_testing_prevention',
-					'message' => $platform_message,
+					'message' => $card_testing,
 				),
+				$card_testing,
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
-		);
-
-		$data = $outcome->get_data();
-
-		$this->assertSame( $platform_message, $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame( $platform_message, $data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ] );
-	}
-
-	/**
-	 * @testdox Failed intent mapping redacts unknown provider details from shopper copy.
-	 */
-	public function test_failed_intent_mapping_redacts_unknown_provider_message(): void {
-		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-			// Synthetic: provider_internal_failure stands for any code the message catalog does not know; a non-card error type
-			// gets the generic message, as client 11.1.0 class-wc-payments-utils.php:797-798 does.
-			array(
-				'id'                 => 'pi_unknown_failure',
-				'status'             => 'requires_payment_method',
-				'last_payment_error' => array(
+			// Synthetic: provider_internal_failure stands for any code the message catalog does not know.
+			'unknown non-card error'           => array(
+				'pi_unknown_failure',
+				array(
 					'type'    => 'api_error',
 					'code'    => 'provider_internal_failure',
 					'message' => 'Raw provider secret must remain diagnostic only.',
 				),
+				"We're not able to process this request. Please refresh the page and try again.",
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
-		);
-
-		$data = $outcome->get_data();
-
-		$this->assertSame( 'Raw provider secret must remain diagnostic only.', $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] );
-		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
-			$data[ WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY ]
 		);
 	}
 
@@ -435,36 +428,31 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed transport outcomes carry the declined payment intent id so the order stays traceable.
+	 * @testdox A failed transport outcome keeps the intent ID ($_dataName), so the failed order stays traceable from the transaction.
+	 *
+	 * @dataProvider provider_failed_transport_provider_payment_ids
+	 *
+	 * @param string                  $operation           Operation that failed.
+	 * @param WooPaymentsApiException $exception           Platform error, with the intent ID of its envelope.
+	 * @param string                  $provider_payment_id Explicit provider payment ID, '' for none (the default).
+	 * @param string                  $expected            Provider payment ID the outcome carries.
 	 */
-	public function test_failed_transport_outcome_uses_intent_id_from_error_envelope(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'charge',
-			new WooPaymentsApiException(
-				'Error: Your card was declined.',
-				'card_declined',
-				402,
-				'card_error',
-				'do_not_honor',
-				array(),
-				'pi_declined_test'
-			)
-		);
+	public function test_failed_transport_outcome_provider_payment_id( string $operation, WooPaymentsApiException $exception, string $provider_payment_id, string $expected ): void {
+		$sut = WooPaymentsIntentCodec::failed_transport_outcome( $operation, $exception, $provider_payment_id );
 
-		$this->assertSame( 'pi_declined_test', $sut->get_provider_payment_id(), 'A declined charge must keep its intent id so support can find the order from the transaction.' );
+		$this->assertSame( $expected, $sut->get_provider_payment_id(), 'A declined charge must keep its intent id so support can find the order from the transaction.' );
 	}
 
 	/**
-	 * @testdox Failed transport outcomes prefer an explicitly supplied provider payment id over the envelope id.
+	 * Failed transport outcomes and the intent ID each keeps.
+	 *
+	 * @return array<string,array{0:string,1:WooPaymentsApiException,2:string,3:string}>
 	 */
-	public function test_failed_transport_outcome_prefers_explicit_provider_payment_id(): void {
-		$sut = WooPaymentsIntentCodec::failed_transport_outcome(
-			'capture',
-			new WooPaymentsApiException( 'Error: boom.', 'processing_error', 402, '', '', array(), 'pi_envelope' ),
-			'pi_explicit'
+	public function provider_failed_transport_provider_payment_ids(): array {
+		return array(
+			'envelope ID only'          => array( 'charge', new WooPaymentsApiException( 'Error: Your card was declined.', 'card_declined', 402, 'card_error', 'do_not_honor', array(), 'pi_declined_test' ), '', 'pi_declined_test' ),
+			'explicit ID over envelope' => array( 'capture', new WooPaymentsApiException( 'Error: boom.', 'processing_error', 402, '', '', array(), 'pi_envelope' ), 'pi_explicit', 'pi_explicit' ),
 		);
-
-		$this->assertSame( 'pi_explicit', $sut->get_provider_payment_id() );
 	}
 
 	/**
