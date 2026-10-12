@@ -997,6 +997,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A dispute created event retried after the dispute closed ($status) leaves the order off hold with no open dispute.
 	 * @testWith ["won", "dp_created_retry_won", "needs_response"]
+	 *           ["lost", "dp_created_retry_lost", "needs_response"]
+	 *           ["prevented", "dp_created_retry_prevented", "needs_response"]
 	 *           ["warning_closed", "dp_created_retry_inquiry", "warning_needs_response"]
 	 *
 	 * The first created delivery fails writing its note, after the hold, the close lands, and the store's retry of the created
@@ -1029,12 +1031,16 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			$caught = $exception;
 		}
 		remove_filter( 'woocommerce_new_order_note_data', $throw_once );
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost close
+		// refunds its amount.
 		$this->sut->process(
 			'charge.dispute.closed',
 			array(
-				'id'     => $dispute_id,
-				'charge' => 'ch_created_retry',
-				'status' => $status,
+				'id'       => $dispute_id,
+				'charge'   => 'ch_created_retry',
+				'status'   => $status,
+				'amount'   => 1000,
+				'currency' => 'usd',
 			)
 		);
 		$this->sut->process( 'charge.dispute.created', $created );
@@ -1081,7 +1087,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
 			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
 		);
-		// A Stripe Dispute, as charge.dispute.closed carries it: a lost dispute of 4.00 on a 10.00 order.
+		// A Stripe Dispute, as charge.dispute.closed carries it (https://docs.stripe.com/api/disputes/object): a lost dispute of
+		// 4.00 on a 10.00 order.
 		$event      = array(
 			'id'       => 'dp_lost_retry',
 			'charge'   => 'ch_lost_retry',
