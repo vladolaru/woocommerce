@@ -266,7 +266,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Cached minimums above and equal to the 0.50 total.
+	 * Cached minimums above and equal to the 0.50 total. The answer is the recorded basic_card_usd_create_and_confirm
+	 * (Fixtures/platform-intention-basic-card.json) reduced to its ID and status.
 	 *
 	 * @return array<string,array{0:int,1:string,2:string|null,3:string|null,4:int}>
 	 */
@@ -2689,6 +2690,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox With manual capture enabled, a $_dataName charge sends the $capture_method capture method.
 	 *
+	 * The answers are reduced from the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json:
+	 * requires_capture, charge not captured) and renewal_off_session (Fixtures/platform-intention-subscription.json:
+	 * succeeded, charge captured).
+	 *
 	 * @dataProvider provider_capture_methods_with_manual_capture_enabled
 	 *
 	 * @param array<string,mixed> $provider_data  Checkout provider data.
@@ -2794,7 +2799,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Processing card answers with and without a requested approval.
+	 * Processing card answers with and without a requested approval. No recording holds a processing card intent; the
+	 * answer carries `processing.card.customer_notification`, the fields client 11.1.0 reads for this note
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1336-1352).
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:int[]}>
 	 */
@@ -3015,6 +3022,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Charge sends only the server-allowed express checkout payment method types when $_dataName.
+	 *
+	 * The answer is the recorded basic_card_usd_create_and_confirm (Fixtures/platform-intention-basic-card.json) reduced
+	 * to its intent fields, with no charge: the rows check only the request.
 	 *
 	 * @dataProvider provider_express_payment_method_types
 	 *
@@ -8985,7 +8995,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Capture requests: the order total by the transaction ID, a context amount, and the intent meta as a fallback.
+	 * Capture requests: the order total by the transaction ID, a context amount, and the intent meta as a fallback. The
+	 * answer is the recorded capture_full_amount (Fixtures/platform-manual-capture.json) reduced to its ID and status.
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:float|null,3:string,4:int}>
 	 */
@@ -9220,6 +9231,82 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				static fn( object $note ): bool => 0 === strpos( (string) $note->content, '<strong>Fee details:</strong>' )
 			)
 		);
+	}
+
+	/**
+	 * @testdox Capture defers settlement exchange-rate metadata to its effect plan.
+	 *
+	 * A GBP order on a USD account and store. The answer keeps the capture fields of the recorded capture answer
+	 * (Fixtures/platform-manual-capture.json, capture_full_amount), whose charge expands its balance transaction with
+	 * `exchange_rate`; client 11.1.0 stores that rate for Multi-Currency reporting only
+	 * (includes/class-wc-payment-gateway-wcpay.php:2764-2771, :2800-2803).
+	 */
+	public function test_capture_defers_settlement_exchange_rate_meta_to_effect_plan(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		$order = $this->create_woopayments_order( '40.00' );
+		$order->set_currency( 'GBP' );
+		$order->set_transaction_id( 'pi_capture_converted' );
+		$order->save();
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'capture_intention' ) )
+			->getMock();
+
+		$api_client->expects( $this->once() )
+			->method( 'is_available' )
+			->willReturn( true );
+		$api_client->expects( $this->once() )
+			->method( 'capture_intention' )
+			->with(
+				'pi_capture_converted',
+				4000,
+				$this->callback(
+					static function ( array $metadata ): bool {
+						return isset( $metadata['order_id'], $metadata['order_key'], $metadata['payment_type'] );
+					}
+				),
+				array()
+			)
+			->willReturn(
+				array(
+					'id'      => 'pi_capture_converted',
+					'status'  => 'succeeded',
+					'charges' => array(
+						'total_count' => 1,
+						'data'        => array(
+							array(
+								'id'                  => 'ch_capture_converted',
+								'currency'            => 'gbp',
+								'balance_transaction' => array(
+									'id'            => 'txn_capture_converted',
+									'exchange_rate' => 1.33127,
+								),
+							),
+						),
+					),
+				)
+			);
+
+		$sut     = $this->create_operation_service(
+			$api_client,
+			null,
+			null,
+			$this->create_account_service(
+				true,
+				array(),
+				array(
+					'store_currencies' => array(
+						'default' => 'usd',
+					),
+				)
+			)
+		);
+		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
+		$this->assertSame( 1.33127, $outcome->get_effect_plan()->get_provider_result()['charges']['data'][0]['balance_transaction']['exchange_rate'] );
 	}
 
 	/**
@@ -9459,7 +9546,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Re-fetches that show no expired authorization: one that fails, and one that finds the intent still capturable.
+	 * Re-fetches that show no expired authorization: one that fails, and one that finds the intent still capturable. The
+	 * capturable answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to its ID
+	 * and status; client 11.1.0 reads only the status of this re-fetch (includes/class-wc-payment-gateway-wcpay.php:4014-4021).
 	 *
 	 * @return array<string,array{0:callable}>
 	 */
@@ -9521,7 +9610,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Where cancel finds the intent: the transaction ID, or the intent meta when the transaction ID is missing.
+	 * Where cancel finds the intent: the transaction ID, or the intent meta when the transaction ID is missing. No cancel
+	 * answer is recorded: each is a PaymentIntent reduced to its ID, the canceled status and, on the first row, the charge
+	 * ID the cancel plan carries. Client 11.1.0 reads the status of the cancel answer
+	 * (includes/class-wc-payment-gateway-wcpay.php:4076-4079, :4101-4102).
 	 *
 	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:array<string,mixed>,4:string|null}>
 	 */

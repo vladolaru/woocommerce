@@ -232,7 +232,10 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Gateway modes and account Sift configs, with the beacon key each should prepare.
+	 * Gateway modes and account Sift configs, with the beacon key each should prepare. The account payload's
+	 * `fraud_services.sift` keys are the ones client 11.1.0 reads (includes/class-wc-payments-fraud-service.php:92-104,
+	 * :331-335). In test mode without a sandbox key native ships no beacon key, where the client keeps the production one
+	 * (register rows 36 and 368).
 	 *
 	 * @return array<string,array{string,array<string,string>,array<string,string>}>
 	 */
