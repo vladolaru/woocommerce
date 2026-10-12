@@ -761,7 +761,8 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			$service->process_event( 'evt_refund' );
 			$this->fail( 'The failure must still reach Action Scheduler.' );
 		} catch ( \RuntimeException $exception ) {
-			unset( $exception );
+			// The ingestor's failure, not PHPUnit's own: AssertionFailedError is a RuntimeException too.
+			$this->assertSame( 'transient boom', $exception->getMessage() );
 		}
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
