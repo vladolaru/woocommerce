@@ -238,7 +238,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event whose mode differs from the store's is skipped before any hook, with one error line naming it, as with the WooPayments extension.
+	 * @testdox An event whose mode differs from the store's is skipped before any hook, with one error line naming it, as with the WooPayments extension; a redelivery is skipped whole.
+	 *
+	 * The skipped event is marked processed like a handled one, so a redelivery within the hour writes no second line.
 	 */
 	public function test_webhook_mode_mismatch_logs_the_event(): void {
 		$order = $this->create_woopayments_order();
@@ -254,17 +256,17 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		// The mismatch check reads only the envelope's livemode and id (client 11.1.0
 		// class-wc-payments-webhook-processing-service.php:268-290); the PaymentIntent body is never reached.
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.succeeded',
-				$order,
-				array(),
-				array(
-					'id'       => 'evt_mode_mismatch',
-					'livemode' => true,
-				)
+		$event = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(),
+			array(
+				'id'       => 'evt_mode_mismatch',
+				'livemode' => true,
 			)
 		);
+		$this->sut->process( $event );
+		$this->sut->process( $event );
 
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
 		$this->assertSame( array(), $hook_calls );
