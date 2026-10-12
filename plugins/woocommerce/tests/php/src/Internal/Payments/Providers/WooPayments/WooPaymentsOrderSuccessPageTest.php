@@ -53,6 +53,8 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'wc-woopayments-appearance' );
 		wp_dequeue_style( 'wc-woopayments-order-success' );
 		wp_deregister_style( 'wc-woopayments-order-success' );
+		$this->reset_container_replacements();
+		$this->reset_container_resolutions();
 
 		parent::tearDown();
 	}
@@ -859,14 +861,25 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should receive the API client from the container so the redirect re-check is wired in production.
+	 * @testdox The page the container builds re-checks a still-unpaid redirect-method order and shows the failure copy.
+	 *
+	 * The container-built page keeps the real one-second wait.
 	 */
-	public function test_container_wires_the_api_client(): void {
-		$page     = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
-		$property = new \ReflectionProperty( WooPaymentsOrderSuccessPage::class, 'api_client' );
-		$property->setAccessible( true );
+	public function test_container_built_page_reports_a_failed_redirect_intent(): void {
+		wc_get_container()->replace(
+			WooPaymentsApiClient::class,
+			$this->create_api_client_mock(
+				array(
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array( 'code' => 'payment_intent_authentication_failure' ),
+				)
+			)
+		);
+		$this->reset_container_resolutions();
+		$page = wc_get_container()->get( WooPaymentsOrderSuccessPage::class );
+		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
-		$this->assertInstanceOf( WooPaymentsApiClient::class, $property->getValue( $page ) );
+		$this->assertStringContainsString( 'Unfortunately, your order has failed.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
 	}
 
 	/**
