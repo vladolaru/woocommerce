@@ -154,8 +154,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param string $payment_method Payment gateway ID.
 	 * @param string $mode           WooPayments order mode.
 	 * @param string $cached_value   Cached one-and-done eligibility.
+	 * @param string $new_status     Paid status the order moves to.
 	 */
-	public function test_paid_order_status_transition_invalidates_one_and_done_cache( string $payment_method, string $mode, string $cached_value ): void {
+	public function test_paid_order_status_transition_invalidates_one_and_done_cache( string $payment_method, string $mode, string $cached_value, string $new_status ): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$order   = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -167,7 +168,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_has_live_sale', '1', false );
 		set_transient( 'wcpay_one_and_done_eligible', $cached_value, HOUR_IN_SECONDS );
 
-		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
+		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, $new_status, $order );
 
 		$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
 		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
@@ -176,12 +177,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Relevant transitions and both cached results.
 	 *
-	 * @return array<string,array{string,string,string}>
+	 * @return array<string,array{string,string,string,string}>
 	 */
 	public static function provide_one_and_done_cache_invalidations(): array {
 		return array(
-			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1' ),
-			'alternate gateway order with negative cache' => array( 'cod', '', '0' ),
+			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1', OrderStatus::PROCESSING ),
+			'alternate gateway order with negative cache' => array( 'cod', '', '0', OrderStatus::COMPLETED ),
 		);
 	}
 
@@ -191,6 +192,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_paid_order_status_transition_without_eligibility_cache_skips_mode_meta(): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$order   = $this->createMock( WC_Order::class );
+		$order->method( 'get_payment_method' )->willReturn( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->expects( $this->never() )->method( 'get_meta' );
 		update_option( 'wcpay_has_live_sale', '1', false );
 		delete_transient( 'wcpay_one_and_done_eligible' );
