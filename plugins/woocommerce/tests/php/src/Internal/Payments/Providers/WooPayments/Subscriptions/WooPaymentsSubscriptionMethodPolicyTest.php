@@ -46,65 +46,52 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat a renewal-only cart as a subscription cart, like the extension.
+	 * @testdox With $label, the cart counts as a subscription cart: $expected; subscriptions support is available: $available.
+	 *
+	 * Like the extension: a renewal-only cart counts, and nothing counts while WooCommerce Subscriptions' cart class is not
+	 * loaded or subscriptions support is not available (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:97`).
+	 *
+	 * @dataProvider provider_subscription_carts
+	 *
+	 * @param string   $label                Case label.
+	 * @param string[] $loaded               Classes reported as loaded.
+	 * @param string[] $hidden               Classes reported as not loaded.
+	 * @param bool     $subscription_in_cart Whether the cart holds a subscription.
+	 * @param bool     $renewal_in_cart      Whether the cart holds a renewal.
+	 * @param bool     $available            Whether subscriptions support is available.
+	 * @param bool     $expected             Whether the cart counts as a subscription cart.
 	 */
-	public function test_cart_contains_subscription_or_renewal_includes_renewal_carts(): void {
-		$this->report_classes_loaded( array( 'WC_Subscriptions_Core_Plugin' ) );
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
-
-		$this->assertTrue( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
-	}
-
-	/**
-	 * @testdox Should report no subscription cart when neither a subscription nor a renewal is present.
-	 */
-	public function test_cart_contains_subscription_or_renewal_false_without_either(): void {
-		$this->report_classes_loaded( array( 'WC_Subscriptions_Core_Plugin' ) );
-		WooCommerceSubscriptionsDoubles::load_cart();
-
-		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
-	}
-
-	/**
-	 * @testdox Should report no subscription cart while WooCommerce Subscriptions' cart class is not loaded (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:97`).
-	 */
-	public function test_cart_contains_subscription_or_renewal_false_without_the_cart_class(): void {
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = true;
+	public function test_cart_contains_subscription_or_renewal( string $label, array $loaded, array $hidden, bool $subscription_in_cart, bool $renewal_in_cart, bool $available, bool $expected ): void {
+		unset( $label );
 		$this->register_legacy_proxy_function_mocks(
 			array(
-				'class_exists' => static fn( $class_name, ...$args ) => 'WC_Subscriptions_Core_Plugin' === $class_name
-					|| ( 'WC_Subscriptions_Cart' !== $class_name && class_exists( $class_name, ...$args ) ),
+				'class_exists' => static fn( $class_name, ...$args ) => in_array( $class_name, $loaded, true )
+					|| ( ! in_array( $class_name, $hidden, true ) && class_exists( $class_name, ...$args ) ),
 			)
 		);
-
-		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
-	}
-
-	/**
-	 * @testdox Should report no subscription cart while subscriptions support is not available (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:97`).
-	 */
-	public function test_cart_contains_subscription_or_renewal_false_without_subscriptions_support(): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = true;
+		if ( $subscription_in_cart ) {
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
+		}
+		if ( $renewal_in_cart ) {
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
+		}
 
-		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() );
-		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+		$this->assertSame( $available, WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() );
+		$this->assertSame( $expected, WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
 	}
 
 	/**
-	 * Report classes as loaded through LegacyProxy's `class_exists`, which the policy asks; the mock is reset after every test.
+	 * Carts and the WooCommerce Subscriptions classes the policy finds.
 	 *
-	 * @param string[] $class_names Class names to report as loaded.
+	 * @return array<string,array{0:string,1:string[],2:string[],3:bool,4:bool,5:bool,6:bool}>
 	 */
-	private function report_classes_loaded( array $class_names ): void {
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'class_exists' => static fn( $class_name, ...$args ) => in_array( $class_name, $class_names, true ) || class_exists( $class_name, ...$args ),
-			)
+	public function provider_subscription_carts(): array {
+		return array(
+			'renewal-only cart'                   => array( 'a renewal-only cart', array( 'WC_Subscriptions_Core_Plugin' ), array(), false, true, true, true ),
+			'neither'                             => array( 'neither a subscription nor a renewal in the cart', array( 'WC_Subscriptions_Core_Plugin' ), array(), false, false, true, false ),
+			'cart class not loaded'               => array( "WooCommerce Subscriptions' cart class not loaded", array( 'WC_Subscriptions_Core_Plugin' ), array( 'WC_Subscriptions_Cart' ), true, true, true, false ),
+			'subscriptions support not available' => array( 'subscriptions support not available', array(), array(), true, true, false, false ),
 		);
 	}
 

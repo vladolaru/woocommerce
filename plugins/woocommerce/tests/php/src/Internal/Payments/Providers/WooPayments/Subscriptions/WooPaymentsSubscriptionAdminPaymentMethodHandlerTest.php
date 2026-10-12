@@ -72,27 +72,31 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should expose saved WooPayments token metadata for WCS admin payment-method edits.
+	 * @testdox Should expose the saved $gateway_id token metadata for WCS admin payment-method edits, with the custom selector renderer.
+	 * @dataProvider provider_reusable_gateway_tokens
+	 *
+	 * @param string $gateway_id Reusable gateway ID.
 	 */
-	public function test_add_subscription_payment_meta_returns_saved_token_metadata(): void {
+	public function test_add_subscription_payment_meta_returns_saved_token_metadata( string $gateway_id ): void {
 		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_saved' );
+		$subscription = $this->create_subscription_order( $user_id, $gateway_id );
+		$token        = $this->create_reusable_token( $gateway_id, $user_id, 'pm_saved' );
 		$subscription->add_payment_token( $token );
 		$subscription->save();
 
 		$payment_meta = $this->sut->add_subscription_payment_meta( array(), $subscription );
 
+		$this->assertArrayHasKey( $gateway_id, $payment_meta );
 		$this->assertSame(
 			(string) $token->get_id(),
-			$payment_meta[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ]['wc_order_tokens']['token']['value'],
+			$payment_meta[ $gateway_id ]['wc_order_tokens']['token']['value'],
 			'The WCS admin meta should point at the active WooPayments token ID.'
 		);
-		$this->assertSame( 'Saved payment method', $payment_meta[ WooPaymentsPersistenceVocabulary::GATEWAY_ID ]['wc_order_tokens']['token']['label'] );
+		$this->assertSame( 'Saved payment method', $payment_meta[ $gateway_id ]['wc_order_tokens']['token']['label'] );
 		$this->assertSame(
 			10,
 			has_action(
-				'woocommerce_subscription_payment_meta_input_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_wc_order_tokens_token',
+				'woocommerce_subscription_payment_meta_input_' . $gateway_id . '_wc_order_tokens_token',
 				array( $this->sut, 'render_custom_payment_meta_input' )
 			),
 			'The custom selector renderer should be registered for WCS payment meta.'
@@ -100,28 +104,14 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should expose Amazon Pay token metadata through its preserved reusable gateway ID.
+	 * The reusable WooPayments gateways: cards and the preserved Amazon Pay gateway.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_add_subscription_payment_meta_returns_amazon_pay_token_metadata(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id, self::AMAZON_PAY_GATEWAY_ID );
-		$token        = $this->create_amazon_pay_token( $user_id, 'pm_amazon_saved' );
-		$subscription->add_payment_token( $token );
-		$subscription->save();
-
-		$payment_meta = $this->sut->add_subscription_payment_meta( array(), $subscription );
-
-		$this->assertArrayHasKey( self::AMAZON_PAY_GATEWAY_ID, $payment_meta );
-		$this->assertSame(
-			(string) $token->get_id(),
-			$payment_meta[ self::AMAZON_PAY_GATEWAY_ID ]['wc_order_tokens']['token']['value']
-		);
-		$this->assertSame(
-			10,
-			has_action(
-				'woocommerce_subscription_payment_meta_input_' . self::AMAZON_PAY_GATEWAY_ID . '_wc_order_tokens_token',
-				array( $this->sut, 'render_custom_payment_meta_input' )
-			)
+	public function provider_reusable_gateway_tokens(): array {
+		return array(
+			'card'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'Amazon Pay' => array( self::AMAZON_PAY_GATEWAY_ID ),
 		);
 	}
 
@@ -150,14 +140,17 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should attach the selected token and provider metadata when WCS saves admin payment meta.
+	 * @testdox Should attach the selected $gateway_id token and its payment method when WCS saves admin payment meta, keeping the existing customer.
+	 * @dataProvider provider_reusable_gateway_tokens
+	 *
+	 * @param string $gateway_id Reusable gateway ID.
 	 */
-	public function test_save_meta_in_order_tokens_attaches_selected_token_and_provider_meta(): void {
+	public function test_save_meta_in_order_tokens_attaches_selected_token_and_provider_meta( string $gateway_id ): void {
 		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id );
+		$subscription = $this->create_subscription_order( $user_id, $gateway_id );
 		$subscription->update_meta_data( '_stripe_customer_id', 'cus_existing' );
 		$subscription->save();
-		$token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_selected' );
+		$token = $this->create_reusable_token( $gateway_id, $user_id, 'pm_selected' );
 
 		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token->get_id() );
 
@@ -166,22 +159,6 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
 		$this->assertSame( 'pm_selected', $subscription->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'cus_existing', $subscription->get_meta( '_stripe_customer_id', true ) );
-	}
-
-	/**
-	 * @testdox Should accept and attach Amazon Pay tokens saved through WCS admin payment metadata.
-	 */
-	public function test_save_meta_in_order_tokens_accepts_amazon_pay_token(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id, self::AMAZON_PAY_GATEWAY_ID );
-		$token        = $this->create_amazon_pay_token( $user_id, 'pm_amazon_selected' );
-
-		$this->sut->save_meta_in_order_tokens( $subscription, 'wc_order_tokens', 'token', (string) $token->get_id() );
-
-		$subscription = wc_get_order( $subscription->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
-		$this->assertSame( 'pm_amazon_selected', $subscription->get_meta( '_payment_method_id', true ) );
 	}
 
 	/**
@@ -224,59 +201,60 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should update the subscription method and token when WCS changes the default payment token.
+	 * @testdox When WCS changes the default payment token to a $gateway_id token, the subscription moves to that token's gateway and takes the token and its payment method.
+	 * @dataProvider provider_reusable_gateway_tokens
+	 *
+	 * @param string $gateway_id Reusable gateway ID of the new token; the subscription starts on the card gateway.
 	 */
-	public function test_update_subscription_token_sets_woopayments_gateway_token_and_payment_meta(): void {
+	public function test_update_subscription_token_sets_the_token_gateway_token_and_payment_meta( string $gateway_id ): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
+		$token        = $this->create_reusable_token( $gateway_id, $user_id, 'pm_default' );
 
 		$result = $this->sut->update_subscription_token( false, $subscription, $token );
 
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertTrue( $result );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( $gateway_id, $subscription->get_payment_method() );
 		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
 		$this->assertSame( 'pm_default', $subscription->get_meta( '_payment_method_id', true ) );
 	}
 
 	/**
-	 * @testdox Should retain the Amazon Pay gateway ID when WCS updates a subscription token.
+	 * @testdox Should render the $gateway_id token selector for WCS admin payment meta.
+	 * @dataProvider provider_token_selectors
+	 *
+	 * @param string   $gateway_id Reusable gateway ID.
+	 * @param string[] $expected   Fragments of the selector besides the field name and the token ID.
 	 */
-	public function test_update_subscription_token_retains_amazon_pay_gateway_id(): void {
+	public function test_render_custom_payment_meta_input_outputs_token_selector( string $gateway_id, array $expected ): void {
 		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_amazon_pay_token( $user_id, 'pm_amazon_default' );
-
-		$result = $this->sut->update_subscription_token( false, $subscription, $token );
-
-		$subscription = wc_get_order( $subscription->get_id() );
-		$this->assertTrue( $result );
-		$this->assertInstanceOf( WC_Order::class, $subscription );
-		$this->assertSame( self::AMAZON_PAY_GATEWAY_ID, $subscription->get_payment_method() );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
-		$this->assertSame( 'pm_amazon_default', $subscription->get_meta( '_payment_method_id', true ) );
-	}
-
-	/**
-	 * @testdox Should render a token selector for WCS admin payment meta.
-	 */
-	public function test_render_custom_payment_meta_input_outputs_token_selector(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_rendered' );
-		$field_id     = '_payment_method_meta[' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '][wc_order_tokens][token]';
+		$subscription = $this->create_subscription_order( $user_id, $gateway_id );
+		$token        = $this->create_reusable_token( $gateway_id, $user_id, 'pm_rendered' );
+		$field_id     = '_payment_method_meta[' . $gateway_id . '][wc_order_tokens][token]';
 
 		ob_start();
 		$this->sut->render_custom_payment_meta_input( $subscription, $field_id, (string) $token->get_id() );
 		$output = (string) ob_get_clean();
 
-		$this->assertStringContainsString( 'class="wcpay-subscription-payment-method"', $output );
-		$this->assertStringContainsString( 'data-wcpay-pm-selector=', $output );
 		$this->assertStringContainsString( 'name="' . esc_attr( $field_id ) . '"', $output );
 		$this->assertStringContainsString( 'value="' . esc_attr( (string) $token->get_id() ) . '"', $output );
-		$this->assertStringContainsString( '4242', $output );
+		foreach ( $expected as $fragment ) {
+			$this->assertStringContainsString( $fragment, $output );
+		}
+	}
+
+	/**
+	 * Token selectors per reusable gateway.
+	 *
+	 * @return array<string,array{0:string,1:string[]}>
+	 */
+	public function provider_token_selectors(): array {
+		return array(
+			'card'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( 'class="wcpay-subscription-payment-method"', 'data-wcpay-pm-selector=', '4242' ) ),
+			'Amazon Pay' => array( self::AMAZON_PAY_GATEWAY_ID, array( 'Amazon Pay', self::AMAZON_PAY_GATEWAY_ID ) ),
+		);
 	}
 
 	/**
@@ -316,51 +294,34 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should render Amazon Pay tokens in the preserved gateway's WCS admin selector.
+	 * @testdox Should display the saved $gateway_id token instead of "$title" for the subscription.
+	 * @dataProvider provider_saved_token_displays
+	 *
+	 * @param string $gateway_id Reusable gateway ID.
+	 * @param string $title      Payment method title WCS passes in.
 	 */
-	public function test_render_custom_payment_meta_input_outputs_amazon_pay_tokens(): void {
+	public function test_renders_subscription_payment_method_from_saved_token( string $gateway_id, string $title ): void {
 		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id, self::AMAZON_PAY_GATEWAY_ID );
-		$token        = $this->create_amazon_pay_token( $user_id, 'pm_amazon_rendered' );
-		$field_id     = '_payment_method_meta[' . self::AMAZON_PAY_GATEWAY_ID . '][wc_order_tokens][token]';
-
-		ob_start();
-		$this->sut->render_custom_payment_meta_input( $subscription, $field_id, (string) $token->get_id() );
-		$output = (string) ob_get_clean();
-
-		$this->assertStringContainsString( 'value="' . esc_attr( (string) $token->get_id() ) . '"', $output );
-		$this->assertStringContainsString( 'Amazon Pay', $output );
-		$this->assertStringContainsString( self::AMAZON_PAY_GATEWAY_ID, $output );
-	}
-
-	/**
-	 * @testdox Should display the saved token for WooPayments subscriptions.
-	 */
-	public function test_renders_subscription_payment_method_from_saved_token(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id );
-		$token        = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_display' );
+		$subscription = $this->create_subscription_order( $user_id, $gateway_id );
+		$token        = $this->create_reusable_token( $gateway_id, $user_id, 'pm_display' );
 		$subscription->add_payment_token( $token );
 		$subscription->save();
 
-		$result = $this->sut->maybe_render_subscription_payment_method( 'Card', $subscription );
+		$result = $this->sut->maybe_render_subscription_payment_method( $title, $subscription );
 
 		$this->assertSame( $token->get_display_name(), $result );
 	}
 
 	/**
-	 * @testdox Should display the saved Amazon Pay token for preserved-gateway subscriptions.
+	 * Saved tokens shown for a subscription, with the title WCS passes in.
+	 *
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function test_renders_amazon_pay_subscription_payment_method_from_saved_token(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_subscription_order( $user_id, self::AMAZON_PAY_GATEWAY_ID );
-		$token        = $this->create_amazon_pay_token( $user_id, 'pm_amazon_display' );
-		$subscription->add_payment_token( $token );
-		$subscription->save();
-
-		$result = $this->sut->maybe_render_subscription_payment_method( 'Amazon Pay', $subscription );
-
-		$this->assertSame( $token->get_display_name(), $result );
+	public function provider_saved_token_displays(): array {
+		return array(
+			'card'       => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'Card' ),
+			'Amazon Pay' => array( self::AMAZON_PAY_GATEWAY_ID, 'Amazon Pay' ),
+		);
 	}
 
 	/**
@@ -407,46 +368,40 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	}
 
 	/**
-	 * @testdox Should preserve unrelated subscription update-payment decisions outside WCS change-payment requests.
+	 * @testdox On a $label, the WCS update-payment decision is $expected.
+	 * @dataProvider provider_change_payment_requests
+	 *
+	 * @param string      $label    Case label.
+	 * @param string|null $posted   Token value posted with a WCS change-payment request, or null for no change request.
+	 * @param bool        $expected Decision returned.
 	 */
-	public function test_update_payment_method_for_subscriptions_ignores_non_change_payment_requests(): void {
+	public function test_update_payment_method_for_subscriptions_decides_by_the_posted_token( string $label, ?string $posted, bool $expected ): void {
+		unset( $label );
 		$subscription = $this->create_subscription_order( self::factory()->user->create() );
+		if ( null !== $posted ) {
+			$_POST = array(
+				'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
+				'change_payment_method' => (string) $subscription->get_id(),
+				'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => $posted,
+			);
+		}
 
 		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
 
-		$this->assertTrue( $result );
+		$this->assertSame( $expected, $result );
 	}
 
 	/**
-	 * @testdox Should let WCS update subscriptions when the customer selected a saved WooPayments token.
+	 * Update-payment requests: none, a saved token, and a new payment method WooPayments has to process first.
+	 *
+	 * @return array<string,array{0:string,1:?string,2:bool}>
 	 */
-	public function test_update_payment_method_for_subscriptions_allows_saved_tokens(): void {
-		$subscription = $this->create_subscription_order( self::factory()->user->create() );
-		$_POST        = array(
-			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
-			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => '123',
+	public function provider_change_payment_requests(): array {
+		return array(
+			'not a change request' => array( 'request that is not a change-payment request', null, true ),
+			'saved token posted'   => array( 'change-payment request with a saved token', '123', true ),
+			'new method posted'    => array( 'change-payment request with a new payment method', 'new', false ),
 		);
-
-		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
-
-		$this->assertTrue( $result );
-	}
-
-	/**
-	 * @testdox Should stop WCS from updating subscriptions when WooPayments needs to process a new payment method.
-	 */
-	public function test_update_payment_method_for_subscriptions_stops_new_payment_methods(): void {
-		$subscription = $this->create_subscription_order( self::factory()->user->create() );
-		$_POST        = array(
-			'_wcsnonce'             => wp_create_nonce( 'wcs_change_payment_method' ),
-			'change_payment_method' => (string) $subscription->get_id(),
-			'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' => 'new',
-		);
-
-		$result = $this->sut->update_payment_method_for_subscriptions( true, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription );
-
-		$this->assertFalse( $result );
 	}
 
 	/**
@@ -512,6 +467,20 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		$order->save();
 
 		return $order;
+	}
+
+	/**
+	 * Create a saved token for a reusable gateway: a card token, or an Amazon Pay token for the preserved Amazon Pay gateway.
+	 *
+	 * @param string $gateway_id        Reusable gateway ID.
+	 * @param int    $user_id           User ID.
+	 * @param string $payment_method_id Provider payment method ID.
+	 * @return \WC_Payment_Token
+	 */
+	private function create_reusable_token( string $gateway_id, int $user_id, string $payment_method_id ): \WC_Payment_Token {
+		return self::AMAZON_PAY_GATEWAY_ID === $gateway_id
+			? $this->create_amazon_pay_token( $user_id, $payment_method_id )
+			: $this->create_card_token( $user_id, $gateway_id, $payment_method_id );
 	}
 
 	/**

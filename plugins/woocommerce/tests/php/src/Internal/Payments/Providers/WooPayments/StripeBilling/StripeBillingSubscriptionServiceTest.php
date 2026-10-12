@@ -336,11 +336,25 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A subscription whose product was deleted stops checkout with the general message before any platform call (client `class-wc-payments-subscription-service.php:432`, `:482`).
+	 * @testdox A subscription with $label stops checkout with the general message before any platform call; a Stripe customer is asked for: $asks_customer.
+	 *
+	 * Client `class-wc-payments-subscription-service.php`: deleted product `:432`, `:482`; no customer account `:433-438`;
+	 * billing cycle longer than one year `:1171-1177`.
+	 *
+	 * @dataProvider provider_checkout_refusals_before_the_platform
+	 *
+	 * @param string               $label  Case label.
+	 * @param array<string,string> $meta   Subscription meta.
+	 * @param callable|null        $change Change made to the subscription after it is created, given the test and the subscription.
+	 * @param bool                 $asks_customer Whether checkout asks the customer service for a Stripe customer first.
 	 */
-	public function test_a_deleted_product_stops_checkout_before_the_platform(): void {
-		$subscription = $this->create_subscription();
-		wc_get_product( $this->get_line_item( $subscription )->get_product_id() )->delete( true );
+	public function test_checkout_is_refused_before_the_platform( string $label, array $meta, ?callable $change, bool $asks_customer ): void {
+		unset( $label );
+		$subscription = $this->create_subscription( $meta );
+		if ( null !== $change ) {
+			$change( $this, $subscription );
+		}
+		$this->customer_service->expects( $asks_customer ? $this->atLeastOnce() : $this->never() )->method( 'get_or_create_customer_id_for_user' );
 
 		$message = $this->get_checkout_error( wc_get_order( $subscription->get_id() ) );
 
@@ -349,42 +363,67 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A billing cycle longer than one year stops checkout before any platform call (client `class-wc-payments-subscription-service.php:1171-1177`).
-	 * @testWith ["month", "13"]
-	 *           ["year", "2"]
-	 *           ["week", "53"]
-	 *           ["day", "366"]
+	 * Subscriptions checkout refuses before any platform call.
 	 *
-	 * @param string $period   Billing period.
-	 * @param string $interval Billing interval.
+	 * @return array<string,array{0:string,1:array<string,string>,2:?callable,3:bool}>
 	 */
-	public function test_a_billing_cycle_over_one_year_stops_checkout( string $period, string $interval ): void {
-		$subscription = $this->create_subscription(
-			array(
-				'_billing_period'   => $period,
-				'_billing_interval' => $interval,
-			)
+	public function provider_checkout_refusals_before_the_platform(): array {
+		return array(
+			'deleted product'     => array(
+				'a deleted product',
+				array(),
+				static function ( self $test, WC_Order $subscription ): void {
+					wc_get_product( $test->get_line_item( $subscription )->get_product_id() )->delete( true );
+				},
+				true,
+			),
+			'13 months'           => array(
+				'a billing cycle of 13 months',
+				array(
+					'_billing_period'   => 'month',
+					'_billing_interval' => '13',
+				),
+				null,
+				true,
+			),
+			'2 years'             => array(
+				'a billing cycle of 2 years',
+				array(
+					'_billing_period'   => 'year',
+					'_billing_interval' => '2',
+				),
+				null,
+				true,
+			),
+			'53 weeks'            => array(
+				'a billing cycle of 53 weeks',
+				array(
+					'_billing_period'   => 'week',
+					'_billing_interval' => '53',
+				),
+				null,
+				true,
+			),
+			'366 days'            => array(
+				'a billing cycle of 366 days',
+				array(
+					'_billing_period'   => 'day',
+					'_billing_interval' => '366',
+				),
+				null,
+				true,
+			),
+			'no customer account' => array(
+				'no customer account',
+				array(),
+				static function ( self $test, WC_Order $subscription ): void {
+					unset( $test );
+					$subscription->set_customer_id( 0 );
+					$subscription->save();
+				},
+				false,
+			),
 		);
-
-		$message = $this->get_checkout_error( $subscription );
-
-		$this->assertSame( 'There was a problem creating your subscription. Please try again or contact us for assistance.', $message );
-		$this->assertSame( 0, $this->http_client->request_count );
-	}
-
-	/**
-	 * @testdox A subscription without a customer account stops checkout without asking for a Stripe customer (client `class-wc-payments-subscription-service.php:433-438`).
-	 */
-	public function test_a_subscription_without_a_user_stops_checkout(): void {
-		$subscription = $this->create_subscription();
-		$subscription->set_customer_id( 0 );
-		$subscription->save();
-		$this->customer_service->expects( $this->never() )->method( 'get_or_create_customer_id_for_user' );
-
-		$message = $this->get_checkout_error( $subscription );
-
-		$this->assertSame( 'There was a problem creating your subscription. Please try again or contact us for assistance.', $message );
-		$this->assertSame( 0, $this->http_client->request_count );
 	}
 
 	/**
@@ -543,7 +582,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Each status change reaches the Stripe subscription (client test_cancel_subscription, test_suspend_subscription, test_set_pending_cancel_for_subscription, test_reactivate_subscription).
+	 * @testdox Each status change reaches the Stripe subscription, and only putting it on hold notes the suspension (client test_cancel_subscription, test_suspend_subscription, test_set_pending_cancel_for_subscription, test_reactivate_subscription).
 	 * @dataProvider status_changes
 	 *
 	 * @param string     $method   Service method the status hook calls.
@@ -551,26 +590,28 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 * @param string     $verb     HTTP method sent.
 	 * @param string     $path     Path sent.
 	 * @param array|null $body     Body sent.
+	 * @param bool       $suspended Whether the subscription gets the suspension note (client `:549-550`).
 	 */
-	public function test_status_changes_reach_the_stripe_subscription( string $method, string $pair, string $verb, string $path, ?array $body ): void {
+	public function test_status_changes_reach_the_stripe_subscription( string $method, string $pair, string $verb, string $path, ?array $body, bool $suspended ): void {
 		$this->queue_entry( $this->get_entry( $pair ) );
 		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
 
 		$this->sut->$method( $subscription );
 
 		$this->assertSame( array( array( $verb, $path, $body ) ), $this->get_requests() );
+		$this->assertSame( $suspended, in_array( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', $this->get_order_note_texts( $subscription ), true ) );
 	}
 
 	/**
 	 * Status changes and the request each sends: client `class-wc-payments-subscription-service.php:518-530`, `:539-587`, `:614-616`, `:597-605`; endpoints `class-wc-payments-api-client.php:1721-1733`, `:1746-1758`.
 	 *
-	 * @return array<string,array{string,string,string,string,array<string,mixed>|null}>
+	 * @return array<string,array{string,string,string,string,array<string,mixed>|null,bool}>
 	 */
 	public static function status_changes(): array {
 		$path = '/sites/4/wcpay/subscriptions/' . self::MAIN_SUBSCRIPTION_ID;
 
 		return array(
-			'cancelled or expired' => array( 'cancel_subscription', 'cancel_subscription', 'DELETE', $path . '?test_mode=1', null ),
+			'cancelled or expired' => array( 'cancel_subscription', 'cancel_subscription', 'DELETE', $path . '?test_mode=1', null, false ),
 			'on hold'              => array(
 				'handle_subscription_status_on_hold',
 				'update_subscription',
@@ -580,6 +621,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 					'test_mode'        => true,
 					'pause_collection' => array( 'behavior' => 'void' ),
 				),
+				true,
 			),
 			'pending cancel'       => array(
 				'set_pending_cancel_for_subscription',
@@ -590,6 +632,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 					'test_mode'            => true,
 					'cancel_at_period_end' => 'true',
 				),
+				false,
 			),
 			'active again'         => array(
 				'reactivate_subscription',
@@ -601,20 +644,9 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 					'cancel_at_period_end' => 'false',
 					'pause_collection'     => '',
 				),
+				false,
 			),
 		);
-	}
-
-	/**
-	 * @testdox Putting a Stripe-billed subscription on hold leaves a note on it (client `class-wc-payments-subscription-service.php:549-550`).
-	 */
-	public function test_putting_on_hold_notes_the_suspension(): void {
-		$this->queue_entry( $this->get_entry( 'update_subscription' ) );
-		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
-
-		$this->sut->handle_subscription_status_on_hold( $subscription );
-
-		$this->assertContains( 'Suspended WooPayments Subscription because subscription status changed to on-hold.', $this->get_order_note_texts( $subscription ) );
 	}
 
 	/**
