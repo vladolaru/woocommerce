@@ -78,6 +78,35 @@ class WooPaymentsOrderEffectsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An authorized PaymentIntent without a balance transaction stores an empty payment transaction ID.
+	 *
+	 * Plugin 11.1.0 reads the ID as '' when the charge has no balance transaction and stores it for every intent status
+	 * (class-wc-payments-order-service.php:1364-1365, :1415).
+	 */
+	public function test_payment_intent_meta_stores_an_empty_transaction_id_before_capture(): void {
+		$meta = WooPaymentsOrderEffects::payment_intent_meta(
+			array(
+				'id'       => 'pi_authorized',
+				'status'   => 'requires_capture',
+				'currency' => 'usd',
+				'charges'  => array(
+					'data' => array(
+						array(
+							'id'       => 'ch_authorized',
+							'currency' => 'usd',
+							'amount'   => 2500,
+						),
+					),
+				),
+			),
+			'USD',
+			WooPaymentsOrderMode::TEST
+		);
+
+		$this->assertSame( '', $meta['_wcpay_payment_transaction_id'] ?? null );
+	}
+
+	/**
 	 * @testdox Completed capture metadata uses the latest charge and explicit settlement facts.
 	 */
 	public function test_completed_capture_meta_uses_latest_charge_and_explicit_inputs(): void {
