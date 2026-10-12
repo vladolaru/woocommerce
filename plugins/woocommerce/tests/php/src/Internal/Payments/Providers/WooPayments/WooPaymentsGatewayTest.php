@@ -3349,6 +3349,84 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $0 subscription payment-method change whose new card cannot be saved after its SetupIntent succeeded is refused and keeps the subscription's payment method and status.
+	 *
+	 * Nothing is charged on a change, so it is refused as the change confirmed after 3D Secure is (client 11.1.0
+	 * class-wc-payment-gateway-wcpay.php:4308-4321). The extension's synchronous change instead completes without the token
+	 * (gw:2036-2067), and the subscription's renewals keep charging the card the shopper meant to replace.
+	 */
+	public function test_process_payment_refuses_subscription_change_when_new_card_cannot_be_saved(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$user_id      = $this->factory()->user->create();
+		$subscription = $this->create_order();
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		// WooCommerce Subscriptions zeroes the subscription's total on the change request.
+		$subscription->set_total( '0.00' );
+		$subscription->set_status( 'on-hold' );
+		$subscription->update_meta_data( '_payment_method_id', 'pm_old' );
+		$subscription->save();
+		// The recorded succeeded SetupIntent (Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'my_account_setup_intent_challenge_completed' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $subscription->get_id(), $subscription->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
+		)->with_effect_plan(
+			WooPaymentsOrderEffectPlan::for_setup_intent(
+				$intent,
+				true,
+				array(
+					'_wcpay_intent_currency' => 'USD',
+					'_wcpay_mode'            => 'test',
+				)
+			)
+		);
+
+		// A failed platform payment-method fetch leaves no details and no token (WooPaymentsTokenService::get_bound_payment_method_details()).
+		$token_service = new class() extends WooPaymentsTokenService {
+			/**
+			 * Answer as the token service does when the platform payment-method fetch fails.
+			 *
+			 * @param string $payment_method_id              Provider payment method ID.
+			 * @param int    $user_id                         User ID.
+			 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
+			 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+			 */
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				unset( $payment_method_id, $user_id, $include_existing_token_details );
+
+				return array(
+					'token'                  => null,
+					'payment_method_details' => array(),
+				);
+			}
+		};
+
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $this->create_provider_charging( $outcome, $token_service ) );
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $subscription->get_id();
+		$_POST['wcpay-payment-method']          = (string) $intent['payment_method'];
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		$result = $gateway->process_payment( $subscription->get_id() );
+
+		$this->assertSame( 'failure', $result['result'] ?? '' );
+		$this->assertSame( array( 'Unable to save payment method for subscription. Please try again or use a different payment method.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( 'on-hold', $subscription->get_status() );
+		$this->assertSame( 'pm_old', $subscription->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $subscription->get_transaction_id() );
+	}
+
+	/**
 	 * @testdox A $throwable_class after the payment succeeded with debug logging $logging keeps the order and is logged with its trace: $written.
 	 *
 	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145): when the payment step

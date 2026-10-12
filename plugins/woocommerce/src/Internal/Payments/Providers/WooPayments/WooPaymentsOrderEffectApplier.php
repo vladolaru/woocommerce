@@ -126,7 +126,15 @@ class WooPaymentsOrderEffectApplier {
 				$previous_payment_method_id = (string) $context->get_order()->get_meta( '_payment_method_id', true );
 				if ( $plan->should_apply_token_effects() ) {
 					// As for a PaymentIntent, a token that cannot be saved is logged and the order completes without it (client 11.1.0 gw:2036-2067).
+					// A subscription payment method change takes no money, so it is refused instead and the subscription keeps its
+					// payment method and status, as the change confirmed after 3D Secure is (gw:4308-4321).
 					$payment_method_details = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
+					if ( null === $payment_method_details ) {
+						if ( ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] ) ) {
+							return $this->payment_method_change_token_save_failed_outcome();
+						}
+						$payment_method_details = array();
+					}
 				}
 				$this->persist_setup_intent_details( $context->get_order(), $outcome, $plan->get_setup_meta() );
 				$provider_result = $plan->get_provider_result();
@@ -900,9 +908,10 @@ class WooPaymentsOrderEffectApplier {
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param PaymentOutcome          $outcome      Provider outcome.
 	 * @param bool                    $is_recurring Whether recurring token persistence is required.
-	 * @return array<string,mixed> Payment method details read while saving a SetupIntent's token, empty otherwise.
+	 * @return array<string,mixed>|null Payment method details read while saving a SetupIntent's token, empty otherwise; null
+	 *                                  when a token was to be saved or attached and was not.
 	 */
-	private function apply_token_effects( PaymentOperationContext $context, PaymentOutcome $outcome, bool $is_recurring ): array {
+	private function apply_token_effects( PaymentOperationContext $context, PaymentOutcome $outcome, bool $is_recurring ): ?array {
 		$payment_data      = $context->get_payment_data();
 		$payment_method_id = $outcome->get_payment_method_id();
 		$customer_id       = $outcome->get_customer_id();
@@ -912,15 +921,15 @@ class WooPaymentsOrderEffectApplier {
 			if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
 				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $order->get_user_id() );
-				if ( $token instanceof WC_Payment_Token ) {
-					$this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id );
-				}
+				return $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ? array() : null;
+			}
 
+			if ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) {
 				return array();
 			}
 
-			if ( ( empty( $payment_data['save_payment_method'] ) && ! $is_recurring ) || '' === $payment_method_id || 0 >= $order->get_user_id() ) {
-				return array();
+			if ( '' === $payment_method_id || 0 >= $order->get_user_id() ) {
+				return null;
 			}
 
 			if ( 0 === strpos( $outcome->get_provider_payment_id(), 'seti_' ) ) {
@@ -938,7 +947,33 @@ class WooPaymentsOrderEffectApplier {
 			$this->log_token_save_error( $order, $payment_method_id, $exception );
 		}
 
-		return array();
+		return null;
+	}
+
+	/**
+	 * Build the refusal of a payment method change whose new payment method could not be saved.
+	 *
+	 * Nothing was charged. The outcome carries no provider reference or meta and keeps the order's status, so the
+	 * subscription keeps its payment method and status, and the shopper sees why.
+	 *
+	 * @return PaymentOutcome
+	 */
+	private function payment_method_change_token_save_failed_outcome(): PaymentOutcome {
+		$message = __( 'Unable to save payment method for subscription. Please try again or use a different payment method.', 'woocommerce' );
+
+		return new PaymentOutcome(
+			PaymentOutcome::STATUS_FAILED,
+			'',
+			'',
+			'',
+			'',
+			array(
+				PaymentOutcome::DATA_ERROR_CODE            => 'wcpay_recurring_token_save_failed',
+				PaymentOutcome::DATA_ERROR_MESSAGE         => $message,
+				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => $message,
+				PaymentOutcome::DATA_PRESERVE_ORDER_STATUS => true,
+			)
+		);
 	}
 
 	/**
