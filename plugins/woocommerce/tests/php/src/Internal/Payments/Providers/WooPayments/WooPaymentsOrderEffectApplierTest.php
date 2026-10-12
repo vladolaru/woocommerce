@@ -842,9 +842,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recurring token failures preserve provider identity in a failed replacement outcome.
+	 * @testdox A recurring PaymentIntent whose token cannot be saved keeps its paid outcome, identity and note.
 	 */
-	public function test_recurring_token_failure_preserves_provider_identity(): void {
+	public function test_recurring_token_failure_keeps_the_paid_outcome(): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order();
 		$order->set_customer_id( $user_id );
@@ -885,15 +885,12 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $result->get_status() );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $result->get_status() );
 		$this->assertSame( 'pi_paid', $result->get_provider_payment_id() );
 		$this->assertSame( 'pm_paid', $result->get_payment_method_id() );
 		$this->assertSame( 'cus_paid', $result->get_customer_id() );
-		$this->assertSame( 'ch_paid', $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_charge_id'] );
-		$this->assertSame( 'wcpay_recurring_token_save_failed', $result->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $result->get_data() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $result->get_data() );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_EQUIVALENTS, $result->get_data() );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ERROR_CODE, $result->get_data() );
+		$this->assertStringContainsString( 'successfully charged', (string) ( $result->get_data()[ PaymentOutcome::DATA_NOTE ] ?? '' ), 'The paid outcome keeps its success note.' );
 	}
 
 	/**
@@ -1006,9 +1003,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Saved-token attachment failures preserve provider identity for recurring payments.
+	 * @testdox A recurring PaymentIntent whose saved token cannot be attached keeps its paid outcome.
 	 */
-	public function test_recurring_saved_token_attachment_failure_preserves_provider_identity(): void {
+	public function test_recurring_saved_token_attachment_failure_keeps_the_paid_outcome(): void {
 		$user_id = $this->factory()->user->create();
 		$order   = $this->create_woopayments_order();
 		$order->set_customer_id( $user_id );
@@ -1050,11 +1047,11 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $result->get_status() );
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $result->get_status() );
 		$this->assertSame( 'pi_saved_failure', $result->get_provider_payment_id() );
 		$this->assertSame( 'pm_saved_failure', $result->get_payment_method_id() );
 		$this->assertSame( 'cus_saved_failure', $result->get_customer_id() );
-		$this->assertSame( 'wcpay_recurring_token_save_failed', $result->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ERROR_CODE, $result->get_data() );
 	}
 
 	/**

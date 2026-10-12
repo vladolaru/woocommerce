@@ -108,11 +108,8 @@ class WooPaymentsOrderEffectApplier {
 		switch ( $plan->get_type() ) {
 			case WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT:
 				if ( $plan->should_apply_token_effects() ) {
-					$token_effects = $this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
-					$outcome       = $token_effects['outcome'];
-					if ( PaymentOutcome::STATUS_FAILED === $outcome->get_status() ) {
-						return $outcome;
-					}
+					// The platform took the payment, so a token that cannot be saved is logged and the order completes without it (client 11.1.0 gw:2036-2067).
+					$this->apply_token_effects( $context, $outcome, $plan->is_recurring() );
 				}
 
 				$display_effects = $this->compose_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
