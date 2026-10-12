@@ -347,7 +347,7 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		// The raw price, as client 11.1.0 (button helper :657): a sign-up fee or deposit alone does not make a free product payable here.
-		$supported = ! $this->is_reference_blocked_product( $product ) && (float) $product->get_price() > 0;
+		$supported = ! $this->is_product_excluded_from_express_checkout( $product ) && (float) $product->get_price() > 0;
 
 		/**
 		 * Filters whether a product can show WooPayments product-page express checkout.
@@ -501,7 +501,7 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get reference-shaped product data for product-page ECE.
+	 * Get the product data the product-page express checkout reads.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -618,12 +618,13 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Tell whether the product hits a reference WooPayments product-page ECE fail-closed guardrail.
+	 * Tell whether express checkout is not offered for the product: pre-orders charged on release and the product types
+	 * listed below.
 	 *
 	 * @param \WC_Product $product Product object.
 	 * @return bool
 	 */
-	private function is_reference_blocked_product( \WC_Product $product ): bool {
+	private function is_product_excluded_from_express_checkout( \WC_Product $product ): bool {
 		if ( class_exists( '\WC_Pre_Orders_Product' ) && \WC_Pre_Orders_Product::product_is_charged_upon_release( $product ) ) {
 			return true;
 		}

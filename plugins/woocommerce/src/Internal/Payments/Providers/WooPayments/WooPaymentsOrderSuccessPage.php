@@ -84,14 +84,14 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Payment methods that complete through a provider redirect, whose still-pending
-	 * orders get a live intent re-check on the thank-you page.
+	 * Payment methods whose still-unpaid orders get a live intent re-check on the thank-you page, since their failure can
+	 * reach the store after the shopper does.
 	 *
 	 * Client 11.1.0's Payment_Method::REDIRECT_PAYMENT_METHODS (`includes/constants/class-payment-method.php:65`).
 	 *
 	 * @var string[]
 	 */
-	private const REDIRECT_PAYMENT_METHODS = array( 'wechat_pay' );
+	private const RECHECKED_PAYMENT_METHODS = array( 'wechat_pay' );
 
 	/**
 	 * API client, for the live intent re-check.
@@ -275,7 +275,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			}
 
 			$api_client = $this->api_client;
-			if ( '' !== $intent_id && in_array( $payment_method_type, self::REDIRECT_PAYMENT_METHODS, true ) && null !== $api_client && $api_client->is_available() ) {
+			if ( '' !== $intent_id && in_array( $payment_method_type, self::RECHECKED_PAYMENT_METHODS, true ) && null !== $api_client && $api_client->is_available() ) {
 				$this->wait_before_intent_recheck();
 
 				try {

@@ -41,19 +41,22 @@ class StripeBillingProductService {
 	public const TEST_PRODUCT_ID_KEY = '_wcpay_product_id_test';
 
 	/**
-	 * Product meta holding a hash of the price data last sent, from client versions before 3.3.0.
+	 * Product meta holding a hash of the price data last sent, written by WooPayments before 3.3.0; only skipped on
+	 * duplicates and deleted here.
 	 */
-	public const PRICE_HASH_KEY = '_wcpay_product_price_hash';
+	public const RETIRED_PRICE_HASH_KEY = '_wcpay_product_price_hash';
 
 	/**
-	 * Product meta holding the live Stripe price ID, from client versions before 3.3.0.
+	 * Product meta holding the live Stripe price ID, written by WooPayments before 3.3.0; only skipped on duplicates,
+	 * archived and deleted here.
 	 */
-	public const LIVE_PRICE_ID_KEY = '_wcpay_product_price_id_live';
+	public const RETIRED_LIVE_PRICE_ID_KEY = '_wcpay_product_price_id_live';
 
 	/**
-	 * Product meta holding the test Stripe price ID, from client versions before 3.3.0.
+	 * Product meta holding the test Stripe price ID, written by WooPayments before 3.3.0; only skipped on duplicates,
+	 * archived and deleted here.
 	 */
-	public const TEST_PRICE_ID_KEY = '_wcpay_product_price_id_test';
+	public const RETIRED_TEST_PRICE_ID_KEY = '_wcpay_product_price_id_test';
 
 	/**
 	 * Platform calls.
@@ -197,9 +200,9 @@ class StripeBillingProductService {
 				self::PRODUCT_HASH_KEY,
 				self::LIVE_PRODUCT_ID_KEY,
 				self::TEST_PRODUCT_ID_KEY,
-				self::PRICE_HASH_KEY,
-				self::LIVE_PRICE_ID_KEY,
-				self::TEST_PRICE_ID_KEY,
+				self::RETIRED_PRICE_HASH_KEY,
+				self::RETIRED_LIVE_PRICE_ID_KEY,
+				self::RETIRED_TEST_PRICE_ID_KEY,
 			)
 		);
 	}
@@ -418,8 +421,8 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Archive the live and test Stripe products of a product, and archive and forget the Stripe prices client
-	 * versions before 3.3.0 saved on it.
+	 * Archive the live and test Stripe products of a product, and archive and forget the Stripe prices WooPayments
+	 * saved on it before 3.3.0.
 	 *
 	 * @param WC_Product $product Product.
 	 */
@@ -462,7 +465,7 @@ class StripeBillingProductService {
 	}
 
 	/**
-	 * Archive the Stripe prices client versions before 3.3.0 saved on a product, in both modes, and delete their meta and the
+	 * Archive the Stripe prices WooPayments saved on a product before 3.3.0, in both modes, and delete their meta and the
 	 * price hash.
 	 *
 	 * @param WC_Product $product Product.
@@ -470,7 +473,7 @@ class StripeBillingProductService {
 	private function delete_all_wcpay_price_ids( WC_Product $product ): void {
 		foreach ( array( 'test', 'live' ) as $environment ) {
 			$test_mode    = 'test' === $environment;
-			$price_id_key = $test_mode ? self::TEST_PRICE_ID_KEY : self::LIVE_PRICE_ID_KEY;
+			$price_id_key = $test_mode ? self::RETIRED_TEST_PRICE_ID_KEY : self::RETIRED_LIVE_PRICE_ID_KEY;
 			if ( ! $product->meta_exists( $price_id_key ) ) {
 				continue;
 			}
@@ -491,7 +494,7 @@ class StripeBillingProductService {
 			$product->delete_meta_data( $price_id_key . '_linked_to' );
 		}
 
-		$product->delete_meta_data( self::PRICE_HASH_KEY );
+		$product->delete_meta_data( self::RETIRED_PRICE_HASH_KEY );
 		$product->save();
 	}
 

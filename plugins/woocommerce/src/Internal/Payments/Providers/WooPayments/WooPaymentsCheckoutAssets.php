@@ -81,7 +81,7 @@ class WooPaymentsCheckoutAssets {
 	);
 
 	/**
-	 * WooPay button config keys, which client 11.1.0 adds only while its WooPay button handler runs.
+	 * Config keys added only when the WooPay button can show on this page.
 	 *
 	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:144-160.
 	 */
@@ -600,11 +600,11 @@ class WooPaymentsCheckoutAssets {
 		$base   = $this->get_payment_fields_js_config_base( $supports );
 		$config = array_diff_key( $base['config'], array_flip( self::BLOCKS_OMITTED_CONFIG_KEYS ) );
 
-		if ( ! $this->is_woopay_button_handler_active() ) {
+		if ( ! $this->should_add_woopay_button_config() ) {
 			$config = array_diff_key( $config, array_flip( self::WOOPAY_BUTTON_CONFIG_KEYS ) );
 		}
 
-		if ( empty( $config['isChangingPayment'] ) && $this->are_express_checkout_handlers_loaded() ) {
+		if ( empty( $config['isChangingPayment'] ) && $this->can_offer_express_checkout() ) {
 			$config = array_merge( $config, $this->get_express_checkout_enabled_config( $base['currency'] ), WooPaymentsOrderPayAccess::get_pay_for_order_page_params() );
 		}
 
@@ -614,38 +614,43 @@ class WooPaymentsCheckoutAssets {
 	}
 
 	/**
-	 * Tell whether client 11.1.0 loads its express checkout handlers on this request: payments enabled on the account,
-	 * and not a cron or XML-RPC request (client 11.1.0 class-wc-payments.php:1858-1871).
+	 * Tell whether express checkout can be offered on this request: the account works, and it is not a cron or XML-RPC
+	 * request.
+	 *
+	 * Client 11.1.0 loads its express checkout handlers on the same check (class-wc-payments.php:1858-1871).
 	 *
 	 * @return bool
 	 */
-	private function are_express_checkout_handlers_loaded(): bool {
+	private function can_offer_express_checkout(): bool {
 		return ! wp_doing_cron()
 			&& ! ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST )
 			&& $this->get_account_service()->has_working_account();
 	}
 
 	/**
-	 * Tell whether a client 11.1.0 express button handler registers its config filter on this request: the WooPayments
+	 * Tell whether the express buttons' config is added on this request: express checkout can be offered, the WooPayments
 	 * gateway is enabled and the page is not a subscription's change payment method page.
 	 *
 	 * Client 11.1.0 class-wc-payments-woopay-button-handler.php:107-126 and class-wc-payments-express-checkout-button-handler.php:74-89.
 	 *
 	 * @return bool
 	 */
-	private function is_express_button_handler_request(): bool {
-		return $this->are_express_checkout_handlers_loaded()
+	private function should_add_express_button_config(): bool {
+		return $this->can_offer_express_checkout()
 			&& $this->get_account_service()->is_gateway_enabled()
 			&& ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request flag.
 	}
 
 	/**
-	 * Tell whether client 11.1.0's WooPay button handler adds its config keys on this request.
+	 * Tell whether the WooPay button config is added on this request: the express buttons' config is, and the WooPay
+	 * button is enabled.
+	 *
+	 * Client 11.1.0's WooPay button handler adds its config keys on the same check.
 	 *
 	 * @return bool
 	 */
-	private function is_woopay_button_handler_active(): bool {
-		return $this->is_express_button_handler_request() && $this->get_woopay_session_service()->is_woopay_button_enabled();
+	private function should_add_woopay_button_config(): bool {
+		return $this->should_add_express_button_config() && $this->get_woopay_session_service()->is_woopay_button_enabled();
 	}
 
 	/**
@@ -660,7 +665,7 @@ class WooPaymentsCheckoutAssets {
 	private function get_express_checkout_enabled_config( string $currency ): array {
 		$express_service = $this->get_express_checkout_service();
 		$payment_request = $express_service->is_payment_request_enabled();
-		if ( ! $this->is_express_button_handler_request() || ! ( $payment_request || $express_service->is_amazon_pay_usable() ) ) {
+		if ( ! $this->should_add_express_button_config() || ! ( $payment_request || $express_service->is_amazon_pay_usable() ) ) {
 			return array();
 		}
 
