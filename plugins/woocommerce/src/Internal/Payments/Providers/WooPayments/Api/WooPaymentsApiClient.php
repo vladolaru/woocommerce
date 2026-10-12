@@ -312,7 +312,8 @@ class WooPaymentsApiClient {
 	 * @param string      $source           Refund source identifier.
 	 * @param string      $idempotency_key  Key minted fresh for this refund call by the caller, reused across transport retries. It is
 	 *                                      also sent as the `refund_attempt` metadata, so the charge's refund list shows which
-	 *                                      refund the call made. An empty key lets each send mint its own and sends no marker.
+	 *                                      refund the call made. An empty key sends no marker, and the request mints one key
+	 *                                      that its transport retries resend.
 	 * @return array<string,mixed>
 	 */
 	public function refund_charge( string $charge_id, ?int $amount, ?string $reason, string $source, string $idempotency_key ): array {
@@ -335,8 +336,8 @@ class WooPaymentsApiClient {
 		}
 
 		if ( null !== $reason && '' !== $reason ) {
-			// The platform caps metadata values at 500 characters and rejects the whole
-			// request beyond it; a long merchant reason must cost its tail, not the refund.
+			// The platform caps metadata values at 500 characters and rejects the whole request beyond it; a long
+			// merchant reason must cost its tail, not the refund.
 			$params['metadata']['merchant_refund_reason'] = mb_substr( $reason, 0, self::METADATA_VALUE_MAX_LENGTH );
 		}
 
@@ -1866,11 +1867,9 @@ class WooPaymentsApiClient {
 	/**
 	 * Fetch the platform's public (merchant-agnostic) fraud-services config.
 	 *
-	 * This endpoint is public and unauthenticated by design — it serves the
-	 * merchant-agnostic fallback used before account data carries a
-	 * merchant-specific config — so the request deliberately bypasses the
-	 * signed transport. Failures return null: fraud config is best-effort and
-	 * must never break a checkout render.
+	 * This endpoint is public and unauthenticated by design — it serves the merchant-agnostic fallback used before
+	 * account data carries a merchant-specific config — so the request deliberately bypasses the signed transport.
+	 * Failures return null: fraud config is best-effort and must never break a checkout render.
 	 *
 	 * @return array<string,mixed>|null Decoded config, or null when unavailable.
 	 */

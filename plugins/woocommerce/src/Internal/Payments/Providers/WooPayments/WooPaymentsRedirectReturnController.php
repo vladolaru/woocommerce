@@ -27,7 +27,7 @@ use WC_Order;
 class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 	/**
-	 * Checkout query flag the client adds when the fetched intent belongs to another order (client 11.1.0 gw:118).
+	 * Checkout query flag this controller adds when the fetched intent belongs to another order (client 11.1.0 gw:118).
 	 *
 	 * @var string
 	 */

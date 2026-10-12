@@ -275,10 +275,9 @@ class WooPaymentsDisputeEventHandler {
 					if ( 'lost' === $status ) {
 						$this->create_dispute_lost_refund( $order, $this->get_lost_dispute_amount( $event_object, $dispute_id, $charge_id ), $charge_id, $dispute_id, $status );
 					} elseif ( ! empty( $open_dispute_ids ) ) {
-						// Another dispute on the same charge is still running its evidence
-						// deadline, and the hold it put on the order has to outlive this one.
-						// Leave the status alone rather than picking a new one: the sibling's
-						// own close will resolve it.
+						// Another dispute on the same charge is still running its evidence deadline, and the hold it
+						// put on the order has to outlive this one. Leave the status alone rather than picking a new
+						// one: the sibling's own close will resolve it.
 						$order->add_order_note(
 							sprintf(
 								/* translators: %d: the number of disputes on this payment that are still open */
@@ -292,9 +291,8 @@ class WooPaymentsDisputeEventHandler {
 							)
 						);
 					} elseif ( $this->is_order_fully_refunded( $order ) ) {
-						// Promoting a fully refunded order to completed would make Analytics
-						// count it as revenue again. It still has to leave the dispute hold,
-						// though: no other webhook will arrive to move it off on-hold.
+						// Promoting a fully refunded order to completed would make Analytics count it as revenue again.
+						// It still has to leave the dispute hold, though: no other webhook will arrive to move it off on-hold.
 						if ( ! $order->has_status( OrderStatus::REFUNDED ) ) {
 							$order->update_status( OrderStatus::REFUNDED );
 						}
@@ -450,9 +448,9 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Get the amount a lost dispute refunds: the platform's dispute summary, or the event's own dispute when it fails.
 	 *
-	 * The summary's disputed_amount and currency are the Stripe dispute's amount and currency (platform
-	 * class-dispute-service.php, the summary builder), which the closed event carries too. Client 11.1.0 refunds the
-	 * order's whole remaining amount when the fetch fails; for a partial dispute that over-refunds.
+	 * The summary's disputed_amount and currency are the Stripe dispute's amount and currency, which the closed event
+	 * carries too. Client 11.1.0 refunds the order's whole remaining amount when the fetch fails; for a partial dispute
+	 * that over-refunds.
 	 *
 	 * @param array<string,mixed> $event_object Dispute object of the event.
 	 * @param string              $dispute_id   Dispute ID.
@@ -863,11 +861,10 @@ class WooPaymentsDisputeEventHandler {
 	/**
 	 * Tell whether the order has already been refunded in full.
 	 *
-	 * Two independent clauses: has_status() catches WooCommerce's standard
-	 * fully-refunded transition, the remaining-amount check catches stores that
-	 * redirect it via woocommerce_order_fully_refunded_status, plus over-refunds.
-	 * The total clamp guards only the second clause, since on a zero-total order
-	 * (free / 100% coupon) the remaining amount is trivially 0.
+	 * Two independent clauses: has_status() catches WooCommerce's standard fully-refunded transition, the
+	 * remaining-amount check catches stores that redirect it via woocommerce_order_fully_refunded_status, plus
+	 * over-refunds. The total clamp guards only the second clause, since on a zero-total order (free / 100% coupon) the
+	 * remaining amount is trivially 0.
 	 *
 	 * @param WC_Order $order Order object.
 	 * @return bool

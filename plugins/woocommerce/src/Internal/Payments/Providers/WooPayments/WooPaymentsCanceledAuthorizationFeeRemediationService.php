@@ -467,14 +467,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 
 				$this->delete_refund_order_stats( $refund_id );
 
-				/**
-				 * Fires after a refund is deleted during WooPayments canceled-authorization fee remediation.
-				 *
-				 * @since 11.0.0
-				 *
-				 * @param int $refund_id       Deleted refund ID.
-				 * @param int $parent_order_id Parent order ID.
-				 */
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's own hook, fired as WC_AJAX::delete_refund() fires it after deleting a refund.
 				do_action( 'woocommerce_refund_deleted', $refund_id, $parent_order_id );
 			}
 
@@ -850,14 +843,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 				return;
 			}
 
-			/**
-			 * Fires when the refund stats row is deleted during WooPayments canceled-authorization fee remediation.
-			 *
-			 * @since 11.0.0
-			 *
-			 * @param int $order_id    Deleted refund ID.
-			 * @param int $customer_id Customer ID. Always 0 because the refund object has already been deleted.
-			 */
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's own hook, fired as the order stats data store fires it after deleting a stats row; the refund is already deleted, so the customer ID is 0.
 			do_action( 'woocommerce_analytics_delete_order_stats', $order_id, 0 );
 			if ( class_exists( ReportsCache::class ) ) {
 				ReportsCache::invalidate();

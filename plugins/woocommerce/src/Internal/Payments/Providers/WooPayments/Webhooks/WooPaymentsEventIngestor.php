@@ -57,7 +57,9 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
 	 *
-	 * Other types get one attempt: running the fraud warning handlers again can apply an older event over a newer one.
+	 * The refund and dispute types are retried too ({@see self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES}), and invoice.paid
+	 * while the Stripe Billing module is loaded ({@see self::is_retried_event()}). Other types get one attempt: running the
+	 * fraud warning handlers again can apply an older event over a newer one.
 	 *
 	 * @var string[]
 	 */
@@ -193,8 +195,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Process a WooPayments webhook event.
 	 *
-	 * An event with an ID is skipped for the marker TTL once a delivery of it has finished: Action Scheduler retries,
-	 * platform redelivery and the failed-event queue can deliver it again, and applying it twice would repeat status
+	 * An event with an ID is skipped for the marker TTL once a delivery of it has finished: the store's retry job, a
+	 * platform redelivery and the missed-event fetch can deliver it again, and applying it twice would repeat status
 	 * changes, refund metadata and dispute updates. The marker is written only after the event is handled, so a delivery
 	 * that threw or died is processed again. Overlapping deliveries are not kept apart here: the handlers that change an
 	 * order take the order payment lock or the Stripe Billing invoice lock, and a redelivery after a failed attempt can

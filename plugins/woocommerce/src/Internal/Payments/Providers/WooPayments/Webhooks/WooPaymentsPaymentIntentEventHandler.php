@@ -508,10 +508,9 @@ class WooPaymentsPaymentIntentEventHandler {
 					: (string) $order->get_meta( '_intent_id', true );
 				$note_candidates = $this->order_note_service->format_capture_expired_note_candidates( $intent_id, $charge_id );
 
-				// The stored intention status still says requires_capture; only the live
-				// intent knows its status after expiry (canceled), and a stale value keeps
-				// capture and cancel actions offered against a dead intent. A failed fetch
-				// fails the delivery, as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:396-398),
+				// The stored intention status still says requires_capture; only the live intent knows its status after
+				// expiry (canceled), and a stale value keeps capture and cancel actions offered against a dead intent.
+				// A failed fetch fails the delivery, as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:396-398),
 				// and charge.expired gets no retry after such a failure.
 				$expired_intent = $this->api_client->get_payment_intention( $intent_id );
 
@@ -742,11 +741,10 @@ class WooPaymentsPaymentIntentEventHandler {
 	/**
 	 * Repair the payment token on an unpaid recurring order paid through a webhook.
 	 *
-	 * A recurring order can reach `payment_intent.succeeded` without a usable local
-	 * token — WooPay checkouts and platform-side charges save the method at the
-	 * provider, not locally. Without the repair, the next scheduled renewal finds no
-	 * token and fails. Runs before the lifecycle apply on purpose: once this same
-	 * event marks the order paid, the redelivery guard below would skip the repair.
+	 * A recurring order can reach `payment_intent.succeeded` without a usable local token — WooPay checkouts and
+	 * platform-side charges save the method at the provider, not locally. Without the repair, the next scheduled
+	 * renewal finds no token and fails. Runs before the lifecycle apply on purpose: once this same event marks the
+	 * order paid, the redelivery guard below would skip the repair.
 	 *
 	 * @param WC_Order            $order        Order the event resolved to.
 	 * @param array<string,mixed> $event_object Provider intent object.

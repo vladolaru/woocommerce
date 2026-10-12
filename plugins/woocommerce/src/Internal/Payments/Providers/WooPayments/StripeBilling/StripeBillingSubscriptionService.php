@@ -773,7 +773,8 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Limit what a Stripe-billed subscription supports: Stripe schedules its payments, so its amounts and dates cannot change here.
 	 *
-	 * Subscriptions that are not Stripe-billed keep changing amounts and dates, and never claim Stripe's scheduled payments.
+	 * Every other subscription is answered too: amount and date changes supported and Stripe's scheduled payments not,
+	 * whatever its own gateway answered.
 	 *
 	 * @internal
 	 *

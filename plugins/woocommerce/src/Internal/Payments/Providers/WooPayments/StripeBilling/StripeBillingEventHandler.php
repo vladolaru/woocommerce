@@ -118,8 +118,8 @@ class StripeBillingEventHandler {
 	 *
 	 * An event with missing data, or about a subscription this store does not have, is refused with an
 	 * `InvalidArgumentException`, which the webhook answers with 400 and does not retry. The webhook route or the
-	 * failed-event job that catches the refusal logs it. Other failures, such as a platform call that fails, are passed on
-	 * so the event is retried.
+	 * failed-event job that catches the refusal logs it. Other failures, such as a platform call that fails, are passed on:
+	 * an invoice.paid is retried, invoice.upcoming and invoice.payment_failed get this one attempt.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws InvalidArgumentException When the event has missing data or names no subscription of this store.

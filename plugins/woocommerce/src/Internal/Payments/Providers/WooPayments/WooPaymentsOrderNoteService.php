@@ -1452,7 +1452,7 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible created-refund note.
+	 * Build the created-refund note.
 	 *
 	 * @param WC_Order $order      Order object.
 	 * @param float    $amount     Refunded amount.

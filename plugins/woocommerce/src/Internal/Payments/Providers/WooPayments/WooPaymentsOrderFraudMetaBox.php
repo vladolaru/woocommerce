@@ -371,7 +371,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Print compatible early fraud warning evidence before the risk panel.
+	 * Print early fraud warning evidence before the risk panel.
 	 *
 	 * @param WC_Order $order     Order containing early fraud warning evidence.
 	 * @param string   $charge_id Provider charge ID.
@@ -495,7 +495,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Print fired fraud filters when compatible evidence is stored on the order.
+	 * Print fired fraud filters when their evidence is stored on the order.
 	 *
 	 * @param WC_Order $order Order instance.
 	 */
@@ -524,7 +524,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the shared order-note service without changing the initializer contract.
+	 * Get the shared order-note service, resolved on first use.
 	 *
 	 * @return WooPaymentsOrderNoteService
 	 */

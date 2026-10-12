@@ -38,7 +38,7 @@ class WooPaymentsPaymentMethodRegistry {
 	private const EXPRESS_CHECKOUT = 'express_checkout';
 
 	/**
-	 * Payment methods WooPayments discontinued: they have no definition here, and settings that still name them are cleaned at cutover.
+	 * Payment methods WooPayments discontinued: they have no definition here, and settings that still name them are cleaned when a store switches to the built-in WooPayments.
 	 */
 	public const DISCONTINUED_PAYMENT_METHOD_IDS = array( 'giropay', 'sofort' );
 

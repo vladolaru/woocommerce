@@ -653,11 +653,10 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		// Atomically claim the scheduling. add_option() performs an INSERT that
-		// returns false when the row already exists, so only the first of two
-		// concurrent account-refresh handlers proceeds to schedule the email stages.
-		// This avoids the time-of-check/time-of-use race a get_option()/update_option()
-		// pair would leave open and the duplicate merchant emails it could send.
+		// Atomically claim the scheduling. add_option() performs an INSERT that returns false when the row already
+		// exists, so only the first of two concurrent account-refresh handlers proceeds to schedule the email stages.
+		// This avoids the time-of-check/time-of-use race a get_option()/update_option() pair would leave open and the
+		// duplicate merchant emails it could send.
 		if ( ! add_option( self::POST_KYC_EMAILS_SCHEDULED_OPTION, '1', '', false ) ) {
 			return;
 		}
@@ -776,14 +775,12 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		// Note: this handler intentionally does not verify a nonce. It fires from a
-		// post-KYC activation email CTA that merchants may open days after it is sent,
-		// so a short-lived nonce would be expired for most legitimate clicks. The CSRF
-		// exposure is limited and acceptable: the handler checks the
-		// `manage_woocommerce` capability, only records a single telemetry event whose
-		// `stage` must be in the POST_KYC_STAGE_DAYS allowlist, and performs a safe
-		// same-page redirect via wp_safe_redirect( remove_query_arg( ... ) ). The worst
-		// a forged request can do is record one allowlisted-stage analytics event.
+		// Note: this handler intentionally does not verify a nonce. It fires from a post-KYC activation email CTA that
+		// merchants may open days after it is sent, so a short-lived nonce would be expired for most legitimate clicks.
+		// The CSRF exposure is limited and acceptable: the handler checks the `manage_woocommerce` capability, only
+		// records a single telemetry event whose `stage` must be in the POST_KYC_STAGE_DAYS allowlist, and performs a
+		// safe same-page redirect via wp_safe_redirect( remove_query_arg( ... ) ). The worst a forged request can do is
+		// record one allowlisted-stage analytics event.
 		$stage = isset( $_GET['wcpay_referrer_stage'] ) ? (int) $_GET['wcpay_referrer_stage'] : 0;
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 

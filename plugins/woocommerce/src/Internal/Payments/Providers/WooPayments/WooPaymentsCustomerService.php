@@ -235,9 +235,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		// for the same logged-in user. On stores with a persistent object cache
 		// the advisory lock is shared across requests, so only the request that
 		// acquires it creates while the losers re-read the persisted ID. Guests
-		// keep their ID in the request-local session and are unaffected, so they
-		// skip the lock. Without a persistent object cache the lock is
-		// request-local and every request creates, as with no lock.
+		// keep their ID in the WooCommerce session, which this lock does not
+		// cover, so they skip it: two concurrent checkouts in one guest session
+		// can each create a customer. Without a persistent object cache the lock
+		// is request-local and every request creates, as with no lock.
 		$lock_key = null === $user_id ? '' : 'wcpay_customer_create_' . $user_id;
 
 		// wp_cache_add() both acquires the lock and reports contention: it

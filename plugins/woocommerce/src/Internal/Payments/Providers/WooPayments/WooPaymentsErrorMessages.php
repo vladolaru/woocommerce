@@ -62,7 +62,7 @@ class WooPaymentsErrorMessages {
 
 		return sprintf(
 			// translators: %1$s is a localized payment-provider error message.
-			_x( 'Error: %1$s', 'API error message to throw as Exception', 'woocommerce' ),
+			_x( 'Error: %1$s', 'Shopper-facing payment error message', 'woocommerce' ),
 			$localized_message
 		);
 	}

@@ -240,7 +240,7 @@ final class WooPaymentsPaymentMethodDefinition {
 		$limits = $this->get_array_config( 'limits' );
 
 		/**
-		 * Limits config is constructed locally and shaped by tests.
+		 * The registry's definition configs give the limits this shape.
 		 *
 		 * @var array<string,array<string,array{min:int,max:int}>> $limits
 		 */
@@ -346,7 +346,7 @@ final class WooPaymentsPaymentMethodDefinition {
 	}
 
 	/**
-	 * Get EEA countries plus Switzerland and the United Kingdom in extension order.
+	 * Get the EEA countries plus Switzerland and the United Kingdom, in the order the checkout config sends them.
 	 *
 	 * @return string[]
 	 */

@@ -19,8 +19,8 @@ use WC_Order;
  * to Refunded raises a confirmation modal that refunds at the provider, instead of core silently
  * recording a local-only refund the customer never receives.
  *
- * All business rules live in {@see WooPaymentsOrderStatusChangeConfirmation}; this controller only
- * decides when to load the asset and hands the projected config to the browser.
+ * All business rules live in {@see WooPaymentsOrderStatusChangeConfirmation}; for the dialog, this controller only
+ * decides when to load the script and hands it the order's config.
  *
  * @since 11.0.0
  * @internal
@@ -99,7 +99,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Set the admin asset availability resolver.
 	 *
-	 * @internal Used by tests and future explicit asset bootstrap.
+	 * @internal For tests, which run without the built admin script.
 	 *
 	 * @param callable $asset_available_resolver Admin asset availability resolver.
 	 */
@@ -110,7 +110,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	/**
 	 * Set the admin asset registrar.
 	 *
-	 * @internal Used by tests and future explicit asset bootstrap.
+	 * @internal For tests, which run without the built admin script.
 	 *
 	 * @param callable $asset_registrar Admin asset registrar.
 	 */

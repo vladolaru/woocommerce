@@ -550,7 +550,7 @@ class WooPaymentsOrderEffects {
 	 * Compose local effects for a successful provider refund.
 	 *
 	 * @param array<string,mixed> $result                  Provider refund response.
-	 * @param string              $rendered_note           Rendered compatibility note.
+	 * @param string              $rendered_note           Rendered refund note.
 	 * @param string              $refund_note_identity    Stable refund note identity.
 	 * @param array<mixed>        $refund_note_equivalents Exact equivalent refund-note renderings.
 	 * @return array<string,mixed>

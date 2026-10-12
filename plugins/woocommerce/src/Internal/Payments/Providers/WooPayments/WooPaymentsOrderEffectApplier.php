@@ -434,7 +434,7 @@ class WooPaymentsOrderEffectApplier {
 	 *
 	 * Same effects the charge.expired webhook applies: expired note, canceled
 	 * intention status, review-expired stamp. Reached only through an
-	 * explicitly declared expired plan (the adapter's post-failure re-fetch).
+	 * explicitly declared expired plan (the operation service's re-fetch after a failed capture).
 	 *
 	 * @param WC_Order            $order   Order whose authorization expired.
 	 * @param PaymentOutcome      $outcome Provider capture outcome.
@@ -865,7 +865,7 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Establish the generic title used by the lifecycle completion note.
+	 * Title the order "WooPayments" when the payment carries no card or method details to name it.
 	 *
 	 * @param WC_Order $order Order being processed.
 	 */

@@ -39,8 +39,8 @@ defined( 'ABSPATH' ) || exit;
  *
  * Client 11.1.0 attaches these hooks whenever WooPayments loads, whether or not its gateway is enabled (client 11.1.0
  * `includes/class-wc-payments.php:630-649`, `includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:274-298`),
- * so a connected store with the gateway disabled still renews. Collaborators are resolved when a renewal runs, so
- * attaching the hooks builds nothing else.
+ * so a connected store with the gateway disabled still renews. Renewal collaborators are resolved when a renewal runs;
+ * attaching the hooks builds only the admin payment-method handler and the token service it uses.
  *
  * @since 11.2.0
  * @internal

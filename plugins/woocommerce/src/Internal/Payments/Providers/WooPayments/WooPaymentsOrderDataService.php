@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use WC_Order;
 
 /**
- * Builds the order data sent to the platform (billing details, shipping, amounts in minor units, the settlement exchange
- * rate) and the Fee details note.
+ * Builds the order data sent to the platform (billing details, shipping, amounts in minor units), reads a charge's
+ * settlement exchange rate into order meta, and titles the Fee details note.
  *
  * @since 11.0.0
  * @internal
