@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\Cry
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\ReconcileCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Crypto\CryptoRefusalListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\EmailTriggers;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PayWithCryptoGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
@@ -94,8 +93,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * signs a capture refund, a crypto order creation and the platform app's reads for the connected seller, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
 	 * order, the reconcile, the admin emails, the filters that name the payee and the settings app's collecting data.
-	 * Pay with Crypto is kept off the gateway list while the store collects, and recorded as not available once platform
-	 * connected when PayPal refuses a checkout's crypto order for the payment source.
+	 * Pay with Crypto is recorded as not available once platform connected when PayPal refuses a checkout's crypto order
+	 * for the payment source.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -107,9 +106,6 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 		add_filter( 'woocommerce_paypal_payments_rest_common_merchant_features', array( $gates, 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ), self::GATE_PRIORITY );
 		add_filter( 'woocommerce_paypal_payments_features_list', array( $gates, 'handle_woocommerce_paypal_payments_features_list' ), self::GATE_PRIORITY );
 		add_filter( 'woocommerce_paypal_payments_todos_list', array( $gates, 'handle_woocommerce_paypal_payments_todos_list' ), self::GATE_PRIORITY );
-
-		$crypto_guard = new PayWithCryptoGuard( $connection_state );
-		add_filter( 'woocommerce_payment_gateways', array( $crypto_guard, 'handle_woocommerce_payment_gateways' ), self::GATE_PRIORITY );
 
 		// The Refund button's lock is the shell's (OwnerIndependent), so it holds whoever owns the wallet; the server-side
 		// refusal is the LockingRefundProcessor extension.

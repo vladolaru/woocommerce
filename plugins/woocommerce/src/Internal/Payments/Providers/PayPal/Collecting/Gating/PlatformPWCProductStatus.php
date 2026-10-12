@@ -15,13 +15,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\H
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 
 /**
- * The Pay with Crypto capability of a store the platform serves: on a platform-connected store, the Pay with Crypto check's
- * answer instead of the seller status.
+ * The Pay with Crypto capability of a store the platform serves: no while the store collects, and the Pay with Crypto
+ * check's answer instead of the seller status once platform connected.
  *
- * The seller status the platform reads is the partner's view of the merchant, which never lists a product the merchant
- * added on their own account, so it never shows the crypto capability (probe rerun 2). Once platform connected, the answer
- * is the stored check's (`CryptoCheckMarker`), and no answer means not available; the shared result cache is neither read
- * nor written then. A collecting store keeps the wallet's own check, which the collecting rule overrides.
+ * A collecting store has no PayPal account, so it cannot hold the capability. The seller status the platform reads is the
+ * partner's view of the merchant, which never lists a product the merchant added on their own account, so it never shows
+ * the crypto capability (probe rerun 2). Once platform connected, the answer is the stored check's (`CryptoCheckMarker`),
+ * and no answer means not available. In both states `is_active()` neither reads nor writes the shared result cache.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -66,8 +66,8 @@ class PlatformPWCProductStatus extends PWCProductStatus {
 	}
 
 	/**
-	 * The check's answer on a platform-connected store, so the seller status is not asked; the wallet's cached answer
-	 * otherwise.
+	 * No on a collecting store, the check's answer on a platform-connected one, so the seller status is not asked and the
+	 * shared cache, where a stale "yes" may sit, is not read; the wallet's own answer otherwise.
 	 *
 	 * @since 11.3.0
 	 *
@@ -75,7 +75,11 @@ class PlatformPWCProductStatus extends PWCProductStatus {
 	 * @return bool|null
 	 */
 	public function check_local_state( bool $skip_filters = false ): ?bool {
-		if ( ConnectionState::PLATFORM_CONNECTED === $this->connection_state->resolve() ) {
+		$state = $this->connection_state->resolve();
+		if ( ConnectionState::COLLECTING === $state ) {
+			return false;
+		}
+		if ( ConnectionState::PLATFORM_CONNECTED === $state ) {
 			return $this->marker->is_available();
 		}
 

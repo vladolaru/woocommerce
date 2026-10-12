@@ -292,9 +292,9 @@ return array(
 			$previous
 		);
 	},
-	// The partner's view of a platform merchant never lists the crypto capability, so once platform connected every reader
-	// of the Pay with Crypto status (the merchant features, and through them the gateway, card, to-do and settings method)
-	// gets the Pay with Crypto check's answer instead.
+	// Every reader of the Pay with Crypto status (the merchant features, and through them the gateway, card, to-do and
+	// settings method) gets "no" while the store collects, since it has no account, and the Pay with Crypto check's answer
+	// once platform connected, since the partner's view of a platform merchant never lists the crypto capability.
 	'wcgateway.pwc-product-status'                     => static function ( PWCProductStatus $previous, ContainerInterface $c ): PWCProductStatus {
 		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
 			return $previous;

@@ -220,7 +220,7 @@ class PlatformServedGatesTest extends WalletTestCase {
 
 		$this->assertArrayNotHasKey( 'apply_for_working_capital', $todos );
 		$this->assertArrayNotHasKey( 'enable_installments', $todos );
-		$this->assertArrayNotHasKey( 'enable_pwc', $todos, 'Pay with Crypto needs an account to enable' );
+		$this->assertArrayHasKey( 'enable_pwc', $todos, 'The capability, which says no while collecting, keeps the Crypto to-do off, not this filter' );
 		foreach ( $todos as $id => $todo ) {
 			$this->assertNotSame( 'pay_later_messaging', $todo['action']['tab'] ?? null, "{$id} opens the hidden tab" );
 		}

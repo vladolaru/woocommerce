@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CollectCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
-use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PayWithCryptoGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
@@ -116,7 +115,7 @@ class CollectingModuleTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report success from run and add the intent, merchant-features, features-list, to-dos-list and Pay with Crypto guard filters late.
+	 * @testdox Should report success from run, add the intent, merchant-features, features-list and to-dos-list filters late, and add nothing to WooCommerce's gateway list.
 	 */
 	public function test_run_adds_the_gate_filters(): void {
 		$container = new ContainerDouble(
@@ -129,7 +128,7 @@ class CollectingModuleTest extends WalletTestCase {
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_rest_common_merchant_features', 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ) );
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_features_list', 'handle_woocommerce_paypal_payments_features_list' ) );
 		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_todos_list', 'handle_woocommerce_paypal_payments_todos_list' ) );
-		$this->assertSame( 100, $this->priority_of( 'woocommerce_payment_gateways', 'handle_woocommerce_payment_gateways', PayWithCryptoGuard::class ) );
+		$this->assertSame( array(), $this->collecting_callbacks_on( 'woocommerce_payment_gateways' ), 'Pay with Crypto is kept off a collecting store by its capability, so the wallet module\'s own registration is the only path' );
 	}
 
 	/**
@@ -150,6 +149,34 @@ class CollectingModuleTest extends WalletTestCase {
 		}
 
 		return null;
+	}
+
+	/**
+	 * The callbacks on a hook whose object or class belongs to the collecting module's namespace.
+	 *
+	 * @param string $hook The hook.
+	 * @return array<int, string> The owning class of each such callback.
+	 */
+	private function collecting_callbacks_on( string $hook ): array {
+		$owners = array();
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				if ( is_array( $function ) ) {
+					$owner = is_object( $function[0] ) ? get_class( $function[0] ) : (string) $function[0];
+				} elseif ( $function instanceof \Closure ) {
+					$scope = ( new \ReflectionFunction( $function ) )->getClosureScopeClass();
+					$owner = $scope ? $scope->getName() : '';
+				} else {
+					$owner = is_object( $function ) ? get_class( $function ) : (string) $function;
+				}
+				if ( 0 === strpos( $owner, 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\PayPal\\Collecting\\' ) ) {
+					$owners[] = $owner;
+				}
+			}
+		}
+
+		return $owners;
 	}
 
 	/**

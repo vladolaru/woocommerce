@@ -109,8 +109,7 @@ class PlatformServedGates {
 	 *
 	 * Working Capital and Installments link to PayPal pages that need an account the payee does not have. The to-dos that
 	 * open a tab of the settings app stay, except, while the store only collects, those that open the Pay Later Messaging
-	 * tab, which the settings app hides until setup completes (K11), and the one that enables Pay with Crypto, which
-	 * needs an account.
+	 * tab, which the settings app hides until setup completes (K11).
 	 *
 	 * @internal
 	 *
@@ -126,7 +125,6 @@ class PlatformServedGates {
 		unset( $todos['apply_for_working_capital'], $todos['enable_installments'] );
 
 		if ( ConnectionState::COLLECTING === $this->connection_state->resolve() ) {
-			unset( $todos['enable_pwc'] );
 			$todos = array_filter(
 				$todos,
 				static fn( $todo ): bool => 'pay_later_messaging' !== ( $todo['action']['tab'] ?? null )
