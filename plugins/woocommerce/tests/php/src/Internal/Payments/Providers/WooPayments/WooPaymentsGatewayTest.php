@@ -169,53 +169,29 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should brand the gateway titles by account country like the WooPayments extension
+	 * @testdox Should brand the Afterpay gateway titles by account country like the WooPayments extension: $_dataName.
+	 *
+	 * With empty account data, while the platform connection is down, client 11.1.0 titles the gateway for US, not the
+	 * store country (includes/class-wc-payment-gateway-wcpay.php:3604-3613; includes/class-wc-payments-account.php:2731-2734).
+	 *
+	 * @dataProvider provider_afterpay_titles_by_account_country
+	 *
+	 * @param array<string,string> $account_data   Cached account data.
+	 * @param string|null          $store_country  Store base country, or null to keep the default.
+	 * @param string               $expected_title Expected gateway title.
 	 */
-	public function test_gateway_titles_follow_account_country_branding(): void {
+	public function test_gateway_titles_follow_account_country_branding( array $account_data, ?string $store_country, string $expected_title ): void {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
 		$this->assertNotNull( $definition );
-
-		$expected_titles = array(
-			'GB' => 'Clearpay',
-			'US' => 'Cash App Afterpay',
-			'AU' => 'Afterpay',
-		);
-
-		foreach ( $expected_titles as $account_country => $expected_title ) {
-			$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-				->disableOriginalConstructor()
-				->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
-				->getMock();
-			$account_service->method( 'get_cached_account_data' )->willReturn(
-				array( 'country' => $account_country )
-			);
-			$account_service->method( 'is_gateway_enabled' )->willReturn( true );
-			$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-
-			$gateway = new WooPaymentsGateway( $definition );
-			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
-			$gateway->handle_init();
-
-			$this->assertSame( $expected_title, $gateway->get_title(), "Gateway title for {$account_country}" );
-			$this->assertSame( "WooPayments ({$expected_title})", $gateway->get_method_title(), "Method title for {$account_country}" );
+		if ( null !== $store_country ) {
+			update_option( 'woocommerce_default_country', $store_country );
 		}
-	}
 
-	/**
-	 * @testdox Should brand the gateway titles for a US account, not the store country, when the account data has no country.
-	 */
-	public function test_gateway_titles_use_us_without_an_account_country(): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'afterpay_clearpay' );
-		$this->assertNotNull( $definition );
-		update_option( 'woocommerce_default_country', 'GB' );
-
-		// The account data is empty while the platform connection is down. Client 11.1.0 then titles the gateway for US
-		// (includes/class-wc-payment-gateway-wcpay.php:3604-3613; includes/class-wc-payments-account.php:2731-2734).
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
-		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 
@@ -223,8 +199,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 		$gateway->handle_init();
 
-		$this->assertSame( 'Cash App Afterpay', $gateway->get_title() );
-		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+		$this->assertSame( $expected_title, $gateway->get_title() );
+		$this->assertSame( "WooPayments ({$expected_title})", $gateway->get_method_title() );
+	}
+
+	/**
+	 * Account data, store country and the Afterpay title they give.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string|null,2:string}>
+	 */
+	public function provider_afterpay_titles_by_account_country(): array {
+		return array(
+			'GB account'                   => array( array( 'country' => 'GB' ), null, 'Clearpay' ),
+			'US account'                   => array( array( 'country' => 'US' ), null, 'Cash App Afterpay' ),
+			'AU account'                   => array( array( 'country' => 'AU' ), null, 'Afterpay' ),
+			'no account country, GB store' => array( array(), 'GB', 'Cash App Afterpay' ),
+		);
 	}
 
 	/**
@@ -565,18 +555,40 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat saved cards as on while the WooPayments settings hold no saved cards setting, as the client's form field default (class-wc-payment-gateway-wcpay.php:404-410,987-989).
+	 * @testdox Should expose saved-card support on the card gateway only while saved cards are on: $_dataName.
+	 *
+	 * With no saved cards setting stored, saved cards are on, as the client's form field default (class-wc-payment-gateway-wcpay.php:404-410,987-989).
+	 *
+	 * @dataProvider provider_card_gateway_saved_cards_setting
+	 *
+	 * @param array<string,string> $settings WooPayments gateway settings.
+	 * @param bool                 $expected Whether saved cards are on.
 	 */
-	public function test_card_gateway_saved_cards_default_on(): void {
+	public function test_card_gateway_saved_card_support_follows_saved_cards_setting( array $settings, bool $expected ): void {
 		$this->with_gateway_settings(
-			array( 'enabled' => 'yes' ),
-			function (): void {
+			$settings,
+			function () use ( $expected ): void {
 				$gateway = new WooPaymentsGateway();
 
-				$this->assertTrue( $gateway->is_saved_cards_enabled() );
-				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
-				$this->assertTrue( $gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ) );
+				$this->assertSame( $expected, $gateway->is_saved_cards_enabled() );
+				$this->assertSame( $expected, $gateway->supports( PaymentGatewayFeature::TOKENIZATION ) );
+				$this->assertSame( $expected, $gateway->supports( PaymentGatewayFeature::ADD_PAYMENT_METHOD ) );
+				$this->assertSame( $expected, in_array( PaymentGatewayFeature::TOKENIZATION, $gateway->supports, true ) );
+				$this->assertSame( $expected, in_array( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports, true ) );
 			}
+		);
+	}
+
+	/**
+	 * Card gateway settings and whether they turn saved cards on.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:bool}>
+	 */
+	public function provider_card_gateway_saved_cards_setting(): array {
+		return array(
+			'no saved cards setting stored' => array( array( 'enabled' => 'yes' ), true ),
+			'saved cards on'                => array( array( 'saved_cards' => 'yes' ), true ),
+			'saved cards off'               => array( array( 'saved_cards' => 'no' ), false ),
 		);
 	}
 
@@ -709,15 +721,20 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide a method that cannot be reused from a subscription or renewal cart (client 11.1.0 `class-upe-payment-method.php:218-236`).
-	 * @testWith ["subscription", false]
-	 *           ["renewal", false]
-	 *           ["ordinary", true]
+	 * @testdox Should hide a method that cannot be reused from a subscription or renewal cart unless manual renewals are on: $_dataName.
 	 *
-	 * @param string $cart     Cart the shopper checks out: a subscription, a renewal or neither.
-	 * @param bool   $expected Whether Bancontact is offered.
+	 * Client 11.1.0 `class-upe-payment-method.php:218-236`. Amazon Pay is offered as a list gateway only while it is enabled at
+	 * checkout with list placement on, so its row turns both on.
+	 *
+	 * @dataProvider provider_gateway_availability_by_subscription_cart
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @param string $currency          Store currency.
+	 * @param string $cart              Cart the shopper checks out: a subscription, a renewal or neither.
+	 * @param bool   $manual_renewals   Whether WooCommerce Subscriptions accepts manual renewals.
+	 * @param bool   $expected          Whether the method is offered.
 	 */
-	public function test_gateway_availability_hides_a_non_reusable_method_from_subscription_carts( string $cart, bool $expected ): void {
+	public function test_gateway_availability_hides_a_non_reusable_method_from_subscription_carts( string $payment_method_id, string $currency, string $cart, bool $manual_renewals, bool $expected ): void {
 		$this->activate_builtin_tier();
 		// WooCommerce Subscriptions loads its core library with its cart; the mock is reset after every test.
 		$this->register_legacy_proxy_function_mocks(
@@ -728,30 +745,89 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = 'subscription' === $cart;
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ]      = 'renewal' === $cart ? array( 'subscription_renewal' => array() ) : false;
+		$this->ensure_wcs_manual_renewal_double();
+		$GLOBALS['wcpay_test_manual_renewal_enabled'] = $manual_renewals;
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'country'          => 'US',
+				'capabilities'     => array( "{$payment_method_id}_payments" => 'active' ),
+				'store_currencies' => array( 'default' => 'usd' ),
+			)
+		);
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( $payment_method_id ) {
+				$settings = array(
+					'express_checkout_in_payment_methods' => 'yes',
+					'upe_enabled_payment_method_ids'      => array( $payment_method_id ),
+				);
+
+				return $settings[ $key ] ?? $fallback;
+			}
+		);
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
 
 		$settings_filter = static function (): array {
 			return array( 'enabled' => 'yes' );
 		};
-		$currency_filter = static function (): string {
-			return 'EUR';
+		$currency_filter = static function () use ( $currency ): string {
+			return $currency;
 		};
-		$settings_option = 'pre_option_woocommerce_woocommerce_payments_bancontact_settings';
+		$feature_filter  = static fn(): string => '1';
+		$settings_option = "pre_option_woocommerce_woocommerce_payments_{$payment_method_id}_settings";
 		$previous_cart   = WC()->cart;
 		WC()->cart       = new \WC_Cart();
 		WC()->cart->set_total( '0' );
 		add_filter( $settings_option, $settings_filter );
 		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
+		add_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
 
 		try {
-			$gateway = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' ) );
-			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $this->create_account_service_for_country( 'US', 'bancontact_payments', true ) );
+			$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+			$this->assertNotNull( $definition );
+			$gateway = new WooPaymentsGateway( $definition );
+			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
 
 			$this->assertSame( $expected, $gateway->is_available() );
 		} finally {
 			remove_filter( $settings_option, $settings_filter );
 			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
+			remove_filter( 'pre_option__wcpay_feature_dynamic_checkout_place_order_button', $feature_filter );
+			unset( $GLOBALS['wcpay_test_manual_renewal_enabled'] );
 			WC()->cart = $previous_cart;
 		}
+	}
+
+	/**
+	 * Payment methods, carts and manual-renewal settings, and whether the method is offered.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:bool,4:bool}>
+	 */
+	public function provider_gateway_availability_by_subscription_cart(): array {
+		return array(
+			'Bancontact, subscription cart'          => array( 'bancontact', 'EUR', 'subscription', false, false ),
+			'Bancontact, renewal cart'               => array( 'bancontact', 'EUR', 'renewal', false, false ),
+			'Bancontact, ordinary cart'              => array( 'bancontact', 'EUR', 'ordinary', false, true ),
+			'Bancontact, subscription cart, manual renewals on' => array( 'bancontact', 'EUR', 'subscription', true, true ),
+			'reusable Amazon Pay, subscription cart' => array( 'amazon_pay', 'USD', 'subscription', false, true ),
+		);
+	}
+
+	/**
+	 * Define `wcs_is_manual_renewal_enabled()`, which reports the `wcpay_test_manual_renewal_enabled` global, false when unset.
+	 */
+	private function ensure_wcs_manual_renewal_double(): void {
+		if ( function_exists( 'wcs_is_manual_renewal_enabled' ) ) {
+			return;
+		}
+
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its manual renewal setting.
+		eval( 'namespace { function wcs_is_manual_renewal_enabled() { return ! empty( $GLOBALS["wcpay_test_manual_renewal_enabled"] ); } }' );
 	}
 
 	/**
@@ -1371,35 +1447,35 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should show the checkout test-mode badge when test mode is enabled.
+	 * @testdox Should show the checkout test-mode badge only in test mode: $_dataName.
+	 *
+	 * @dataProvider provider_test_mode_badge
+	 *
+	 * @param string $test_mode Gateway `test_mode` setting.
+	 * @param bool   $shown     Whether the badge shows.
 	 */
-	public function test_gateway_icon_shows_test_mode_badge_when_test_mode_is_enabled(): void {
+	public function test_gateway_icon_shows_test_mode_badge_only_in_test_mode( string $test_mode, bool $shown ): void {
 		$this->with_gateway_settings(
-			array( 'test_mode' => 'yes' ),
-			function (): void {
-				$gateway = new WooPaymentsGateway();
+			array( 'test_mode' => $test_mode ),
+			function () use ( $shown ): void {
+				$icon = ( new WooPaymentsGateway() )->get_icon();
 
-				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
-				$this->assertStringContainsString( 'test-mode badge', $gateway->get_icon() );
-				$this->assertStringContainsString( 'background-color:#fff2d7', $gateway->get_icon() );
-				$this->assertStringContainsString( 'Test Mode', $gateway->get_icon() );
+				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $icon );
+				$this->assertSame( $shown, str_contains( $icon, 'test-mode badge' ) );
+				$this->assertSame( $shown, str_contains( $icon, 'Test Mode' ) );
 			}
 		);
 	}
 
 	/**
-	 * @testdox Should hide the checkout test-mode badge when test mode is disabled.
+	 * Test mode settings and whether the badge shows.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
 	 */
-	public function test_gateway_icon_hides_test_mode_badge_when_test_mode_is_disabled(): void {
-		$this->with_gateway_settings(
-			array( 'test_mode' => 'no' ),
-			function (): void {
-				$gateway = new WooPaymentsGateway();
-
-				$this->assertStringContainsString( '/assets/images/payment-methods/visa-color.svg', $gateway->get_icon() );
-				$this->assertStringNotContainsString( 'test-mode badge', $gateway->get_icon() );
-				$this->assertStringNotContainsString( 'Test Mode', $gateway->get_icon() );
-			}
+	public function provider_test_mode_badge(): array {
+		return array(
+			'test mode on'  => array( 'yes', true ),
+			'test mode off' => array( 'no', false ),
 		);
 	}
 
@@ -1431,31 +1507,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$icon = $gateway->get_icon();
 
 		$this->assertStringContainsString( '<span class="payment-methods--logos-count">' . $more_count . '</span>', $icon );
-	}
-
-	/**
-	 * @testdox Should expose saved-card support only when saved cards are enabled.
-	 */
-	public function test_saved_card_support_tracks_saved_cards_setting(): void {
-		$this->with_gateway_settings(
-			array( 'saved_cards' => 'yes' ),
-			function (): void {
-				$gateway = new WooPaymentsGateway();
-
-				$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $gateway->supports );
-				$this->assertContains( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports );
-			}
-		);
-
-		$this->with_gateway_settings(
-			array( 'saved_cards' => 'no' ),
-			function (): void {
-				$gateway = new WooPaymentsGateway();
-
-				$this->assertNotContains( PaymentGatewayFeature::TOKENIZATION, $gateway->supports );
-				$this->assertNotContains( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports );
-			}
-		);
 	}
 
 	/**
@@ -1513,79 +1564,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Subscription checkout eligibility follows reusability and manual renewal policy.
-	 */
-	public function test_subscription_checkout_eligibility_is_independent_from_hook_ownership(): void {
-		$registry              = new WooPaymentsPaymentMethodRegistry();
-		$bancontact_definition = $registry->get( 'bancontact' );
-		$amazon_definition     = $registry->get( 'amazon_pay' );
-		$this->assertNotNull( $bancontact_definition );
-		$this->assertNotNull( $amazon_definition );
-
-		$method = new \ReflectionMethod( WooPaymentsGateway::class, 'is_available_for_subscription_context' );
-		$method->setAccessible( true );
-
-		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), false, false ) );
-		$this->assertFalse( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), true, false ) );
-		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $bancontact_definition ), true, true ) );
-		$this->assertTrue( $method->invoke( new WooPaymentsGateway( $amazon_definition ), true, false ) );
-	}
-
-	/**
-	 * @testdox Should preserve a non-reusable method while forcing its subscription to manual renewal.
-	 */
-	public function test_maybe_force_subscription_to_manual_preserves_non_reusable_method(): void {
-		$subscription = new class() extends WC_Order {
-			/**
-			 * Whether manual renewal is required.
-			 *
-			 * @var bool
-			 */
-			private bool $requires_manual_renewal = false;
-
-			/**
-			 * Set whether manual renewal is required.
-			 *
-			 * @param bool $requires_manual_renewal Whether manual renewal is required.
-			 */
-			public function set_requires_manual_renewal( $requires_manual_renewal ): void {
-				$this->requires_manual_renewal = (bool) $requires_manual_renewal;
-			}
-
-			/**
-			 * Tell whether manual renewal is required.
-			 *
-			 * @return bool
-			 */
-			public function is_manual(): bool {
-				return $this->requires_manual_renewal;
-			}
-		};
-		$gateway_id   = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact';
-		$subscription->set_payment_method( $gateway_id );
-		$subscription->save();
-
-		$gateway = new WooPaymentsGateway();
-		if ( ! method_exists( $gateway, 'maybe_force_subscription_to_manual' ) ) {
-			$this->fail( 'The subscription creation policy callback does not exist.' );
-		}
-		$gateway->maybe_force_subscription_to_manual( $subscription );
-
-		$this->assertTrue( $subscription->is_manual() );
-		$this->assertSame( $gateway_id, $subscription->get_payment_method() );
-		$this->assertSame( $gateway_id, $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
-	}
-
-	/**
-	 * @testdox Should leave a card subscription on automatic renewal because card is a reusable method.
+	 * @testdox Should force only a non-reusable method's subscription to manual renewal, keeping its method: $_dataName.
 	 *
-	 * Mirrors client 11.1.0 `tr:1399-1401` (`maybe_force_subscription_to_manual`): a reusable gateway
-	 * (card, Amazon Pay) returns before touching `requires_manual_renewal` or the original-method meta.
-	 * `test_maybe_force_subscription_to_manual_preserves_non_reusable_method` above only covers the
-	 * non-reusable (split gateway) branch; this covers the reusable early-return branch the client
-	 * takes for `WC_Payment_Gateway_WCPay::GATEWAY_ID` itself.
+	 * Mirrors client 11.1.0 `tr:1399-1401` (`maybe_force_subscription_to_manual`): a reusable gateway (card, Amazon Pay)
+	 * returns before touching `requires_manual_renewal` or the original-method meta.
+	 *
+	 * @dataProvider provider_subscription_renewal_mode_by_method
+	 *
+	 * @param string $gateway_id    Gateway ID of the subscription's payment method.
+	 * @param bool   $manual        Whether the subscription is forced to manual renewal.
+	 * @param string $original_meta Expected `_wcpay_original_payment_method_id` meta.
 	 */
-	public function test_maybe_force_subscription_to_manual_leaves_card_subscription_automatic(): void {
+	public function test_maybe_force_subscription_to_manual_follows_method_reusability( string $gateway_id, bool $manual, string $original_meta ): void {
 		$subscription = new class() extends WC_Order {
 			/**
 			 * Whether manual renewal is required.
@@ -1612,55 +1602,55 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				return $this->requires_manual_renewal;
 			}
 		};
-		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_payment_method( $gateway_id );
 		$subscription->save();
 
 		( new WooPaymentsGateway() )->maybe_force_subscription_to_manual( $subscription );
 
-		$this->assertFalse( $subscription->is_manual() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
-		$this->assertSame( '', $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
+		$this->assertSame( $manual, $subscription->is_manual() );
+		$this->assertSame( $gateway_id, $subscription->get_payment_method() );
+		$this->assertSame( $original_meta, $subscription->get_meta( '_wcpay_original_payment_method_id', true ) );
 	}
 
 	/**
-	 * @testdox Should copy the successful renewal token onto a failing subscription.
+	 * Subscription payment methods and the renewal mode they leave.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:string}>
 	 */
-	public function test_update_failing_payment_method_copies_renewal_token(): void {
-		$user_id      = self::factory()->user->create();
-		$subscription = $this->create_order();
-		$renewal      = $this->create_order();
-		$token        = $this->create_card_token( $user_id, 'pm_recovered' );
+	public function provider_subscription_renewal_mode_by_method(): array {
+		$bancontact = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact';
 
-		$subscription->set_customer_id( $user_id );
-		$subscription->save();
-		$renewal->set_customer_id( $user_id );
-		$renewal->add_payment_token( $token );
-		$renewal->save();
-
-		$gateway = new WooPaymentsGateway();
-
-		$gateway->update_failing_payment_method( wc_get_order( $subscription->get_id() ), wc_get_order( $renewal->get_id() ) );
-
-		$subscription = wc_get_order( $subscription->get_id() );
-		$this->assertContains( $token->get_id(), array_map( 'absint', $subscription->get_payment_tokens() ) );
+		return array(
+			'non-reusable Bancontact' => array( $bancontact, true, $bancontact ),
+			'reusable card'           => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, false, '' ),
+		);
 	}
 
 	/**
-	 * @testdox Should reappend a previously used renewal token so it becomes active on the failing subscription.
+	 * @testdox Should append the successful renewal token to a failing subscription so it becomes active: $_dataName.
+	 *
+	 * @dataProvider provider_failing_payment_method_token_updates
+	 *
+	 * @param string[] $subscription_tokens Payment method IDs of the subscription's tokens, in order.
+	 * @param string   $renewal_token       Payment method ID of the renewal's token.
+	 * @param string[] $expected            Payment method IDs of the subscription's tokens afterwards, in order.
 	 */
-	public function test_update_failing_payment_method_reappends_previously_used_renewal_token(): void {
+	public function test_update_failing_payment_method_appends_the_renewal_token( array $subscription_tokens, string $renewal_token, array $expected ): void {
 		$user_id      = self::factory()->user->create();
 		$subscription = $this->create_order();
 		$renewal      = $this->create_order();
-		$token_a      = $this->create_card_token( $user_id, 'pm_a' );
-		$token_b      = $this->create_card_token( $user_id, 'pm_b' );
+		$tokens       = array();
+		foreach ( array_unique( array_merge( $subscription_tokens, array( $renewal_token ) ) ) as $payment_method_id ) {
+			$tokens[ $payment_method_id ] = $this->create_card_token( $user_id, $payment_method_id );
+		}
 
 		$subscription->set_customer_id( $user_id );
-		$subscription->add_payment_token( $token_a );
-		$subscription->add_payment_token( $token_b );
+		foreach ( $subscription_tokens as $payment_method_id ) {
+			$subscription->add_payment_token( $tokens[ $payment_method_id ] );
+		}
 		$subscription->save();
 		$renewal->set_customer_id( $user_id );
-		$renewal->add_payment_token( $token_a );
+		$renewal->add_payment_token( $tokens[ $renewal_token ] );
 		$renewal->save();
 
 		$gateway = new WooPaymentsGateway();
@@ -1669,8 +1659,20 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $subscription );
 		$this->assertSame(
-			array( $token_a->get_id(), $token_b->get_id(), $token_a->get_id() ),
+			array_map( static fn( string $payment_method_id ): int => $tokens[ $payment_method_id ]->get_id(), $expected ),
 			array_values( array_map( 'absint', $subscription->get_payment_tokens() ) )
+		);
+	}
+
+	/**
+	 * Subscription and renewal tokens, and the subscription's tokens after the update.
+	 *
+	 * @return array<string,array{0:string[],1:string,2:string[]}>
+	 */
+	public function provider_failing_payment_method_token_updates(): array {
+		return array(
+			'new renewal token'             => array( array(), 'pm_recovered', array( 'pm_recovered' ) ),
+			'previously used renewal token' => array( array( 'pm_a', 'pm_b' ), 'pm_a', array( 'pm_a', 'pm_b', 'pm_a' ) ),
 		);
 	}
 
@@ -2679,55 +2681,21 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should admit a checkout request whose fraud-prevention token matches the session.
-	 *
-	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227` and
-	 * `fraud-prevention/class-fraud-prevention-service.php:168-177`: a token that hashes equal to the
-	 * session's is admitted without regenerating it.
-	 */
-	public function test_process_payment_admits_matching_fraud_prevention_token_when_enabled(): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$session = $this->create_session();
-		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, '0123456789abcdef' );
-		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = '0123456789abcdef';
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init(
-			$service,
-			new WooPaymentsProvider(),
-			null,
-			null,
-			null,
-			null,
-			null,
-			$this->create_fraud_prevention_service( true, $session )
-		);
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $service->last_checkout_context->get_gateway_id() );
-		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
-	}
-
-	/**
-	 * @testdox Should admit a matching fraud-prevention token on split redirect gateways.
+	 * @testdox Should admit a fraud-prevention token that matches the session, without regenerating it: $_dataName.
 	 *
 	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1219-1227`: `process_payment`
 	 * reads one shared `Fraud_Prevention_Service::get_instance()`, not a per-gateway one, so a matching
-	 * token admits the checkout identically whichever split gateway ID is processing.
+	 * token admits the checkout identically whichever gateway ID is processing, and
+	 * `fraud-prevention/class-fraud-prevention-service.php:168-177` admits it without regenerating it.
 	 *
 	 * @dataProvider split_redirect_gateway_provider
 	 *
-	 * @param string $payment_method_id Split payment method ID.
+	 * @param string|null $payment_method_id Split payment method ID, or null for the card gateway.
+	 * @param string      $gateway_id        Expected gateway ID of the checkout.
 	 */
-	public function test_process_payment_admits_valid_fraud_token_on_split_redirect_gateways( string $payment_method_id ): void {
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
-		$this->assertNotNull( $definition );
+	public function test_process_payment_admits_valid_fraud_token_on_split_redirect_gateways( ?string $payment_method_id, string $gateway_id ): void {
+		$definition = null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id );
+		$this->assertSame( null === $payment_method_id, null === $definition );
 
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
@@ -2753,19 +2721,21 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( $gateway_id, $service->last_checkout_context->get_gateway_id() );
+		$this->assertSame( '0123456789abcdef', $session->get( WooPaymentsFraudPreventionService::TOKEN_NAME ) );
 	}
 
 	/**
-	 * Split redirect gateways the matching fraud-prevention token must be admitted on.
+	 * Gateways the matching fraud-prevention token must be admitted on: card and the split redirect gateways.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:string|null,1:string}>
 	 */
 	public function split_redirect_gateway_provider(): array {
 		return array(
-			'Affirm'            => array( 'affirm' ),
-			'Cash App Afterpay' => array( 'afterpay_clearpay' ),
-			'Bancontact'        => array( 'bancontact' ),
+			'card'              => array( null, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'Affirm'            => array( 'affirm', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'affirm' ),
+			'Cash App Afterpay' => array( 'afterpay_clearpay', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay' ),
+			'Bancontact'        => array( 'bancontact', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'bancontact' ),
 		);
 	}
 
@@ -2944,18 +2914,24 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should suffix the rate-limiter note amount with the order currency in a multi-currency store.
+	 * @testdox Should suffix the rate-limiter note amount with the order currency only while Multi-Currency is on: $_dataName.
 	 *
 	 * WooPayments 11.1.0 `class-wc-payment-gateway-wcpay.php:1418` passes the total through
 	 * `WC_Payments_Explicit_Price_Formatter::get_explicit_price()`, which appends ` <currency code>`
 	 * when customer multi-currency is on and more than one currency is enabled
-	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`). The gateway reads core Multi-Currency.
+	 * (`class-wc-payments-explicit-price-formatter.php:106-142`, `:167-190`), and returns the bare price while
+	 * Multi-Currency is off, even with enabled currencies left in the option (`:167-172`). The gateway reads core Multi-Currency.
+	 *
+	 * @dataProvider provider_rate_limiter_note_currency_suffix
+	 *
+	 * @param bool   $multi_currency Whether core Multi-Currency owns the runtime.
+	 * @param string $suffix         Expected text after the note amount.
 	 */
-	public function test_process_payment_rate_limiter_note_uses_explicit_price_in_multi_currency_store(): void {
+	public function test_process_payment_rate_limiter_note_suffixes_the_currency_only_with_multi_currency( bool $multi_currency, string $suffix ): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-		$this->set_core_multi_currency( true );
+		$this->set_core_multi_currency( $multi_currency );
 		$order   = $this->create_order();
 		$session = $this->create_session();
 		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
@@ -2977,45 +2953,20 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'USD', $order->get_currency() );
 		$this->assertContains(
-			'A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . ' USD <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
+			'A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . $suffix . ' <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
 			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
 		);
 	}
 
 	/**
-	 * @testdox Should omit the explicit currency from the rate-limiter note while Multi-Currency is off.
+	 * Multi-Currency states and the text the rate-limiter note puts after the amount.
 	 *
-	 * WooPayments 11.1.0 `class-wc-payments-explicit-price-formatter.php:167-172` returns the bare price
-	 * when Multi-Currency is off, even with enabled currencies left in the option. The gateway reads core Multi-Currency.
+	 * @return array<string,array{0:bool,1:string}>
 	 */
-	public function test_process_payment_rate_limiter_note_omits_explicit_price_when_multi_currency_is_off(): void {
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
-		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-		$this->set_core_multi_currency( false );
-		$order   = $this->create_order();
-		$session = $this->create_session();
-		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init(
-			new RecordingPaymentProcessingService(),
-			new WooPaymentsProvider(),
-			null,
-			null,
-			null,
-			null,
-			null,
-			$this->create_fraud_prevention_service( false, $session ),
-			new WooPaymentsFailedTransactionRateLimiter( $session )
-		);
-
-		$gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'USD', $order->get_currency() );
-		$this->assertContains(
-			'A payment of ' . wc_price( 12.00, array( 'currency' => 'USD' ) ) . ' <strong>failed</strong> to complete because of too many failed transactions. A rate limiter was enabled for the user to prevent more attempts temporarily.',
-			array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) )
+	public function provider_rate_limiter_note_currency_suffix(): array {
+		return array(
+			'Multi-Currency on'  => array( true, ' USD' ),
+			'Multi-Currency off' => array( false, '' ),
 		);
 	}
 
@@ -3178,49 +3129,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep a paid order and return success when a step after the payment throws.
-	 *
-	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145):
-	 * when the payment step throws after the intent succeeded, the catch (`class-wc-payment-gateway-wcpay.php:1283-1304`)
-	 * keeps the order status, adds the downstream-error note, logs a warning and returns success with get_return_url().
-	 * The test runs the real processing service: the provider's post-lifecycle step throws after the order is paid.
-	 */
-	public function test_process_payment_post_lifecycle_failure_after_payment_keeps_order_and_returns_success(): void {
-		$order      = $this->create_order();
-		$logger     = $this->capture_logs();
-		$return_url = $this->filter_return_url( $order );
-		$provider   = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_downstream', '', 'pm_card_visa' ),
-			'post_lifecycle_effects',
-			new \RuntimeException( 'Auth credentials missing' )
-		);
-		$gateway    = new WooPaymentsGateway();
-		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
-		$_POST['wcpay-payment-method'] = 'pm_card_visa';
-
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'success', $result['result'] ?? '' );
-		$this->assertSame( $return_url, $result['redirect'] ?? '' );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'completed', $order->get_status(), 'The paid order must keep its status.' );
-		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: Auth credentials missing. Order status preserved.', $notes );
-		$this->assertSame(
-			array( sprintf( 'Payment intent already succeeded; downstream RuntimeException on order #%d suppressed to preserve order status.', $order->get_id() ) ),
-			$logger->warning_messages()
-		);
-		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
-	}
-
-	/**
 	 * @testdox A $throwable_class after the payment succeeded with debug logging $logging keeps the order and is logged with its trace: $written.
 	 *
-	 * Client 11.1.0 writes `Logger::exception( 'Error occurred during the payment process.', $e )` with the class, code and
+	 * WooPayments 11.1.0 `tests/unit/test-class-wc-payment-gateway-wcpay.php:4531` (WOOPMNT-6145): when the payment step
+	 * throws after the intent succeeded, the catch (`class-wc-payment-gateway-wcpay.php:1283-1304`) keeps the order status,
+	 * adds the downstream-error note, logs a warning and returns success with get_return_url(). The test runs the real
+	 * processing service: the provider's post-lifecycle step throws after the order is paid.
+	 *
+	 * Client 11.1.0 also writes `Logger::exception( 'Error occurred during the payment process.', $e )` with the class, code and
 	 * trace before its succeeded-intent check (`class-wc-payment-gateway-wcpay.php:1274`, `includes/class-logger.php:100-112`),
-	 * behind the debug setting; a PHP error, which fatals there, is written whatever the setting. The
-	 * succeeded-intent warning and the success answer stay as they are.
+	 * behind the debug setting; a PHP error, which fatals there, is written whatever the setting.
 	 *
 	 * @testWith ["TypeError", "no", true]
 	 *           ["RuntimeException", "yes", true]
@@ -3233,13 +3151,14 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	public function test_process_payment_succeeded_intent_failure_is_logged_with_trace( string $throwable_class, string $logging, bool $written ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$order    = $this->create_order();
-		$provider = $this->create_provider_failing_after_charge(
+		$order      = $this->create_order();
+		$return_url = $this->filter_return_url( $order );
+		$provider   = $this->create_provider_failing_after_charge(
 			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_downstream', '', 'pm_card_visa' ),
 			'post_lifecycle_effects',
 			new $throwable_class( 'Downstream step failed' )
 		);
-		$gateway  = new WooPaymentsGateway();
+		$gateway    = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
 		$logger                        = RecordingWcLogger::install();
@@ -3247,9 +3166,19 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] ?? '' );
-		$this->assertSame( 'completed', wc_get_order( $order->get_id() )->get_status() );
-		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && str_starts_with( $line[1], 'Payment intent already succeeded' ) ) );
-		$this->assertCount( 1, $warnings, 'The succeeded-intent warning is written whatever the setting.' );
+		$this->assertSame( $return_url, $result['redirect'] ?? '' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( 'completed', $order->get_status(), 'The paid order must keep its status.' );
+		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertContains( 'Payment succeeded, but a downstream error occurred during post-payment processing: Downstream step failed. Order status preserved.', $notes );
+		$warnings = array_values( array_map( static fn( array $line ): string => $line[1], array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
+		$this->assertSame(
+			array( sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $throwable_class, $order->get_id() ) ),
+			$warnings,
+			'The succeeded-intent warning is written whatever the setting.'
+		);
+		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
 		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error occurred during the payment process.' === $line[1] ) );
 		if ( ! $written ) {
 			$this->assertSame( array(), $lines );
@@ -3716,62 +3645,18 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should bump the failed-transaction limiter for extension-matching decline error codes.
-	 *
-	 * @dataProvider failed_transaction_limited_error_codes
-	 *
-	 * @param string $error_code Provider error code.
-	 */
-	public function test_process_payment_bumps_failed_transaction_rate_limiter_for_decline_error_codes( string $error_code ): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$session = $this->create_session();
-
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array(
-				PaymentOutcome::DATA_ERROR_CODE    => $error_code,
-				PaymentOutcome::DATA_ERROR_MESSAGE => 'Declined.',
-			)
-		);
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init(
-			$service,
-			new WooPaymentsProvider(),
-			null,
-			null,
-			null,
-			null,
-			null,
-			$this->create_fraud_prevention_service( false, $session ),
-			new WooPaymentsFailedTransactionRateLimiter( $session )
-		);
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'failure', $result['result'] );
-		$this->assertCount( 1, $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
-	}
-
-	/**
-	 * @testdox Should not bump the failed-transaction limiter for non-card-decline failures.
+	 * @testdox Should bump the failed-transaction limiter only for the WooPayments extension's decline error codes: $_dataName.
 	 *
 	 * Client `class-wc-payment-gateway-wcpay.php:4891-4893` (11.1.0) bumps only for
 	 * `card_declined`, `incorrect_number` and `incorrect_cvc`; `expired_card` is not
 	 * in that list, so an expired-card decline must not count toward the limiter.
 	 *
-	 * @dataProvider failed_transaction_unlimited_error_codes
+	 * @dataProvider provider_failed_transaction_rate_limiter_error_codes
 	 *
-	 * @param string $error_code Provider error code.
+	 * @param string $error_code     Provider error code.
+	 * @param int    $expected_count Failed transactions the limiter records.
 	 */
-	public function test_process_payment_does_not_bump_failed_transaction_rate_limiter_for_other_errors( string $error_code ): void {
+	public function test_process_payment_bumps_failed_transaction_rate_limiter_only_for_decline_error_codes( string $error_code, int $expected_count ): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
@@ -3807,42 +3692,41 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( 'failure', $result['result'] );
-		$this->assertSame( array(), $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
+		$this->assertCount( $expected_count, $session->get( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array() ) );
 	}
 
 	/**
-	 * Provider error codes that must not bump the failed-transaction rate limiter.
+	 * Provider error codes and the failed transactions the rate limiter records for them.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{0:string,1:int}>
 	 */
-	public function failed_transaction_unlimited_error_codes(): array {
+	public function provider_failed_transaction_rate_limiter_error_codes(): array {
 		return array(
-			'processing error' => array( 'processing_error' ),
-			'expired card'     => array( 'expired_card' ),
+			'card declined'    => array( 'card_declined', 1 ),
+			'incorrect number' => array( 'incorrect_number', 1 ),
+			'incorrect cvc'    => array( 'incorrect_cvc', 1 ),
+			'processing error' => array( 'processing_error', 0 ),
+			'expired card'     => array( 'expired_card', 0 ),
 		);
 	}
 
 	/**
-	 * @testdox A failed provider checkout adds exactly one localized shopper notice without exposing raw diagnostics.
+	 * @testdox A failed provider checkout adds exactly one shopper notice, its shopper copy or a generic sentence, without raw diagnostics: $_dataName.
+	 *
+	 * @dataProvider provider_failed_outcome_shopper_notices
+	 *
+	 * @param string              $intent_id     Intent ID of the failed outcome.
+	 * @param array<string,mixed> $outcome_data  Data of the failed outcome.
+	 * @param string              $notice        Expected shopper notice.
+	 * @param string              $private_value Diagnostic text the notice must not show.
 	 */
-	public function test_process_payment_adds_one_localized_notice_for_failed_provider_outcome(): void {
+	public function test_process_payment_adds_one_safe_notice_for_failed_outcome( string $intent_id, array $outcome_data, string $notice, string $private_value ): void {
 		wc_clear_notices();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
 
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'pi_declined',
-			'',
-			'',
-			'',
-			array(
-				PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
-				PaymentOutcome::DATA_ERROR_MESSAGE => 'Provider diagnostic for request req_private.',
-				WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card has insufficient funds.',
-			)
-		);
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, $intent_id, '', '', '', $outcome_data );
 
 		$sut = new WooPaymentsGateway();
 		$sut->init(
@@ -3864,56 +3748,37 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'failure', $result['result'] );
 		$this->assertCount( 1, $notices );
-		$this->assertSame( 'Error: Your card has insufficient funds.', $notices[0]['notice'] );
-		$this->assertStringNotContainsString( 'req_private', $notices[0]['notice'] );
+		$this->assertSame( $notice, $notices[0]['notice'] );
+		$this->assertStringNotContainsString( $private_value, $notices[0]['notice'] );
 	}
 
 	/**
-	 * @testdox Failed outcomes without shopper copy add one generic safe notice.
+	 * Failed outcomes and the one notice the shopper sees.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:string,3:string}>
 	 */
-	public function test_process_payment_adds_one_generic_notice_for_failed_transport_outcome(): void {
-		wc_clear_notices();
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$session = $this->create_session();
-
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array(
-				PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_native_transport_error',
-				PaymentOutcome::DATA_ERROR_MESSAGE => 'Connection refused at private-provider-host:8443.',
-			)
+	public function provider_failed_outcome_shopper_notices(): array {
+		return array(
+			'provider decline with shopper copy'   => array(
+				'pi_declined',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'card_declined',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Provider diagnostic for request req_private.',
+					WooPaymentsIntentCodec::SHOPPER_ERROR_MESSAGE_KEY => 'Error: Your card has insufficient funds.',
+				),
+				'Error: Your card has insufficient funds.',
+				'req_private',
+			),
+			'transport error without shopper copy' => array(
+				'',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_native_transport_error',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Connection refused at private-provider-host:8443.',
+				),
+				"We're not able to process this request. Please refresh the page and try again.",
+				'private-provider-host',
+			),
 		);
-
-		$sut = new WooPaymentsGateway();
-		$sut->init(
-			$service,
-			new WooPaymentsProvider(),
-			null,
-			null,
-			null,
-			null,
-			null,
-			$this->create_fraud_prevention_service( false, $session ),
-			new WooPaymentsFailedTransactionRateLimiter( $session )
-		);
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$result  = $sut->process_payment( $order->get_id() );
-		$notices = wc_get_notices( 'error' );
-
-		$this->assertSame( 'failure', $result['result'] );
-		$this->assertCount( 1, $notices );
-		$this->assertSame(
-			"We're not able to process this request. Please refresh the page and try again.",
-			$notices[0]['notice']
-		);
-		$this->assertStringNotContainsString( 'private-provider-host', $notices[0]['notice'] );
 	}
 
 	/**
@@ -3976,19 +3841,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 0, wc_notice_count( 'error' ) );
-	}
-
-	/**
-	 * Failed transaction error codes that match standalone WooPayments rate-limiter behavior.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function failed_transaction_limited_error_codes(): array {
-		return array(
-			'card declined'    => array( 'card_declined' ),
-			'incorrect number' => array( 'incorrect_number' ),
-			'incorrect cvc'    => array( 'incorrect_cvc' ),
-		);
 	}
 
 	/**
@@ -4273,20 +4125,23 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve confirmation redirects and delay update-all bookkeeping for subscription changes.
+	 * @testdox Should keep a non-terminal outcome's redirect and defer subscription-change bookkeeping until it returns: $_dataName.
+	 *
+	 * @dataProvider provider_subscription_change_non_terminal_outcomes
+	 *
+	 * @param string $status          Outcome status.
+	 * @param string $intent_id       Outcome intent ID.
+	 * @param string $redirect_format Outcome redirect URL, with `%d` for the order ID.
+	 * @param bool   $update_all      Whether the shopper asks to update all subscriptions.
+	 * @param string $delayed_update  Expected `_delayed_update_payment_method_all` meta.
 	 */
-	public function test_process_payment_preserves_subscription_change_confirmation_redirect(): void {
+	public function test_process_payment_keeps_the_redirect_and_defers_subscription_change_bookkeeping( string $status, string $intent_id, string $redirect_format, bool $update_all, string $delayed_update ): void {
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
 		$order                     = $this->create_order();
-		$confirmation_redirect     = '#wcpay-confirm-pi:' . $order->get_id() . ':secret:nonce';
+		$redirect                  = sprintf( $redirect_format, $order->get_id() );
 		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION,
-			'pi_requires_action',
-			$confirmation_redirect,
-			'pm_new'
-		);
+		$service->checkout_outcome = new PaymentOutcome( $status, $intent_id, $redirect, 'pm_new' );
 		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
@@ -4296,7 +4151,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
-		$_POST['update_all_subscriptions_payment_method'] = '1';
+		if ( $update_all ) {
+			$_POST['update_all_subscriptions_payment_method'] = '1';
+		}
 
 		$_POST['wcpay-payment-method'] = 'pm_card';
 
@@ -4304,43 +4161,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order  = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $confirmation_redirect, $result['redirect'] );
+		$this->assertSame( $redirect, $result['redirect'] );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_meta( '_delayed_update_payment_method_all', true ) );
+		$this->assertSame( $delayed_update, $order->get_meta( '_delayed_update_payment_method_all', true ) );
 	}
 
 	/**
-	 * @testdox Should preserve provider redirects and defer subscription bookkeeping until authorization returns.
+	 * Non-terminal outcomes of a subscription payment-method change, and the update-all bookkeeping they leave.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:bool,4:string}>
 	 */
-	public function test_process_payment_defers_subscription_change_update_for_provider_redirect(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
-		$order                     = $this->create_order();
-		$provider_redirect         = 'https://payments.example.test/authorize';
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_REQUIRES_REDIRECT,
-			'pi_requires_redirect',
-			$provider_redirect,
-			'pm_new'
+	public function provider_subscription_change_non_terminal_outcomes(): array {
+		return array(
+			'confirmation redirect, update all' => array( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, 'pi_requires_action', '#wcpay-confirm-pi:%d:secret:nonce', true, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'provider redirect'                 => array( PaymentOutcome::STATUS_REQUIRES_REDIRECT, 'pi_requires_redirect', 'https://payments.example.test/authorize', false, '' ),
 		);
-		$gateway                   = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
-		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
-		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $provider_redirect, $result['redirect'] );
-		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 	}
 
 	/**
@@ -4376,18 +4212,25 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A no-external-payment outcome does not complete a subscription payment-method change.
+	 * @testdox An outcome other than completed or authorized does not complete a subscription payment-method change: $_dataName.
 	 *
 	 * The service answers no external payment for a $0 checkout with no credential, which the gateway lets through only with
 	 * network-wide saved cards; the recording service returns it here whatever the request carries. Only a completed or
 	 * authorized outcome updates the subscription's payment method and takes the change's return URL.
+	 *
+	 * @dataProvider provider_subscription_change_outcomes_that_do_not_complete
+	 *
+	 * @param string $status                  Outcome status.
+	 * @param string $result                  Expected checkout result.
+	 * @param bool   $redirects_order_received Whether checkout redirects to the order-received page, or to nothing.
 	 */
-	public function test_process_payment_does_not_complete_subscription_change_on_no_external_payment_outcome(): void {
+	public function test_process_payment_does_not_complete_subscription_change_on_an_incomplete_outcome( string $status, string $result, bool $redirects_order_received ): void {
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT );
+		$redirect                  = $redirects_order_received ? $order->get_checkout_order_received_url() : '';
+		$service->checkout_outcome = new PaymentOutcome( $status );
 		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
@@ -4406,66 +4249,42 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
 
 		try {
-			$result = $gateway->process_payment( $order->get_id() );
+			$checkout = $gateway->process_payment( $order->get_id() );
 		} finally {
 			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
 		}
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( $order->get_checkout_order_received_url(), $result['redirect'] );
+		$this->assertSame( $result, $checkout['result'] );
+		$this->assertSame( $redirect, $checkout['redirect'] );
 		$this->assertSame( 0, $return_filter_calls );
 		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
 	}
 
 	/**
-	 * @testdox Should not update subscription payment methods or success redirects after a failed new-method change.
-	 */
-	public function test_process_payment_does_not_update_subscription_payment_method_after_failed_new_method_change(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
-		$order                     = $this->create_order();
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED );
-		$gateway                   = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
-		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
-		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
-		$_POST['wcpay-payment-method']          = 'pm_card';
-
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
-
-		$return_filter_calls = 0;
-		$return_url_filter   = static function ( string $return_url ) use ( &$return_filter_calls ): string {
-			++$return_filter_calls;
-			return $return_url;
-		};
-		add_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
-
-		try {
-			$result = $gateway->process_payment( $order->get_id() );
-		} finally {
-			remove_filter( 'woocommerce_get_return_url', $return_url_filter, 11 );
-		}
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertTrue( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false, 'The request must run as a validated subscription payment-method change.' );
-		$this->assertSame( 'failure', $result['result'] );
-		$this->assertSame( 0, $return_filter_calls );
-		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
-	}
-
-	/**
-	 * @testdox Should require a positive matching subscription ID for new-method change semantics.
-	 * @dataProvider invalid_subscription_change_requests
+	 * Outcomes that leave a subscription payment-method change incomplete, and what checkout answers.
 	 *
-	 * @param string $request_id_type Request ID scenario.
-	 * @param bool   $is_subscription Whether the processed order should be identified as a subscription.
+	 * @return array<string,array{0:string,1:string,2:bool}>
 	 */
-	public function test_process_payment_rejects_invalid_subscription_change_request_identity( string $request_id_type, bool $is_subscription ): void {
+	public function provider_subscription_change_outcomes_that_do_not_complete(): array {
+		return array(
+			'no external payment' => array( PaymentOutcome::STATUS_NO_EXTERNAL_PAYMENT, 'success', true ),
+			'failed'              => array( PaymentOutcome::STATUS_FAILED, 'failure', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should give a subscription change request new-method change semantics only with a valid nonce and the exact processed subscription: $_dataName.
+	 *
+	 * @dataProvider provider_invalid_subscription_change_requests
+	 *
+	 * @param string   $nonce                 Nonce to post: '' for none, 'valid' for a valid one, or the literal value.
+	 * @param string   $request_key           POST key naming the subscription.
+	 * @param int|null $request_offset        Offset of the posted subscription ID from the order ID, or null to post '0'.
+	 * @param int[]    $subscription_offsets  Offsets from the order ID of the IDs registered as subscriptions.
+	 */
+	public function test_process_payment_rejects_invalid_subscription_change_requests( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets ): void {
 		$this->ensure_wcs_change_payment_gateway_double();
 		$this->ensure_wcs_subscription_detector_double();
 		$order   = $this->create_order();
@@ -4473,9 +4292,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
-		$GLOBALS['wcpay_test_subscription_ids'] = $is_subscription ? array( $order->get_id() ) : array();
-		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
-		$_POST['change_payment_method']         = 'zero' === $request_id_type ? '0' : (string) ( $order->get_id() + ( 'mismatch' === $request_id_type ? 1 : 0 ) );
+		$GLOBALS['wcpay_test_subscription_ids'] = array_map( static fn( int $offset ): int => $order->get_id() + $offset, $subscription_offsets );
+		if ( '' !== $nonce ) {
+			$_POST['_wcsnonce'] = 'valid' === $nonce ? wp_create_nonce( 'wcs_change_payment_method' ) : $nonce;
+		}
+		$_POST[ $request_key ] = null === $request_offset ? '0' : (string) ( $order->get_id() + $request_offset );
 
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
 
@@ -4491,44 +4312,21 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @dataProvider invalid_subscription_change_authority_requests
-	 * @testdox Subscription-change provider data requires a valid nonce and the exact processed subscription.
+	 * Subscription change requests that must not get new-method change semantics.
 	 *
-	 * @param string $nonce Nonce request value.
-	 * @param bool   $use_mismatched_subscription Whether the request names a different real subscription.
+	 * The first three post `change_payment_method` with a valid nonce and identify the wrong subscription; the last three
+	 * post `woocommerce_change_payment` naming a real subscription without the authority to change it.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int|null,3:int[]}>
 	 */
-	public function test_process_payment_rejects_invalid_subscription_change_request_authority( string $nonce, bool $use_mismatched_subscription ): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$request_id                             = $use_mismatched_subscription ? $order->get_id() + 1 : $order->get_id();
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id(), $request_id );
-		if ( '' !== $nonce ) {
-			$_POST['_wcsnonce'] = 'valid' === $nonce ? wp_create_nonce( 'wcs_change_payment_method' ) : $nonce;
-		}
-		$_POST['woocommerce_change_payment'] = (string) $request_id;
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$gateway->process_payment( $order->get_id() );
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertFalse( $service->last_checkout_context->get_provider_data()['subscription_payment_method_change'] ?? false );
-	}
-
-	/**
-	 * @return array<string,array{string,bool}>
-	 */
-	public static function invalid_subscription_change_authority_requests(): array {
+	public static function provider_invalid_subscription_change_requests(): array {
 		return array(
-			'missing nonce'                => array( '', false ),
-			'invalid nonce'                => array( 'invalid-nonce', false ),
-			'mismatched real subscription' => array( 'valid', true ),
+			'zero request ID'              => array( 'valid', 'change_payment_method', null, array( 0 ) ),
+			'mismatched request ID'        => array( 'valid', 'change_payment_method', 1, array( 0 ) ),
+			'non-subscription ID'          => array( 'valid', 'change_payment_method', 0, array() ),
+			'missing nonce'                => array( '', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'invalid nonce'                => array( 'invalid-nonce', 'woocommerce_change_payment', 0, array( 0, 0 ) ),
+			'mismatched real subscription' => array( 'valid', 'woocommerce_change_payment', 1, array( 0, 1 ) ),
 		);
 	}
 
@@ -4607,73 +4405,27 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Invalid subscription change request cases.
+	 * @testdox Should refuse a WooPay preflight check before changing the order status: $_dataName.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @dataProvider provider_refused_woopay_preflights
+	 *
+	 * @param bool   $tampered_token Whether card-testing protection is on and the posted fraud-prevention token is tampered.
+	 * @param bool   $rate_limited   Whether the failed-transaction rate limiter is active.
+	 * @param string $notice         Expected shopper notice.
 	 */
-	public static function invalid_subscription_change_requests(): array {
-		return array(
-			'zero request ID'       => array( 'zero', true ),
-			'mismatched request ID' => array( 'mismatch', true ),
-			'non-subscription ID'   => array( 'match', false ),
-		);
-	}
-
-	/**
-	 * @testdox Should reject WooPay preflight checks with invalid fraud-prevention tokens before changing the order status.
-	 */
-	public function test_process_payment_rejects_woopay_preflight_with_invalid_fraud_token_before_status_change(): void {
+	public function test_process_payment_refuses_woopay_preflight_before_status_change( bool $tampered_token, bool $rate_limited, string $notice ): void {
 		wc_clear_notices();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$session = $this->create_session();
 		$order->update_status( 'failed' );
-		$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
-		$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
-		$_POST['is-woopay-preflight-check']                     = '1';
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init(
-			$service,
-			new WooPaymentsProvider(),
-			null,
-			null,
-			null,
-			null,
-			null,
-			$this->create_fraud_prevention_service( true, $session )
-		);
-
-		$result = $gateway->process_payment( $order->get_id() );
-		$order  = wc_get_order( $order->get_id() );
-
-		$this->assertSame(
-			array(
-				'result'         => 'failure',
-				'redirect'       => '',
-				'payment_method' => '',
-			),
-			$result
-		);
-		$this->assertSame(
-			"We're not able to process this payment. Please refresh the page and try again.",
-			wc_get_notices( 'error' )[0]['notice'] ?? ''
-		);
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertNull( $service->last_checkout_context );
-	}
-
-	/**
-	 * @testdox Should reject rate-limited WooPay preflight checks before changing the order status.
-	 */
-	public function test_process_payment_rejects_rate_limited_woopay_preflight_before_status_change(): void {
-		wc_clear_notices();
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$session = $this->create_session();
-		$order->update_status( 'failed' );
-		$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+		if ( $tampered_token ) {
+			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+		}
+		if ( $rate_limited ) {
+			$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+		}
 		$_POST['is-woopay-preflight-check'] = '1';
 
 		$gateway = new WooPaymentsGateway();
@@ -4685,8 +4437,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			null,
 			null,
 			null,
-			$this->create_fraud_prevention_service( false, $session ),
-			new WooPaymentsFailedTransactionRateLimiter( $session )
+			$this->create_fraud_prevention_service( $tampered_token, $session ),
+			$rate_limited ? new WooPaymentsFailedTransactionRateLimiter( $session ) : null
 		);
 
 		$result = $gateway->process_payment( $order->get_id() );
@@ -4700,10 +4452,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			$result
 		);
-		$this->assertSame( 'Your payment was not processed.', wc_get_notices( 'error' )[0]['notice'] ?? '' );
+		$this->assertSame( $notice, wc_get_notices( 'error' )[0]['notice'] ?? '' );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertNull( $service->last_checkout_context );
+	}
+
+	/**
+	 * WooPay preflight refusals and the notice the shopper sees.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:string}>
+	 */
+	public function provider_refused_woopay_preflights(): array {
+		return array(
+			'tampered fraud-prevention token' => array( true, false, "We're not able to process this payment. Please refresh the page and try again." ),
+			'rate limiter active'             => array( false, true, 'Your payment was not processed.' ),
+		);
 	}
 
 	/**
@@ -4735,80 +4499,108 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should pass platform-created payment method state through provider data.
+	 * @testdox Should pass the WooPay intent id through provider data with the WooPayments extension's sanitize rule, empty without one: $_dataName.
+	 *
+	 * WooPay's merchant checkout body (PaymentsHandler::get_merchant_checkout_body()) sends the intent it confirmed under
+	 * `platform-checkout-intent`; client 11.1.0 keeps only word characters after unslashing.
+	 *
+	 * @dataProvider provider_woopay_intent_ids
+	 *
+	 * @param string      $payment_method_id Posted payment method ID.
+	 * @param string|null $posted_intent     Posted WooPay intent ID, or null when none is posted.
+	 * @param string      $expected          Expected WooPay intent ID in the provider data.
 	 */
-	public function test_process_payment_passes_platform_payment_method_state_to_provider_data(): void {
+	public function test_process_payment_passes_the_sanitized_woopay_intent_to_provider_data( string $payment_method_id, ?string $posted_intent, string $expected ): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
-		$_POST['wcpay-payment-method']             = 'pm_platform';
-		$_POST['wcpay-is-platform-payment-method'] = 'true';
+		$_POST['wcpay-payment-method'] = $payment_method_id;
+		if ( null !== $posted_intent ) {
+			$_POST['platform-checkout-intent'] = $posted_intent;
+		}
 
 		$gateway->process_payment( $order->get_id() );
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( 'pm_platform', $service->last_checkout_context->get_payment_method_id() );
-		$this->assertTrue( $service->last_checkout_context->get_provider_data()['is_platform_payment_method'] );
+		$this->assertSame( $expected, $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
 	}
 
 	/**
-	 * @testdox Should pass the WooPay intent id through provider data with the WooPayments extension's sanitize rule.
+	 * Posted WooPay intents and the intent ID the provider data carries.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string}>
 	 */
-	public function test_process_payment_passes_the_sanitized_woopay_intent_to_provider_data(): void {
+	public function provider_woopay_intent_ids(): array {
+		return array(
+			'WooPay intent with unsafe characters' => array( 'pm_woopay', 'pi_3Ab-c<x>\\\'', 'pi_3Abcx' ),
+			'no WooPay intent'                     => array( 'pm_card', null, '' ),
+		);
+	}
+
+	/**
+	 * @testdox Should mark only a WooPay checkout's order with is_woopay, before the payment runs, whatever its outcome: $_dataName.
+	 *
+	 * WooPay's merchant checkout body sends is_woopay (PaymentsHandler::get_merchant_checkout_body()). Client 11.1.0
+	 * Payment_Information::from_payment_request() adds it before processing, and before it turns a payment-method creation
+	 * error into a failure (class-payment-information.php:284-296).
+	 *
+	 * @dataProvider provider_is_woopay_order_meta
+	 *
+	 * @param string|null          $outcome_status Status of the processing outcome, or null for the recording service's default.
+	 * @param array<string,string> $post           Submitted checkout fields.
+	 * @param string               $result         Expected checkout result.
+	 * @param string               $is_woopay      Expected is_woopay meta.
+	 */
+	public function test_process_payment_marks_only_a_woopay_order_as_woopay( ?string $outcome_status, array $post, string $result, string $is_woopay ): void {
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
+		if ( null !== $outcome_status ) {
+			$service->checkout_outcome = new PaymentOutcome( $outcome_status, '', '', '', '', array() );
+		}
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
-		// WooPay's merchant checkout body (PaymentsHandler::get_merchant_checkout_body()) sends the
-		// intent it confirmed under this key; client 11.1.0 keeps only word characters after unslashing.
-		$_POST['wcpay-payment-method']     = 'pm_woopay';
-		$_POST['platform-checkout-intent'] = 'pi_3Ab-c<x>\\\'';
+		$_POST = array_merge( $_POST, $post ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Test fixture; tearDown unsets each field.
 
-		$gateway->process_payment( $order->get_id() );
+		$checkout = $gateway->process_payment( $order->get_id() );
 
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( 'pi_3Abcx', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
-	}
-
-	/**
-	 * @testdox Should leave the WooPay intent id empty when the checkout sends none.
-	 */
-	public function test_process_payment_leaves_the_woopay_intent_empty_without_one(): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$gateway->process_payment( $order->get_id() );
-
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertSame( '', $service->last_checkout_context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_WOOPAY_INTENT_ID ] ?? null );
-	}
-
-	/**
-	 * @testdox Should mark a WooPay checkout's order with is_woopay before the payment runs, whatever its outcome.
-	 */
-	public function test_process_payment_marks_a_woopay_order_even_when_the_payment_fails(): void {
-		$order                     = $this->create_order();
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', array() );
-		$gateway                   = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		// WooPay's merchant checkout body sends is_woopay (PaymentsHandler::get_merchant_checkout_body()).
-		$_POST['wcpay-payment-method'] = 'pm_woopay';
-		$_POST['is_woopay']            = '1';
-
-		$gateway->process_payment( $order->get_id() );
-
+		$this->assertSame( $result, $checkout['result'] );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( '1', $order->get_meta( 'is_woopay', true ), 'Client 11.1.0 Payment_Information::from_payment_request() adds is_woopay before processing (class-payment-information.php:284-287).' );
+		$this->assertSame( $is_woopay, $order->get_meta( 'is_woopay', true ) );
+	}
+
+	/**
+	 * Checkouts and the is_woopay meta they leave on the order.
+	 *
+	 * @return array<string,array{0:string|null,1:array<string,string>,2:string,3:string}>
+	 */
+	public function provider_is_woopay_order_meta(): array {
+		return array(
+			'WooPay checkout whose payment fails' => array(
+				PaymentOutcome::STATUS_FAILED,
+				array(
+					'wcpay-payment-method' => 'pm_woopay',
+					'is_woopay'            => '1',
+				),
+				'failure',
+				'1',
+			),
+			'WooPay checkout with a payment-method creation error' => array(
+				null,
+				array(
+					'wcpay-payment-method'               => 'woocommerce_payments_payment_method_error',
+					'wcpay-payment-method-error-message' => 'Your card number is invalid.',
+					'wcpay-payment-method-error-code'    => 'incomplete_number',
+					'is_woopay'                          => '1',
+				),
+				'failure',
+				'1',
+			),
+			'ordinary checkout'                   => array( null, array( 'wcpay-payment-method' => 'pm_card' ), 'success', '' ),
+		);
 	}
 
 	/**
@@ -4831,46 +4623,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertCount( 1, $order->get_meta( 'is_woopay', false ), 'Client 11.1.0 adds is_woopay with $unique = true (class-payment-information.php:285).' );
-	}
-
-	/**
-	 * @testdox Should mark a WooPay order before the payment method creation error check, as the WooPayments extension does.
-	 */
-	public function test_process_payment_marks_a_woopay_order_before_the_payment_method_creation_error_check(): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
-		$_POST['wcpay-payment-method-error-message'] = 'Your card number is invalid.';
-		$_POST['wcpay-payment-method-error-code']    = 'incomplete_number';
-		$_POST['is_woopay']                          = '1';
-
-		$result = $gateway->process_payment( $order->get_id() );
-
-		$this->assertSame( 'failure', $result['result'] );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( '1', $order->get_meta( 'is_woopay', true ), 'Client 11.1.0 writes is_woopay before it turns the payment-method error into a failure (class-payment-information.php:284-296).' );
-	}
-
-	/**
-	 * @testdox Should not mark an ordinary checkout's order with is_woopay.
-	 */
-	public function test_process_payment_does_not_mark_an_ordinary_order_as_woopay(): void {
-		$order   = $this->create_order();
-		$service = new RecordingPaymentProcessingService();
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-
-		$_POST['wcpay-payment-method'] = 'pm_card';
-
-		$gateway->process_payment( $order->get_id() );
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( '', $order->get_meta( 'is_woopay', true ) );
 	}
 
 	/**
@@ -5697,39 +5449,50 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide a checked save-payment control for a subscription cart.
+	 * @testdox Should hide and check the save-payment control only for a subscription cart: $_dataName.
+	 *
+	 * The extension keeps the classic checkbox visible on renewal carts; the save is forced server-side regardless.
+	 *
+	 * @dataProvider provider_save_checkbox_by_cart
+	 *
+	 * @param bool $subscription       Whether the cart contains a subscription.
+	 * @param bool $renewal            Whether the cart contains a renewal.
+	 * @param bool $hidden_and_checked Whether the control is hidden and checked.
 	 */
-	public function test_save_payment_method_checkbox_hides_checked_control_for_subscription_cart(): void {
+	public function test_save_payment_method_checkbox_hides_a_checked_control_only_for_subscription_carts( bool $subscription, bool $renewal, bool $hidden_and_checked ): void {
 		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS['wcpay_test_cart_contains_subscription'] = true;
+		$GLOBALS['wcpay_test_cart_contains_subscription'] = $subscription;
+		if ( $renewal ) {
+			$GLOBALS['wcpay_test_cart_contains_renewal'] = true;
+		}
 
 		$gateway = new WooPaymentsGateway();
 
-		ob_start();
-		$gateway->save_payment_method_checkbox();
-		$output = (string) ob_get_clean();
+		try {
+			ob_start();
+			$gateway->save_payment_method_checkbox();
+			$output = (string) ob_get_clean();
+		} finally {
+			unset( $GLOBALS['wcpay_test_cart_contains_renewal'] );
+		}
 
 		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
-		$this->assertStringContainsString( 'style="display:none;"', $output );
-		$this->assertMatchesRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]+checked[^>]*>/', $output );
+		$this->assertSame( $hidden_and_checked, str_contains( $output, 'style="display:none;"' ) );
+		$this->assertSame( (int) $hidden_and_checked, preg_match( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+type="checkbox"[^>]+checked[^>]*>/', $output ) );
+		$this->assertSame( (int) $hidden_and_checked, preg_match( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output ) );
 	}
 
 	/**
-	 * @testdox Should keep the save-payment control visible and unchecked for a regular cart.
+	 * Carts and whether the save-payment control is hidden and checked.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool}>
 	 */
-	public function test_save_payment_method_checkbox_keeps_visible_unchecked_control_for_regular_cart(): void {
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
-
-		$gateway = new WooPaymentsGateway();
-
-		ob_start();
-		$gateway->save_payment_method_checkbox();
-		$output = (string) ob_get_clean();
-
-		$this->assertSame( 1, substr_count( $output, 'id="wc-woocommerce_payments-new-payment-method"' ) );
-		$this->assertStringNotContainsString( 'style="display:none;"', $output );
-		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
+	public function provider_save_checkbox_by_cart(): array {
+		return array(
+			'subscription cart' => array( true, false, true ),
+			'regular cart'      => array( false, false, false ),
+			'renewal-only cart' => array( false, true, false ),
+		);
 	}
 
 	/**
@@ -5789,28 +5552,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertMatchesRegularExpression( '#<label for="wc-woocommerce_payments-new-payment-method" style="display:inline;">Save payment information to my account for future purchases\.</label>#', $output );
 		$this->assertStringNotContainsString( 'Save to account', $output );
-	}
-
-	/**
-	 * @testdox Should keep the visible unchecked save control on a renewal-only classic cart, like the extension.
-	 */
-	public function test_save_payment_method_checkbox_stays_visible_for_renewal_only_cart(): void {
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS['wcpay_test_cart_contains_subscription'] = false;
-		$GLOBALS['wcpay_test_cart_contains_renewal']      = true;
-
-		$gateway = new WooPaymentsGateway();
-
-		try {
-			ob_start();
-			$gateway->save_payment_method_checkbox();
-			$output = (string) ob_get_clean();
-		} finally {
-			unset( $GLOBALS['wcpay_test_cart_contains_renewal'] );
-		}
-
-		$this->assertStringNotContainsString( 'style="display:none;"', $output, 'The extension keeps the classic checkbox visible on renewal carts; the save is forced server-side regardless.' );
-		$this->assertDoesNotMatchRegularExpression( '/<input[^>]+id="wc-woocommerce_payments-new-payment-method"[^>]+checked[^>]*>/', $output );
 	}
 
 	/**
@@ -6021,89 +5762,75 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A succeeded payment links the admin order page to its transaction details.
+	 * @testdox Should link an authorized payment on the admin order page to its transaction details: $_dataName.
 	 *
 	 * The gateway writes `_transaction_id` on every paid order, so WooCommerce renders the
 	 * identifier on the order page either way; answering `get_transaction_url()` is
 	 * what makes it the link the merchant had before switching runtimes.
+	 *
+	 * @dataProvider provider_linkable_transaction_orders
+	 *
+	 * @param string $intention_status Provider intention status meta.
+	 * @param string $intent_id        Provider intent ID meta.
+	 * @param string $charge_id        Provider charge ID meta.
+	 * @param string $linked_id        ID the link names.
 	 */
-	public function test_get_transaction_url_links_a_succeeded_payment_to_its_intent(): void {
-		$order   = $this->create_order_with_provider_meta( 'succeeded', 'pi_transaction_url', 'ch_transaction_url' );
+	public function test_get_transaction_url_links_an_authorized_payment( string $intention_status, string $intent_id, string $charge_id, string $linked_id ): void {
+		$order   = $this->create_order_with_provider_meta( $intention_status, $intent_id, $charge_id );
 		$gateway = new WooPaymentsGateway();
 
 		$url = $gateway->get_transaction_url( $order );
 
 		$this->assertStringContainsString( 'page=wc-admin', $url );
-		$this->assertStringContainsString( 'id=pi_transaction_url', $url );
+		$this->assertStringContainsString( "id={$linked_id}", $url );
 		$this->assertStringContainsString( 'path=%2Fpayments%2Ftransactions%2Fdetails', $url );
 	}
 
 	/**
-	 * An authorized-but-uncaptured payment still has a transaction to show.
-	 */
-	public function test_get_transaction_url_links_an_uncaptured_authorization(): void {
-		$order   = $this->create_order_with_provider_meta( 'requires_capture', 'pi_uncaptured' );
-		$gateway = new WooPaymentsGateway();
-
-		$this->assertStringContainsString( 'id=pi_uncaptured', $gateway->get_transaction_url( $order ) );
-	}
-
-	/**
-	 * The charge ID carries the link when no intent ID was stored.
-	 */
-	public function test_get_transaction_url_falls_back_to_the_charge_id(): void {
-		$order   = $this->create_order_with_provider_meta( 'succeeded', '', 'ch_only' );
-		$gateway = new WooPaymentsGateway();
-
-		$this->assertStringContainsString( 'id=ch_only', $gateway->get_transaction_url( $order ) );
-	}
-
-	/**
-	 * An unauthorized intention has no payment to link to.
+	 * Orders with an authorized payment and the ID their link names: the intent ID, or the charge ID without one.
 	 *
-	 * @dataProvider provider_unlinkable_intention_statuses
-	 *
-	 * @param string $intention_status Provider intention status meta.
+	 * @return array<string,array{0:string,1:string,2:string,3:string}>
 	 */
-	public function test_get_transaction_url_is_empty_for_an_unauthorized_intention( string $intention_status ): void {
-		$order   = $this->create_order_with_provider_meta( $intention_status, 'pi_unauthorized' );
-		$gateway = new WooPaymentsGateway();
-
-		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
-	}
-
-	/**
-	 * Intention statuses that must not produce a transaction link.
-	 *
-	 * @return array<string, array<string>>
-	 */
-	public function provider_unlinkable_intention_statuses(): array {
+	public function provider_linkable_transaction_orders(): array {
 		return array(
-			'requires payment method' => array( 'requires_payment_method' ),
-			'requires action'         => array( 'requires_action' ),
-			'canceled'                => array( 'canceled' ),
-			'no status recorded'      => array( '' ),
+			'succeeded payment'        => array( 'succeeded', 'pi_transaction_url', 'ch_transaction_url', 'pi_transaction_url' ),
+			'uncaptured authorization' => array( 'requires_capture', 'pi_uncaptured', '', 'pi_uncaptured' ),
+			'charge ID without intent' => array( 'succeeded', '', 'ch_only', 'ch_only' ),
 		);
 	}
 
 	/**
-	 * A SetupIntent stores no payment, so it must not be linked as a transaction.
+	 * @testdox Should not link an order without an authorized payment: $_dataName.
+	 *
+	 * An unauthorized intention has no payment to link to, a SetupIntent stores no payment, and an order carrying no
+	 * provider identifier has nothing to link.
+	 *
+	 * @dataProvider provider_unlinkable_transaction_orders
+	 *
+	 * @param string $intention_status Provider intention status meta.
+	 * @param string $intent_id        Provider intent ID meta.
 	 */
-	public function test_get_transaction_url_refuses_a_setup_intent(): void {
-		$order   = $this->create_order_with_provider_meta( 'succeeded', 'seti_saved_card' );
+	public function test_get_transaction_url_is_empty_without_an_authorized_payment( string $intention_status, string $intent_id ): void {
+		$order   = $this->create_order_with_provider_meta( $intention_status, $intent_id );
 		$gateway = new WooPaymentsGateway();
 
 		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
 	}
 
 	/**
-	 * An order carrying no provider identifier has nothing to link.
+	 * Orders that must not produce a transaction link.
+	 *
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function test_get_transaction_url_is_empty_without_provider_identifiers(): void {
-		$order   = $this->create_order_with_provider_meta( 'succeeded', '' );
-		$gateway = new WooPaymentsGateway();
-
-		$this->assertSame( '', $gateway->get_transaction_url( $order ) );
+	public function provider_unlinkable_transaction_orders(): array {
+		return array(
+			'requires payment method' => array( 'requires_payment_method', 'pi_unauthorized' ),
+			'requires action'         => array( 'requires_action', 'pi_unauthorized' ),
+			'canceled'                => array( 'canceled', 'pi_unauthorized' ),
+			'no status recorded'      => array( '', 'pi_unauthorized' ),
+			'setup intent'            => array( 'succeeded', 'seti_saved_card' ),
+			'no provider identifiers' => array( 'succeeded', '' ),
+		);
 	}
 
 	/**
@@ -6840,9 +6567,15 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should lazily memoize account-country branding when the title is requested.
+	 * @testdox Should read the account country once, on the first title read: $_dataName.
+	 *
+	 * @dataProvider provider_branded_title_reads
+	 *
+	 * @param string|null $payment_method_id Payment method ID, or null for the default card gateway.
+	 * @param string      $title_method      Title method to call.
+	 * @param string      $expected          Expected title.
 	 */
-	public function test_get_title_lazily_memoizes_account_country_branding(): void {
+	public function test_title_reads_lazily_memoize_account_country_branding( ?string $payment_method_id, string $title_method, string $expected ): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
 		$account_service->expects( $this->once() )
 			->method( 'get_cached_account_data' )
@@ -6850,28 +6583,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		wc_get_container()->reset_all_resolved();
 
-		$gateway = new WooPaymentsGateway();
+		$gateway = new WooPaymentsGateway( null === $payment_method_id ? null : ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
 
-		$this->assertSame( 'Card', $gateway->get_title() );
-		$this->assertSame( 'Card', $gateway->get_title() );
+		$this->assertSame( $expected, $gateway->{$title_method}() );
+		$this->assertSame( $expected, $gateway->{$title_method}() );
 	}
 
 	/**
-	 * @testdox Should lazily memoize account-country branding when the admin title is requested.
+	 * Gateways, the title method read and the title it gives.
+	 *
+	 * @return array<string,array{0:string|null,1:string,2:string}>
 	 */
-	public function test_get_method_title_lazily_memoizes_account_country_branding(): void {
-		$registry        = new WooPaymentsPaymentMethodRegistry();
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'get_cached_account_data' )
-			->willReturn( array( 'country' => 'US' ) );
-		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
-		wc_get_container()->reset_all_resolved();
-
-		$gateway = new WooPaymentsGateway( $registry->get( 'afterpay_clearpay' ) );
-
-		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
-		$this->assertSame( 'WooPayments (Cash App Afterpay)', $gateway->get_method_title() );
+	public function provider_branded_title_reads(): array {
+		return array(
+			'card title'                    => array( null, 'get_title', 'Card' ),
+			'Cash App Afterpay admin title' => array( 'afterpay_clearpay', 'get_method_title', 'WooPayments (Cash App Afterpay)' ),
+		);
 	}
 
 	/**
@@ -6959,13 +6686,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		try {
 			$_POST['wcpay-payment-method'] = 'pm_card';
 			$_POST['save_user_in_woopay']  = 'true';
-			$provider_data                 = $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( 'card' ) ) );
+			$provider_data                 = $this->checkout_context( new WooPaymentsGateway( $registry->get( 'card' ) ) )->get_provider_data();
 
 			$this->assertTrue( $provider_data['save_payment_method_to_platform'] );
 			$this->assertSame( 1, $action_fired );
 
 			unset( $_POST['save_user_in_woopay'] );
-			$bare_provider_data = $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( 'card' ) ) );
+			$bare_provider_data = $this->checkout_context( new WooPaymentsGateway( $registry->get( 'card' ) ) )->get_provider_data();
 
 			$this->assertFalse( $bare_provider_data['save_payment_method_to_platform'] );
 			$this->assertSame( 1, $action_fired );
@@ -7013,7 +6740,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Only a new card checkout should be treated as a platform-created payment method, like the WooPayments extension's checkout service.
+	 * @testdox Only a new card checkout should be treated as a platform-created payment method, like the WooPayments extension's checkout service, and the payment method passes through: $_dataName.
 	 * @dataProvider platform_payment_method_submission_provider
 	 *
 	 * @param string               $payment_method_id Payment method definition ID.
@@ -7028,19 +6755,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			// A submitted payment method keeps every row past the missing-payment-details refusal.
 			$_POST = array_merge( $_POST, array( 'wcpay-payment-method' => 'pm_submitted' ), $post ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Test fixture.
 
-			$this->assertSame( $expected, $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( $payment_method_id ) ) )['is_platform_payment_method'] );
+			$context = $this->checkout_context( new WooPaymentsGateway( $registry->get( $payment_method_id ) ) );
+
+			$this->assertSame( 'pm_submitted', $context->get_payment_method_id() );
+			$this->assertSame( $expected, $context->get_provider_data()['is_platform_payment_method'] );
 		} finally {
 			$_POST = $original_post;
 		}
 	}
 
 	/**
-	 * Pay a new order through process_payment() and return the provider data the processing service received.
+	 * Pay a new order through process_payment() and return the checkout context the processing service received.
 	 *
 	 * @param WooPaymentsGateway $gateway Gateway to pay with; it is initialized with a recording processing service.
-	 * @return array<string,mixed>
+	 * @return PaymentOperationContext
 	 */
-	private function checkout_provider_data( WooPaymentsGateway $gateway ): array {
+	private function checkout_context( WooPaymentsGateway $gateway ): PaymentOperationContext {
 		$service = new RecordingPaymentProcessingService();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
@@ -7048,32 +6778,35 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 
-		return $service->last_checkout_context->get_provider_data();
+		return $service->last_checkout_context;
 	}
 
 	/**
-	 * @testdox Should use the custom place-order button contract for payment-list wallets.
+	 * @testdox Should use the custom place-order button without ordinary fields only for payment-list wallets: $_dataName.
+	 *
+	 * @dataProvider provider_place_order_button_by_method
+	 *
+	 * @param string $payment_method_id Payment method ID.
+	 * @param bool   $wallet            Whether the method is a payment-list wallet.
 	 */
-	public function test_payment_list_wallets_use_custom_place_order_button_without_ordinary_fields(): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
+	public function test_only_payment_list_wallets_use_custom_place_order_button( string $payment_method_id, bool $wallet ): void {
+		$sut = new WooPaymentsGateway( ( new WooPaymentsPaymentMethodRegistry() )->get( $payment_method_id ) );
 
-		foreach ( array( 'apple_pay', 'google_pay' ) as $payment_method_id ) {
-			$sut = new WooPaymentsGateway( $registry->get( $payment_method_id ) );
-
-			$this->assertTrue( $sut->has_custom_place_order_button, "{$payment_method_id} should register a custom place-order button." );
-			$this->assertFalse( $sut->has_fields, "{$payment_method_id} should not render ordinary payment fields." );
-		}
+		$this->assertSame( $wallet, $sut->has_custom_place_order_button );
+		$this->assertSame( ! $wallet, $sut->has_fields );
 	}
 
 	/**
-	 * @testdox Should retain ordinary fields for non-express payment methods.
+	 * Payment methods and whether they are payment-list wallets.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
 	 */
-	public function test_non_express_payment_methods_retain_ordinary_fields(): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
-		$sut      = new WooPaymentsGateway( $registry->get( 'card' ) );
-
-		$this->assertFalse( $sut->has_custom_place_order_button );
-		$this->assertTrue( $sut->has_fields );
+	public function provider_place_order_button_by_method(): array {
+		return array(
+			'Apple Pay'  => array( 'apple_pay', true ),
+			'Google Pay' => array( 'google_pay', true ),
+			'card'       => array( 'card', false ),
+		);
 	}
 
 	/**
