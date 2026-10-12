@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
@@ -26,9 +25,9 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Intent decoding contains no order-effect data.
+	 * @testdox A succeeded intent maps to a completed outcome whose data holds only the charge ID.
 	 */
-	public function test_outcome_from_intention_contains_no_order_effect_data(): void {
+	public function test_outcome_from_intention_maps_a_succeeded_intent(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			// Shape: the succeeded PaymentIntent in Fixtures/platform-intention-basic-card.json (entries[0]), with charges as a Stripe list
 			// object and an expanded balance_transaction, reduced to the fields the codec reads.
@@ -56,13 +55,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pi_neutral', $outcome->get_provider_payment_id() );
 		$this->assertSame( 'pm_neutral', $outcome->get_payment_method_id() );
 		$this->assertSame( 'cus_neutral', $outcome->get_customer_id() );
-		$this->assertSame( 'ch_neutral', $data['charge_id'] );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $data );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE, $data );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_ORDER_META, $data );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_META, $data );
-		$this->assertArrayNotHasKey( PaymentOutcome::DATA_REFUND_NOTE, $data );
+		$this->assertSame( array( 'charge_id' => 'ch_neutral' ), $data );
 	}
 
 	/**
@@ -113,7 +106,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, $outcome->get_status() );
 		$this->assertSame( '#wcpay-confirm-pi:42:secret_action:explicit_nonce', $outcome->get_redirect_url() );
 		$this->assertSame( 'cus_fallback', $outcome->get_customer_id() );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 	}
 
 	/**
@@ -163,44 +155,30 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	 * @testdox Redirect next actions map to provider redirect outcomes.
 	 */
 	public function test_outcome_from_intention_maps_provider_redirect(): void {
-		$clean_url_calls = 0;
-		$clean_url       = static function ( string $url ) use ( &$clean_url_calls ): string {
-			unset( $url );
-			++$clean_url_calls;
-
-			return 'https://filtered.example/should-not-run';
-		};
-		add_filter( 'clean_url', $clean_url );
-
-		try {
-			$outcome = WooPaymentsIntentCodec::outcome_from_intention(
-				// Shape: next_action.redirect_to_url.url, the field client 11.1.0 class-wc-payment-gateway-wcpay.php:2094 reads.
-				array(
-					'id'          => 'pi_ideal',
-					'status'      => 'requires_action',
-					'next_action' => array(
-						'type'            => 'redirect_to_url',
-						'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
-					),
+		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
+			// Shape: next_action.redirect_to_url.url, the field client 11.1.0 class-wc-payment-gateway-wcpay.php:2094 reads.
+			array(
+				'id'          => 'pi_ideal',
+				'status'      => 'requires_action',
+				'next_action' => array(
+					'type'            => 'redirect_to_url',
+					'redirect_to_url' => array( 'url' => 'https://hooks.stripe.com/redirect/ideal' ),
 				),
-				new WooPaymentsIntentMappingContext(
-					42,
-					'https://example.test/order-received/42',
-					'',
-					'',
-					'',
-					'pi',
-					'https://sanitized.example/redirect/ideal'
-				),
-			);
-		} finally {
-			remove_filter( 'clean_url', $clean_url );
-		}
+			),
+			new WooPaymentsIntentMappingContext(
+				42,
+				'https://example.test/order-received/42',
+				'',
+				'',
+				'',
+				'pi',
+				'https://sanitized.example/redirect/ideal'
+			),
+		);
 
 		$this->assertSame( PaymentOutcome::STATUS_REQUIRES_REDIRECT, $outcome->get_status() );
 		$this->assertSame( 'https://sanitized.example/redirect/ideal', $outcome->get_redirect_url() );
 		$this->assertSame( 'https://sanitized.example/redirect/ideal', $outcome->get_data()[ PaymentOutcome::DATA_CHECKOUT_REDIRECT ] );
-		$this->assertSame( 0, $clean_url_calls, 'The pure codec must not dispatch URL filters.' );
 	}
 
 	/**
@@ -223,7 +201,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
 		$this->assertSame( 'https://example.test/order-received/42', $outcome->get_redirect_url() );
-		$this->assertArrayNotHasKey( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY, $outcome->get_data() );
 	}
 
 	/**

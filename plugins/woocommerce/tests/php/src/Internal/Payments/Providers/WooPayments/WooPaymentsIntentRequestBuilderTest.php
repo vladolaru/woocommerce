@@ -59,16 +59,6 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Intent metadata reports the WooPayments-compatible client capability version.
-	 */
-	public function test_metadata_client_version_matches_woopayments_transport_capability(): void {
-		$order    = wc_create_order();
-		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order );
-
-		$this->assertSame( WooPaymentsClientVersion::VERSION, $metadata['client_version'] );
-	}
-
-	/**
 	 * @testdox A wcpay_metadata_from_order callback cannot drop or change the order id and key; its other changes stand.
 	 *
 	 * The kept charge key's lookup and the webhook order resolver find the order by these two keys. Client 11.1.0

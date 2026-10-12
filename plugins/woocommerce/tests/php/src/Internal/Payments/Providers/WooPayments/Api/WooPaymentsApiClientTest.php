@@ -4605,8 +4605,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 
-		$this->assertTrue( method_exists( $sut, 'get_authorizations' ), 'WooPaymentsApiClient should expose get_authorizations().' );
-
 		add_filter( 'wcpay_list_authorizations_request', $filter );
 
 		try {
@@ -4656,8 +4654,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'get_authorization' ), 'WooPaymentsApiClient should expose get_authorization().' );
 
 		add_filter( 'wcpay_get_authorization_request', $filter );
 
@@ -4753,8 +4749,6 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( true ), $this->transport_log() );
-
-		$this->assertTrue( method_exists( $sut, 'create_capital_link' ), 'WooPaymentsApiClient should expose create_capital_link().' );
 
 		add_filter( 'wcpay_get_account_capital_link', $filter );
 
