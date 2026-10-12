@@ -866,6 +866,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * The container-built page keeps the real one-second wait.
 	 */
 	public function test_container_built_page_reports_a_failed_redirect_intent(): void {
+		// Client 11.1.0 shows the failure copy for requires_payment_method with a payment error
+		// (includes/class-wc-payments-order-success-page.php:447-458), its API client keeps last_payment_error
+		// (includes/wc-payment-api/class-wc-payments-api-client.php:2405), and payment_intent_authentication_failure
+		// is one of its error codes (includes/class-wc-payments-utils.php:864).
 		wc_get_container()->replace(
 			WooPaymentsApiClient::class,
 			$this->create_api_client_mock(
