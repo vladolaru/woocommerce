@@ -20,10 +20,11 @@ use WP_REST_Response;
 /**
  * The settings app's authentication route for a store the platform serves: the disconnect also leaves the served state.
  *
- * While served, the wallet's disconnect runs as for a first-party store (its connection data is empty here; "Start over"
- * still deletes every `woocommerce-ppcp-*` setting), and the store then leaves the platform as after a first-party
- * connect (R201): the platform and collecting options, the seller status, the Pay with Crypto check answer, the owner
- * row and the apps' tokens go; held orders keep their status, notes and locked Refund. The store is dormant afterwards.
+ * While served, the wallet's disconnect runs as for a first-party store (its connection data is empty here; "Start
+ * over" still resets the wallet's settings models, as it does first-party), and the store then leaves the platform as
+ * after a first-party connect (R201): the platform and collecting options, the seller status, the Pay with Crypto check
+ * answer, the owner row and the apps' tokens go; held orders keep their status, notes and locked Refund. The store is
+ * dormant afterwards.
  * The card status the wallet's disconnect refilled from the platform merchant is cleared too, without a request.
  * The transport's webhook subscriptions stay at PayPal: nothing here calls the transport, and the served registrar never
  * unsubscribes. A delivery still boots the wallet on its `/paypal/v1` route, without the collecting module, and the
