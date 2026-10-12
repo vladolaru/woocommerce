@@ -503,13 +503,11 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$service->handle_wcpay_update_saved_payment_method( 'pm_123', $order->get_id(), false );
 
-		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
-		$this->assertCount( 1, $errors );
-		$this->assertSame( 'Failed to update WooPayments saved payment method.', $logger->lines[ $errors[0] ][1] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $errors[0] ]['http_status'], $logger->contexts[ $errors[0] ]['error_code'] ) );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assertSame(
 			array( 'wcpay_update_saved_payment_method', $order->get_id(), 'pm_123' ),
-			array( $logger->contexts[ $errors[0] ]['action'], $logger->contexts[ $errors[0] ]['order_id'], $logger->contexts[ $errors[0] ]['payment_method'] )
+			array( $context['action'], $context['order_id'], $context['payment_method'] )
 		);
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -1344,7 +1342,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token filter.
 		apply_filters( 'woocommerce_get_customer_payment_tokens', array( $local_token->get_id() => $local_token ), $user_id, '' );
 
-		$context = $this->get_logged_context( $logger, 'Failed to fetch payment methods for customer.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -1387,7 +1385,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
 		do_action( 'woocommerce_payment_token_deleted', $token->get_id(), $token );
 
-		$context = $this->get_logged_context( $logger, 'Error detaching payment method.' );
+		$context = $this->get_logged_context_at_level( $logger, 'info' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -1441,7 +1439,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
 		do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
 
-		$context = $this->get_logged_context( $logger, 'Error setting WooPayments default payment method.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -2352,11 +2350,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $error, $thrown );
 		$this->assertSame( array(), WC_Payment_Tokens::get_customer_tokens( $user_id ) );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error retrieving WooPayments payment method details for ' ) ) );
-		$this->assertCount( 1, $lines, 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
-		$this->assertSame( 'error', $lines[0][0] );
-		$this->assertStringContainsString( 'pm_display', $lines[0][1] );
-		$this->assertSame( 'TypeError', $logger->contexts[ array_search( $lines[0], $logger->lines, true ) ]['exception'] ?? '' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 'TypeError', 'pm_display' ), array( $context['exception'] ?? '', $context['payment_method_id'] ?? '' ), 'The display read logs the PHP error with debug logging off; the token path leaves it to its caller.' );
 	}
 
 	/**

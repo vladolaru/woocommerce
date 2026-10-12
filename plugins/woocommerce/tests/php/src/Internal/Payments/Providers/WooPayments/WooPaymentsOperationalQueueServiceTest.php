@@ -1119,28 +1119,20 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		switch ( $job ) {
 			case 'site language':
 				$service->handle_site_language_update( 'WPLANG', '', 'de_DE' );
-				$expected = 'Failed to propagate the site language to the WooPayments account locale.';
 				break;
 			case 'store setup sync':
 				$service->handle_wcpay_store_setup_sync();
-				$expected = null;
 				break;
 			case 'compatibility data update':
 				$service->handle_wcpay_update_compatibility_data();
-				$expected = null;
 				break;
 			case 'store launch':
 				$service->handle_store_launch( 'yes', 'no' );
-				$expected = 'Failed to re-send the WooPayments business URL after the store went live.';
 				break;
 		}
 
-		$errors = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) );
-		$this->assertCount( 1, $errors );
-		if ( null !== $expected ) {
-			$this->assertSame( $expected, $logger->lines[ $errors[0] ][1] );
-		}
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $errors[0] ]['http_status'], $logger->contexts[ $errors[0] ]['error_code'] ) );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

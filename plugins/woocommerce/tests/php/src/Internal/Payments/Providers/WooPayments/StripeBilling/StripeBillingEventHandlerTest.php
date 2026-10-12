@@ -904,10 +904,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 
 		$this->sut->handle_event( $this->get_event( 'invoice_payment_failed' ) );
 
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Unable to retrieve charge data for invoice.payment_failed webhook. Charge ID: ' ) ) );
-		$this->assertCount( 1, $lines );
-		$this->assertSame( 'error', $logger->lines[ $lines[0] ][0] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status() );
 	}

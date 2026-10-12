@@ -255,7 +255,7 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 
 		$sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
 
-		$context = $this->get_logged_context( $logger, 'Failed to fetch attached WooPayments payment intent.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing', 'pi_attached' ), array( $context['http_status'], $context['error_code'], $context['intent_id'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

@@ -20,6 +20,8 @@ use WP_Error;
  */
 class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Captured URLs of intercepted public fraud-services config requests.
 	 *
@@ -535,16 +537,17 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$this->make_link_sut( $http_client )->link_session_if_user_just_logged_in();
 
 		$this->assertGreaterThanOrEqual( 1, $http_client->request_count );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => '[Tracking] Error when linking session with user.' === $line[1] ) );
 		if ( ! $expected ) {
-			$this->assertSame( array(), $lines );
+			$this->assertSame( array(), $logger->lines );
 			return;
 		}
-		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 'info', 'woopayments' ), array( $logger->lines[ $lines[0] ][0], $logger->lines[ $lines[0] ][2] ) );
+		// With logging on, the transport writes its own info lines; only this one carries the platform's status.
+		$context = $this->get_logged_context_with( $logger, 'http_status', 500 );
+		$line    = $logger->lines[ array_search( $context, $logger->contexts, true ) ];
+		$this->assertSame( array( 'info', 'woopayments' ), array( $line[0], $line[2] ) );
 		// The platform's message stays off this line; its status and code (not a listed one here) go in.
-		$this->assertSame( array( 500, 'unknown_error' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
-		$this->assertStringNotContainsString( 'Link failed', (string) wp_json_encode( $logger->contexts[ $lines[0] ] ) );
+		$this->assertSame( array( 500, 'unknown_error' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assertStringNotContainsString( 'Link failed', (string) wp_json_encode( $context ) );
 	}
 
 	/** @return array<string,array{string,bool}> */

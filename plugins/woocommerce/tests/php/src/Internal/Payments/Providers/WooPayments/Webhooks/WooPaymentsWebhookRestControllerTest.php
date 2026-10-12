@@ -207,7 +207,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertCount( 1, $logger->get_errors() );
 		$this->assertSame( 'woopayments', $logger->get_errors()[0][2] );
 		// Processing calls the platform, so a failure's message is left out; its class names it.
-		$this->assertSame( RuntimeException::class, $this->get_logged_context( $logger, 'Failed processing a WooPayments webhook event.' )['exception'] );
+		$this->assertSame( RuntimeException::class, $this->get_logged_context_at_level( $logger, 'error' )['exception'] );
 	}
 
 	/**

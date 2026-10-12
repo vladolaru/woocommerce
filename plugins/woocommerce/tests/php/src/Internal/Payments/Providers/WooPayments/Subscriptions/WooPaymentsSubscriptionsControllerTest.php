@@ -1041,9 +1041,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_status, $order->get_status() );
 		$this->assertSame( 'pi_renewal_error', $order->get_transaction_id() );
 		$this->assertSame( $rethrown ? 0 : 1, $authentication_hook );
-		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_starts_with( $line[1], 'Error applying the WooPayments subscription renewal payment' ) ) );
-		$this->assertCount( 1, $lines, 'The PHP error is logged whatever the logging setting.' );
-		$this->assertSame( 'error', $lines[0][0] );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( \TypeError::class, $order->get_id() ), array( $context['exception'] ?? '', $context['order_id'] ?? 0 ), 'The PHP error is logged whatever the logging setting.' );
 	}
 
 	/**
@@ -1068,7 +1067,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		$sut->scheduled_subscription_payment( 12.0, wc_get_order( $order->get_id() ) );
 
-		$context = $this->get_logged_context( $logger, 'Error applying the WooPayments subscription renewal payment.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -1108,7 +1107,10 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
 		}
 
-		$context = $this->get_logged_context( $logger, 'Error repairing subscription renewal payment token for order #' . $renewal->get_id() . '.' );
+		// With logging on, the missing token writes another error line; the repair line carries the order ID.
+		$context = $this->get_logged_context_with( $logger, 'order_id', $renewal->get_id() );
+		$line    = $logger->lines[ array_search( $context, $logger->contexts, true ) ];
+		$this->assertSame( array( 'error', 'woopayments' ), array( $line[0], $line[2] ) );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -1280,7 +1282,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $status, wc_get_order( $renewal->get_id() )->get_status() );
 		$notes = array_map( static fn( $note ) => (string) $note->content, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 		$this->assertSame( $note_added, in_array( 'Subscription renewal failed: No saved payment method found.', $notes, true ) );
-		$repair_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Error repairing subscription renewal payment token' ) ) );
+		$repair_lines = array_keys( array_filter( $logger->contexts, static fn( array $context ): bool => $renewal->get_id() === ( $context['order_id'] ?? null ) ) );
 		$this->assertSame( $logged_exceptions, array_map( static fn( int $line ) => $logger->contexts[ $line ]['exception'] ?? null, $repair_lines ) );
 	}
 

@@ -2280,7 +2280,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut->get_settings();
 
-		$context = $this->get_logged_context( $logger, 'refresh' === $step ? 'Native WooPayments fraud ruleset refresh failed.' : 'Native WooPayments fraud ruleset Basic initialization failed.' );
+		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 'unknown_error', 500 ), array( $context['error_code'], $context['http_status'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

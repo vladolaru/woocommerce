@@ -78,4 +78,34 @@ trait ProviderTextLogAssertions {
 
 		return $logger->contexts[ $found[0] ];
 	}
+
+	/**
+	 * Get the context of the one recorded line at this level under this source, whatever its message.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @param string            $level  Log level.
+	 * @param string            $source Log source.
+	 * @return array<string,mixed>
+	 */
+	private function get_logged_context_at_level( RecordingWcLogger $logger, string $level, string $source = 'woopayments' ): array {
+		$found = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => $level === $line[0] && $source === $line[2] ) );
+		$this->assertCount( 1, $found, 'One ' . $level . ' line under ' . $source . '. Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+
+		return $logger->contexts[ $found[0] ];
+	}
+
+	/**
+	 * Get the context of the one recorded line whose context holds this value under this key, whatever its message.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 * @param string            $key    Context key.
+	 * @param mixed             $value  Expected value, compared strictly.
+	 * @return array<string,mixed>
+	 */
+	private function get_logged_context_with( RecordingWcLogger $logger, string $key, $value ): array {
+		$found = array_keys( array_filter( $logger->contexts, static fn( array $context ): bool => array_key_exists( $key, $context ) && $value === $context[ $key ] ) );
+		$this->assertCount( 1, $found, 'One line has ' . $key . ' ' . (string) wp_json_encode( $value ) . ' in its context. Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+
+		return $logger->contexts[ $found[0] ];
+	}
 }

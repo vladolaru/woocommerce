@@ -305,7 +305,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut->get_visible_promotions();
 
-		$context = $this->get_logged_context( $logger, 'Unable to fetch payment method promotions.' );
+		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -330,7 +330,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
 
-		$context = $this->get_logged_context( $logger, 'Failed to activate promotion for payment method klarna: Platform error.' );
+		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

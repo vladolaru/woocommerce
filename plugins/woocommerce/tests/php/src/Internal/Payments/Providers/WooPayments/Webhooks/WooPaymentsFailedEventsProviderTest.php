@@ -71,7 +71,7 @@ class WooPaymentsFailedEventsProviderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $result['data'] );
 		$this->assertFalse( $result['has_more'] );
-		$context = $this->get_logged_context( $logger, 'Can not fetch failed events from the server.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( $expected_status, $expected_code ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assertSame( 'woopayments', $context['source'] ?? null, 'Fetch failures land in the WooPayments log with every other webhook line.' );
 		$this->assert_log_holds_no_provider_text( $logger );

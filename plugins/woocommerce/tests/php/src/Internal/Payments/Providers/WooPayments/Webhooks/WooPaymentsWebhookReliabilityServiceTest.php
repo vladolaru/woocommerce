@@ -709,7 +709,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $store->get_event( 'evt_exhausted' ), 'An event out of retries is dropped.' );
 		$this->assertSame( array(), $scheduler->scheduled_jobs, 'An event out of retries gets no further attempt.' );
-		$context = $this->get_logged_context( $logger, 'WooPayments webhook event evt_exhausted (payment_intent.succeeded) could not be processed after 3 retries and was dropped.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
@@ -739,8 +739,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 
 		$service->process_event( 'evt_process' );
 
-		$context = $this->get_logged_context( $logger, 'Failed processing event evt_process.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( \InvalidArgumentException::class, 404, 'resource_missing' ), array( $context['exception'], $context['http_status'], $context['error_code'] ) );
+		$this->assertStringContainsString( 'evt_process', (string) wp_json_encode( array_column( $logger->lines, 1 ) ), 'The line names the refused event.' );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

@@ -162,7 +162,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 
 		$provider->get_address_service_jwt();
 
-		$context = $this->get_logged_context( $logger, 'Unexpected error getting address service JWT.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

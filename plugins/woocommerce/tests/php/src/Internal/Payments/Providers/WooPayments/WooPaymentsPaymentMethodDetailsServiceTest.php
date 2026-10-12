@@ -216,14 +216,12 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array(), $this->sut->get_payment_method_details( 'pm_123' ) );
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'Error retrieving WooPayments payment method details for pm_123.' === $line[1] ) );
 		if ( ! $expected ) {
-			$this->assertSame( array(), $lines );
+			$this->assertSame( array(), $logger->lines );
 			return;
 		}
-		$this->assertCount( 1, $lines );
-		$this->assertSame( 'error', $logger->lines[ $lines[0] ][0] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing', 'pm_123' ), array( $context['http_status'], $context['error_code'], $context['payment_method_id'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

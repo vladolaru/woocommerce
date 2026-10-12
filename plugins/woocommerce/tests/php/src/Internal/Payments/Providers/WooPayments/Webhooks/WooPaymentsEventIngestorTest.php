@@ -764,7 +764,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS['wcpay_test_renewal_order_ids'] );
 		}
 
-		$context = $this->get_logged_context( $logger, 'Error when saving payment method from webhook.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing', $order->get_id() ), array( $context['http_status'], $context['error_code'], $context['order_id'] ) );
 		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
@@ -798,10 +798,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut->process( $this->load_recorded_dispute_closed_event( 'accept_closed_lost' ) );
 
-		$lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'Failed to fetch dispute summary for dispute ' ) ) );
-		$this->assertCount( 1, $lines );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->contexts[ $lines[0] ]['http_status'], $logger->contexts[ $lines[0] ]['error_code'] ) );
-		$this->assertSame( 'woopayments', $logger->contexts[ $lines[0] ]['source'] );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

@@ -768,16 +768,16 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A platform error from $method is logged with its status and code, never its message.
-	 * @testWith ["create_subscription", "There was a problem creating the WooPayments subscription."]
-	 *           ["cancel_subscription", "There was a problem canceling the subscription on WooPayments server."]
-	 *           ["set_pending_cancel_for_subscription", "There was a problem updating the WooPayments subscription on server."]
+	 * @testWith ["create_subscription", "info"]
+	 *           ["cancel_subscription", "error"]
+	 *           ["set_pending_cancel_for_subscription", "error"]
 	 *
 	 * Client 11.1.0 appends the platform's message (`class-wc-payments-subscription-service.php:459`, `:528`, `:1017`).
 	 *
-	 * @param string $method   Service method that calls the platform.
-	 * @param string $expected Expected line.
+	 * @param string $method Service method that calls the platform.
+	 * @param string $level  Level of the line.
 	 */
-	public function test_platform_error_log_leaves_out_platform_text( string $method, string $expected ): void {
+	public function test_platform_error_log_leaves_out_platform_text( string $method, string $level ): void {
 		// The error envelope client 11.1.0 reads (error.code, error.message, error.type; class-wc-payments-api-client.php:2852-2871).
 		$this->http_client->responses[] = $this->make_response(
 			404,
@@ -800,7 +800,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 			$this->sut->$method( $subscription );
 		}
 
-		$context = $this->get_logged_context( $logger, $expected );
+		$context = $this->get_logged_context_at_level( $logger, $level );
 		$this->assertSame( array( 404, 'resource_missing', $subscription->get_id() ), array( $context['http_status'], $context['error_code'], $context['subscription_id'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

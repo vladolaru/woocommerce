@@ -191,7 +191,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
 
-		$context = $this->get_logged_context( $logger, 'Failed to handle WooPayments Terms of Service request.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

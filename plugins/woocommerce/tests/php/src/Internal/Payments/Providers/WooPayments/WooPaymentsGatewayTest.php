@@ -3593,9 +3593,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$result = $gateway->process_payment( $order->get_id() );
 
 		$this->assertSame( $charges ? 1 : 0, $service->checkout_attempt_count );
-		$guard_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => str_starts_with( $line[1], 'Failed to fetch attached' ) ) );
 		if ( $charges ) {
-			$this->assertSame( array(), $guard_lines, 'An exception follows the logging setting, which is off.' );
+			$this->assertSame( array(), $logger->lines, 'An exception follows the logging setting, which is off.' );
 			return;
 		}
 		$this->assertSame( 'failure', $result['result'] ?? '' );
@@ -3603,8 +3602,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'pending', $order->get_status() );
 		$this->assertSame( array( "We're not able to process this payment. Please try again later." ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$this->assertCount( 1, $guard_lines, 'A PHP Error is logged whatever the logging setting.' );
-		$this->assertSame( 'Error', $logger->contexts[ $guard_lines[0] ]['exception'] ?? '' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 'Error', 'pi_existing' ), array( $context['exception'] ?? '', $context['intent_id'] ?? '' ), 'A PHP Error is logged whatever the logging setting.' );
 	}
 
 	/**
@@ -5987,7 +5986,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->process_refund( $order->get_id(), 4.25, 'Adjustment' );
 
-		$context = $this->get_logged_context( $logger, 'A WooPayments refund failed to complete.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( $order->get_id(), 'unknown_error' ), array( $context['order_id'], $context['error_code'] ) );
 		$this->assertSame( 'woopayments', $context['source'] );
 		$this->assert_log_holds_no_provider_text( $logger );
@@ -6010,7 +6009,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $gateway->get_recommended_payment_methods( 'GB' ) );
 
-		$context = $this->get_logged_context( $logger, 'Failed to fetch the WooPayments recommended payment methods.' );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
