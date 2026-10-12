@@ -253,72 +253,45 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deprecated customer IDs should migrate to the live key when the account is live, even in test mode.
+	 * @dataProvider provider_deprecated_customer_id_migration
+	 * @testdox Deprecated customer IDs should migrate to the key of the account's mode and resolve only in that mode ($_dataName).
+	 *
+	 * Unknown account liveness is treated as live, so live customer data is never lost.
+	 *
+	 * @param bool        $test_mode       Whether the store is in test mode.
+	 * @param bool|null   $account_is_live Account liveness: true live, false test, null unknown.
+	 * @param string|null $expected_result Customer ID the migration resolves for the current mode.
+	 * @param string      $target_key      Option the legacy customer ID must land under.
+	 * @param string      $other_key       Option that must stay empty.
 	 */
-	public function test_migration_targets_live_key_when_account_is_live_even_in_test_mode(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-account' ) );
+	public function test_migration_targets_the_account_mode_key( bool $test_mode, ?bool $account_is_live, ?string $expected_result, string $target_key, string $other_key ): void {
+		$user_id = $this->factory->user->create();
 		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
 
-		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), true );
+		$sut = $this->create_sut( $test_mode, $this->create_customer_api_client( array() ), $account_is_live );
 
-		$this->assertNull( $sut->migrate_and_get_customer_id( $user_id ), 'A live-account legacy ID must not resolve as the test-mode customer.' );
-
-		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ), 'A live account\'s legacy customer must land under the live key regardless of the store mode.' );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertSame( $expected_result, $sut->migrate_and_get_customer_id( $user_id ) );
+		$this->assertSame( 'cus_legacy', get_user_option( $target_key, $user_id ) );
+		$this->assertFalse( get_user_option( $other_key, $user_id ) );
 		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
 	}
 
 	/**
-	 * @testdox Deprecated customer IDs on a live account in live mode should migrate and resolve immediately.
+	 * Store mode and account liveness: the legacy ID lands under the account's key and resolves only in the matching mode.
+	 *
+	 * @return array<string,array{bool,?bool,?string,string,string}>
 	 */
-	public function test_migration_resolves_live_key_on_live_account_in_live_mode(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-live-live' ) );
-		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
+	public function provider_deprecated_customer_id_migration(): array {
+		$live = WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION;
+		$test = WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION;
 
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), true );
-
-		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ) );
-		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
-	}
-
-	/**
-	 * @testdox Deprecated customer IDs should migrate to the test key when the account is not live.
-	 */
-	public function test_migration_targets_test_key_when_account_is_not_live(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-test-account' ) );
-		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
-
-		$sut = $this->create_sut( true, $this->create_customer_api_client( array() ), false );
-
-		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ) );
-		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
-
-		$other_user_id = $this->factory->user->create( array( 'user_login' => 'legacy-test-account-live-mode' ) );
-		update_user_option( $other_user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
-
-		$live_mode_sut = $this->create_sut( false, $this->create_customer_api_client( array() ), false );
-
-		$this->assertNull( $live_mode_sut->migrate_and_get_customer_id( $other_user_id ), 'A test-account legacy ID must not resolve as the live-mode customer.' );
-		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $other_user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $other_user_id ) );
-	}
-
-	/**
-	 * @testdox Deprecated customer IDs should default to the live key when the account liveness is unknown.
-	 */
-	public function test_migration_defaults_to_live_key_when_account_liveness_is_unknown(): void {
-		$user_id = $this->factory->user->create( array( 'user_login' => 'legacy-unknown-account' ) );
-		update_user_option( $user_id, WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, 'cus_legacy' );
-
-		$sut = $this->create_sut( false, $this->create_customer_api_client( array() ), null );
-
-		$this->assertSame( 'cus_legacy', $sut->migrate_and_get_customer_id( $user_id ), 'Unknown account liveness must be treated as live to avoid losing live customer data.' );
-		$this->assertSame( 'cus_legacy', get_user_option( WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
-		$this->assertFalse( get_user_option( WooPaymentsCustomerService::DEPRECATED_CUSTOMER_ID_OPTION, $user_id ) );
+		return array(
+			'live account, test mode'     => array( true, true, null, $live, $test ),
+			'live account, live mode'     => array( false, true, 'cus_legacy', $live, $test ),
+			'test account, test mode'     => array( true, false, 'cus_legacy', $test, $live ),
+			'test account, live mode'     => array( false, false, null, $test, $live ),
+			'unknown liveness, live mode' => array( false, null, 'cus_legacy', $live, $test ),
+		);
 	}
 
 	/**
@@ -437,18 +410,59 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A validated subscription change reuses an existing guest session customer without updating it.
+	 * @dataProvider provider_subscription_change_existing_customer_sources
+	 * @testdox A validated subscription payment-method change reuses an existing customer without updating or creating one ($_dataName).
+	 *
+	 * A payment-method change must not push the subscription's stale billing to the provider customer.
+	 *
+	 * @param bool     $logged_in        Whether the order belongs to a user.
+	 * @param callable $store_customer   Stores the existing customer ID, given the order and the user ID.
+	 * @param string   $expected_customer Customer ID the resolution returns.
 	 */
-	public function test_subscription_change_customer_resolution_reuses_guest_session_customer_without_update(): void {
-		$order      = $this->create_checkout_order();
+	public function test_subscription_change_reuses_an_existing_customer_without_update( bool $logged_in, callable $store_customer, string $expected_customer ): void {
+		$user_id    = $logged_in ? $this->factory->user->create() : 0;
+		$order      = $this->create_checkout_order( $user_id );
 		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
-		$sut        = $this->create_sut( false, $api_client );
+		$store_customer( $order, $user_id );
 
-		WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_guest', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
+		$this->assertSame( $expected_customer, $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
 		$this->assertSame( array(), $api_client->updated_customers );
 		$this->assertSame( array(), $api_client->created_customers );
+	}
+
+	/**
+	 * Where the existing customer ID is stored: the guest session, the order meta, or the user option.
+	 *
+	 * @return array<string,array{bool,callable,string}>
+	 */
+	public function provider_subscription_change_existing_customer_sources(): array {
+		return array(
+			'guest session' => array(
+				false,
+				static function (): void {
+					WC()->session->set( 'wcpay_customer_id', 'cus_guest' );
+				},
+				'cus_guest',
+			),
+			'order meta'    => array(
+				true,
+				static function ( WC_Order $order ): void {
+					$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+					$order->save();
+				},
+				'cus_subscription',
+			),
+			'user option'   => array(
+				true,
+				static function ( WC_Order $order, int $user_id ): void {
+					unset( $order );
+					update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_user' );
+				},
+				'cus_user',
+			),
+		);
 	}
 
 	/**
@@ -470,78 +484,45 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A validated subscription payment-method change should not overwrite the provider customer.
+	 * @dataProvider provider_customer_update_not_suppressed
+	 * @testdox Ordinary customer resolution should still update the customer when the request names no subscription of this order ($_dataName).
+	 *
+	 * Only a verified subscription change may skip the customer update.
+	 *
+	 * @param string $stored_customer            Customer ID stored on the order.
+	 * @param int    $request_id_offset          Offset from the order ID of the change_payment_method request value.
+	 * @param bool   $request_id_is_subscription Whether the request value is a subscription.
 	 */
-	public function test_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
-		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-customer' ) );
+	public function test_customer_update_is_not_suppressed_without_a_subscription_change_for_this_order( string $stored_customer, int $request_id_offset, bool $request_id_is_subscription ): void {
+		$user_id    = $this->factory->user->create();
 		$order      = $this->create_checkout_order( $user_id );
 		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
 
-		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
+		$order->update_meta_data( '_stripe_customer_id', $stored_customer );
 		$order->save();
 
-		$sut = $this->create_sut( false, $api_client );
-
-		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
-		$this->assertSame( array(), $api_client->updated_customers, 'A payment-method change must not push the subscription\'s stale billing to the provider customer.' );
-	}
-
-	/**
-	 * @testdox A validated subscription change should leave a user-persisted customer untouched.
-	 */
-	public function test_user_persisted_customer_update_is_skipped_when_changing_subscription_payment_method(): void {
-		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-user-customer' ) );
-		$order      = $this->create_checkout_order( $user_id );
-		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
-
-		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_user' );
-
-		$sut = $this->create_sut( false, $api_client );
-
-		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
-		$this->assertSame( array(), $api_client->updated_customers );
-	}
-
-	/**
-	 * @testdox An unrelated subscription request value should not suppress an ordinary customer update.
-	 */
-	public function test_customer_update_runs_for_an_ordinary_order_with_an_unrelated_subscription_request_value(): void {
-		$user_id    = $this->factory->user->create( array( 'user_login' => 'unrelated-subscription-request' ) );
-		$order      = $this->create_checkout_order( $user_id );
-		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
-
-		$order->update_meta_data( '_stripe_customer_id', 'cus_order' );
-		$order->save();
-
+		$request_id = $order->get_id() + $request_id_offset;
 		$this->fake_wcs_is_subscription();
-		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() + 1 );
-		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
+		$GLOBALS['wcpay_test_subscription_ids'] = $request_id_is_subscription ? array( $request_id ) : array();
+		$_GET['change_payment_method']          = (string) $request_id;
 
 		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_order', $sut->get_or_create_customer_id_for_order( $order ) );
-		$this->assertCount( 1, $api_client->updated_customers, 'Ordinary customer resolution must not inspect unrelated request globals.' );
+		$this->assertSame( $stored_customer, $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertCount( 1, $api_client->updated_customers );
 	}
 
 	/**
-	 * @testdox A change_payment_method parameter that is not a subscription should still update the customer.
+	 * Request values that must not suppress an ordinary update: another subscription's ID, or this order's ID when it is
+	 * not a subscription.
+	 *
+	 * @return array<string,array{string,int,bool}>
 	 */
-	public function test_customer_update_still_runs_when_change_payment_method_is_not_a_subscription(): void {
-		$user_id    = $this->factory->user->create( array( 'user_login' => 'pm-change-non-subscription' ) );
-		$order      = $this->create_checkout_order( $user_id );
-		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
-
-		$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
-		$order->save();
-
-		$this->fake_wcs_is_subscription();
-		$GLOBALS['wcpay_test_subscription_ids'] = array();
-		$_GET['change_payment_method']          = (string) $order->get_id();
-
-		$sut = $this->create_sut( false, $api_client );
-
-		$this->assertSame( 'cus_subscription', $sut->get_or_create_customer_id_for_order( $order ) );
-		$this->assertCount( 1, $api_client->updated_customers, 'Only a verified subscription change may skip the customer update.' );
+	public function provider_customer_update_not_suppressed(): array {
+		return array(
+			'unrelated subscription id in the request' => array( 'cus_order', 1, true ),
+			'request id is not a subscription'         => array( 'cus_subscription', 0, false ),
+		);
 	}
 
 	/**

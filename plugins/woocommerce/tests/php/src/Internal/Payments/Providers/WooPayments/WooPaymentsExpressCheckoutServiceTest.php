@@ -785,11 +785,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not require login confirmation when guest checkout is enabled.
+	 * @dataProvider provider_login_confirmation_not_required
+	 * @testdox Should not require login confirmation on checkout ($_dataName).
+	 *
+	 * @param bool                 $logged_in Whether a shopper is logged in.
+	 * @param array<string,string> $options   Store options to set.
 	 */
-	public function test_login_confirmation_false_when_guest_checkout_enabled(): void {
-		wp_set_current_user( 0 );
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+	public function test_login_confirmation_false_when_checkout_needs_no_login( bool $logged_in, array $options ): void {
+		wp_set_current_user( $logged_in ? $this->factory()->user->create() : 0 );
+		foreach ( $options as $option => $value ) {
+			update_option( $option, $value );
+		}
 
 		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
 
@@ -797,38 +803,40 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not require login confirmation for logged-in shoppers.
+	 * Shoppers and store settings that need no login before an express payment.
+	 *
+	 * @return array<string,array{bool,array<string,string>}>
 	 */
-	public function test_login_confirmation_false_for_logged_in_user(): void {
-		$user_id = $this->factory()->user->create();
-		wp_set_current_user( $user_id );
-		update_option( 'woocommerce_enable_guest_checkout', 'no' );
-		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' );
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertFalse( $params['login_confirmation'] );
+	public function provider_login_confirmation_not_required(): array {
+		return array(
+			'guest checkout on'        => array( false, array( 'woocommerce_enable_guest_checkout' => 'yes' ) ),
+			'logged-in shopper'        => array(
+				true,
+				array(
+					'woocommerce_enable_guest_checkout' => 'no',
+					'woocommerce_enable_signup_and_login_from_checkout' => 'no',
+				),
+			),
+			'checkout signup possible' => array(
+				false,
+				array(
+					'woocommerce_enable_guest_checkout' => 'no',
+					'woocommerce_enable_signup_and_login_from_checkout' => 'yes',
+					'woocommerce_registration_generate_username' => 'yes',
+					'woocommerce_registration_generate_password' => 'yes',
+				),
+			),
+		);
 	}
 
 	/**
-	 * @testdox Should not require login confirmation when checkout signup is possible.
+	 * @dataProvider provider_product_total_label
+	 * @testdox Should build the product total label from the apostrophe-free statement descriptor and the exact default suffix ($_dataName).
+	 *
+	 * @param array<string,string> $account_data   Account data overrides.
+	 * @param string               $expected_label Expected total label.
 	 */
-	public function test_login_confirmation_false_when_account_creation_possible(): void {
-		wp_set_current_user( 0 );
-		update_option( 'woocommerce_enable_guest_checkout', 'no' );
-		update_option( 'woocommerce_enable_signup_and_login_from_checkout', 'yes' );
-		update_option( 'woocommerce_registration_generate_username', 'yes' );
-		update_option( 'woocommerce_registration_generate_password', 'yes' );
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertFalse( $params['login_confirmation'] );
-	}
-
-	/**
-	 * @testdox Should build the product total label from the apostrophe-free account statement descriptor and exact default suffix.
-	 */
-	public function test_product_total_label_matches_statement_descriptor_oracle(): void {
+	public function test_product_total_label_matches_the_statement_descriptor_oracle( array $account_data, string $expected_label ): void {
 		$product = \WC_Helper_Product::create_simple_product(
 			true,
 			array(
@@ -840,29 +848,21 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->set_current_product( $product );
 
-		$params = $this->create_service( array(), true, array( 'statement_descriptor' => "Merchant's Store" ) )->get_express_checkout_params( 'product' );
+		$params = $this->create_service( array(), true, $account_data )->get_express_checkout_params( 'product' );
 
-		$this->assertSame( 'Merchants Store (via WooCommerce)', $params['product']['total']['label'] );
+		$this->assertSame( $expected_label, $params['product']['total']['label'] );
 	}
 
 	/**
-	 * @testdox Should use the exact suffix-only fallback when the account statement descriptor is absent.
+	 * Statement descriptors and the labels they give.
+	 *
+	 * @return array<string,array{array<string,string>,string}>
 	 */
-	public function test_product_total_label_matches_empty_descriptor_fallback(): void {
-		$product = \WC_Helper_Product::create_simple_product(
-			true,
-			array(
-				'name'          => 'Express Widget',
-				'regular_price' => '12.34',
-				'virtual'       => true,
-				'price'         => '12.34',
-			)
+	public function provider_product_total_label(): array {
+		return array(
+			"descriptor Merchant's Store" => array( array( 'statement_descriptor' => "Merchant's Store" ), 'Merchants Store (via WooCommerce)' ),
+			'no descriptor'               => array( array(), ' (via WooCommerce)' ),
 		);
-		$this->set_current_product( $product );
-
-		$params = $this->create_service()->get_express_checkout_params( 'product' );
-
-		$this->assertSame( ' (via WooCommerce)', $params['product']['total']['label'] );
 	}
 
 	/**
@@ -1359,29 +1359,34 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use the Stripe zero-decimal minor unit for zero-decimal currencies.
+	 * @dataProvider provider_stripe_minor_unit_currencies
+	 * @testdox Should use Stripe's minor unit for the store currency ($_dataName).
+	 *
+	 * @param string $country             Store country.
+	 * @param string $currency            Store currency.
+	 * @param string $expected_code       Expected lowercase currency code.
+	 * @param int    $expected_minor_unit Expected Stripe minor unit.
 	 */
-	public function test_express_checkout_params_use_stripe_zero_minor_unit_for_zero_decimal_currency(): void {
-		update_option( 'woocommerce_default_country', 'JP' );
-		update_option( 'woocommerce_currency', 'JPY' );
+	public function test_express_checkout_params_use_the_stripe_minor_unit( string $country, string $currency, string $expected_code, int $expected_minor_unit ): void {
+		update_option( 'woocommerce_default_country', $country );
+		update_option( 'woocommerce_currency', $currency );
 
 		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
 
-		$this->assertSame( 'jpy', $params['checkout']['currency_code'] );
-		$this->assertSame( 0, $params['checkout']['stripe_minor_unit'] );
+		$this->assertSame( $expected_code, $params['checkout']['currency_code'] );
+		$this->assertSame( $expected_minor_unit, $params['checkout']['stripe_minor_unit'] );
 	}
 
 	/**
-	 * @testdox Should keep Stripe two-decimal minor units for Stripe special-case currencies.
+	 * A zero-decimal currency, and a Stripe special case that keeps two decimals.
+	 *
+	 * @return array<string,array{string,string,string,int}>
 	 */
-	public function test_express_checkout_params_keep_stripe_two_minor_unit_for_special_case_currency(): void {
-		update_option( 'woocommerce_default_country', 'UG' );
-		update_option( 'woocommerce_currency', 'UGX' );
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertSame( 'ugx', $params['checkout']['currency_code'] );
-		$this->assertSame( 2, $params['checkout']['stripe_minor_unit'] );
+	public function provider_stripe_minor_unit_currencies(): array {
+		return array(
+			'zero-decimal JPY'             => array( 'JP', 'JPY', 'jpy', 0 ),
+			'two-decimal special case UGX' => array( 'UG', 'UGX', 'ugx', 2 ),
+		);
 	}
 
 	/**
@@ -1421,17 +1426,27 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the WooPayments extension's availability conditions holds.
+	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` (client 11.1.0 class-wc-payment-gateway-wcpay.php:908-913).
+	 * Client 11.1.0 gates it on that capability, never on the account fees: `can_use_amazon_pay()` (express checkout button helper :362-388)
+	 * reaches `check_base_availability()` (class-wc-payment-gateway-wcpay.php:897-947); fees only shape the settings list (:4848-4879)
+	 * and the Link note (:4835-4840).
+	 *
+	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the WooPayments extension's availability conditions holds ($_dataName).
 	 *
 	 * @dataProvider provider_amazon_pay_availability_conditions
 	 *
-	 * @param array<string,mixed> $settings  Gateway setting overrides.
-	 * @param bool                $test_mode Whether the account is in test mode.
-	 * @param bool                $in_list   Whether the dynamic checkout feature is on (express methods may sit in the payment-method list).
-	 * @param bool                $expected  Whether Amazon Pay should be usable.
+	 * @param array<string,mixed>  $settings     Gateway setting overrides.
+	 * @param bool                 $test_mode    Whether the account is in test mode.
+	 * @param bool                 $in_list      Whether the dynamic checkout feature is on (express methods may sit in the payment-method list).
+	 * @param array<string,mixed>  $account_data Account data overrides.
+	 * @param array<string,string> $tax_options  Tax options to set.
+	 * @param bool                 $expected     Whether Amazon Pay should be usable.
 	 */
-	public function test_amazon_pay_honors_woopayments_extension_availability_conditions( array $settings, bool $test_mode, bool $in_list, bool $expected ): void {
+	public function test_amazon_pay_honors_woopayments_extension_availability_conditions( array $settings, bool $test_mode, bool $in_list, array $account_data, array $tax_options, bool $expected ): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', $in_list ? '1' : '0' );
+		foreach ( $tax_options as $option => $value ) {
+			update_option( $option, $value );
+		}
 		$sut = $this->create_service(
 			array_merge(
 				array(
@@ -1442,7 +1457,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 				$settings
 			),
 			true,
-			array( 'ece_confirmation_tokens_disabled' => false ),
+			array_merge( array( 'ece_confirmation_tokens_disabled' => false ), $account_data ),
 			true,
 			true,
 			$test_mode
@@ -1456,16 +1471,55 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Data provider for the Amazon Pay availability conditions.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:bool,2:bool,3:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:bool,3:array<string,mixed>,4:array<string,string>,5:bool}>
 	 */
 	public function provider_amazon_pay_availability_conditions(): array {
+		$card_fee_only = array( 'card' => array( 'base' => array( 'currency' => 'usd' ) ) );
+
 		return array(
-			'all conditions hold'                        => array( array(), true, false, true ),
-			'merchant switched amazon pay off'           => array( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), true, false, false ),
-			'express methods in the payment-method list' => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, true, false ),
-			'list setting on without the feature flag'   => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, false, true ),
-			'woopayments gateway disabled'               => array( array( 'enabled' => 'no' ), true, false, false ),
-			'live mode without https'                    => array( array(), false, false, false ),
+			'all conditions hold'                        => array( array(), true, false, array(), array(), true ),
+			'merchant switched amazon pay off'           => array( array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), true, false, array(), array(), false ),
+			'express methods in the payment-method list' => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, true, array(), array(), false ),
+			'list setting on without the feature flag'   => array( array( 'express_checkout_in_payment_methods' => 'yes' ), true, false, array(), array(), true ),
+			'woopayments gateway disabled'               => array( array( 'enabled' => 'no' ), true, false, array(), array(), false ),
+			'live mode without https'                    => array( array(), false, false, array(), array(), false ),
+			'capability inactive'                        => array( array(), true, false, array( 'capabilities' => array( 'amazon_pay_payments' => 'inactive' ) ), array(), false ),
+			'capability pending'                         => array( array(), true, false, array( 'capabilities' => array( 'amazon_pay_payments' => 'pending' ) ), array(), false ),
+			'capability disabled'                        => array( array(), true, false, array( 'capabilities' => array( 'amazon_pay_payments' => 'disabled' ) ), array(), false ),
+			'no amazon pay fee entry'                    => array(
+				array(),
+				true,
+				false,
+				array(
+					'capabilities' => array( 'amazon_pay_payments' => 'active' ),
+					'fees'         => $card_fee_only,
+				),
+				array(),
+				true,
+			),
+			'confirmation tokens disabled'               => array( array(), true, false, array( 'ece_confirmation_tokens_disabled' => true ), array(), false ),
+			'taxes based on billing address'             => array(
+				array(),
+				true,
+				false,
+				array(),
+				array(
+					'woocommerce_tax_based_on' => 'billing',
+					'woocommerce_calc_taxes'   => 'yes',
+				),
+				false,
+			),
+			'billing address basis with taxes off'       => array(
+				array(),
+				true,
+				false,
+				array(),
+				array(
+					'woocommerce_tax_based_on' => 'billing',
+					'woocommerce_calc_taxes'   => 'no',
+				),
+				true,
+			),
 		);
 	}
 
@@ -1711,119 +1765,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 ignores checkout locations.
 			'amazon pay usable with no location listing it' => array( array_diff_key( $amazon_only, array( 'express_checkout_checkout_methods' => true ) ), array(), true ),
 		);
-	}
-
-	/**
-	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` (client 11.1.0
-	 * class-wc-payment-gateway-wcpay.php:908-913); the account shape is the one create_account_service() cites.
-	 *
-	 * @testdox Should leave Amazon Pay out when its capability is $amazon_pay_status.
-	 * @testWith ["inactive"]
-	 *           ["pending"]
-	 *           ["disabled"]
-	 *
-	 * @param string $amazon_pay_status Platform status of the amazon_pay_payments capability.
-	 */
-	public function test_allowed_payment_method_types_exclude_amazon_pay_without_active_capability( string $amazon_pay_status ): void {
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-				'capabilities'                     => array( 'amazon_pay_payments' => $amazon_pay_status ),
-			)
-		);
-
-		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-		$this->assertSame( array( 'payment_request' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
-	}
-
-	/**
-	 * Client 11.1.0 gates Amazon Pay express on its capability alone: `can_use_amazon_pay()` (express checkout button helper :362-388)
-	 * reaches `check_base_availability()` (class-wc-payment-gateway-wcpay.php:897-947), which reads capability statuses (:908-913) and
-	 * never the account fees; fees only shape the settings list (:4848-4879) and the Link note (:4835-4840).
-	 *
-	 * @testdox Should offer Amazon Pay express while its capability is active, whether or not the account lists an Amazon Pay fee.
-	 */
-	public function test_amazon_pay_is_offered_without_an_amazon_pay_fee_entry(): void {
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-				'capabilities'                     => array( 'amazon_pay_payments' => 'active' ),
-				'fees'                             => array( 'card' => array( 'base' => array( 'currency' => 'usd' ) ) ),
-			)
-		);
-
-		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $sut->get_enabled_methods_for_context( 'checkout' ) );
-		$this->assertSame( array( 'card', 'amazon_pay' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-	}
-
-	/**
-	 * @testdox Should fail closed when account data disables ECE confirmation tokens.
-	 */
-	public function test_allowed_payment_method_types_exclude_amazon_pay_when_confirmation_tokens_are_disabled(): void {
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => true,
-			)
-		);
-
-		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-	}
-
-	/**
-	 * @testdox Should block Amazon Pay when taxes are based on billing address.
-	 */
-	public function test_allowed_payment_method_types_exclude_amazon_pay_for_billing_address_taxes(): void {
-		update_option( 'woocommerce_tax_based_on', 'billing' );
-		update_option( 'woocommerce_calc_taxes', 'yes' );
-
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-			)
-		);
-
-		$this->assertSame( array( 'card' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
-	}
-
-	/**
-	 * @testdox Should allow Amazon Pay with billing-address tax settings when taxes are disabled.
-	 */
-	public function test_allowed_payment_method_types_include_amazon_pay_for_billing_address_when_taxes_disabled(): void {
-		update_option( 'woocommerce_tax_based_on', 'billing' );
-		update_option( 'woocommerce_calc_taxes', 'no' );
-
-		$sut = $this->create_service(
-			array(
-				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
-				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
-			),
-			true,
-			array(
-				'ece_confirmation_tokens_disabled' => false,
-			)
-		);
-
-		$this->assertSame( array( 'card', 'amazon_pay' ), $sut->get_allowed_payment_method_types_for_context( 'checkout' ) );
 	}
 
 	/**

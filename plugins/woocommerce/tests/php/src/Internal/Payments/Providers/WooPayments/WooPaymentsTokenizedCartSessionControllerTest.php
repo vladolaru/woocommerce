@@ -96,10 +96,13 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should switch Store API requests with a valid product-page session nonce to the tokenized handler.
+	 * @dataProvider provider_store_api_request_shapes
+	 * @testdox Should switch Store API requests with a valid product-page session nonce to the tokenized handler ($_dataName).
+	 *
+	 * @param string $set_request Name of the helper that shapes the Store API request.
 	 */
-	public function test_uses_tokenized_handler_for_store_api_request_with_valid_session_nonce(): void {
-		$this->set_store_api_request();
+	public function test_uses_tokenized_handler_for_store_api_request_with_valid_session_nonce( string $set_request ): void {
+		$this->{$set_request}();
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
 		$this->sut = $this->create_controller( true );
 
@@ -110,14 +113,15 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should switch plain-permalink Store API requests with a valid product-page session nonce to the tokenized handler.
+	 * Store API request shapes: the pretty permalink path and the plain permalink rest_route query.
+	 *
+	 * @return array<string,array{string}>
 	 */
-	public function test_uses_tokenized_handler_for_rest_route_store_api_request_with_valid_session_nonce(): void {
-		$this->set_query_store_api_request();
-		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
-		$this->sut = $this->create_controller( true );
-
-		$this->assertSame( WooPaymentsTokenizedCartSessionHandler::class, $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
+	public function provider_store_api_request_shapes(): array {
+		return array(
+			'pretty permalinks' => array( 'set_store_api_request' ),
+			'plain permalinks'  => array( 'set_query_store_api_request' ),
+		);
 	}
 
 	/**

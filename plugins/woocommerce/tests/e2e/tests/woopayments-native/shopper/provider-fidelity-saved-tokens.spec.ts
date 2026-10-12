@@ -28,7 +28,7 @@ import {
  * - Paying with an already-saved token creating no second token is
  *   `WooPaymentsOrderEffectApplierTest::test_saved_token_effects_attach_selected_token`.
  * - Deleting a token detaching its provider method is
- *   `WooPaymentsTokenServiceTest::test_detaches_woopayments_card_payment_methods_when_token_is_deleted`,
+ *   `WooPaymentsTokenServiceTest::test_detaches_the_provider_payment_method_when_a_reusable_token_is_deleted` data set "card",
  *   which this case's own cleanup below still proves live at the provider.
  * - A Classic or Blocks checkout that saves a card creating exactly one token
  *   is `WooPaymentsGatewayTest`, `WooPaymentsPaymentOperationServiceTest`

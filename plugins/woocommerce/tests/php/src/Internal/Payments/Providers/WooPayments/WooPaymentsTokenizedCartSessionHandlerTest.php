@@ -87,21 +87,13 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create an isolated guest session when no tokenized session header is present.
+	 * @dataProvider provider_new_isolated_session_shoppers
+	 * @testdox Should create an isolated, empty tokenized guest session when no tokenized session header is present ($_dataName).
+	 *
+	 * @param bool $logged_in Whether a shopper is logged in.
 	 */
-	public function test_creates_isolated_guest_session_without_cookie_header(): void {
-		$handler = new WooPaymentsTokenizedCartSessionHandler();
-		$handler->init();
-
-		$this->assertStringStartsWith( 't_', $handler->get_customer_id() );
-		$this->assertSame( array(), $handler->get( 'cart' ) );
-	}
-
-	/**
-	 * @testdox Should create an isolated tokenized guest session for logged-in shoppers.
-	 */
-	public function test_creates_isolated_guest_session_for_logged_in_shopper(): void {
-		$user_id = self::factory()->user->create();
+	public function test_creates_isolated_guest_session_without_session_header( bool $logged_in ): void {
+		$user_id = $logged_in ? self::factory()->user->create() : 0;
 		wp_set_current_user( $user_id );
 
 		$handler = new WooPaymentsTokenizedCartSessionHandler();
@@ -109,6 +101,19 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertNotSame( (string) $user_id, $handler->get_customer_id() );
 		$this->assertStringStartsWith( 't_', $handler->get_customer_id() );
+		$this->assertSame( array(), $handler->get( 'cart' ) );
+	}
+
+	/**
+	 * Guest and logged-in shoppers.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_new_isolated_session_shoppers(): array {
+		return array(
+			'guest'     => array( false ),
+			'logged-in' => array( true ),
+		);
 	}
 
 	/**

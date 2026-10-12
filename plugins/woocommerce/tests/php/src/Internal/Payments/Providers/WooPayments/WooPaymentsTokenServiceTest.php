@@ -541,12 +541,16 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detach WooPayments card payment methods when a saved token is deleted.
+	 * @dataProvider provider_reusable_token_types_detached_on_delete
+	 * @testdox Should detach the provider payment method when a reusable WooPayments token is deleted ($_dataName).
+	 *
+	 * @param string                            $payment_method_id      Payment method ID the token holds.
+	 * @param array<string,array<string,mixed>> $payment_method_details Provider payment method details keyed by ID.
+	 * @param callable                          $create_token           Builds the saved token from the test, the service and the user ID.
 	 */
-	public function test_detaches_woopayments_card_payment_methods_when_token_is_deleted(): void {
-		$user_id           = $this->factory()->user->create();
-		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
-		$api_client        = new class() extends WooPaymentsApiClient {
+	public function test_detaches_the_provider_payment_method_when_a_reusable_token_is_deleted( string $payment_method_id, array $payment_method_details, callable $create_token ): void {
+		$user_id    = $this->factory()->user->create();
+		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Detached payment method IDs.
 			 *
@@ -566,12 +570,72 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				return array( 'id' => $payment_method_id );
 			}
 		};
-		$this->create_service( array(), $api_client, null, $this->create_account_service( true ) );
+		$sut        = $this->create_service( $payment_method_details, $api_client, null, $this->create_account_service( true ) );
+		$token      = $create_token( $this, $sut, $user_id );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-		do_action( 'woocommerce_payment_token_deleted', $woopayments_token->get_id(), $woopayments_token );
+		do_action( 'woocommerce_payment_token_deleted', $token->get_id(), $token );
 
-		$this->assertSame( array( 'pm_delete' ), $api_client->detached_payment_method_ids );
+		$this->assertSame( array( $payment_method_id ), $api_client->detached_payment_method_ids, 'Every reusable WooPayments token type must detach at the provider on deletion.' );
+	}
+
+	/**
+	 * Reusable token types: a card token saved under the WooPayments gateway, and SEPA, Link and Amazon Pay tokens
+	 * created from their provider payment method details.
+	 *
+	 * @return array<string,array{string,array<string,array<string,mixed>>,callable}>
+	 */
+	public function provider_reusable_token_types_detached_on_delete(): array {
+		$from_details = static function ( string $payment_method_id ): callable {
+			return static function ( self $test, WooPaymentsTokenService $sut, int $user_id ) use ( $payment_method_id ) {
+				unset( $test );
+				return $sut->get_or_create_token_for_user( $payment_method_id, $user_id );
+			};
+		};
+
+		return array(
+			'card'       => array(
+				'pm_delete',
+				array(),
+				static function ( self $test, WooPaymentsTokenService $sut, int $user_id ): WC_Payment_Token_CC {
+					unset( $sut );
+					return $test->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_delete' );
+				},
+			),
+			'SEPA'       => array(
+				'pm_sepa',
+				array(
+					'pm_sepa' => array(
+						'id'         => 'pm_sepa',
+						'type'       => 'sepa_debit',
+						'sepa_debit' => array( 'last4' => '6789' ),
+					),
+				),
+				$from_details( 'pm_sepa' ),
+			),
+			'Link'       => array(
+				'pm_link',
+				array(
+					'pm_link' => array(
+						'id'   => 'pm_link',
+						'type' => 'link',
+						'link' => array( 'email' => 'buyer@example.com' ),
+					),
+				),
+				$from_details( 'pm_link' ),
+			),
+			'Amazon Pay' => array(
+				'pm_amazon',
+				array(
+					'pm_amazon' => array(
+						'id'              => 'pm_amazon',
+						'type'            => 'amazon_pay',
+						'billing_details' => array( 'email' => 'buyer@example.com' ),
+					),
+				),
+				$from_details( 'pm_amazon' ),
+			),
+		);
 	}
 
 	/**
@@ -635,66 +699,14 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detach SEPA, Link and Amazon Pay payment methods when their saved tokens are deleted.
+	 * @dataProvider provider_token_types_that_set_remote_default
+	 * @testdox Should set the remote customer default payment method when a WooPayments token becomes default ($_dataName).
+	 *
+	 * @param string                            $payment_method_id      Payment method ID the token holds.
+	 * @param array<string,array<string,mixed>> $payment_method_details Provider payment method details keyed by ID.
+	 * @param callable                          $create_token           Builds the saved token from the test, the service and the user ID.
 	 */
-	public function test_detaches_non_card_payment_methods_when_tokens_are_deleted(): void {
-		$user_id    = $this->factory()->user->create();
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Detached payment method IDs.
-			 *
-			 * @var string[]
-			 */
-			public array $detached_payment_method_ids = array();
-
-			/**
-			 * Detach a payment method.
-			 *
-			 * @param string $payment_method_id Payment method ID.
-			 * @return array<string,mixed>
-			 */
-			public function detach_payment_method( string $payment_method_id ): array {
-				$this->detached_payment_method_ids[] = $payment_method_id;
-
-				return array( 'id' => $payment_method_id );
-			}
-		};
-		$sut        = $this->create_service(
-			array(
-				'pm_sepa'   => array(
-					'id'         => 'pm_sepa',
-					'type'       => 'sepa_debit',
-					'sepa_debit' => array( 'last4' => '6789' ),
-				),
-				'pm_link'   => array(
-					'id'   => 'pm_link',
-					'type' => 'link',
-					'link' => array( 'email' => 'buyer@example.com' ),
-				),
-				'pm_amazon' => array(
-					'id'              => 'pm_amazon',
-					'type'            => 'amazon_pay',
-					'billing_details' => array( 'email' => 'buyer@example.com' ),
-				),
-			),
-			$api_client,
-			null,
-			$this->create_account_service( true )
-		);
-
-		foreach ( array( 'pm_sepa', 'pm_link', 'pm_amazon' ) as $payment_method_id ) {
-			$token = $sut->get_or_create_token_for_user( $payment_method_id, $user_id );
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered token deletion hook.
-			do_action( 'woocommerce_payment_token_deleted', $token->get_id(), $token );
-		}
-
-		$this->assertSame( array( 'pm_sepa', 'pm_link', 'pm_amazon' ), $api_client->detached_payment_method_ids, 'Every reusable WooPayments token type must detach at the provider on deletion.' );
-	}
-
-	/**
-	 * @testdox Should set the remote customer default payment method when a non-card token becomes default.
-	 */
-	public function test_sets_remote_default_payment_method_when_sepa_token_becomes_default(): void {
+	public function test_sets_remote_default_payment_method_when_a_token_becomes_default( string $payment_method_id, array $payment_method_details, callable $create_token ): void {
 		$user_id          = $this->factory()->user->create();
 		$customer_service = new class() extends WooPaymentsCustomerService {
 			/**
@@ -737,19 +749,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		};
 		$customer_service->customer_ids_by_user_id[ $user_id ] = 'cus_test';
 
-		$sut = $this->create_service(
-			array(
-				'pm_sepa' => array(
-					'id'         => 'pm_sepa',
-					'type'       => 'sepa_debit',
-					'sepa_debit' => array( 'last4' => '6789' ),
-				),
-			),
-			null,
-			$customer_service
-		);
-
-		$token = $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+		$sut   = $this->create_service( $payment_method_details, null, $customer_service );
+		$token = $create_token( $this, $sut, $user_id );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
 		do_action( 'woocommerce_payment_token_set_default', $token->get_id(), $token );
 
@@ -757,11 +758,44 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'customer_id'       => 'cus_test',
-					'payment_method_id' => 'pm_sepa',
+					'payment_method_id' => $payment_method_id,
 				),
 			),
 			$customer_service->default_payment_methods,
-			'A non-card default must update the provider customer default payment method.'
+			'A WooPayments default must update the provider customer default payment method.'
+		);
+	}
+
+	/**
+	 * Token types whose default is mirrored to the provider customer: SEPA from its details, a card saved under the
+	 * WooPayments gateway.
+	 *
+	 * @return array<string,array{string,array<string,array<string,mixed>>,callable}>
+	 */
+	public function provider_token_types_that_set_remote_default(): array {
+		return array(
+			'SEPA' => array(
+				'pm_sepa',
+				array(
+					'pm_sepa' => array(
+						'id'         => 'pm_sepa',
+						'type'       => 'sepa_debit',
+						'sepa_debit' => array( 'last4' => '6789' ),
+					),
+				),
+				static function ( self $test, WooPaymentsTokenService $sut, int $user_id ) {
+					unset( $test );
+					return $sut->get_or_create_token_for_user( 'pm_sepa', $user_id );
+				},
+			),
+			'card' => array(
+				'pm_default',
+				array(),
+				static function ( self $test, WooPaymentsTokenService $sut, int $user_id ): WC_Payment_Token_CC {
+					unset( $sut );
+					return $test->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
+				},
+			),
 		);
 	}
 
@@ -1620,68 +1654,6 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should set the remote customer default payment method when a WooPayments card token becomes default.
-	 */
-	public function test_sets_remote_default_payment_method_when_a_woopayments_card_token_becomes_default(): void {
-		$user_id           = $this->factory()->user->create();
-		$woopayments_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_default' );
-		$customer_service  = new class() extends WooPaymentsCustomerService {
-			/**
-			 * Customer IDs keyed by WordPress user ID.
-			 *
-			 * @var array<int,string>
-			 */
-			public array $customer_ids_by_user_id = array();
-
-			/**
-			 * Default payment method updates.
-			 *
-			 * @var array<int,array{customer_id:string,payment_method_id:string}>
-			 */
-			public array $default_payment_methods = array();
-
-			/**
-			 * Get a customer ID for a user.
-			 *
-			 * @param int|null $user_id User ID.
-			 * @return string|null
-			 */
-			public function migrate_and_get_customer_id( ?int $user_id ): ?string {
-				return null === $user_id ? null : $this->customer_ids_by_user_id[ $user_id ] ?? null;
-			}
-
-			/**
-			 * Set a payment method as default for a customer.
-			 *
-			 * @param string $customer_id       Customer ID.
-			 * @param string $payment_method_id Payment method ID.
-			 * @return void
-			 */
-			public function set_default_payment_method_for_customer( string $customer_id, string $payment_method_id ): void {
-				$this->default_payment_methods[] = array(
-					'customer_id'       => $customer_id,
-					'payment_method_id' => $payment_method_id,
-				);
-			}
-		};
-		$customer_service->customer_ids_by_user_id[ $user_id ] = 'cus_test';
-		$this->create_service( array(), null, $customer_service );
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered default-token hook.
-		do_action( 'woocommerce_payment_token_set_default', $woopayments_token->get_id(), $woopayments_token );
-
-		$this->assertSame(
-			array(
-				array(
-					'customer_id'       => 'cus_test',
-					'payment_method_id' => 'pm_default',
-				),
-			),
-			$customer_service->default_payment_methods
-		);
-	}
-
-	/**
 	 * @testdox Should keep only locally supported WooPayments tokens in token lists.
 	 */
 	public function test_keeps_only_supported_woopayments_tokens_in_customer_token_lists(): void {
@@ -1725,29 +1697,29 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A card-gateway read leaves out a saved Link token while Link is disabled.
+	 * @dataProvider provider_card_gateway_read_hides_disabled_type_tokens
+	 * @testdox A card-gateway read leaves out a token of a disabled type filed under the card gateway ($_dataName).
 	 *
 	 * Link rides the card gateway, so client 11.1.0 retrieves it for that gateway only while Link is enabled
-	 * (`class-wc-payments-token-service.php:366-369`) and drops the stored Link token from the read (`:199-250`). Native
-	 * keeps the token stored and leaves it out of the read, so the card gateway's checkout and selectors match the client.
+	 * (`class-wc-payments-token-service.php:366-369`) and drops the stored Link token from the read (`:199-250`).
+	 * Client 11.1.0 fetches only the card gateway's own types for a card-gateway read (`:360-377`) and drops every stored
+	 * token it did not fetch (`:199-250`), so a SEPA token filed under the card gateway never reaches the card checkout
+	 * (review 37 F3). Native keeps both rows and leaves them out, so the card gateway's checkout and selectors match the client.
+	 *
+	 * @param callable $create_other_token Saves the other-type token under the card gateway for the given user ID.
 	 */
-	public function test_card_gateway_read_leaves_out_link_tokens_while_link_is_disabled(): void {
-		$user_id    = $this->factory()->user->create();
-		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
-		$link_token = new WooPaymentsLinkToken();
-		$link_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$link_token->set_user_id( $user_id );
-		$link_token->set_token( 'pm_link' );
-		$link_token->set_email( 'buyer@example.com' );
-		$link_token->save();
+	public function test_card_gateway_read_leaves_out_tokens_of_a_disabled_type_filed_under_it( callable $create_other_token ): void {
+		$user_id     = $this->factory()->user->create();
+		$card_token  = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
+		$other_token = $create_other_token( $user_id );
 		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
 		$result = apply_filters(
 			'woocommerce_get_customer_payment_tokens',
 			array(
-				$card_token->get_id() => $card_token,
-				$link_token->get_id() => $link_token,
+				$card_token->get_id()  => $card_token,
+				$other_token->get_id() => $other_token,
 			),
 			$user_id,
 			WooPaymentsPersistenceVocabulary::GATEWAY_ID
@@ -1757,35 +1729,37 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A card-gateway read leaves out a SEPA token stored under the card gateway while SEPA is disabled.
+	 * Tokens of a type other than card, saved under the card gateway while only card is enabled.
 	 *
-	 * Client 11.1.0 fetches only the card gateway's own types for a card-gateway read (`class-wc-payments-token-service.php:360-377`)
-	 * and drops every stored token it did not fetch (`:199-250`), so a SEPA token filed under the card gateway never reaches
-	 * the card checkout. Native keeps the row and leaves it out while SEPA is disabled (review 37 F3).
+	 * @return array<string,array{callable}>
 	 */
-	public function test_card_gateway_read_leaves_out_a_sepa_token_filed_under_the_card_gateway_while_sepa_is_disabled(): void {
-		$user_id    = $this->factory()->user->create();
-		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
-		$sepa_token = new WooPaymentsSepaToken();
-		$sepa_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$sepa_token->set_user_id( $user_id );
-		$sepa_token->set_token( 'pm_sepa_under_card' );
-		$sepa_token->set_last4( '6789' );
-		$sepa_token->save();
-		$this->create_service( array(), null, null, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+	public function provider_card_gateway_read_hides_disabled_type_tokens(): array {
+		return array(
+			'Link token under the card gateway' => array(
+				static function ( int $user_id ): WooPaymentsLinkToken {
+					$token = new WooPaymentsLinkToken();
+					$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+					$token->set_user_id( $user_id );
+					$token->set_token( 'pm_link' );
+					$token->set_email( 'buyer@example.com' );
+					$token->save();
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the registered customer-token filter.
-		$result = apply_filters(
-			'woocommerce_get_customer_payment_tokens',
-			array(
-				$card_token->get_id() => $card_token,
-				$sepa_token->get_id() => $sepa_token,
+					return $token;
+				},
 			),
-			$user_id,
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID
-		);
+			'SEPA token under the card gateway' => array(
+				static function ( int $user_id ): WooPaymentsSepaToken {
+					$token = new WooPaymentsSepaToken();
+					$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+					$token->set_user_id( $user_id );
+					$token->set_token( 'pm_sepa_under_card' );
+					$token->set_last4( '6789' );
+					$token->save();
 
-		$this->assertSame( array( $card_token->get_id() ), array_keys( $result ) );
+					return $token;
+				},
+			),
+		);
 	}
 
 	/**

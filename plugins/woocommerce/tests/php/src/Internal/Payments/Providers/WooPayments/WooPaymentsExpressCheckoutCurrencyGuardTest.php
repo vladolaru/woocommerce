@@ -134,38 +134,19 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should still reject a mismatch, but keep a currency header that is not a currency code out of the log line.
+	 * @dataProvider provider_non_currency_code_headers
+	 * @testdox Should still reject a mismatch, but keep a currency header that is not a currency code out of the log line ($_dataName).
 	 *
-	 * Any caller can send the header; only a three-letter code is copied into the store's log.
+	 * Any caller can send the header; only a three-letter code is copied into the store's log. In PCRE, `$` also matches
+	 * before a final line break, so the code check must end at the very end of the string.
+	 *
+	 * @param string $header Payment-currency header value.
 	 */
-	public function test_keeps_a_header_that_is_not_a_currency_code_out_of_the_log(): void {
+	public function test_keeps_a_header_that_is_not_a_currency_code_out_of_the_log( string $header ): void {
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
 
-		$request = $this->create_request( $this->ece_headers( "usd\nforged log line" ) );
-
-		try {
-			$this->sut->assert_currency_matches_element( $order, $request );
-			$this->fail( 'Expected a RouteException for the currency mismatch.' );
-		} catch ( RouteException $exception ) {
-			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
-		}
-		$this->assertSame( 1, $this->count_payment_info_errors() );
-		foreach ( $this->log_lines as $line ) {
-			$this->assertStringNotContainsString( 'forged log line', $line['message'] );
-		}
-	}
-
-	/**
-	 * @testdox Should keep a currency header with a trailing line break out of the log line.
-	 *
-	 * In PCRE, `$` also matches before a final line break, so the code check must end at the very end of the string.
-	 */
-	public function test_keeps_a_currency_header_with_a_trailing_line_break_out_of_the_log(): void {
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'EUR' );
-
-		$request = $this->create_request( $this->ece_headers( "usd\n" ) );
+		$request = $this->create_request( $this->ece_headers( $header ) );
 
 		try {
 			$this->sut->assert_currency_matches_element( $order, $request );
@@ -176,65 +157,70 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( 1, $this->count_payment_info_errors() );
 		$this->assertStringContainsString( 'element currency: (not a currency code), order currency: eur', $this->log_lines[0]['message'] );
 		$this->assertStringNotContainsString( "\n", $this->log_lines[0]['message'] );
+		foreach ( $this->log_lines as $line ) {
+			$this->assertStringNotContainsString( 'forged log line', $line['message'] );
+		}
 	}
 
 	/**
-	 * @testdox Should allow order placement when the element and order currencies agree regardless of case.
+	 * Header values that carry a currency code but are not one.
+	 *
+	 * @return array<string,array{string}>
 	 */
-	public function test_allows_matching_currency(): void {
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'USD' );
-
-		$request = $this->create_request( $this->ece_headers( 'usd' ) );
-
-		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertSame( 0, $this->count_payment_info_errors() );
-	}
-
-	/**
-	 * @testdox Should fail open when no payment-currency header was sent.
-	 */
-	public function test_fails_open_without_currency_header(): void {
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'EUR' );
-
-		$request = $this->create_request( $this->ece_headers() );
-
-		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertSame( 0, $this->count_payment_info_errors() );
-	}
-
-	/**
-	 * @testdox Should ignore Store API requests that did not originate from express checkout.
-	 */
-	public function test_ignores_non_express_checkout_requests(): void {
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'EUR' );
-
-		$request = $this->create_request(
-			array( 'X-WooPayments-Payment-Currency' => 'usd' )
+	public function provider_non_currency_code_headers(): array {
+		return array(
+			'forged log line'     => array( "usd\nforged log line" ),
+			'trailing line break' => array( "usd\n" ),
 		);
+	}
+
+	/**
+	 * @dataProvider provider_requests_the_guard_lets_through
+	 * @testdox Should let order placement through without logging when the guard has nothing to reject ($_dataName).
+	 *
+	 * @param string               $order_currency  Order currency.
+	 * @param array<string,string> $headers         Request headers.
+	 * @param bool                 $add_valid_nonce Whether to add a valid tokenized-cart nonce header.
+	 */
+	public function test_lets_order_placement_through( string $order_currency, array $headers, bool $add_valid_nonce ): void {
+		$order = WC_Helper_Order::create_order();
+		$order->set_currency( $order_currency );
+		if ( $add_valid_nonce ) {
+			$headers['X-WooPayments-Tokenized-Cart-Nonce'] = wp_create_nonce( 'woopayments_tokenized_cart_nonce' );
+		}
+
+		$request = $this->create_request( $headers );
 
 		$this->sut->assert_currency_matches_element( $order, $request );
 		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 
 	/**
-	 * @testdox Should ignore express-checkout-shaped requests whose tokenized-cart nonce does not verify.
+	 * Requests the guard lets through: matching currencies, no currency header, not express checkout, an invalid nonce.
+	 *
+	 * @return array<string,array{string,array<string,string>,bool}>
 	 */
-	public function test_ignores_requests_with_invalid_nonce(): void {
-		$order = WC_Helper_Order::create_order();
-		$order->set_currency( 'EUR' );
-
-		$request = $this->create_request(
-			array(
-				'X-WooPayments-Tokenized-Cart'       => 'true',
-				'X-WooPayments-Tokenized-Cart-Nonce' => 'not-a-valid-nonce',
-				'X-WooPayments-Payment-Currency'     => 'usd',
-			)
+	public function provider_requests_the_guard_lets_through(): array {
+		return array(
+			'currencies agree regardless of case'  => array(
+				'USD',
+				array(
+					'X-WooPayments-Tokenized-Cart'   => 'true',
+					'X-WooPayments-Payment-Currency' => 'usd',
+				),
+				true,
+			),
+			'no payment-currency header'           => array( 'EUR', array( 'X-WooPayments-Tokenized-Cart' => 'true' ), true ),
+			'not an express checkout request'      => array( 'EUR', array( 'X-WooPayments-Payment-Currency' => 'usd' ), false ),
+			'tokenized-cart nonce does not verify' => array(
+				'EUR',
+				array(
+					'X-WooPayments-Tokenized-Cart'       => 'true',
+					'X-WooPayments-Tokenized-Cart-Nonce' => 'not-a-valid-nonce',
+					'X-WooPayments-Payment-Currency'     => 'usd',
+				),
+				false,
+			),
 		);
-
-		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertSame( 0, $this->count_payment_info_errors() );
 	}
 }
