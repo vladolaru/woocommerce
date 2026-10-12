@@ -660,7 +660,11 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return;
 		}
 
-		$multibanco_info       = $this->get_multibanco_info_from_order( $order );
+		$multibanco_info = $this->get_multibanco_info_from_order( $order );
+		if ( ! $this->has_complete_multibanco_info( $multibanco_info ) ) {
+			return;
+		}
+
 		$expiry_date           = date_i18n( wc_date_format() . ' ' . wc_time_format(), $multibanco_info['expiry'] );
 		$formatted_order_total = wp_strip_all_tags( $order->get_formatted_order_total() );
 

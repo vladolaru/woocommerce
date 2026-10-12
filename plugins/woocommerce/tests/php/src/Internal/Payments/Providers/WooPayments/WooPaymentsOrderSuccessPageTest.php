@@ -413,6 +413,29 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The customer on-hold email ($format) adds no Multibanco instructions when the order has no voucher.
+	 * @testWith ["html"]
+	 *           ["plain"]
+	 *
+	 * @param string $format Email format.
+	 */
+	public function test_on_hold_email_adds_no_multibanco_instructions_without_a_voucher( string $format ): void {
+		$page = $this->create_page( true );
+		$page->register();
+		$this->registered_pages[] = $page;
+		$order                    = wc_create_order();
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'multibanco' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+
+		$output = $this->render_customer_email( 'WC_Email_Customer_On_Hold_Order', $order, 'plain' === $format );
+
+		$this->assertStringNotContainsString( 'Enter the entity number, reference number, and amount.', $output );
+		$this->assertStringNotContainsString( '1970', $output );
+	}
+
+	/**
 	 * @testdox Should render the registry-backed LPM title and alt text on the order-received page, not the incoming title.
 	 *
 	 * Oracle: WooPayments 11.1.0 `class-wc-payments-order-success-page.php:333-369`
