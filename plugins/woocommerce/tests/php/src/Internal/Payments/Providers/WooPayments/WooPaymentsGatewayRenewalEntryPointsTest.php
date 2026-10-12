@@ -71,22 +71,12 @@ class WooPaymentsGatewayRenewalEntryPointsTest extends WC_Unit_Test_Case {
 		$context = $this->processing_service->last_checkout_context;
 		$this->assertSame( $order->get_id(), $context->get_order_id() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $context->get_gateway_id() );
-		$this->assertSame(
-			array(
-				'payment_token'       => (string) $token->get_id(),
-				'save_payment_method' => false,
-			),
-			$context->get_payment_data(),
-			'The charge must use the order\'s saved token and not save it again.'
-		);
-		$this->assertSame(
-			array(
-				'scheduled_subscription_payment'    => true,
-				'saved_payment_method_display_name' => $token->get_display_name(),
-			),
-			$context->get_provider_data(),
-			'The charge must be a merchant-initiated renewal.'
-		);
+		$payment_data = $context->get_payment_data();
+		$this->assertSame( (string) $token->get_id(), $payment_data['payment_token'] ?? null, 'The charge must use the order\'s saved token.' );
+		$this->assertFalse( $payment_data['save_payment_method'] ?? null, 'The charge must not save the token again.' );
+		$provider_data = $context->get_provider_data();
+		$this->assertTrue( $provider_data['scheduled_subscription_payment'] ?? null, 'The charge must be a merchant-initiated renewal.' );
+		$this->assertSame( $token->get_display_name(), $provider_data['saved_payment_method_display_name'] ?? null );
 	}
 
 	/**

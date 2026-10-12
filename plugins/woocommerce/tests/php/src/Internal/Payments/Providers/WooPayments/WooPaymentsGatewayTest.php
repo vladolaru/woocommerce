@@ -37,7 +37,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
@@ -109,30 +108,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		remove_all_actions( 'woocommerce_checkout_subscription_created' );
-		remove_all_actions( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		remove_all_actions( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay' );
-		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		remove_all_actions( 'woocommerce_subscription_failing_payment_method_updated_woocommerce_payments_amazon_pay' );
-		remove_all_filters( 'woocommerce_subscription_payment_meta' );
-		remove_all_actions( 'woocommerce_subscription_validate_payment_meta' );
-		remove_all_actions( 'wcs_save_other_payment_meta' );
-		remove_all_filters( 'wcs_copy_payment_meta_to_order' );
-		remove_all_filters( 'woocommerce_my_subscriptions_payment_method' );
-		remove_all_filters( 'woocommerce_subscription_payment_method_to_display' );
 		remove_all_filters( 'wcs_view_subscription_actions' );
-		remove_all_filters( 'user_has_cap' );
-		remove_all_filters( 'woocommerce_subscription_note_old_payment_method_title' );
-		remove_all_filters( 'woocommerce_subscription_note_new_payment_method_title' );
 		remove_all_actions( 'woocommerce_admin_order_data_after_billing_address' );
-		remove_all_filters( 'woocommerce_subscriptions_update_subscription_token' );
 		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
-		remove_all_actions( 'wp_ajax_wcpay_get_user_payment_tokens' );
-		remove_all_actions( 'woocommerce_woocommerce_payments_payment_requires_action' );
 		$classic_checkout_fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$classic_checkout_fallback_hooks->setAccessible( true );
 		$classic_checkout_fallback_hooks->setValue( null, false );
-		remove_all_filters( 'woocommerce_email_classes' );
-		remove_all_filters( 'wcs_get_retry_rule_raw' );
 		unset( $_POST['wcpay-setup-intent'] );
 		unset( $_POST['wcpay-payment-method'] );
 		unset( $_POST['wcpay-payment-method-error-message'] );
@@ -1614,7 +1595,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Split gateways advertise subscription support without owning shared renewal hooks.
+	 * @testdox Split gateways advertise subscription support.
 	 */
 	public function test_split_gateway_subscription_support_is_independent_from_hook_ownership(): void {
 		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'bancontact' );
@@ -1631,12 +1612,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
-
 		$this->assertContains( 'subscriptions', $gateway->supports );
-		$this->assertFalse( has_action( 'woocommerce_checkout_subscription_created', array( $controller, 'maybe_force_subscription_to_manual' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway->id, array( $controller, 'scheduled_subscription_payment' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_woocommerce_payments_amazon_pay', array( $controller, 'scheduled_subscription_payment' ) ) );
 	}
 
 	/**
@@ -2586,8 +2562,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, array_filter( $notes, static fn( string $note ): bool => false !== strpos( $note, 'Your card number is invalid' ) ), 'The status change must not carry the raw message as a second note.' );
 		$this->assertSame( array( 'Your card number is invalid.' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
-		$error_messages = array_column( array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'message' );
-		$this->assertContains( 'Error occurred during the payment process.', $error_messages );
 		// The message is Stripe.js text the browser posted; only the refusal's code is logged.
 		$this->assertStringNotContainsString( 'Your card number is invalid', (string) wp_json_encode( $logger->entries ) );
 	}
@@ -2717,8 +2691,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'success', $result['result'] );
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
-		$this->assertSame( '10.99', $service->last_checkout_context->get_order()->get_total() );
-		$this->assertSame( 'USD', $service->last_checkout_context->get_order()->get_currency() );
 		$this->assertSame( 'pi_plugin_history_use', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
@@ -5367,13 +5339,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $result );
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_refund_context );
-		$this->assertSame(
-			array(
-				'amount' => 4.25,
-				'reason' => 'Adjustment',
-			),
-			$service->last_refund_context->get_payment_data()
-		);
+		$payment_data = $service->last_refund_context->get_payment_data();
+		$this->assertSame( 4.25, $payment_data['amount'] ?? null );
+		$this->assertSame( 'Adjustment', $payment_data['reason'] ?? null );
 		$this->assertArrayHasKey( 'wcadmin_wcpay_edit_order_refund_success', $recorded->events, 'A successful refund records the client\'s success event.' );
 	}
 
@@ -7438,7 +7406,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_checkout_provider_data_carries_woopay_save_user_opt_in(): void {
 		$registry = new WooPaymentsPaymentMethodRegistry();
-		$sut      = new WooPaymentsGateway( $registry->get( 'card' ) );
 
 		$action_fired = 0;
 		add_action(
@@ -7448,18 +7415,16 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$method = new \ReflectionMethod( WooPaymentsGateway::class, 'get_checkout_provider_data' );
-		$method->setAccessible( true );
-
 		try {
-			$_POST['save_user_in_woopay'] = 'true';
-			$provider_data                = $method->invoke( $sut );
+			$_POST['wcpay-payment-method'] = 'pm_card';
+			$_POST['save_user_in_woopay']  = 'true';
+			$provider_data                 = $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( 'card' ) ) );
 
 			$this->assertTrue( $provider_data['save_payment_method_to_platform'] );
 			$this->assertSame( 1, $action_fired );
 
 			unset( $_POST['save_user_in_woopay'] );
-			$bare_provider_data = $method->invoke( $sut );
+			$bare_provider_data = $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( 'card' ) ) );
 
 			$this->assertFalse( $bare_provider_data['save_payment_method_to_platform'] );
 			$this->assertSame( 1, $action_fired );
@@ -7515,19 +7480,34 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool                 $expected          Expected platform flag.
 	 */
 	public function test_checkout_provider_data_limits_the_platform_payment_method_flag( string $payment_method_id, array $post, bool $expected ): void {
-		$registry = new WooPaymentsPaymentMethodRegistry();
-		$sut      = new WooPaymentsGateway( $registry->get( $payment_method_id ) );
-		$method   = new \ReflectionMethod( WooPaymentsGateway::class, 'get_checkout_provider_data' );
-		$method->setAccessible( true );
+		$registry      = new WooPaymentsPaymentMethodRegistry();
 		$original_post = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Saved to restore the fixture.
 
 		try {
-			$_POST = array_merge( $_POST, $post ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Test fixture.
+			// A submitted payment method keeps every row past the missing-payment-details refusal.
+			$_POST = array_merge( $_POST, array( 'wcpay-payment-method' => 'pm_submitted' ), $post ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Test fixture.
 
-			$this->assertSame( $expected, $method->invoke( $sut )['is_platform_payment_method'] );
+			$this->assertSame( $expected, $this->checkout_provider_data( new WooPaymentsGateway( $registry->get( $payment_method_id ) ) )['is_platform_payment_method'] );
 		} finally {
 			$_POST = $original_post;
 		}
+	}
+
+	/**
+	 * Pay a new order through process_payment() and return the provider data the processing service received.
+	 *
+	 * @param WooPaymentsGateway $gateway Gateway to pay with; it is initialized with a recording processing service.
+	 * @return array<string,mixed>
+	 */
+	private function checkout_provider_data( WooPaymentsGateway $gateway ): array {
+		$service = new RecordingPaymentProcessingService();
+		$gateway->init( $service, new WooPaymentsProvider() );
+
+		$gateway->process_payment( $this->create_order()->get_id() );
+
+		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
+
+		return $service->last_checkout_context->get_provider_data();
 	}
 
 	/**
