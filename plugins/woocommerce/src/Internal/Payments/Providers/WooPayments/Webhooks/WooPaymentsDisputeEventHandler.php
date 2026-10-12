@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicit
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
@@ -39,6 +40,13 @@ class WooPaymentsDisputeEventHandler {
 	 * @var string
 	 */
 	public const OPEN_DISPUTE_IDS_META_KEY = '_wcpay_open_dispute_ids';
+
+	/**
+	 * Refund meta key holding the ID of the lost dispute the refund records.
+	 *
+	 * @var string
+	 */
+	private const LOST_DISPUTE_ID_REFUND_META_KEY = '_wcpay_dispute_id';
 
 	/**
 	 * WooPayments API client.
@@ -340,7 +348,10 @@ class WooPaymentsDisputeEventHandler {
 	}
 
 	/**
-	 * Create a local refund for a lost dispute.
+	 * Create a local refund for a lost dispute, unless the order already has it.
+	 *
+	 * The refund carries the dispute ID from its first save after `woocommerce_create_refund`, so a close that failed after
+	 * that save, before its closed note, is retried without a second refund.
 	 *
 	 * @param WC_Order            $order           Order object.
 	 * @param array<string,mixed> $dispute_summary Dispute summary.
@@ -350,6 +361,12 @@ class WooPaymentsDisputeEventHandler {
 	 * @throws RuntimeException When the local refund cannot be created.
 	 */
 	private function create_dispute_lost_refund( WC_Order $order, array $dispute_summary, string $charge_id, string $dispute_id, string $status ): void {
+		foreach ( $order->get_refunds() as $refund ) {
+			if ( $dispute_id === (string) $refund->get_meta( self::LOST_DISPUTE_ID_REFUND_META_KEY, true ) ) {
+				return;
+			}
+		}
+
 		$refund_amount = (float) $order->get_remaining_refund_amount();
 		$line_items    = $order->get_items();
 
@@ -366,11 +383,12 @@ class WooPaymentsDisputeEventHandler {
 
 		$refund = wc_create_refund(
 			array(
-				'amount'         => $refund_amount,
-				'reason'         => __( 'Dispute lost.', 'woocommerce' ),
-				'order_id'       => $order->get_id(),
-				'line_items'     => $line_items,
-				'refund_payment' => false,
+				'amount'                          => $refund_amount,
+				'reason'                          => __( 'Dispute lost.', 'woocommerce' ),
+				'order_id'                        => $order->get_id(),
+				'line_items'                      => $line_items,
+				'refund_payment'                  => false,
+				RefundRowCapture::REFUND_META_ARG => array( self::LOST_DISPUTE_ID_REFUND_META_KEY => $dispute_id ),
 			)
 		);
 

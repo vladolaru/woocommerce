@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
@@ -200,6 +201,7 @@ class WooPaymentsRefundEventHandler {
 
 			$wc_refund = $this->create_local_refund(
 				$order,
+				$refund_id,
 				$refunded_amount,
 				$refund_reason,
 				$is_partial_refund ? array() : $order->get_items()
@@ -276,20 +278,25 @@ class WooPaymentsRefundEventHandler {
 	}
 
 	/**
-	 * Create a local WC refund.
+	 * Create a local WC refund linked to its provider refund.
+	 *
+	 * The link is stored from the refund's first save after `woocommerce_create_refund`, so an event that failed after
+	 * that save is retried on the linked row instead of adding a second refund.
 	 *
 	 * @param WC_Order $order      Order object.
+	 * @param string   $refund_id  Provider refund ID.
 	 * @param float    $amount     Refund amount.
 	 * @param string   $reason     Refund reason.
 	 * @param array    $line_items Line items to refund.
 	 * @return WC_Order_Refund
 	 * @throws RuntimeException When WooCommerce cannot create the local refund.
 	 */
-	private function create_local_refund( WC_Order $order, float $amount, string $reason, array $line_items ): WC_Order_Refund {
+	private function create_local_refund( WC_Order $order, string $refund_id, float $amount, string $reason, array $line_items ): WC_Order_Refund {
 		$refund_args = array(
-			'amount'   => wc_format_decimal( $amount, wc_get_price_decimals() ),
-			'reason'   => $reason,
-			'order_id' => $order->get_id(),
+			'amount'                          => wc_format_decimal( $amount, wc_get_price_decimals() ),
+			'reason'                          => $reason,
+			'order_id'                        => $order->get_id(),
+			RefundRowCapture::REFUND_META_ARG => array( '_wcpay_refund_id' => $refund_id ),
 		);
 
 		if ( ! empty( $line_items ) ) {

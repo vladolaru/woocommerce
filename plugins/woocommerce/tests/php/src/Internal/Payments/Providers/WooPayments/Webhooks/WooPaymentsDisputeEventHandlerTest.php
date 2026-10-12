@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
@@ -991,6 +992,74 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$record_notes = $this->find_order_note( $order, 'Payment dispute has been updated: the dispute' );
 		$this->assertCount( 1, $record_notes );
 		$this->assertStringContainsString( 'under_review', $record_notes[0]->content );
+	}
+
+	/**
+	 * @testdox A lost dispute close retried after an error left its refund behind records one refund.
+	 *
+	 * wc_create_refund() deletes the refund it saved only when a hook throws an Exception (includes/wc-order-functions.php:749-754),
+	 * so an Error from a refund hook leaves the row, the closed note is never written, and the store retries the event.
+	 */
+	public function test_lost_dispute_close_retried_after_an_error_left_its_refund_records_one_refund(): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order = $this->create_disputable_order();
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_charge_id', 'ch_lost_retry' );
+		$order->update_meta_data( '_wcpay_open_dispute_ids', array( 'dp_lost_retry' ) );
+		$order->save();
+		$handler = new WooPaymentsDisputeEventHandler();
+		$handler->init(
+			new class() extends WooPaymentsApiClient {
+				/**
+				 * Answer with no summary, so the event's own amount is refunded.
+				 *
+				 * @param string $dispute_id Dispute ID.
+				 * @return array<string,mixed>
+				 */
+				public function get_dispute_summary( string $dispute_id ): array {
+					unset( $dispute_id );
+
+					return array();
+				}
+			},
+			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
+			wc_get_container()->get( OrderPaymentLock::class ),
+			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
+			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
+			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
+		);
+		// A Stripe Dispute, as charge.dispute.closed carries it: a lost dispute of 4.00 on a 10.00 order.
+		$event      = array(
+			'id'       => 'dp_lost_retry',
+			'charge'   => 'ch_lost_retry',
+			'status'   => 'lost',
+			'amount'   => 400,
+			'currency' => 'usd',
+		);
+		$thrown     = 0;
+		$throw_once = static function () use ( &$thrown ): void {
+			if ( 0 === $thrown++ ) {
+				throw new \Error( 'Refund hook failed.' );
+			}
+		};
+		add_action( 'woocommerce_order_partially_refunded', $throw_once );
+
+		$caught = null;
+		try {
+			$handler->process( 'charge.dispute.closed', $event );
+		} catch ( \Error $error ) {
+			$caught = $error;
+		}
+		$handler->process( 'charge.dispute.closed', $event );
+		remove_action( 'woocommerce_order_partially_refunded', $throw_once );
+
+		$this->assertInstanceOf( \Error::class, $caught, 'The first delivery fails after the refund row is saved.' );
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '4.00', wc_format_decimal( $refunds[0]->get_amount(), 2 ) );
+		$this->assertCount( 1, $this->find_order_note( $order, 'Dispute has been closed with status' ) );
 	}
 
 	/**

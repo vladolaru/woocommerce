@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -1275,6 +1276,43 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 			'payment method changed by the merchant' => array( 'cod', 'pi_123' ),
 			'transaction ID is the charge'           => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'ch_123' ),
 		);
+	}
+
+	/**
+	 * @testdox A charge.refunded retried after an error left its refund row behind records the refund once.
+	 *
+	 * wc_create_refund() deletes the refund it saved only when a hook throws an Exception (includes/wc-order-functions.php:749-754),
+	 * so an Error from a woocommerce_order_refunded callback leaves the row, and the store retries the event.
+	 */
+	public function test_charge_refunded_retried_after_an_error_left_its_row_records_the_refund_once(): void {
+		wc_get_container()->get( RefundRowCapture::class )->register();
+		$order      = $this->create_refundable_order();
+		$thrown     = 0;
+		$throw_once = static function () use ( &$thrown ): void {
+			if ( 0 === $thrown++ ) {
+				throw new \Error( 'Refund hook failed.' );
+			}
+		};
+		add_action( 'woocommerce_order_refunded', $throw_once );
+
+		$caught = null;
+		try {
+			$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+		} catch ( \Error $error ) {
+			$caught = $error;
+		}
+		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+		remove_action( 'woocommerce_order_refunded', $throw_once );
+
+		$this->assertInstanceOf( \Error::class, $caught, 'The first delivery fails after the refund row is saved.' );
+		$order   = wc_get_order( $order->get_id() );
+		$refunds = $order->get_refunds();
+		$this->assertCount( 1, $refunds );
+		$this->assertSame( '-4.00', $refunds[0]->get_total() );
+		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'txn_123', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertCount( 1, $this->get_notes_containing( $order, 're_123' ) );
 	}
 
 	/**

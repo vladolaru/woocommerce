@@ -39,6 +39,17 @@ class RefundRowCapture implements RegisterHooksInterface {
 	public const MANUAL_REFUND_META = '_wc_manual_refund_record';
 
 	/**
+	 * The wc_create_refund() argument holding meta, key to value, to store on the refund row from its save after
+	 * `woocommerce_create_refund` on.
+	 *
+	 * A refund recorded from a provider event carries its provider reference from that save, so a request that fails after
+	 * it leaves a row that the event's retry can find instead of adding a second one.
+	 *
+	 * @since 11.2.0
+	 */
+	public const REFUND_META_ARG = 'order_payment_refund_meta';
+
+	/**
 	 * Provider gateways controller.
 	 *
 	 * @var ProviderGatewaysController
@@ -84,9 +95,9 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * Keep a refund WooCommerce is about to refund through one of the runtime's gateways, next to those kept for calls
 	 * still running.
 	 *
-	 * A refund that does not go through the gateway gets MANUAL_REFUND_META, which the save that follows this hook stores,
-	 * and leaves what was kept alone, so a manual refund a callback creates inside a gateway refund's call never takes that
-	 * call's row away (Codex review 204 F3). Refunds through other plugins' gateways are not kept: no refund call of the
+	 * The refund first gets the meta its creator passed under REFUND_META_ARG. A refund that does not go through the gateway
+	 * gets MANUAL_REFUND_META, which the save that follows this hook stores, and leaves what was kept alone, so a manual
+	 * refund a callback creates inside a gateway refund's call never takes that call's row away (Codex review 204 F3). Refunds through other plugins' gateways are not kept: no refund call of the
 	 * runtime takes them (Codex review 205 R2).
 	 *
 	 * @internal
@@ -97,6 +108,13 @@ class RefundRowCapture implements RegisterHooksInterface {
 	public function handle_create_refund( $refund, $args ): void {
 		if ( ! $refund instanceof WC_Order_Refund ) {
 			return;
+		}
+
+		$refund_meta = is_array( $args ) && isset( $args[ self::REFUND_META_ARG ] ) && is_array( $args[ self::REFUND_META_ARG ] ) ? $args[ self::REFUND_META_ARG ] : array();
+		foreach ( $refund_meta as $key => $value ) {
+			if ( is_string( $key ) && '' !== $key && is_scalar( $value ) ) {
+				$refund->update_meta_data( $key, (string) $value );
+			}
 		}
 
 		if ( ! is_array( $args ) || empty( $args['refund_payment'] ) ) {
