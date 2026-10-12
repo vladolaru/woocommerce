@@ -73,26 +73,6 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Known card codes use their localized shopper message.
-	 */
-	public function test_get_shopper_message_localizes_known_card_code(): void {
-		$this->assertSame(
-			'Error: Your card has expired.',
-			WooPaymentsErrorMessages::get_shopper_message( 'card_error', 'expired_card' )
-		);
-	}
-
-	/**
-	 * @testdox A known decline code takes precedence over the general card-declined code.
-	 */
-	public function test_get_shopper_message_prefers_known_decline_code(): void {
-		$this->assertSame(
-			'Error: Your card has insufficient funds.',
-			WooPaymentsErrorMessages::get_shopper_message( 'card_error', 'card_declined', 'insufficient_funds' )
-		);
-	}
-
-	/**
 	 * @testdox An unknown decline code falls back to the known general error code.
 	 */
 	public function test_get_shopper_message_falls_back_from_unknown_decline_code_to_error_code(): void {

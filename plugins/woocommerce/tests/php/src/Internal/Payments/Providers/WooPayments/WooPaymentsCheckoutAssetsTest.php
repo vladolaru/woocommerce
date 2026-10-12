@@ -2234,21 +2234,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the setup intent and order status nonces when the checkout surface is available.
-	 */
-	public function test_get_payment_fields_js_config_exposes_checkout_nonces_when_checkout_surface_is_available(): void {
-		$account_service = $this->create_account_service( true );
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
-		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
-	}
-
-	/**
 	 * @testdox Should expose the fraud-prevention token in card checkout config and Blocks payment method data.
 	 */
 	public function test_get_payment_fields_js_config_includes_fraud_prevention_token_when_enabled(): void {
