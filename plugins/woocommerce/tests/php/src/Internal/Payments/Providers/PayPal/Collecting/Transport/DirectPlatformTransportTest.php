@@ -293,6 +293,29 @@ class DirectPlatformTransportTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should read an app's cached token without asking PayPal for one, and answer null when none is cached, it expired or it does not parse.
+	 */
+	public function test_cached_token_reads_the_cache_only(): void {
+		$requests = 0;
+		$this->stub_http(
+			function () use ( &$requests ) {
+				++$requests;
+				return new \WP_Error( 'unrouted', 'Unrouted' );
+			}
+		);
+
+		$this->assertNull( PerAppBearer::cached_token( PlatformTransport::APP_PLATFORM ), 'Nothing cached' );
+		set_transient( self::PLATFORM_TOKEN_TRANSIENT, '{"access_token":"token-cached","expires_in":32400}' );
+		$this->assertSame( 'token-cached', PerAppBearer::cached_token( PlatformTransport::APP_PLATFORM ) );
+		$this->assertNull( PerAppBearer::cached_token( PlatformTransport::APP_MERCHANT_APP ), 'Per app' );
+		set_transient( self::PLATFORM_TOKEN_TRANSIENT, '{"token":"token-old","expires_in":60,"created":1000}' );
+		$this->assertNull( PerAppBearer::cached_token( PlatformTransport::APP_PLATFORM ), 'Expired' );
+		set_transient( self::PLATFORM_TOKEN_TRANSIENT, 'not json' );
+		$this->assertNull( PerAppBearer::cached_token( PlatformTransport::APP_PLATFORM ), 'Unparsable' );
+		$this->assertSame( 0, $requests, 'No token request' );
+	}
+
+	/**
 	 * @testdox Should send no assertion header while no seller is known, and the unsigned JWT of the calling app once one is.
 	 */
 	public function test_assertion_header(): void {

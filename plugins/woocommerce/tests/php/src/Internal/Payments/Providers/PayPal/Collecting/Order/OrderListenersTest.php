@@ -3,16 +3,23 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Order;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderListeners;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\OrderPin;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\BootsCollectingContainer;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\RecordingLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\TransportBindingModule;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Surface\HoldsWalletState;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
 use Automattic\WooCommerce\Vendor\Psr\Container\ContainerInterface;
 use WC_Order;
@@ -24,6 +31,7 @@ use WC_Order;
  */
 class OrderListenersTest extends WalletTestCase {
 	use BootsCollectingContainer;
+	use HoldsWalletState;
 
 	/**
 	 * Boot the wallet with the fake transport.
@@ -181,5 +189,152 @@ class OrderListenersTest extends WalletTestCase {
 		list( $authorizations ) = $this->order_screen_fetch( false );
 
 		$this->assertSame( array( 'Bearer token-' . PlatformTransport::APP_PLATFORM ), $authorizations );
+	}
+
+	/**
+	 * A Pay with Crypto order, as the gateway leaves it before it writes the PayPal order ID, saved once.
+	 *
+	 * @param string $payment_method The payment method.
+	 * @return WC_Order
+	 */
+	private function crypto_order( string $payment_method = GatewayIds::PWC ): WC_Order {
+		$order = wc_create_order();
+		$order->set_payment_method( $payment_method );
+		$order->save();
+
+		return $order;
+	}
+
+	/**
+	 * Listeners over the fake transport, for the handler called directly.
+	 *
+	 * @return OrderListeners
+	 */
+	private function listeners(): OrderListeners {
+		return new OrderListeners( new ConnectionState(), new OrderAppContext(), new FakePlatformTransport(), new CollectingState( new Options(), new FixedHeldOrders( 0 ) ), new RecordingLogger() );
+	}
+
+	/**
+	 * @testdox Should pin a Pay with Crypto order to the platform app in the save that writes its PayPal order ID, with no second save.
+	 */
+	public function test_pins_a_crypto_order_in_the_save_that_writes_its_paypal_order_id(): void {
+		$this->set_platform_connected();
+		$this->boot();
+		$wc_order = $this->crypto_order();
+		$this->assertFalse( OrderPin::is_pinned( $wc_order ), 'Not pinned before it has a PayPal order ID' );
+		$saves = $this->spy_filter( 'woocommerce_after_order_object_save' );
+
+		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-CRYPTO' );
+		$wc_order->save();
+
+		$this->assertCount( 1, $saves, 'One save' );
+		$this->assertSame( PlatformTransport::APP_PLATFORM, wc_get_order( $wc_order->get_id() )->get_meta( OrderAppContext::ORDER_APP_META_KEY ) );
+	}
+
+	/**
+	 * @testdox Should leave a PayPal button order, and a crypto order saved without a PayPal order ID, unpinned: $description.
+	 * @testWith ["a PayPal button order", "ppcp-gateway", "PP-1"]
+	 *           ["a crypto order without a PayPal order ID", "ppcp-pwc", ""]
+	 *
+	 * @param string $description    What the order is.
+	 * @param string $payment_method The payment method.
+	 * @param string $paypal_id      The PayPal order ID, or empty for none.
+	 */
+	public function test_leaves_other_orders_unpinned( string $description, string $payment_method, string $paypal_id ): void {
+		unset( $description );
+		$this->set_platform_connected();
+		$this->boot();
+		$wc_order = $this->crypto_order( $payment_method );
+
+		if ( '' !== $paypal_id ) {
+			$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, $paypal_id );
+		}
+		$wc_order->save();
+
+		$this->assertFalse( OrderPin::is_pinned( wc_get_order( $wc_order->get_id() ) ) );
+	}
+
+	/**
+	 * @testdox Should leave a crypto order that is getting its PayPal order ID unpinned unless the store is platform connected: $state.
+	 * @testWith ["collecting"]
+	 *           ["first_party"]
+	 *           ["dormant"]
+	 *
+	 * @param string $state The store state.
+	 */
+	public function test_pins_only_on_a_platform_connected_store( string $state ): void {
+		if ( 'collecting' === $state ) {
+			$this->set_collecting();
+		} elseif ( 'first_party' === $state ) {
+			$this->set_platform_connected();
+			$this->set_first_party_connected();
+		}
+		$wc_order = $this->crypto_order();
+		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-CRYPTO' );
+
+		$this->listeners()->handle_woocommerce_before_order_object_save( $wc_order );
+
+		$this->assertFalse( OrderPin::is_pinned( $wc_order ) );
+	}
+
+	/**
+	 * @testdox Should replace an older pin with the platform app when a new PayPal order ID is written, as on a pay-for-order retry.
+	 */
+	public function test_a_new_paypal_order_id_replaces_an_older_pin(): void {
+		$this->set_platform_connected();
+		$wc_order = $this->crypto_order();
+		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-BUTTON' );
+		OrderPin::record( $wc_order, PlatformTransport::APP_MERCHANT_APP );
+		$wc_order->save();
+
+		$wc_order->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-CRYPTO' );
+		$this->listeners()->handle_woocommerce_before_order_object_save( $wc_order );
+
+		$this->assertSame( PlatformTransport::APP_PLATFORM, OrderPin::app( $wc_order ) );
+	}
+
+	/**
+	 * @testdox Should leave the pin, or its absence, alone on a save that does not write the PayPal order ID, such as an edit in the admin.
+	 */
+	public function test_a_save_without_a_new_paypal_order_id_changes_no_pin(): void {
+		$this->set_platform_connected();
+		$pinned = $this->crypto_order();
+		$pinned->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-OLD' );
+		OrderPin::record( $pinned, PlatformTransport::APP_MERCHANT_APP );
+		$pinned->save();
+		$unpinned = $this->crypto_order();
+		$unpinned->update_meta_data( PayPalGateway::ORDER_ID_META_KEY, 'PP-LEGACY' );
+		$unpinned->save();
+
+		$edited_pinned   = wc_get_order( $pinned->get_id() );
+		$edited_unpinned = wc_get_order( $unpinned->get_id() );
+		$edited_pinned->set_customer_note( 'Edited in the admin' );
+		$edited_unpinned->set_customer_note( 'Edited in the admin' );
+
+		$this->listeners()->handle_woocommerce_before_order_object_save( $edited_pinned );
+		$this->listeners()->handle_woocommerce_before_order_object_save( $edited_unpinned );
+
+		$this->assertSame( PlatformTransport::APP_MERCHANT_APP, OrderPin::app( $edited_pinned ) );
+		$this->assertFalse( OrderPin::is_pinned( $edited_unpinned ), 'A legacy order is not pinned by an edit' );
+	}
+
+	/**
+	 * @testdox Should read nothing but the payment method of an order that is not a Pay with Crypto order, and ignore a value that is not an order.
+	 */
+	public function test_reads_only_the_payment_method_of_other_orders(): void {
+		$connection_state = $this->mock( ConnectionState::class );
+		$connection_state->shouldNotReceive( 'is_served_by_platform' );
+		$connection_state->shouldNotReceive( 'resolve' );
+		$wc_order = $this->mock( WC_Order::class );
+		$wc_order->shouldReceive( 'get_payment_method' )->once()->andReturn( 'cod' );
+		$wc_order->shouldNotReceive( 'get_meta' );
+		$wc_order->shouldNotReceive( 'get_meta_data' );
+		$transport = new FakePlatformTransport();
+		$sut       = new OrderListeners( $connection_state, new OrderAppContext(), $transport, new CollectingState( new Options(), new FixedHeldOrders( 0 ) ), new RecordingLogger() );
+
+		$sut->handle_woocommerce_before_order_object_save( $wc_order );
+		$sut->handle_woocommerce_before_order_object_save( 'not an order' );
+
+		$this->assertSame( array(), $transport->calls );
 	}
 }

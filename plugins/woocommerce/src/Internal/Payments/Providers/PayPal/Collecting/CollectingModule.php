@@ -89,7 +89,7 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	/**
 	 * Add the filters that keep authorize-only and saved PayPal and Venmo off, after the wallet's own callbacks, and,
 	 * while the platform serves the store, the one that re-signs a retried request with the call's app, the one that
-	 * signs a capture refund for the connected seller, the listeners
+	 * signs a capture refund, a crypto order creation and the platform app's reads for the connected seller, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
 	 * order, the reconcile, the admin emails, the filters that name the payee and the settings app's collecting data.
 	 * Pay with Crypto is kept off the gateway list while the store collects.
@@ -120,15 +120,17 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			$retry = new BearerRetryFilter( $connection_state, $transport, $context, $state, $logger );
 			add_filter( 'ppcp_retry_request_args', array( $retry, 'handle_ppcp_retry_request_args' ), self::RETRY_PRIORITY, 2 );
 
-			// Once platform connected, a capture refund goes through the platform app for the seller; it is the one call
-			// that leaves the order's pin. Last on both filters, so the retry is not re-signed with the order's app after it.
-			$refund_signer = new AssertedRefundSigner( $connection_state, $transport, $logger );
+			// Once platform connected, a capture refund, a crypto order creation and the platform app's order and capture
+			// reads are signed for the seller. Last on both filters, so the retry is not re-signed with the order's app after it.
+			$refund_signer = new AssertedRefundSigner( $connection_state, $transport, $context, $state, $logger );
 			add_filter( 'ppcp_request_args', array( $refund_signer, 'handle_ppcp_request_args' ), self::REFUND_SIGNER_PRIORITY, 2 );
 			add_filter( 'ppcp_retry_request_args', array( $refund_signer, 'handle_ppcp_retry_request_args' ), self::REFUND_SIGNER_PRIORITY, 2 );
 
 			$listeners = new OrderListeners( $connection_state, $context, $transport, $state, $logger );
 			add_action( 'woocommerce_paypal_wallet_order_context', array( $listeners, 'handle_woocommerce_paypal_wallet_order_context' ) );
 			add_action( 'woocommerce_paypal_wallet_paypal_order_created', array( $listeners, 'handle_woocommerce_paypal_wallet_paypal_order_created' ) );
+			// A Pay with Crypto order is pinned by the save that writes its PayPal order ID; the gateway has no seam.
+			add_action( 'woocommerce_before_order_object_save', array( $listeners, 'handle_woocommerce_before_order_object_save' ) );
 			add_action( 'woocommerce_paypal_payments_after_order_processor', array( $listeners, 'handle_woocommerce_paypal_payments_after_order_processor' ), self::LEAVE_CONTEXT_PRIORITY, 0 );
 
 			// The order screen's void button reads the PayPal order, which only the order's app can do.

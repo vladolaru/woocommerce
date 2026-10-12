@@ -84,6 +84,16 @@ class Orders {
 			$headers
 		);
 
+		if ( is_array( $request_body['payment_source'] ?? null ) && array_key_exists( 'crypto', $request_body['payment_source'] ) ) {
+			/** This filter is documented in src/Internal/Payments/Providers/PayPal/Wallet/ApiClient/Endpoint/OrderEndpoint.php */
+			$filtered_body = apply_filters( 'ppcp_create_order_request_body_data', $request_body, '', array() ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingSinceComment -- Documented in OrderEndpoint.php.
+			if ( is_array( $filtered_body ) ) {
+				$request_body = $filtered_body;
+			} else {
+				$this->logger->warning( 'A ppcp_create_order_request_body_data callback returned a non-array; the order was created with the original body.' );
+			}
+		}
+
 		$args = array(
 			'method'  => 'POST',
 			'headers' => $headers,

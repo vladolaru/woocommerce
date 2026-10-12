@@ -12,6 +12,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\C
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\OrderAppContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\PlatformTransport;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\GatewayIds;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
 use InvalidArgumentException;
 use WC_Order;
@@ -20,8 +22,10 @@ use WC_Order;
  * Keeps each order's PayPal calls on the app that created its PayPal order, while the platform serves the store.
  *
  * When the PayPal order ID is written to a WooCommerce order, the order is pinned to the app that signs the request's
- * calls. When a processor starts on an order, the order's pin is entered for its calls; an order not pinned yet leaves
- * the request to the transport's pick, which is the app that created it.
+ * calls; a Pay with Crypto order, which the wallet's order meta code never sees, is pinned to the platform app by the
+ * save that writes its PayPal order ID, once platform connected. When a processor starts on an order, the order's pin
+ * is entered for its calls; an order not pinned yet leaves the request to the transport's pick, which is the app that
+ * created it.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -137,6 +141,47 @@ final class OrderListeners {
 		} catch ( RuntimeException | InvalidArgumentException $exception ) {
 			$this->logger->warning( sprintf( 'Could not pin WooCommerce order #%d to a PayPal wallet platform app: %s', $wc_order->get_id(), $exception->getMessage() ) );
 		}
+	}
+
+	/**
+	 * Pin a Pay with Crypto order to the platform app in the save that writes its PayPal order ID, once platform connected.
+	 *
+	 * The crypto gateway writes the PayPal order ID and saves without the wallet's order meta code, so the paypal-order-created
+	 * action never fires for it. AssertedRefundSigner creates the crypto order with the platform app, and a new PayPal
+	 * order ID replaces an older pin, as a new PayPal button order does. The payment method is read first, so every other
+	 * order save costs one comparison.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param mixed $wc_order The order being saved.
+	 */
+	public function handle_woocommerce_before_order_object_save( $wc_order ): void {
+		if (
+			! $wc_order instanceof WC_Order
+			|| GatewayIds::PWC !== $wc_order->get_payment_method()
+			|| ! self::writes_paypal_order_id( $wc_order )
+			|| ConnectionState::PLATFORM_CONNECTED !== $this->connection_state->resolve()
+		) {
+			return;
+		}
+
+		OrderPin::record( $wc_order, PlatformTransport::APP_PLATFORM );
+	}
+
+	/**
+	 * Whether the save in progress writes a PayPal order ID: one added since the order was read, or changed.
+	 *
+	 * @param WC_Order $wc_order The order being saved.
+	 * @return bool
+	 */
+	private static function writes_paypal_order_id( WC_Order $wc_order ): bool {
+		foreach ( $wc_order->get_meta_data() as $meta ) {
+			if ( PayPalGateway::ORDER_ID_META_KEY === $meta->key && is_string( $meta->value ) && '' !== $meta->value && ( null === $meta->id || array() !== $meta->get_changes() ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

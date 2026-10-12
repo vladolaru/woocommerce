@@ -96,7 +96,7 @@ final class BearerRetryFilter {
 		if ( ! is_string( $authorization ) || 0 !== strpos( $authorization, 'Bearer ' ) || ! $this->connection_state->is_served_by_platform() ) {
 			return $args;
 		}
-		// A refund signed for the seller is re-signed by AssertedRefundSigner with the platform app; dropping the order
+		// A request signed for the seller is re-signed by AssertedRefundSigner with the platform app; dropping the order
 		// app's token here would only cost it a token request.
 		if ( AssertedRefundSigner::has_assertion( $args['headers'] ) ) {
 			return $args;

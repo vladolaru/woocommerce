@@ -86,6 +86,29 @@ final class PerAppBearer implements Bearer {
 	}
 
 	/**
+	 * An app's cached token, while it is still valid; null when none is cached. It reads the cache only and never asks
+	 * PayPal for a token, so a caller can tell whether a request carries the app's token without issuing one.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @param string $app One of the PlatformTransport::APP_ constants.
+	 * @return string|null
+	 */
+	public static function cached_token( string $app ): ?string {
+		$cached = ( new Cache( self::token_prefix( $app ) ) )->get( PayPalBearer::CACHE_KEY );
+		if ( ! is_string( $cached ) || '' === $cached ) {
+			return null;
+		}
+		try {
+			$token = Token::from_json( $cached );
+		} catch ( RuntimeException $exception ) {
+			return null;
+		}
+
+		return $token->is_valid() ? $token->token() : null;
+	}
+
+	/**
 	 * Delete every app's cached token and token rate-limit state, for a store that no longer uses the platform apps.
 	 *
 	 * The known keys are deleted one by one, which also reaches a persistent object cache; the prefix sweep then catches

@@ -93,7 +93,7 @@ echo '- `woocommerce-paypal-payments` (inbox note source, `InboxNoteRegistrar`; 
 { grep -hoE "define\( '[A-Z_]+'" "$EXT/woocommerce-paypal-payments.php" || [ $? -eq 1 ]; } | sed -E "s/.*'([^']+)'/\1/" | list
 
 section "Core-owned names (the collecting state)"
-echo 'Names core owns and the extension does not know: the shell, `Collecting/`, the five PHP seams in `Wallet/` (three hooks) and the two core files that fire the provider notice and refund lock filters (see "Seams for the after-payment flow" in `FORK.md`). Scanned from this plugin'"'"'s own tree, never from the extension. They carry the `woocommerce_paypal_wallet` and `wc_paypal_wallet` prefixes, never `ppcp`.'
+echo 'Names core owns and the extension does not know: the shell, `Collecting/`, the six PHP seams in `Wallet/` (three core hooks; seam 10 re-fires the extension'"'"'s own `ppcp_create_order_request_body_data`) and the two core files that fire the provider notice and refund lock filters (see "Seams for the after-payment flow" in `FORK.md`). Scanned from this plugin'"'"'s own tree, never from the extension. They carry the `woocommerce_paypal_wallet` and `wc_paypal_wallet` prefixes, never `ppcp`.'
 echo
 echo 'Hooks fired:'
 echo

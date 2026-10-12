@@ -435,7 +435,7 @@ Option prefixes built at runtime (`woocommerce_{gateway id}_settings`, `ppcp-*` 
 
 ## Core-owned names (the collecting state)
 
-Names core owns and the extension does not know: the shell, `Collecting/`, the five PHP seams in `Wallet/` (three hooks) and the two core files that fire the provider notice and refund lock filters (see "Seams for the after-payment flow" in `FORK.md`). Scanned from this plugin's own tree, never from the extension. They carry the `woocommerce_paypal_wallet` and `wc_paypal_wallet` prefixes, never `ppcp`.
+Names core owns and the extension does not know: the shell, `Collecting/`, the six PHP seams in `Wallet/` (three core hooks; seam 10 re-fires the extension's own `ppcp_create_order_request_body_data`) and the two core files that fire the provider notice and refund lock filters (see "Seams for the after-payment flow" in `FORK.md`). Scanned from this plugin's own tree, never from the extension. They carry the `woocommerce_paypal_wallet` and `wc_paypal_wallet` prefixes, never `ppcp`.
 
 Hooks fired:
 
