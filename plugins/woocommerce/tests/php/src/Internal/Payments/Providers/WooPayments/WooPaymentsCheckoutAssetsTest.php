@@ -462,27 +462,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should flag a renewal-only cart as containing a subscription, like the extension.
-	 */
-	public function test_get_payment_fields_js_config_flags_renewal_cart_as_subscription(): void {
-		$this->report_subscriptions_loaded();
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init(
-			$this->create_account_service( true ),
-			$this->create_woopay_session_service( false ),
-			$this->create_frontend_styles_service(),
-			$this->create_frontend_tracking_controller()
-		);
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertTrue( $config['cartContainsSubscription'], 'A renewal cart pays for a subscription; the forced-save signal must fire for it.' );
-	}
-
-	/**
 	 * @testdox Should expose change-payment state only for an order-pay subscription request without mutating it.
 	 */
 	public function test_get_payment_fields_js_config_exposes_subscription_change_payment_request_state(): void {
@@ -591,9 +570,13 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fold enabled Link configuration into the card Payment Element.
+	 * @testdox Should fold enabled Link configuration into the card Payment Element: $_dataName.
+	 *
+	 * @dataProvider provider_link_folded_into_card
+	 *
+	 * @param bool $explicit_card_definition Whether the config is built through the registry's card definition, as production does.
 	 */
-	public function test_get_payment_fields_js_config_folds_link_into_card(): void {
+	public function test_get_payment_fields_js_config_folds_link_into_card( bool $explicit_card_definition ): void {
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -606,10 +589,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 		);
+		$registry        = $explicit_card_definition ? new WooPaymentsPaymentMethodRegistry() : null;
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), null, $registry );
 
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
+		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry ? $registry->get( 'card' ) : null );
 
 		$this->assertArrayHasKey( 'link', $config['paymentMethodsConfig'] );
 		$this->assertSame( 'link', $config['paymentMethodsConfig']['link']['id'] );
@@ -618,46 +602,31 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should offer the card alone when no enabled payment methods are saved, even with Link available to the account.
+	 * Card config paths that fold Link in.
+	 *
+	 * @return array<string,array{0:bool}>
 	 */
-	public function test_get_payment_fields_js_config_offers_card_alone_without_saved_enabled_methods(): void {
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country'      => 'US',
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				// Client 11.1.0 returns the account's fees array (includes/class-wc-payments-account.php:639-641) and reads its keys as
-				// payment method IDs (includes/class-wc-payment-gateway-wcpay.php:4867).
-				'fees'         => array( 'link' => array() ),
-			)
+	public function provider_link_folded_into_card(): array {
+		return array(
+			'card config'              => array( false ),
+			'explicit card definition' => array( true ),
 		);
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertSame( array( 'card' ), array_keys( $config['paymentMethodsConfig'] ) );
-		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
 	}
 
 	/**
-	 * Link folds into card only while `link_payments` is exactly `active` and the account has a `link` fee entry. The account
-	 * reports capability statuses keyed by capability (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`)
-	 * and fees keyed by payment method ID (`:4867`, `includes/class-wc-payments-account.php:639`).
+	 * @testdox Should offer the card alone, without Link: $_dataName.
 	 *
-	 * @testdox Should not fold Link into card when its capability is $link_status or its fee entry is missing.
-	 * @testWith ["inactive", true]
-	 *           ["pending", true]
-	 *           ["disabled", true]
-	 *           ["active", false]
+	 * @dataProvider provider_link_kept_out_of_card
 	 *
-	 * @param string $link_status Platform status of the link_payments capability.
-	 * @param bool   $has_fee     Whether the account lists a link fee.
+	 * @param string              $link_status      Platform status of the link_payments capability.
+	 * @param bool                $has_fee          Whether the account lists a link fee.
+	 * @param array<string,mixed> $gateway_settings Gateway settings.
+	 * @param string              $currency         Store currency to set, or '' to keep the default.
 	 */
-	public function test_get_payment_fields_js_config_does_not_fold_link_without_active_capability_and_fee( string $link_status, bool $has_fee ): void {
+	public function test_get_payment_fields_js_config_keeps_link_out_of_card( string $link_status, bool $has_fee, array $gateway_settings, string $currency ): void {
+		if ( '' !== $currency ) {
+			update_option( 'woocommerce_currency', $currency );
+		}
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -668,42 +637,38 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 				),
 				'fees'         => $has_fee ? array( 'link' => array() ) : array( 'card' => array() ),
 			),
-			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
+			$gateway_settings
 		);
 		$assets          = new WooPaymentsCheckoutAssets();
 		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertArrayNotHasKey( 'link', $config['paymentMethodsConfig'] );
+		$this->assertSame( array( 'card' ), array_keys( $config['paymentMethodsConfig'] ) );
 		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
 	}
 
 	/**
-	 * @testdox Should fold enabled Link into the production explicit-card definition path.
+	 * Accounts and stores where Link stays out of the card Payment Element.
+	 *
+	 * Link folds into card only while `link_payments` is exactly `active`, the account has a `link` fee entry, Link is a saved
+	 * enabled method and Link supports the currency. The account reports capability statuses keyed by capability (client
+	 * 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`) and fees keyed by payment method ID (`:4867`,
+	 * `includes/class-wc-payments-account.php:639-641`).
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<string,mixed>,3:string}>
 	 */
-	public function test_get_payment_fields_js_config_folds_link_into_explicit_card_definition(): void {
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country'      => 'US',
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				'fees'         => array( 'link' => array() ),
-			),
-			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
+	public function provider_link_kept_out_of_card(): array {
+		$card_and_link = array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) );
+
+		return array(
+			'capability inactive'         => array( 'inactive', true, $card_and_link, '' ),
+			'capability pending'          => array( 'pending', true, $card_and_link, '' ),
+			'capability disabled'         => array( 'disabled', true, $card_and_link, '' ),
+			'no Link fee entry'           => array( 'active', false, $card_and_link, '' ),
+			'no saved enabled methods'    => array( 'active', true, array(), '' ),
+			'currency Link does not take' => array( 'active', true, $card_and_link, 'EUR' ),
 		);
-		$registry        = new WooPaymentsPaymentMethodRegistry();
-		$card_definition = $registry->get( 'card' );
-		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), null, $registry );
-
-		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $card_definition );
-
-		$this->assertArrayHasKey( 'link', $config['paymentMethodsConfig'] );
-		$this->assertSame( array( 'card', 'link' ), $config['paymentMethodTypes'] );
 	}
 
 	/**
@@ -817,32 +782,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
 		$this->assertEmpty( $config['paymentListWalletsConfig'] ?? array() );
-	}
-
-	/**
-	 * @testdox Should not fold Link into card when Link does not support the checkout currency.
-	 */
-	public function test_get_payment_fields_js_config_excludes_link_for_unsupported_currency(): void {
-		update_option( 'woocommerce_currency', 'EUR' );
-		$account_service = $this->create_account_service(
-			true,
-			array(
-				'country'      => 'US',
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				'fees'         => array( 'link' => array() ),
-			),
-			array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
-		);
-		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertArrayNotHasKey( 'link', $config['paymentMethodsConfig'] );
-		$this->assertSame( array( 'card' ), $config['paymentMethodTypes'] );
 	}
 
 	/**
@@ -1054,20 +993,57 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide the card save-payment checkbox for logged-in WooPay shoppers.
+	 * @testdox Should offer the card save option only with saved cards enabled, outside WooPay and subscription carts: $_dataName.
+	 *
+	 * Client 11.1.0 shows the save option once a payment method is reusable, saved cards are enabled for the gateway, the
+	 * shopper is not logged in to WooPay, and the cart carries no subscription item (class-wc-payments-checkout.php:579,
+	 * :604-619). Its is_subscription_item_in_cart() counts a renewal (trait-wc-payments-subscriptions-utilities.php:96-101),
+	 * so a renewal-only cart also sends `cartContainsSubscription`, the forced-save signal.
+	 *
+	 * @dataProvider provider_card_save_option
+	 *
+	 * @param bool                $logged_in                  Whether a shopper is logged in.
+	 * @param bool                $woopay                     Whether WooPay is enabled.
+	 * @param array<string,mixed> $gateway_settings           Gateway settings.
+	 * @param bool                $renewal_cart               Whether the cart holds only a subscription renewal.
+	 * @param bool                $saved_cards_enabled        Expected `isSavedCardsEnabled`.
+	 * @param bool                $show_save_option           Expected card `showSaveOption`.
+	 * @param bool                $cart_contains_subscription Expected `cartContainsSubscription`.
 	 */
-	public function test_get_payment_fields_js_config_hides_card_save_option_for_logged_in_woopay_shoppers(): void {
-		wp_set_current_user( self::factory()->user->create() );
-
-		$account_service = $this->create_account_service( true );
+	public function test_get_payment_fields_js_config_decides_the_card_save_option( bool $logged_in, bool $woopay, array $gateway_settings, bool $renewal_cart, bool $saved_cards_enabled, bool $show_save_option, bool $cart_contains_subscription ): void {
+		if ( $logged_in ) {
+			wp_set_current_user( self::factory()->user->create() );
+		}
+		if ( $renewal_cart ) {
+			$this->report_subscriptions_loaded();
+			WooCommerceSubscriptionsDoubles::load_cart();
+			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
+		}
+		$account_service = $this->create_account_service( true, array( 'country' => 'RO' ), $gateway_settings );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
+		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertTrue( $config['isSavedCardsEnabled'] );
-		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
+		$this->assertSame( $saved_cards_enabled, $config['isSavedCardsEnabled'] );
+		$this->assertSame( $show_save_option, $config['paymentMethodsConfig']['card']['showSaveOption'] );
+		$this->assertSame( $cart_contains_subscription, $config['cartContainsSubscription'] );
+	}
+
+	/**
+	 * Shopper, settings and cart cases for the card save option.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:array<string,mixed>,3:bool,4:bool,5:bool,6:bool}>
+	 */
+	public function provider_card_save_option(): array {
+		return array(
+			'logged-in WooPay shopper'                => array( true, true, array(), false, true, false, false ),
+			'saved cards disabled'                    => array( false, false, array( 'saved_cards' => 'no' ), false, false, false, false ),
+			'saved cards enabled'                     => array( false, false, array( 'saved_cards' => 'yes' ), false, true, true, false ),
+			'renewal-only cart'                       => array( false, false, array( 'saved_cards' => 'yes' ), true, true, false, true ),
+			'renewal-only cart, no saved-cards value' => array( false, false, array(), true, true, false, true ),
+		);
 	}
 
 	/**
@@ -1106,48 +1082,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide saved-card controls when saved cards are disabled.
-	 */
-	public function test_get_payment_fields_js_config_hides_saved_card_controls_when_saved_cards_are_disabled(): void {
-		$account_service = $this->create_account_service(
-			true,
-			array( 'country' => 'RO' ),
-			array( 'saved_cards' => 'no' )
-		);
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertFalse( $config['isSavedCardsEnabled'] );
-		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
-	}
-
-	/**
-	 * @testdox Should offer the card save option in the config once saved cards are enabled.
-	 *
-	 * Client 11.1.0 shows the save option once a payment method is reusable, saved cards are
-	 * enabled for the gateway, and the cart carries no subscription item
-	 * (class-wc-payments-checkout.php:579, :604-619).
-	 */
-	public function test_get_payment_fields_js_config_shows_card_save_option_when_saved_cards_enabled(): void {
-		$account_service = $this->create_account_service(
-			true,
-			array( 'country' => 'RO' ),
-			array( 'saved_cards' => 'yes' )
-		);
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertTrue( $config['isSavedCardsEnabled'] );
-		$this->assertTrue( $config['paymentMethodsConfig']['card']['showSaveOption'] );
-	}
-
-	/**
 	 * @testdox Should build no payment methods for a stored empty list of enabled methods (client 11.1.0 `get_enabled_payment_method_config()`, `class-wc-payments-checkout.php:291-320`, builds them from the enabled list).
 	 */
 	public function test_get_payment_fields_js_config_builds_no_methods_for_an_empty_enabled_list(): void {
@@ -1166,31 +1100,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertSame( array(), $config['paymentMethodsConfig'] );
-	}
-
-	/**
-	 * @testdox Should hide the card save option on a renewal-only cart (client 11.1.0 `class-wc-payments-checkout.php:616`).
-	 *
-	 * The client shows the save option only when the cart has no subscription item, and its is_subscription_item_in_cart()
-	 * counts a renewal (trait-wc-payments-subscriptions-utilities.php:96-101).
-	 */
-	public function test_get_payment_fields_js_config_hides_card_save_option_on_a_renewal_only_cart(): void {
-		$this->report_subscriptions_loaded();
-		WooCommerceSubscriptionsDoubles::load_cart();
-		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
-		$account_service = $this->create_account_service(
-			true,
-			array( 'country' => 'RO' ),
-			array( 'saved_cards' => 'yes' )
-		);
-
-		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller() );
-
-		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
-
-		$this->assertTrue( $config['isSavedCardsEnabled'] );
-		$this->assertFalse( $config['paymentMethodsConfig']['card']['showSaveOption'] );
 	}
 
 	/**

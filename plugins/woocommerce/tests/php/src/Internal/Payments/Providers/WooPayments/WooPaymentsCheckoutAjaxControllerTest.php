@@ -541,38 +541,22 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Failed intent lifecycle construction does not persist a generic title before lifecycle ownership.
+	 * @testdox A failing lifecycle application leaves the order's title and setup metadata unwritten: $_dataName.
+	 *
+	 * The confirmation builds the outcome without writing the order; only the lifecycle owner applies it. When that
+	 * application throws, the callback answers 500 and the order keeps what it had.
+	 *
+	 * @dataProvider provider_lifecycle_failure_leaves_order_unwritten
+	 *
+	 * @param string              $total  Order total.
+	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
 	 */
-	public function test_failed_intent_does_not_persist_effects_before_lifecycle_application(): void {
-		$order = $this->create_woopayments_order( '50.00' );
+	public function test_lifecycle_failure_leaves_the_order_unwritten( string $total, array $intent ): void {
+		$order = $this->create_woopayments_order( $total );
 		$order->set_payment_method_title( 'Card' );
-		$order->update_meta_data( '_intent_id', 'pi_failed' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
 		$order->save();
 
-		$api_client                  = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Return a failed PaymentIntent.
-			 *
-			 * @param string $intent_id Intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_payment_intention( string $intent_id ): array {
-				return array(
-					'id'                 => $intent_id,
-					'status'             => 'requires_payment_method',
-					'last_payment_error' => array( 'code' => 'card_declined' ),
-				);
-			}
-		};
 		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
@@ -581,19 +565,42 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->method( 'apply_and_schedule_fee_details_with_lock' )
 			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
 
-		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
-			->confirm_order_payment(
-				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-					'order_id'    => $order->get_id(),
-					'intent_id'   => 'pi_failed',
-				)
-			);
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent, $fee_details_note_controller );
 		$reloaded = wc_get_order( $order->get_id() );
 
 		$this->assertSame( 500, $response['status_code'] );
 		$this->assertInstanceOf( WC_Order::class, $reloaded );
 		$this->assertSame( 'Card', $reloaded->get_payment_method_title() );
+		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_mode', true ) );
+	}
+
+	/**
+	 * Intents whose lifecycle application fails.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
+	 */
+	public function provider_lifecycle_failure_leaves_order_unwritten(): array {
+		return array(
+			'PaymentIntent requires_payment_method with error' => array(
+				'50.00',
+				array(
+					'id'                 => 'pi_failed',
+					'status'             => 'requires_payment_method',
+					'last_payment_error' => array( 'code' => 'card_declined' ),
+				),
+			),
+			'succeeded zero-total SetupIntent' => array(
+				'0.00',
+				array(
+					'id'             => 'seti_read_only',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_read_only',
+					'payment_method' => 'pm_read_only',
+				),
+			),
+		);
 	}
 
 	/**
@@ -649,64 +656,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			__( "We're not able to process this payment. Please try again later.", 'woocommerce' ),
 			$response['error']['message']
 		);
-	}
-
-	/**
-	 * @testdox SetupIntent lifecycle construction leaves setup metadata to the lifecycle owner.
-	 */
-	public function test_setup_intent_does_not_persist_meta_before_lifecycle_application(): void {
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_read_only' );
-		$order->save();
-
-		$api_client                  = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Return a completed SetupIntent.
-			 *
-			 * @param string $intent_id Intent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_setup_intention( string $intent_id ): array {
-				return array(
-					'id'             => $intent_id,
-					'status'         => 'succeeded',
-					'customer'       => 'cus_read_only',
-					'payment_method' => 'pm_read_only',
-				);
-			}
-		};
-		$fee_details_note_controller = $this->getMockBuilder( WooPaymentsFeeDetailsNoteController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'apply_and_schedule_fee_details_with_lock' ) )
-			->getMock();
-		$fee_details_note_controller->expects( $this->once() )
-			->method( 'apply_and_schedule_fee_details_with_lock' )
-			->willThrowException( new \RuntimeException( 'Lifecycle unavailable.' ) );
-
-		$response = $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )
-			->confirm_order_payment(
-				array(
-					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-					'order_id'    => $order->get_id(),
-					'intent_id'   => 'seti_read_only',
-				)
-			);
-		$reloaded = wc_get_order( $order->get_id() );
-
-		$this->assertSame( 500, $response['status_code'] );
-		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( '', $reloaded->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( '', $reloaded->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( '', $reloaded->get_meta( '_wcpay_mode', true ) );
 	}
 
 	/**
@@ -1100,74 +1049,46 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should reject an authenticated user acting on another customer's order.
+	 * @testdox Order-status callback lets only a caller who may pay for the order act on it: $_dataName.
+	 *
+	 * The callback checks `pay_for_order` for the current user: another customer may not act on a customer's order, the
+	 * owner may, and anyone may act on a guest order (the nopriv flow). A refused caller gets a 403 before any intent read.
+	 *
+	 * @dataProvider provider_order_status_caller_access
+	 *
+	 * @param string $order_owner             'customer' for an order owned by a customer account, 'guest' for a guest order.
+	 * @param string $caller                  'owner', 'another customer' or 'guest'.
+	 * @param bool   $allowed                 Whether the caller may act on the order.
+	 * @param int    $expected_status_code    Expected response status code.
+	 * @param string $expected_order_status   Expected order status.
+	 * @param string $expected_intent_status  Expected `_intention_status` meta.
+	 * @param int    $expected_intent_reads   Expected SetupIntent reads.
 	 */
-	public function test_update_order_status_rejects_cross_customer_order_access(): void {
-		$owner_id    = $this->factory()->user->create();
-		$attacker_id = $this->factory()->user->create();
+	public function test_update_order_status_lets_only_a_caller_who_may_pay_act_on_the_order( string $order_owner, string $caller, bool $allowed, int $expected_status_code, string $expected_order_status, string $expected_intent_status, int $expected_intent_reads ): void {
+		$owner_id = 'customer' === $order_owner ? $this->factory()->user->create() : 0;
 
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_customer_id( $owner_id );
 		$order->update_meta_data( '_intent_id', 'seti_native' );
 		$order->save();
 
-		wp_set_current_user( $attacker_id );
+		if ( 'owner' === $caller ) {
+			$caller_id = $owner_id;
+		} elseif ( 'another customer' === $caller ) {
+			$caller_id = $this->factory()->user->create();
+		} else {
+			$caller_id = 0;
+		}
+		wp_set_current_user( $caller_id );
 
 		$api_client = new class() extends WooPaymentsApiClient {
 			/**
-			 * Tell whether the transport is available.
+			 * SetupIntent reads.
 			 *
-			 * @return bool
+			 * @var int
 			 */
-			public function is_available(): bool {
-				return true;
-			}
+			public int $setup_intent_reads = 0;
 
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double must fail if the transport is called.
-			/**
-			 * Retrieve a SetupIntent.
-			 *
-			 * @param string $setup_intent_id SetupIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_setup_intention( string $setup_intent_id ): array {
-				unset( $setup_intent_id );
-				throw new \RuntimeException( 'Cross-customer access should not call the transport.' );
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->confirm_order_payment(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => 'seti_native',
-			)
-		);
-		$order      = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayHasKey( 'error', $response );
-		$this->assertArrayNotHasKey( 'return_url', $response );
-		$this->assertSame( 403, $response['status_code'] );
-		$this->assertNotSame( 'completed', $order->get_status() );
-		$this->assertSame( '', $order->get_meta( '_intention_status', true ), 'A cross-customer caller must not mutate the order.' );
-	}
-
-	/**
-	 * @testdox Order-status callback should allow the owning customer to complete their own order.
-	 */
-	public function test_update_order_status_allows_owner_to_complete_own_order(): void {
-		$owner_id = $this->factory()->user->create();
-
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->set_customer_id( $owner_id );
-		$order->update_meta_data( '_intent_id', 'seti_native' );
-		$order->save();
-
-		wp_set_current_user( $owner_id );
-
-		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -1184,6 +1105,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			 * @return array<string,mixed>
 			 */
 			public function get_setup_intention( string $setup_intent_id ): array {
+				++$this->setup_intent_reads;
 				if ( 'seti_native' !== $setup_intent_id ) {
 					throw new \RuntimeException( 'Unexpected setup intent ID.' );
 				}
@@ -1207,9 +1129,26 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$order      = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayHasKey( 'return_url', $response );
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( ! $allowed, array_key_exists( 'error', $response ) );
+		$this->assertSame( $allowed, array_key_exists( 'return_url', $response ) );
+		$this->assertSame( $expected_status_code, $response['status_code'] );
+		$this->assertSame( $expected_order_status, $order->get_status() );
+		$this->assertSame( $expected_intent_status, $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( $expected_intent_reads, $api_client->setup_intent_reads );
+	}
+
+	/**
+	 * Order owners and callers of the order-status callback.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool,3:int,4:string,5:string,6:int}>
+	 */
+	public function provider_order_status_caller_access(): array {
+		return array(
+			'another customer on a customer order' => array( 'customer', 'another customer', false, 403, 'pending', '', 0 ),
+			'owner on their own order'             => array( 'customer', 'owner', true, 200, 'completed', 'succeeded', 1 ),
+			'guest on a guest order'               => array( 'guest', 'guest', true, 200, 'completed', 'succeeded', 1 ),
+			'signed-in customer on a guest order'  => array( 'guest', 'another customer', true, 200, 'completed', 'succeeded', 1 ),
+		);
 	}
 
 	/**
@@ -1266,117 +1205,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertSame( add_query_arg( 'filtered', '1', wc_get_order( $order->get_id() )->get_checkout_order_received_url() ), $response['return_url'] );
-	}
-
-	/**
-	 * @testdox Order-status callback should allow a guest to complete an unowned order via the nopriv flow.
-	 */
-	public function test_update_order_status_allows_guest_to_complete_unowned_order(): void {
-		wp_set_current_user( 0 );
-
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_native' );
-		$order->save();
-
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Retrieve a SetupIntent.
-			 *
-			 * @param string $setup_intent_id SetupIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_setup_intention( string $setup_intent_id ): array {
-				if ( 'seti_native' !== $setup_intent_id ) {
-					throw new \RuntimeException( 'Unexpected setup intent ID.' );
-				}
-
-				return array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-				);
-			}
-		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->confirm_order_payment(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => 'seti_native',
-			)
-		);
-		$order      = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayHasKey( 'return_url', $response );
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame( 'completed', $order->get_status() );
-	}
-
-	/**
-	 * @testdox Order-status callback should allow an authenticated user to complete a guest order they do not own.
-	 */
-	public function test_update_order_status_allows_authenticated_user_on_guest_order(): void {
-		$user_id = $this->factory()->user->create();
-		wp_set_current_user( $user_id );
-
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_native' );
-		$order->save();
-
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the transport is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Retrieve a SetupIntent.
-			 *
-			 * @param string $setup_intent_id SetupIntent ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_setup_intention( string $setup_intent_id ): array {
-				if ( 'seti_native' !== $setup_intent_id ) {
-					throw new \RuntimeException( 'Unexpected setup intent ID.' );
-				}
-
-				return array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_native',
-					'payment_method' => 'pm_native',
-				);
-			}
-		};
-		$sut        = $this->create_controller( $api_client );
-		$response   = $sut->confirm_order_payment(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => 'seti_native',
-			)
-		);
-		$order      = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayHasKey( 'return_url', $response );
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame( 'completed', $order->get_status() );
 	}
 
 	/**
@@ -1447,26 +1275,28 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should leave an error-free requires_payment_method intent pending with the started note.
+	 * @testdox Order-status callback should leave an intent the client marks as started pending with the started note: $_dataName.
 	 *
 	 * Source: client 11.1.0 `os:418-427`: `requires_payment_method` without an error is `mark_payment_started()`
-	 * (`os:1695-1707`, note `os:2202-2218`), which keeps the order pending. The 409 envelope is native's (C1).
+	 * (`os:1695-1707`, note `os:2202-2218`), which keeps the order pending. For a zero-total order the AJAX
+	 * `update_order_status` handler fetches a SetupIntent (`gw:4238-4242`) and calls `update_order_status_from_intent()`
+	 * (`gw:4339-4345`); its `get_intent_data()` sets `error` only for PaymentIntents (`os:2963-2967`), so `last_setup_error`
+	 * is never read and either status is `mark_payment_started()` too. The redirect-return path fails the same SetupIntent
+	 * (see the redirect-return controller test). The started note carries the intent ID in a code element (`utils:1056-1058`
+	 * builds no URL for `seti_`). The 409 envelope with an `error` key is native's (C1).
+	 *
+	 * @dataProvider provider_unauthorized_intent_outcomes
+	 *
+	 * @param string              $total         Order total.
+	 * @param array<string,mixed> $intent        PaymentIntent or SetupIntent response.
+	 * @param string              $started_note  Fragment of the expected started note.
 	 */
-	public function test_update_order_status_keeps_error_free_requires_payment_method_intent_pending(): void {
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->update_meta_data( '_intent_id', 'pi_requires_payment_method' );
+	public function test_update_order_status_keeps_started_intent_pending( string $total, array $intent, string $started_note ): void {
+		$order = $this->create_woopayments_order( $total );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
 		$order->save();
 
-		$response = $this->get_update_order_status_response_for_intent(
-			$order,
-			array(
-				'id'             => 'pi_requires_payment_method',
-				'status'         => 'requires_payment_method',
-				'currency'       => 'usd',
-				'customer'       => 'cus_native',
-				'payment_method' => 'pm_native',
-			)
-		);
+		$response = $this->get_update_order_status_response_for_intent( $order, $intent );
 		$order    = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -1474,8 +1304,57 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'return_url', $response );
 		$this->assertSame( 409, $response['status_code'] );
 		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
-		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments (<code>pi_requires_payment_method</code>)' );
+		$this->assertSame( $intent['status'], $order->get_meta( '_intention_status', true ) );
+		$this->assert_order_has_note_containing( $order, $started_note );
+	}
+
+	/**
+	 * Intents the order-status callback leaves pending as started.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
+	 */
+	public function provider_unauthorized_intent_outcomes(): array {
+		$setup_error = array(
+			'type'    => 'invalid_request_error',
+			'code'    => 'setup_intent_authentication_failure',
+			'message' => 'We are unable to authenticate your payment method.',
+		);
+
+		return array(
+			'error-free requires_payment_method PaymentIntent' => array(
+				'10.00',
+				array(
+					'id'             => 'pi_requires_payment_method',
+					'status'         => 'requires_payment_method',
+					'currency'       => 'usd',
+					'customer'       => 'cus_native',
+					'payment_method' => 'pm_native',
+				),
+				'was <strong>started</strong> using WooPayments (<code>pi_requires_payment_method</code>)',
+			),
+			'requires_payment_method SetupIntent with a setup error' => array(
+				'0.00',
+				array(
+					'id'               => 'seti_setup_error',
+					'status'           => 'requires_payment_method',
+					'customer'         => 'cus_native',
+					'payment_method'   => 'pm_native',
+					'last_setup_error' => $setup_error,
+				),
+				'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).',
+			),
+			'requires_action SetupIntent with a setup error' => array(
+				'0.00',
+				array(
+					'id'               => 'seti_setup_error',
+					'status'           => 'requires_action',
+					'customer'         => 'cus_native',
+					'payment_method'   => 'pm_native',
+					'last_setup_error' => $setup_error,
+				),
+				'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).',
+			),
+		);
 	}
 
 	/**
@@ -1510,49 +1389,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 409, $response['status_code'] );
 		$this->assertSame( 'failed', $order->get_status() );
 		$this->assertSame( 'requires_action', $order->get_meta( '_intention_status', true ) );
-	}
-
-	/**
-	 * @testdox Order-status callback should leave a SetupIntent with a setup error pending ($status).
-	 *
-	 * Source: client 11.1.0. The AJAX `update_order_status` handler fetches a SetupIntent for a zero-total order
-	 * (`gw:4238-4242`) and calls `update_order_status_from_intent()` (`gw:4339-4345`). Its `get_intent_data()` sets
-	 * `error` only for PaymentIntents (`os:2963-2967`), so `last_setup_error` is never read and either status is
-	 * `mark_payment_started()` (`os:418-427`, `os:1695-1707`): the order stays pending. The redirect-return path
-	 * fails the same intent (see the redirect-return controller test). `mark_payment_started()` writes the started
-	 * note (`os:2202-2218`) with the SetupIntent ID in a code element (`utils:1056-1058` builds no URL for `seti_`).
-	 *
-	 * @dataProvider setup_intent_with_setup_error_status_data
-	 *
-	 * @param string $status SetupIntent status.
-	 */
-	public function test_update_order_status_keeps_setup_intent_with_setup_error_pending( string $status ): void {
-		$order = $this->create_woopayments_order( '0.00' );
-		$order->update_meta_data( '_intent_id', 'seti_setup_error' );
-		$order->save();
-
-		$response = $this->get_update_order_status_response_for_intent(
-			$order,
-			array(
-				'id'               => 'seti_setup_error',
-				'status'           => $status,
-				'customer'         => 'cus_native',
-				'payment_method'   => 'pm_native',
-				'last_setup_error' => array(
-					'type'    => 'invalid_request_error',
-					'code'    => 'setup_intent_authentication_failure',
-					'message' => 'We are unable to authenticate your payment method.',
-				),
-			)
-		);
-		$order    = wc_get_order( $order->get_id() );
-
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertArrayNotHasKey( 'return_url', $response );
-		$this->assertSame( 409, $response['status_code'] );
-		$this->assertSame( 'pending', $order->get_status() );
-		$this->assertSame( $status, $order->get_meta( '_intention_status', true ) );
-		$this->assert_order_has_note_containing( $order, 'was <strong>started</strong> using WooPayments (<code>seti_setup_error</code>).' );
 	}
 
 	/**
@@ -1611,25 +1447,14 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * SetupIntent statuses the client's order service maps by error.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function setup_intent_with_setup_error_status_data(): array {
-		return array(
-			'requires_payment_method' => array( 'requires_payment_method' ),
-			'requires_action'         => array( 'requires_action' ),
-		);
-	}
-
-	/**
 	 * Run the order-status callback against a fixed PaymentIntent or SetupIntent response.
 	 *
-	 * @param WC_Order            $order  Order being confirmed.
-	 * @param array<string,mixed> $intent PaymentIntent or SetupIntent response.
+	 * @param WC_Order                                 $order                       Order being confirmed.
+	 * @param array<string,mixed>                      $intent                      PaymentIntent or SetupIntent response.
+	 * @param WooPaymentsFeeDetailsNoteController|null $fee_details_note_controller Fee details note controller, which applies the lifecycle event.
 	 * @return array<string,mixed>
 	 */
-	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent ): array {
+	private function get_update_order_status_response_for_intent( WC_Order $order, array $intent, ?WooPaymentsFeeDetailsNoteController $fee_details_note_controller = null ): array {
 		$api_client = new class( $intent ) extends WooPaymentsApiClient {
 			/**
 			 * PaymentIntent response.
@@ -1685,7 +1510,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		return $this->create_controller( $api_client )->confirm_order_payment(
+		return $this->create_controller( $api_client, null, null, null, $fee_details_note_controller )->confirm_order_payment(
 			array(
 				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
 				'order_id'    => $order->get_id(),

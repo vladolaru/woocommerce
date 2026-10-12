@@ -43,6 +43,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_order_email_verification_required', array( $page, 'maybe_skip_email_verification_after_payment' ) );
 			remove_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ), 11 );
 			remove_action( 'woocommerce_email_order_details', array( $page, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) );
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_paid_order' ), 11 );
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_successful_intent' ), 11 );
+			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'replace_order_received_text_for_failed_orders' ), 11 );
+			remove_action( 'wp_footer', array( $page, 'output_footer_scripts' ) );
 		}
 		if ( WC() && WC()->session ) {
 			WC()->session->set( 'wcpay_paid_intent_id', null );
@@ -89,7 +93,6 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$split_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'klarna' );
 		$split_order->save();
 
-		$this->assertSame( 10, has_action( 'woocommerce_thankyou', array( $page, 'record_order_success_page_view' ) ) );
 		$page->record_order_success_page_view( $main_order->get_id() );
 		$page->record_order_success_page_view( $split_order->get_id() );
 		$page->record_order_success_page_view( 0 );
@@ -171,25 +174,49 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register Multibanco order-success hooks only when the built-in WooPayments owns the runtime.
+	 * @testdox Should register the order-success hook only when the built-in WooPayments owns the runtime: $_dataName.
+	 *
+	 * Priorities follow client 11.1.0 (class-wc-payments-order-success-page.php:30): the known-shopper exception and the
+	 * order-received text filters run at 11 so they apply after the store's own customizations.
+	 *
+	 * @dataProvider provider_order_success_page_hooks
+	 *
+	 * @param string $hook     Hook name.
+	 * @param string $callback Page method registered on the hook.
+	 * @param int    $priority Expected priority when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_multibanco_order_success_hooks_only_when_builtin_owns_runtime(): void {
+	public function test_registers_order_success_hooks_only_when_builtin_owns_runtime( string $hook, string $callback, int $priority ): void {
 		$extension_owned = $this->create_page( false );
 		$builtin_owned   = $this->create_page( true );
 
 		$extension_owned->register();
-
-		$this->assertFalse( has_action( 'woocommerce_before_thankyou', array( $extension_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_details_before_order_table', array( $extension_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
+		$this->assertFalse( has_filter( $hook, array( $extension_owned, $callback ) ) );
 
 		$builtin_owned->register();
 		$this->registered_pages[] = $builtin_owned;
+		$this->assertSame( $priority, has_filter( $hook, array( $builtin_owned, $callback ) ) );
+	}
 
-		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $builtin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_before_thankyou', array( $builtin_owned, 'register_payment_method_title_override' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $builtin_owned, 'maybe_render_multibanco_payment_instructions' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_order_details_before_order_table', array( $builtin_owned, 'unregister_payment_method_title_override' ) ) );
-		$this->assertSame( 10, has_action( 'wp_enqueue_scripts', array( $builtin_owned, 'enqueue_assets' ) ) );
+	/**
+	 * Hooks the order-success page registers for the built-in WooPayments.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int}>
+	 */
+	public function provider_order_success_page_hooks(): array {
+		return array(
+			'page view tracking'                => array( 'woocommerce_thankyou', 'record_order_success_page_view', 10 ),
+			'thank-you title override'          => array( 'woocommerce_before_thankyou', 'register_payment_method_title_override', 10 ),
+			'thank-you Multibanco instructions' => array( 'woocommerce_before_thankyou', 'maybe_render_multibanco_payment_instructions', 10 ),
+			'order details title override end'  => array( 'woocommerce_order_details_before_order_table', 'unregister_payment_method_title_override', 10 ),
+			'order details Multibanco'          => array( 'woocommerce_order_details_before_order_table', 'maybe_render_multibanco_payment_instructions', 10 ),
+			'order-success assets'              => array( 'wp_enqueue_scripts', 'enqueue_assets', 10 ),
+			'WooPay known-shopper exception'    => array( 'woocommerce_order_received_verify_known_shoppers', 'determine_woopay_order_received_verify_known_shoppers', 11 ),
+			'paid-intent email verification'    => array( 'woocommerce_order_email_verification_required', 'maybe_skip_email_verification_after_payment', 10 ),
+			'duplicate-order notice'            => array( 'woocommerce_thankyou_order_received_text', 'add_notice_previous_paid_order', 11 ),
+			'second-payment notice'             => array( 'woocommerce_thankyou_order_received_text', 'add_notice_previous_successful_intent', 11 ),
+			'failed-order copy'                 => array( 'woocommerce_thankyou_order_received_text', 'replace_order_received_text_for_failed_orders', 11 ),
+			'footer scripts'                    => array( 'wp_footer', 'output_footer_scripts', 10 ),
+		);
 	}
 
 	/**
@@ -274,13 +301,21 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render Multibanco voucher instructions for on-hold Multibanco orders.
+	 * @testdox Should render Multibanco voucher instructions for on-hold Multibanco orders: $_dataName.
+	 *
+	 * The thank-you hook passes an order id; the order details hook passes a WC_Order object.
+	 *
+	 * @dataProvider provider_multibanco_render_input
+	 *
+	 * @param bool $pass_order_object Whether the hook passes the order object instead of its id.
 	 */
-	public function test_renders_multibanco_voucher_instructions_for_on_hold_multibanco_orders(): void {
+	public function test_renders_multibanco_voucher_instructions_for_on_hold_multibanco_orders( bool $pass_order_object ): void {
 		$page  = $this->create_page( true );
 		$order = $this->create_multibanco_order();
 
-		$output = $this->render_multibanco_instructions( $page, $order );
+		ob_start();
+		$page->maybe_render_multibanco_payment_instructions( $pass_order_object ? $order : $order->get_id() );
+		$output = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'wc-payment-gateway-multibanco-instructions-container', $output );
 		$this->assertStringContainsString( '/assets/images/payment-methods/multibanco-instructions.svg', $output );
@@ -300,18 +335,14 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render Multibanco instructions when the hook passes an order object.
+	 * Hook arguments the Multibanco instructions renderer receives.
+	 *
+	 * @return array<string,array{0:bool}>
 	 */
-	public function test_renders_multibanco_voucher_instructions_when_hook_passes_order_object(): void {
-		$page  = $this->create_page( true );
-		$order = $this->create_multibanco_order();
-
-		$output = $this->render_multibanco_instructions_from_hook_payload( $page, $order );
-
-		$this->assertStringContainsString(
-			'wc-payment-gateway-multibanco-instructions-container',
-			$output,
-			'Order details hooks pass a WC_Order object and should not fatal.'
+	public function provider_multibanco_render_input(): array {
+		return array(
+			'order id'     => array( false ),
+			'order object' => array( true ),
 		);
 	}
 
@@ -503,113 +534,49 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should tell the shopper on the thank-you page when a duplicate-order payment was prevented.
+	 * @testdox Should append the duplicate-prevention notice to the thank-you text only when its flag is set: $_dataName.
+	 *
+	 * @dataProvider provider_duplicate_prevention_notices
+	 *
+	 * @param string $method   Page method that filters the thank-you text.
+	 * @param string $flag     Query flag the duplicate-payment redirect sets, or '' for none.
+	 * @param string $expected Expected thank-you text.
 	 */
-	public function test_thankyou_text_gains_notice_for_prevented_duplicate_order(): void {
+	public function test_thankyou_text_gains_duplicate_prevention_notice_only_with_its_flag( string $method, string $flag, string $expected ): void {
 		$page = $this->create_page( true );
 
-		$_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID ] = 'yes';
+		if ( '' !== $flag ) {
+			$_GET[ $flag ] = 'yes';
+		}
 		try {
-			$text = $page->add_notice_previous_paid_order( 'Thank you.' );
+			$text = $page->$method( 'Thank you.' );
 		} finally {
-			unset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID ] );
+			unset( $_GET[ $flag ] );
 		}
 
-		$this->assertStringStartsWith( 'Thank you.', $text );
-		$this->assertStringContainsString( 'woocommerce-info', $text );
-		$this->assertStringContainsString( 'duplicate order', $text );
+		$this->assertSame( $expected, $text );
 	}
 
 	/**
-	 * @testdox Should tell the shopper on the thank-you page when a second payment for the same order was prevented.
+	 * Duplicate-prevention notices and the thank-you text each one produces.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
 	 */
-	public function test_thankyou_text_gains_notice_for_prevented_second_payment(): void {
-		$page = $this->create_page( true );
-
-		$_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT ] = 'yes';
-		try {
-			$text = $page->add_notice_previous_successful_intent( 'Thank you.' );
-		} finally {
-			unset( $_GET[ WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT ] );
-		}
-
-		$this->assertStringStartsWith( 'Thank you.', $text );
-		$this->assertStringContainsString( 'woocommerce-info', $text );
-		$this->assertStringContainsString( 'multiple payments for the same order', $text );
-	}
-
-	/**
-	 * @testdox Should leave the thank-you text alone without the duplicate-prevention flags.
-	 */
-	public function test_thankyou_text_unchanged_without_prevention_flags(): void {
-		$page = $this->create_page( true );
-
-		$this->assertSame( 'Thank you.', $page->add_notice_previous_paid_order( 'Thank you.' ) );
-		$this->assertSame( 'Thank you.', $page->add_notice_previous_successful_intent( 'Thank you.' ) );
-	}
-
-	/**
-	 * @testdox Should hook both duplicate-prevention notices into the order-received text when the built-in WooPayments owns the runtime.
-	 */
-	public function test_register_hooks_duplicate_prevention_notices(): void {
-		$page = $this->create_page( true );
-
-		$page->register();
-
-		try {
-			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_paid_order' ) ) );
-			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_successful_intent' ) ) );
-		} finally {
-			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_paid_order' ), 11 );
-			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'add_notice_previous_successful_intent' ), 11 );
-		}
-	}
-
-	/**
-	 * @testdox Should hook the failed-order copy replacement into the order-received text when the built-in WooPayments owns the runtime.
-	 */
-	public function test_register_hooks_failed_order_copy_replacement(): void {
-		$page = $this->create_page( true );
-		$page->register();
-
-		try {
-			$this->assertSame( 11, has_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'replace_order_received_text_for_failed_orders' ) ) );
-			$this->assertSame( 10, has_action( 'wp_footer', array( $page, 'output_footer_scripts' ) ) );
-		} finally {
-			remove_filter( 'woocommerce_thankyou_order_received_text', array( $page, 'replace_order_received_text_for_failed_orders' ), 11 );
-			remove_action( 'wp_footer', array( $page, 'output_footer_scripts' ) );
-		}
-
-		$extension_owned = $this->create_page( false );
-		$extension_owned->register();
-		$this->assertFalse( has_filter( 'woocommerce_thankyou_order_received_text', array( $extension_owned, 'replace_order_received_text_for_failed_orders' ) ) );
-	}
-
-	/**
-	 * @testdox Should register the paid-intent email-verification exception only when the built-in WooPayments owns the runtime.
-	 */
-	public function test_registers_paid_intent_email_verification_exception_only_when_builtin_owns_runtime(): void {
-		$extension_owned = $this->create_page( false );
-		$builtin_owned   = $this->create_page( true );
-
-		$extension_owned->register();
-		$this->assertFalse( has_filter( 'woocommerce_order_email_verification_required', array( $extension_owned, 'maybe_skip_email_verification_after_payment' ) ) );
-
-		$builtin_owned->register();
-		$this->registered_pages[] = $builtin_owned;
-		$this->assertSame( 10, has_filter( 'woocommerce_order_email_verification_required', array( $builtin_owned, 'maybe_skip_email_verification_after_payment' ) ) );
-
-		global $wp_filter;
-		$callbacks = $wp_filter['woocommerce_order_email_verification_required']->callbacks[10];
-		$matching  = array_filter(
-			$callbacks,
-			static function ( array $callback ) use ( $builtin_owned ): bool {
-				return array( $builtin_owned, 'maybe_skip_email_verification_after_payment' ) === $callback['function'];
-			}
+	public function provider_duplicate_prevention_notices(): array {
+		return array(
+			'duplicate order prevented' => array(
+				'add_notice_previous_paid_order',
+				WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_ORDER_PAID,
+				'Thank you.<div class="woocommerce-info">We detected and prevented an attempt to pay for a duplicate order. If this was a mistake and you wish to try again, please create a new order.</div>',
+			),
+			'second payment prevented'  => array(
+				'add_notice_previous_successful_intent',
+				WooPaymentsDuplicatePaymentPreventionService::FLAG_PREVIOUS_SUCCESSFUL_INTENT,
+				'Thank you.<div class="woocommerce-info">We prevented multiple payments for the same order. If this was a mistake and you wish to try again, please create a new order.</div>',
+			),
+			'duplicate order, no flag'  => array( 'add_notice_previous_paid_order', '', 'Thank you.' ),
+			'second payment, no flag'   => array( 'add_notice_previous_successful_intent', '', 'Thank you.' ),
 		);
-
-		$this->assertCount( 1, $matching );
-		$this->assertSame( 3, reset( $matching )['accepted_args'] );
 	}
 
 	/**
@@ -790,7 +757,6 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 
 		$this->assertStringNotContainsString( 'Please log in to your account to view this order.', $html );
 		$this->assertStringContainsString( (string) $order->get_order_number(), $html );
-		$this->assertSame( 11, has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ) ) );
 	}
 
 	/**
@@ -831,16 +797,6 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			'order key mismatch'      => array( true, false, 0 ),
 			'grace period has passed' => array( true, true, 11 * MINUTE_IN_SECONDS ),
 		);
-	}
-
-	/**
-	 * @testdox The WooPay known-shopper exception is not registered when the built-in WooPayments does not own the runtime.
-	 */
-	public function test_does_not_register_woopay_known_shopper_exception_without_builtin_runtime(): void {
-		$page = $this->create_page( false );
-		$page->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $page, 'determine_woopay_order_received_verify_known_shoppers' ) ) );
 	}
 
 	/**
@@ -1006,18 +962,5 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$email->object = $order;
 
 		return $plain_text ? $email->get_content_plain() : $email->get_content_html();
-	}
-
-	/**
-	 * Render Multibanco instructions for a hook payload.
-	 *
-	 * @param WooPaymentsOrderSuccessPage $page  Order-success page controller.
-	 * @param WC_Order                    $order Order passed by the hook.
-	 * @return string
-	 */
-	private function render_multibanco_instructions_from_hook_payload( WooPaymentsOrderSuccessPage $page, WC_Order $order ): string {
-		ob_start();
-		$page->maybe_render_multibanco_payment_instructions( $order );
-		return (string) ob_get_clean();
 	}
 }

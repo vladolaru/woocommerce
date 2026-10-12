@@ -159,10 +159,11 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Typeless and unmapped card errors pass the platform message through, as the WooPayments extension does.
+	 * @testdox Typeless and unmapped card errors pass the platform message through, even an empty one, as the WooPayments extension does: $_dataName.
 	 *
-	 * Source: client 11.1.0 `class-wc-payments-utils.php:770` (the message defaults to the exception message) and `:797-819`
-	 * (only typed non-card errors and `wcpay_bad_request` are redacted; unmapped card codes keep the message).
+	 * Source: client 11.1.0 `class-wc-payments-utils.php:770` (the message defaults to the exception message), `:797-819`
+	 * (only typed non-card errors and `wcpay_bad_request` are redacted; unmapped card codes keep the message) and `:821`.
+	 * Native callers substitute their own fallback copy for an empty message.
 	 *
 	 * @dataProvider passed_through_platform_error_data
 	 *
@@ -178,27 +179,19 @@ class WooPaymentsErrorMessagesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Platform errors whose message the client shows unchanged.
+	 * Platform errors whose message the client shows unchanged, including empty messages.
 	 *
 	 * @return array<string,array{string,string,string}>
 	 */
 	public function passed_through_platform_error_data(): array {
 		return array(
-			'card-testing prevention'  => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
-			'arbitrary typeless error' => array( '', 'wcpay_native_transport_error', 'Error: Provider diagnostic.' ),
-			'unmapped card error'      => array( 'card_error', 'provider_internal_detail', 'Error: Your card does not support this type of purchase.' ),
-			'unmapped card code'       => array( 'card_error', 'card_velocity_exceeded', 'Error: Your card has exceeded its velocity limit.' ),
+			'card-testing prevention'                => array( '', 'wcpay_card_testing_prevention', "Error: We're not able to add this payment method. Please try again later." ),
+			'arbitrary typeless error'               => array( '', 'wcpay_native_transport_error', 'Error: Provider diagnostic.' ),
+			'unmapped card error'                    => array( 'card_error', 'provider_internal_detail', 'Error: Your card does not support this type of purchase.' ),
+			'unmapped card code'                     => array( 'card_error', 'card_velocity_exceeded', 'Error: Your card has exceeded its velocity limit.' ),
+			'card-testing prevention, empty message' => array( '', 'wcpay_card_testing_prevention', '' ),
+			'unmapped card error, empty message'     => array( 'card_error', 'provider_internal_detail', '' ),
 		);
-	}
-
-	/**
-	 * @testdox An empty platform message stays empty when the WooPayments extension would pass it through.
-	 *
-	 * Source: client 11.1.0 `class-wc-payments-utils.php:770`, `:821`. Native callers substitute their own fallback copy.
-	 */
-	public function test_get_shopper_message_keeps_empty_platform_message(): void {
-		$this->assertSame( '', WooPaymentsErrorMessages::get_shopper_message( '', 'wcpay_card_testing_prevention', '', '' ) );
-		$this->assertSame( '', WooPaymentsErrorMessages::get_shopper_message( 'card_error', 'provider_internal_detail', '', '' ) );
 	}
 
 	/**
