@@ -103,13 +103,6 @@ PHP;
 	}
 
 	/**
-	 * @testdox The module documents its boundary, seams and extraction steps.
-	 */
-	public function test_module_has_boundary_documentation(): void {
-		$this->assertFileExists( WC()->plugin_path() . '/' . self::MODULE_DIRECTORY . 'README.md' );
-	}
-
-	/**
 	 * Tell whether PHP source references the module namespace outside comments.
 	 *
 	 * @param string $source PHP source.

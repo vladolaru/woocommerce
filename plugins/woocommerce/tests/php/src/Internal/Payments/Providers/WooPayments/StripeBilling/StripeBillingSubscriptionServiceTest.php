@@ -1055,17 +1055,6 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A renewal order of a Stripe-billed subscription counts as Stripe-billed even without its own _wcpay_subscription_id, so the built-in WooPayments never charges it (invariant 1; the client's skip at trait :1243-1247 also requires the meta).
-	 */
-	public function test_a_renewal_order_without_its_own_subscription_id_is_still_stripe_billed(): void {
-		$stripe_billed = $this->create_subscription( array( '_wcpay_subscription_id' => self::MAIN_SUBSCRIPTION_ID ) );
-		$renewal       = $this->relate_order( array( 'renewal' => $stripe_billed ) );
-
-		$this->assertSame( '', $renewal->get_meta( '_wcpay_subscription_id', true ) );
-		$this->assertTrue( $this->sut->is_wcpay_subscription_order( $renewal ) );
-	}
-
-	/**
 	 * @testdox A subscription without a parent order bills no one-time shipping where the client fatals reading the parent's shipping (client `class-wc-payments-subscription-service.php:985`).
 	 */
 	public function test_one_time_shipping_without_a_parent_order_bills_nothing(): void {

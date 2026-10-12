@@ -25,10 +25,6 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose the reusable gateway IDs supported by WooPayments 10.8 subscriptions.
 	 */
 	public function test_get_reusable_gateway_ids_matches_woopayments_contract(): void {
-		if ( ! class_exists( WooPaymentsSubscriptionMethodPolicy::class ) ) {
-			$this->fail( 'The shared WooPayments subscription method policy does not exist.' );
-		}
-
 		$this->assertSame(
 			array(
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
@@ -46,10 +42,6 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	 * @param bool   $is_reusable Whether the gateway is reusable.
 	 */
 	public function test_is_reusable_gateway_id_classifies_subscription_methods( string $gateway_id, bool $is_reusable ): void {
-		if ( ! class_exists( WooPaymentsSubscriptionMethodPolicy::class ) ) {
-			$this->fail( 'The shared WooPayments subscription method policy does not exist.' );
-		}
-
 		$this->assertSame( $is_reusable, WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) );
 	}
 

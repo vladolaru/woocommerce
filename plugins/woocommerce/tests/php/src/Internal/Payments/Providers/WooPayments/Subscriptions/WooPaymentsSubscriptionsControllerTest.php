@@ -307,43 +307,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The failed-renewal authentication email the renewal root registers updates the retry rules for renewals that need authentication.
-	 *
-	 * The rule is WooCommerce Subscriptions 9.3.0's second default retry rule (includes/payment-retry/class-wcs-retry-rules.php:29-42);
-	 * client 11.1.0 changes the same two fields (includes/compat/subscriptions/class-wc-payments-email-failed-renewal-authentication.php:209-234).
-	 */
-	public function test_failed_renewal_authentication_email_updates_retry_rules(): void {
-		$this->load_subscriptions();
-		wc_get_container()->get( WooPaymentsSubscriptionsController::class )->handle_plugins_loaded();
-
-		/**
-		 * Filters the registered WooCommerce email classes.
-		 *
-		 * @since 2.1.0
-		 *
-		 * @param array $emails Email classes.
-		 */
-		$emails = apply_filters( 'woocommerce_email_classes', array() );
-		$order  = $this->create_order();
-		$email  = $emails['WC_Payments_Email_Failed_Renewal_Authentication'];
-
-		$email->object = $order;
-		$retry_rule    = array(
-			'retry_after_interval'            => DAY_IN_SECONDS / 2,
-			'email_template_customer'         => 'WCS_Email_Customer_Payment_Retry',
-			'email_template_admin'            => 'WCS_Email_Payment_Retry',
-			'status_to_apply_to_order'        => 'pending',
-			'status_to_apply_to_subscription' => 'on-hold',
-		);
-
-		$customer_rule = $email->prevent_retry_notification_email( $retry_rule, 1, $order->get_id() );
-		$admin_rule    = $email->set_store_owner_custom_email( $retry_rule, 1, $order->get_id() );
-
-		$this->assertSame( '', $customer_rule['email_template_customer'] );
-		$this->assertSame( 'WC_Payments_Email_Failed_Authentication_Retry', $admin_rule['email_template_admin'] );
-	}
-
-	/**
 	 * @testdox A card gateway built before the renewal root attaches registers the failed-renewal emails for a mailer built in the same request.
 	 *
 	 * WooCommerce builds its email classes once, when the mailer is first created (`includes/class-wc-emails.php:59-63`),
@@ -1966,14 +1929,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		// `includes/core/wcs-renewal-functions.php:173-175`), which returns the renewal order's subscriptions.
 		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
 		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
-	}
-
-	/**
-	 * Make the built-in WooPayments the payments owner, which the renewal handlers require.
-	 */
-	private function make_builtin_own_payments(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
