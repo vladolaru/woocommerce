@@ -308,13 +308,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return;
 		}
 
-		$is_woopayments_order = WooPaymentsPersistenceVocabulary::GATEWAY_ID === $order->get_payment_method();
-		$mode                 = $is_woopayments_order ? $order->get_meta( '_wcpay_mode', true ) : null;
-		if ( $has_cached_one_and_done_eligibility && WooPaymentsOrderMode::TEST !== $mode ) {
+		$payment_method = $order->get_payment_method();
+		$mode           = WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $payment_method ) ? $order->get_meta( '_wcpay_mode', true ) : null;
+		if ( $has_cached_one_and_done_eligibility && ! ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $payment_method && WooPaymentsOrderMode::TEST === $mode ) ) {
 			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
 		}
 
-		if ( $has_live_sale || ! $is_woopayments_order || WooPaymentsOrderMode::PRODUCTION !== $mode ) {
+		if ( $has_live_sale || WooPaymentsOrderMode::PRODUCTION !== $mode ) {
 			return;
 		}
 

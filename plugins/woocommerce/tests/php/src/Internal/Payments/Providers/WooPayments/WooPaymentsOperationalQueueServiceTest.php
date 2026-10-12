@@ -129,13 +129,17 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A live WooPayments paid-status transition records the sale and invalidates cached post-KYC eligibility.
+	 * @testWith ["woocommerce_payments"]
+	 *           ["woocommerce_payments_ideal"]
+	 *
+	 * @param string $payment_method WooPayments gateway ID stored on the order.
 	 */
-	public function test_live_woopayments_order_status_transition_invalidates_post_kyc_eligibility(): void {
+	public function test_live_woopayments_order_status_transition_invalidates_post_kyc_eligibility( string $payment_method ): void {
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$service->register();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_payment_method( $payment_method );
 		// Plugin 11.1.0 `maybe_record_first_live_sale()` matches `Order_Mode::PRODUCTION` (class-wc-payments-order-service.php:305).
 		$order->update_meta_data( '_wcpay_mode', 'prod' );
 		$order->save();
@@ -183,6 +187,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1', OrderStatus::PROCESSING ),
 			'alternate gateway order with negative cache' => array( 'cod', '', '0', OrderStatus::COMPLETED ),
+			// Client 11.1.0 keeps the cache only for a test-mode card gateway order (admin/attach-rate/class-wc-payments-one-and-done-notice.php:103-106).
+			'test-mode iDEAL order with positive cache'   => array( 'woocommerce_payments_ideal', 'test', '1', OrderStatus::PROCESSING ),
 		);
 	}
 
