@@ -995,6 +995,58 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A dispute created event retried after the dispute closed ($status) leaves the order off hold with no open dispute.
+	 * @testWith ["won", "dp_created_retry_won", "needs_response"]
+	 *           ["warning_closed", "dp_created_retry_inquiry", "warning_needs_response"]
+	 *
+	 * The first created delivery fails writing its note, after the hold, the close lands, and the store's retry of the created
+	 * event runs last. Stripe closes a dispute as won, lost or prevented and an inquiry as warning_closed
+	 * (https://docs.stripe.com/api/disputes/object#dispute_object-status).
+	 *
+	 * @param string $status         Closing status.
+	 * @param string $dispute_id     Dispute ID.
+	 * @param string $created_status Status the created event carries.
+	 */
+	public function test_dispute_created_retried_after_the_close_does_not_reopen_it( string $status, string $dispute_id, string $created_status ): void {
+		$order = $this->create_disputable_order();
+		$order->update_meta_data( '_charge_id', 'ch_created_retry' );
+		$order->save();
+		$created    = array_merge( $this->get_created_event_object( $dispute_id, $created_status ), array( 'charge' => 'ch_created_retry' ) );
+		$thrown     = 0;
+		$throw_once = static function ( array $note_data ) use ( &$thrown, $dispute_id ): array {
+			if ( false !== strpos( (string) ( $note_data['comment_content'] ?? '' ), $dispute_id ) && 0 === $thrown++ ) {
+				throw new RuntimeException( 'Note write failed.' );
+			}
+
+			return $note_data;
+		};
+		add_filter( 'woocommerce_new_order_note_data', $throw_once );
+
+		$caught = null;
+		try {
+			$this->sut->process( 'charge.dispute.created', $created );
+		} catch ( RuntimeException $exception ) {
+			$caught = $exception;
+		}
+		remove_filter( 'woocommerce_new_order_note_data', $throw_once );
+		$this->sut->process(
+			'charge.dispute.closed',
+			array(
+				'id'     => $dispute_id,
+				'charge' => 'ch_created_retry',
+				'status' => $status,
+			)
+		);
+		$this->sut->process( 'charge.dispute.created', $created );
+
+		$this->assertInstanceOf( RuntimeException::class, $caught, 'The first created delivery fails.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertNotSame( 'on-hold', $order->get_status() );
+		$this->assertSame( '', $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+	}
+
+	/**
 	 * @testdox A lost dispute close retried after an error left its refund behind records one refund.
 	 *
 	 * wc_create_refund() deletes the refund it saved only when a hook throws an Exception (includes/wc-order-functions.php:749-754),

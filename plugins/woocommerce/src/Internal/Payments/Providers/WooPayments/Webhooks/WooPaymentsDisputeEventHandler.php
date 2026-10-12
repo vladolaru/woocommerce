@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicit
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -47,6 +48,14 @@ class WooPaymentsDisputeEventHandler {
 	 * @var string
 	 */
 	private const LOST_DISPUTE_ID_REFUND_META_KEY = '_wcpay_dispute_id';
+
+	/**
+	 * Statuses that close a dispute (won, lost, prevented) or an inquiry (warning_closed), as Stripe sends them with
+	 * charge.dispute.closed (https://docs.stripe.com/api/disputes/object#dispute_object-status).
+	 *
+	 * @var string[]
+	 */
+	private const CLOSING_STATUSES = array( 'won', 'lost', 'prevented', 'warning_closed' );
 
 	/**
 	 * WooPayments API client.
@@ -189,6 +198,12 @@ class WooPaymentsDisputeEventHandler {
 			$event_object,
 			$charge_id,
 			function ( WC_Order $order ) use ( $note, $dispute_id, $status, $note_type ): bool {
+				// A created event retried after the dispute closed finds the closed note and changes nothing, so the order is not put
+				// back on hold for a dispute that is over.
+				if ( $this->has_dispute_closed_note( $order, $dispute_id ) ) {
+					return false;
+				}
+
 				return $this->add_dispute_order_note_once(
 					$order,
 					$note,
@@ -735,10 +750,45 @@ class WooPaymentsDisputeEventHandler {
 		return $this->order_note_service->add_note_once(
 			$order,
 			$note,
-			'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type,
+			self::get_dispute_note_identity( $dispute_id, $event_status, $note_type ),
 			array(),
 			$before_add
 		);
+	}
+
+	/**
+	 * Tell whether the order has the closed note of a dispute, whatever status closed it.
+	 *
+	 * @param WC_Order $order      Order object.
+	 * @param string   $dispute_id Dispute ID.
+	 * @return bool
+	 */
+	private function has_dispute_closed_note( WC_Order $order, string $dispute_id ): bool {
+		if ( '' === $dispute_id ) {
+			return false;
+		}
+
+		$order_payment_notes = wc_get_container()->get( OrderPaymentNotes::class );
+		foreach ( self::CLOSING_STATUSES as $status ) {
+			$note_type = 0 === strpos( $status, 'warning_' ) ? 'closed_inquiry' : 'closed_dispute';
+			if ( 0 < $order_payment_notes->find_by_identity( $order, self::get_dispute_note_identity( $dispute_id, $status, $note_type ), $this->persistence_vocabulary ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the identity of a dispute note.
+	 *
+	 * @param string $dispute_id   Dispute ID.
+	 * @param string $event_status Dispute status the event carries.
+	 * @param string $note_type    Note type.
+	 * @return string
+	 */
+	private static function get_dispute_note_identity( string $dispute_id, string $event_status, string $note_type ): string {
+		return 'dispute:' . $dispute_id . '|' . $event_status . '|' . $note_type;
 	}
 
 	/**
