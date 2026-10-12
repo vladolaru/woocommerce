@@ -9,12 +9,15 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Crypto\CryptoCheck;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Crypto\CryptoCheckBody;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\CaptureReader;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\HeldSettlement;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Order\RefundLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Reconcile\Reconciler;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CryptoCheckMarker;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\ContextBearer;
@@ -132,6 +135,21 @@ return array(
 			$container->get( 'collecting.state' ),
 			$container->get( 'collecting.transport' ),
 			$container->get( 'woocommerce.logger.woocommerce' )
+		);
+	},
+	'collecting.pwc-check-marker'             => static function ( ContainerInterface $container ): CryptoCheckMarker {
+		return new CryptoCheckMarker( $container->get( 'collecting.options' ) );
+	},
+	// Started only by an operator, from WP-CLI; the Orders endpoint is built when the check sends.
+	'collecting.crypto-check'                 => static function ( ContainerInterface $container ): CryptoCheck {
+		return new CryptoCheck(
+			$container->get( 'collecting.connection-state' ),
+			$container->get( 'collecting.transport' ),
+			new CryptoCheckBody( $container->get( 'wcgateway.builder.experience-context' ) ),
+			$container->get( 'collecting.pwc-check-marker' ),
+			static function () use ( $container ) {
+				return $container->get( 'api.endpoint.orders' );
+			}
 		);
 	},
 	'collecting.reconciler'                   => static function ( ContainerInterface $container ): Reconciler {

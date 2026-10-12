@@ -336,8 +336,8 @@ class CollectingState {
 	 * A takeover or a disabled gateway keeps the state while orders are still held for the payee, so they can be
 	 * settled later; the state is deleted once none are held. A first-party connection always deletes it, and the
 	 * platform connection with it, held orders or not: first-party credentials win over everything. An unknown reason is
-	 * refused. Deleting the state also deletes the platform apps' cached tokens and the owner row, which implies a platform
-	 * state was present and has not been abandoned since.
+	 * refused. Deleting the state also deletes the platform apps' cached tokens, the Pay with Crypto check answer and the
+	 * owner row, which implies a platform state was present and has not been abandoned since.
 	 *
 	 * @since 11.3.0
 	 *
@@ -363,12 +363,13 @@ class CollectingState {
 	}
 
 	/**
-	 * Delete the collecting option, the cached seller status, the recorded runtime owner and the platform apps' cached
-	 * tokens, which only the collecting state used.
+	 * Delete the collecting option, the cached seller status, the Pay with Crypto check answer, the recorded runtime owner
+	 * and the platform apps' cached tokens, which only the collecting state used.
 	 */
 	private function delete_collecting_state(): void {
 		delete_option( Options::COLLECTING );
 		delete_option( Options::SELLER_STATUS );
+		delete_option( Options::PWC_CHECK );
 		delete_option( PayPalWalletBootstrap::LAST_OWNER_OPTION );
 		PerAppBearer::forget_stored_tokens();
 	}

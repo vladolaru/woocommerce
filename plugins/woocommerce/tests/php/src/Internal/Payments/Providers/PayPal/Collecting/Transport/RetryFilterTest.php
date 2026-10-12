@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collec
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CryptoCheckMarker;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\BearerRetryFilter;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport\DirectPlatformTransport;
@@ -137,6 +138,7 @@ class RetryFilterTest extends WalletTestCase {
 				'collecting.transport'           => $this->transport(),
 				'collecting.order-app-context'   => $this->context,
 				'collecting.state'               => new CollectingState( new Options(), new FixedHeldOrders( 0 ) ),
+				'collecting.pwc-check-marker'    => new CryptoCheckMarker( new Options() ),
 				'woocommerce.logger.woocommerce' => new NullLogger(),
 			)
 		);

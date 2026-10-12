@@ -7,7 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CryptoCheckCommand;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\ReconcileCommand;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Crypto\CryptoRefusalListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Email\EmailTriggers;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PayWithCryptoGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
@@ -92,7 +94,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 	 * signs a capture refund, a crypto order creation and the platform app's reads for the connected seller, the listeners
 	 * that pin each order to its app and enter it for the order's calls, the ones that record a held capture and claim the first
 	 * order, the reconcile, the admin emails, the filters that name the payee and the settings app's collecting data.
-	 * Pay with Crypto is kept off the gateway list while the store collects.
+	 * Pay with Crypto is kept off the gateway list while the store collects, and recorded as not available once platform
+	 * connected when PayPal refuses a checkout's crypto order for the payment source.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -132,6 +135,10 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 			// A Pay with Crypto order is pinned by the save that writes its PayPal order ID; the gateway has no seam.
 			add_action( 'woocommerce_before_order_object_save', array( $listeners, 'handle_woocommerce_before_order_object_save' ) );
 			add_action( 'woocommerce_paypal_payments_after_order_processor', array( $listeners, 'handle_woocommerce_paypal_payments_after_order_processor' ), self::LEAVE_CONTEXT_PRIORITY, 0 );
+
+			// A checkout's crypto order that PayPal refuses for the payment source records Pay with Crypto as not available.
+			$crypto_refusals = new CryptoRefusalListener( $connection_state, $transport, $container->get( 'collecting.pwc-check-marker' ), $logger );
+			add_action( 'http_api_debug', array( $crypto_refusals, 'handle_http_api_debug' ), 10, 5 );
 
 			// The order screen's void button reads the PayPal order, which only the order's app can do.
 			add_action( 'admin_enqueue_scripts', array( $listeners, 'handle_admin_enqueue_scripts' ), self::ORDER_SCREEN_CONTEXT_PRIORITY, 0 );
@@ -193,7 +200,8 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 
 	/**
 	 * Run the reconcile from Action Scheduler and WP-CLI, and keep it scheduled while orders are held: checked on admin
-	 * screens (at most hourly) and whenever a capture is held. The reconciler is built only when one of them runs.
+	 * screens (at most hourly) and whenever a capture is held. The reconciler is built only when one of them runs. The
+	 * Pay with Crypto check is a WP-CLI command beside it, which only an operator starts.
 	 *
 	 * @param ContainerInterface $container The service container.
 	 */
@@ -232,6 +240,25 @@ class CollectingModule implements ServiceModule, ExtendingModule, ExecutableModu
 					( new ReconcileCommand( $reconciler() ) )->reconcile( $args, $assoc_args );
 				},
 				array( 'shortdesc' => 'Read each held PayPal wallet order\'s capture from PayPal and settle it, then complete onboarding when PayPal reports it complete.' )
+			);
+			WP_CLI::add_command( // @phpstan-ignore class.notFound (WP-CLI is not installed when PHPStan runs.)
+				'wc paypal-wallet crypto-check',
+				static function ( array $args, array $assoc_args ) use ( $container ): void {
+					( new CryptoCheckCommand( $container->get( 'collecting.crypto-check' ) ) )->crypto_check( $args, $assoc_args );
+				},
+				// A closure has no docblock for WP-CLI to read, so the help text and the flag are given here.
+				array(
+					'shortdesc' => 'Create one unapproved Pay with Crypto order for the platform merchant and record whether PayPal accepts it.',
+					'synopsis'  => array(
+						array(
+							'type'        => 'flag',
+							'name'        => 'dry-run',
+							'optional'    => true,
+							'description' => 'Print the order body and send nothing.',
+						),
+					),
+					'longdesc'  => "The order is never approved and expires unpaid; its custom ID is `wc-paypal-wallet-crypto-check`. No WooCommerce order is created.\n\n## EXAMPLES\n\n    wp wc paypal-wallet crypto-check --dry-run\n    wp wc paypal-wallet crypto-check",
+				)
 			);
 		}
 	}

@@ -87,6 +87,120 @@ class ServedConnectionStatusTest extends WalletTestCase {
 	}
 
 	/**
+	 * Answer the seller status read with the given capabilities and products, and count the reads.
+	 *
+	 * @param array $capabilities The capabilities, as PayPal lists them.
+	 * @param array $products     The products, as PayPal lists them.
+	 * @return \ArrayObject The URLs of the seller status reads.
+	 */
+	private function answer_seller_status( array $capabilities, array $products = array() ): \ArrayObject {
+		$reads = new \ArrayObject();
+		$this->stub_http(
+			function ( $request, $url ) use ( $capabilities, $products, $reads ) {
+				unset( $request );
+				if ( false === strpos( (string) $url, '/merchant-integrations/' ) ) {
+					return new \WP_Error( 'unrouted', 'Unrouted' );
+				}
+				$reads[] = (string) $url;
+
+				return $this->http_response(
+					200,
+					(string) wp_json_encode(
+						array(
+							'merchant_id'  => 'M2',
+							'capabilities' => $capabilities,
+							'products'     => $products,
+						)
+					)
+				);
+			}
+		);
+
+		return $reads;
+	}
+
+	/**
+	 * @testdox Should report the platform merchant's seller type, resolved from its seller status as the wallet resolves a first-party one: $expected.
+	 * @testWith ["SEND_INVOICE", "ACTIVE", "business"]
+	 *           ["COMMERCIAL_ENTITY", "ACTIVE", "business"]
+	 *           ["SEND_INVOICE", "INACTIVE", "unknown"]
+	 *           ["PAYPAL_CHECKOUT", "ACTIVE", "unknown"]
+	 *
+	 * @param string $capability The capability the seller status lists.
+	 * @param string $status     Its status.
+	 * @param string $expected   The seller type the settings app gets.
+	 */
+	public function test_platform_connected_store_reports_the_seller_type( string $capability, string $status, string $expected ): void {
+		$this->set_platform_connected();
+		$reads    = $this->answer_seller_status(
+			array(
+				array(
+					'name'   => $capability,
+					'status' => $status,
+				),
+			)
+		);
+		$endpoint = $this->boot()->get( 'settings.rest.common' );
+
+		foreach ( array( $endpoint->get_details(), $endpoint->get_merchant_details() ) as $response ) {
+			$this->assertSame( $expected, $response->get_data()['merchant']['sellerType'] );
+		}
+		$this->assertCount( 1, $reads, 'One seller status read, cached for the second load' );
+		$this->assertStringEndsWith( '/merchant-integrations/M2', $reads[0] );
+		$this->assertSame( array(), $this->stored_wallet_options(), 'No woocommerce-ppcp-* option is written' );
+	}
+
+	/**
+	 * @testdox Should report a business seller from a subscribed PPCP_CUSTOM product, as the probe's platform merchant lists it.
+	 */
+	public function test_platform_connected_store_reports_business_from_the_custom_product(): void {
+		$this->set_platform_connected();
+		$this->answer_seller_status(
+			array(),
+			array(
+				array(
+					'name'           => 'PPCP_CUSTOM',
+					'vetting_status' => 'SUBSCRIBED',
+				),
+			)
+		);
+
+		$this->assertSame( 'business', $this->boot()->get( 'settings.rest.common' )->get_merchant_details()->get_data()['merchant']['sellerType'] );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's unknown seller type when the seller status cannot be read.
+	 */
+	public function test_platform_connected_store_keeps_unknown_when_the_read_fails(): void {
+		$this->set_platform_connected();
+
+		$merchant = $this->boot()->get( 'settings.rest.common' )->get_merchant_details()->get_data()['merchant'];
+
+		$this->assertSame( 'unknown', $merchant['sellerType'] );
+		$this->assertTrue( $merchant['isConnected'], 'The rest of the details stay' );
+	}
+
+	/**
+	 * @testdox Should keep the wallet's seller type, and read no seller status, on a collecting store.
+	 */
+	public function test_collecting_store_keeps_the_wallets_seller_type(): void {
+		$this->set_collecting();
+		$reads = $this->answer_seller_status(
+			array(
+				array(
+					'name'   => 'SEND_INVOICE',
+					'status' => 'ACTIVE',
+				),
+			)
+		);
+
+		$merchant = $this->boot()->get( 'settings.rest.common' )->get_merchant_details()->get_data()['merchant'];
+
+		$this->assertSame( 'unknown', $merchant['sellerType'] );
+		$this->assertCount( 0, $reads );
+	}
+
+	/**
 	 * @testdox Should report a production platform connection as not sandbox.
 	 */
 	public function test_platform_connected_store_reports_a_production_environment(): void {

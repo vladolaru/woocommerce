@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Transport;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Crypto\CryptoCreateAnswer;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
 use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
@@ -43,11 +44,6 @@ final class AssertedRefundSigner {
 	 * The path of a capture refund under the API host.
 	 */
 	private const REFUND_PATH = '#^v2/payments/captures/[^/?]+/refund/?$#';
-
-	/**
-	 * The path of an order creation under the API host, without its query string.
-	 */
-	private const CREATE_ORDER_PATH = '#^v2/checkout/orders/?$#';
 
 	/**
 	 * The paths of an order read and a capture read under the API host, without their query string.
@@ -257,25 +253,11 @@ final class AssertedRefundSigner {
 					return true;
 				}
 
-				return 1 === preg_match( self::CREATE_ORDER_PATH, explode( '?', $path, 2 )[0] ) && self::has_crypto_payment_source( $args );
+				// The check and the checkout re-check read PayPal's answer for exactly the creations signed here.
+				return CryptoCreateAnswer::is_crypto_create( $url, $args, $this->transport );
 			}
 		}
 
 		return false;
-	}
-
-	/**
-	 * Whether a request's JSON body names the crypto payment source, as the Pay with Crypto gateway builds it.
-	 *
-	 * @param array $args The request arguments.
-	 * @return bool
-	 */
-	private static function has_crypto_payment_source( array $args ): bool {
-		if ( ! is_string( $args['body'] ?? null ) ) {
-			return false;
-		}
-		$body = json_decode( $args['body'], true );
-
-		return is_array( $body ) && is_array( $body['payment_source'] ?? null ) && array_key_exists( 'crypto', $body['payment_source'] );
 	}
 }

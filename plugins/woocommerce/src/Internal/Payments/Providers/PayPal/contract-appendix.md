@@ -468,6 +468,7 @@ Names held in constants (options, transient and lock-row prefixes, order and use
 - `woocommerce_paypal_wallet_collecting`
 - `woocommerce_paypal_wallet_first_order`
 - `woocommerce_paypal_wallet_platform`
+- `woocommerce_paypal_wallet_pwc_check`
 - `woocommerce_paypal_wallet_reconcile`
 - `woocommerce_paypal_wallet_webhooks`
 
@@ -477,9 +478,10 @@ Names built or returned at runtime (transient prefixes per platform app, the las
 - `wc_paypal_wallet_last_webhook`
 - `wc_paypal_wallet_rate_`
 
-Dash-named identifiers (the Action Scheduler group, the Home task ID, which core stores in its task-list options, the Inbox note name and the log source):
+Dash-named identifiers (the Action Scheduler group, the Home task ID, which core stores in its task-list options, the Inbox note name, the log source and the custom ID of the Pay with Crypto check order, which PayPal stores on that order):
 
 - `wc-paypal-wallet`
+- `wc-paypal-wallet-crypto-check`
 - `wc-paypal-wallet-setup`
 - `wc-paypal-wallet-setup-required`
 - `woocommerce-paypal-wallet`
@@ -496,6 +498,7 @@ REST namespace and routes (all `manage_woocommerce`):
 WP-CLI commands:
 
 - `wc paypal-wallet collect`
+- `wc paypal-wallet crypto-check`
 - `wc paypal-wallet reconcile`
 
 Script data:

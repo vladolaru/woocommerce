@@ -13,6 +13,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\MerchantlessPartnersEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformPWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedAuthenticationRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedCommonRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedOnboardingRestEndpoint;
@@ -35,6 +36,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\En
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\SettingsRestEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Endpoint\WebhookSettingsEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\Environment;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Helper\PWCProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Processor\RefundProcessor;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\IncomingWebhookEndpoint;
 use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Webhooks\WebhookRegistrar;
@@ -137,8 +139,8 @@ return array(
 
 		return new PlatformServedOnboardingRestEndpoint( $c->get( 'settings.data.onboarding' ), $c->get( 'collecting.connection-state' ) );
 	},
-	// The settings app's "Connection status" block names the platform merchant once platform connected, not the empty
-	// first-party connection.
+	// The settings app's "Connection status" block names the platform merchant and its seller type once platform
+	// connected, not the empty first-party connection.
 	'settings.rest.common'                             => static function ( CommonRestEndpoint $previous, ContainerInterface $c ): CommonRestEndpoint {
 		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
 			return $previous;
@@ -149,7 +151,8 @@ return array(
 			$c->get( 'api.endpoint.partners' ),
 			$c->get( 'settings.service.onboarding-notices' ),
 			$c->get( 'collecting.connection-state' ),
-			$c->get( 'collecting.state' )
+			$c->get( 'collecting.state' ),
+			$c->get( 'settings.service.seller-type-resolver' )
 		);
 	},
 	// The settings app always shows Disconnect; while served it writes nothing, so no woocommerce-ppcp-* data is deleted.
@@ -287,6 +290,23 @@ return array(
 				$c->get( 'collecting.webhook.onboarding-completed' ),
 			),
 			$previous
+		);
+	},
+	// The partner's view of a platform merchant never lists the crypto capability, so once platform connected every reader
+	// of the Pay with Crypto status (the merchant features, and through them the gateway, card, to-do and settings method)
+	// gets the Pay with Crypto check's answer instead.
+	'wcgateway.pwc-product-status'                     => static function ( PWCProductStatus $previous, ContainerInterface $c ): PWCProductStatus {
+		if ( ! $c->get( 'collecting.connection-state' )->is_served_by_platform() ) {
+			return $previous;
+		}
+
+		return new PlatformPWCProductStatus(
+			$c->get( 'settings.flag.is-connected' ),
+			$c->get( 'api.endpoint.partners' ),
+			$c->get( 'api.helper.failure-registry' ),
+			$c->get( 'api.helper.product-status-result-cache' ),
+			$c->get( 'collecting.connection-state' ),
+			$c->get( 'collecting.pwc-check-marker' )
 		);
 	},
 	// Refunds the lock refuses never reach PayPal. The lock reads the order, so a held order stays locked in either served

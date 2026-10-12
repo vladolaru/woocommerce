@@ -61,6 +61,8 @@ class CollectingModuleTest extends WalletTestCase {
 				'collecting.webhook.held-returned',
 				'collecting.webhook.held-pending',
 				'collecting.webhook.onboarding-completed',
+				'collecting.pwc-check-marker',
+				'collecting.crypto-check',
 				'collecting.reconciler',
 			),
 			array_keys( $services )
@@ -95,6 +97,7 @@ class CollectingModuleTest extends WalletTestCase {
 				'webhook.registrar',
 				'settings.rest.webhooks',
 				'webhook.endpoint.handler',
+				'wcgateway.pwc-product-status',
 				'wcgateway.processor.refunds',
 			),
 			array_keys( $sut->extensions() )

@@ -114,7 +114,7 @@ for expected in wc_paypal_wallet_bearer_ wc_paypal_wallet_rate_ wc_paypal_wallet
 done
 printf '%s\n' "$RUNTIME_NAMES" | list
 echo
-echo 'Dash-named identifiers (the Action Scheduler group, the Home task ID, which core stores in its task-list options, the Inbox note name and the log source):'
+echo 'Dash-named identifiers (the Action Scheduler group, the Home task ID, which core stores in its task-list options, the Inbox note name, the log source and the custom ID of the Pay with Crypto check order, which PayPal stores on that order):'
 echo
 DASH_NAMES="$( { cscan "const [A-Z_]+ *= *'wc-paypal-wallet[a-z-]*'"; cscan "'source' *=> *'woocommerce-paypal-wallet'"; cscan "WooCommerceLogger\\( *wc_get_logger\\(\\), *'woocommerce-paypal-wallet'"; } | sed -E "s/.*'([a-z-]+)'.*/\1/" | sort -u )"
 # Found by the shape of the code that holds them; if a refactor hides one, fail instead of dropping it silently.

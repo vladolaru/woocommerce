@@ -58,6 +58,16 @@ class Options {
 	public const SELLER_STATUS = 'wc_paypal_wallet_seller_status';
 
 	/**
+	 * The last answer of the Pay with Crypto check (`wp wc paypal-wallet crypto-check`): whether PayPal accepted a crypto
+	 * order for the platform merchant. It counts only while its merchant ID and environment match the platform option.
+	 * Autoloaded, since every gateway list of a platform-connected store reads it; deleted with the collecting state.
+	 * Keys: available, checked_at, environment, merchant_id.
+	 *
+	 * @since 11.3.0
+	 */
+	public const PWC_CHECK = 'woocommerce_paypal_wallet_pwc_check';
+
+	/**
 	 * Where the Inbox note stands: `added` once it exists, `actioned` once the store is connected. Absent before the note
 	 * is first added. Autoloaded, so the admin requests that check it run no query.
 	 *
@@ -80,7 +90,8 @@ class Options {
 	public const NOTE_ACTIONED = 'actioned';
 
 	/**
-	 * The options written autoloaded, which every reader answers from the autoloaded set.
+	 * The options written autoloaded, which every reader answers from the autoloaded set. The Pay with Crypto check
+	 * answer is also written autoloaded but is not listed: it is read with get_option(), and the autoload heal skips it.
 	 *
 	 * @since 11.3.0
 	 */
@@ -128,6 +139,17 @@ class Options {
 	 */
 	public function seller_status(): array {
 		return $this->read( self::SELLER_STATUS );
+	}
+
+	/**
+	 * The stored Pay with Crypto check answer, unchecked against the platform option; an empty array when none is.
+	 *
+	 * @since 11.3.0
+	 *
+	 * @return array
+	 */
+	public function pwc_check(): array {
+		return $this->read( self::PWC_CHECK );
 	}
 
 	/**
