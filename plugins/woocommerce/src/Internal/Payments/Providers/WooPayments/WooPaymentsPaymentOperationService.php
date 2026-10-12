@@ -730,7 +730,7 @@ class WooPaymentsPaymentOperationService {
 
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), '', $customer_id )
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), '', $customer_id )
 		);
 		$data    = $outcome->get_data();
 
@@ -1467,7 +1467,6 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return new WooPaymentsIntentMappingContext(
-			$order->get_id(),
 			$order->get_checkout_order_received_url(),
 			$payment_credential,
 			$fallback_customer_id,

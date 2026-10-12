@@ -3242,7 +3242,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'signup_initial_setup_future_usage' === $entry['pair'] ) )[0]['response']['body'];
 		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
 		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, true ) );
 
 		$token_service = new class() extends WooPaymentsTokenService {
@@ -3300,7 +3300,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'my_account_setup_intent_challenge_completed' === $entry['pair'] ) )[0]['response']['body'];
 		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
+			new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
 		)->with_effect_plan(
 			WooPaymentsOrderEffectPlan::for_setup_intent(
 				$intent,
@@ -3373,7 +3373,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'my_account_setup_intent_challenge_completed' === $entry['pair'] ) )[0]['response']['body'];
 		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
-			new WooPaymentsIntentMappingContext( $subscription->get_id(), $subscription->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
+			new WooPaymentsIntentMappingContext( $subscription->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
 		)->with_effect_plan(
 			WooPaymentsOrderEffectPlan::for_setup_intent(
 				$intent,
@@ -4296,7 +4296,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		// The outcome the real provider hands the gateway: the codec's mapping enriched with the order effects.
 		$service->checkout_outcome = wc_get_container()->get( WooPaymentsOrderEffectApplier::class )->enrich_outcome_for_lifecycle(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
-			WooPaymentsIntentCodec::outcome_from_intention( $intent, new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url() ) ),
+			WooPaymentsIntentCodec::outcome_from_intention( $intent, new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url() ) ),
 			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 

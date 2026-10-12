@@ -23,13 +23,6 @@ final class WooPaymentsIntentMappingContext {
 	private string $intent_type;
 
 	/**
-	 * Order ID.
-	 *
-	 * @var int
-	 */
-	private int $order_id;
-
-	/**
 	 * Order-received URL.
 	 *
 	 * @var string
@@ -67,7 +60,6 @@ final class WooPaymentsIntentMappingContext {
 	/**
 	 * Constructor.
 	 *
-	 * @param int    $order_id                 Order ID.
 	 * @param string $order_received_url       Order-received URL.
 	 * @param string $payment_credential       Submitted payment credential.
 	 * @param string $fallback_customer_id     Customer ID used for the request.
@@ -76,7 +68,6 @@ final class WooPaymentsIntentMappingContext {
 	 * @param string $provider_redirect_url    Sanitized provider redirect URL.
 	 */
 	public function __construct(
-		int $order_id,
 		string $order_received_url,
 		string $payment_credential = '',
 		string $fallback_customer_id = '',
@@ -85,7 +76,6 @@ final class WooPaymentsIntentMappingContext {
 		string $provider_redirect_url = ''
 	) {
 		$this->intent_type              = $intent_type;
-		$this->order_id                 = $order_id;
 		$this->order_received_url       = $order_received_url;
 		$this->payment_credential       = $payment_credential;
 		$this->fallback_customer_id     = $fallback_customer_id;
@@ -109,15 +99,6 @@ final class WooPaymentsIntentMappingContext {
 	 */
 	public function get_intent_type(): string {
 		return $this->intent_type;
-	}
-
-	/**
-	 * Get the order ID.
-	 *
-	 * @return int
-	 */
-	public function get_order_id(): int {
-		return $this->order_id;
 	}
 
 	/**

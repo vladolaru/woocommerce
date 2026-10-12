@@ -46,7 +46,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					),
 				),
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -72,7 +72,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'customer'       => 'cus_sepa',
 				'payment_method' => 'pm_sepa',
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 'https://example.test/order-received/42' )
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
@@ -95,7 +95,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'payment_method_types' => array( 'wechat_pay' ),
 			),
 			new WooPaymentsIntentMappingContext(
-				42,
 				'https://example.test/order-received/42',
 				'pm_request',
 				'cus_fallback',
@@ -139,7 +138,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
 			$intent,
 			new WooPaymentsIntentMappingContext(
-				42,
 				'https://example.test/order-received/42',
 				'pm_request',
 				'cus_fallback',
@@ -175,7 +173,6 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					),
 				),
 				new WooPaymentsIntentMappingContext(
-					42,
 					'https://example.test/order-received/42',
 					'',
 					'',
@@ -208,7 +205,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'multibanco_display_details' => array( 'reference' => '123 456 789' ),
 				),
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 'https://example.test/order-received/42' )
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
@@ -228,7 +225,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 					'data' => array( array( 'payment_method' => 'pm_from_charge' ) ),
 				),
 			),
-			new WooPaymentsIntentMappingContext( 42, '', 'ctoken_submitted' )
+			new WooPaymentsIntentMappingContext( '', 'ctoken_submitted' )
 		);
 
 		$this->assertSame( 'pm_from_charge', $outcome->get_payment_method_id() );
@@ -253,7 +250,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 				'status'             => 'requires_payment_method',
 				'last_payment_error' => $last_payment_error,
 			),
-			new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
+			new WooPaymentsIntentMappingContext( 'https://example.test/order-received/42' )
 		);
 
 		$data = $outcome->get_data();
@@ -339,7 +336,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 						'message'      => 'Malformed provider metadata for request req_private.',
 					),
 				),
-				new WooPaymentsIntentMappingContext( 42, 'https://example.test/order-received/42' )
+				new WooPaymentsIntentMappingContext( 'https://example.test/order-received/42' )
 			);
 		} finally {
 			restore_error_handler();

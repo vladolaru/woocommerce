@@ -475,7 +475,6 @@ class NativePaymentsShadowMode implements RegisterHooksInterface {
 	 */
 	private function get_mapping_context( WC_Order $order, array $intent ): WooPaymentsIntentMappingContext {
 		return new WooPaymentsIntentMappingContext(
-			$order->get_id(),
 			$order->get_checkout_order_received_url(),
 			(string) $order->get_meta( '_payment_method_id', true ),
 			(string) $order->get_meta( '_stripe_customer_id', true ),
