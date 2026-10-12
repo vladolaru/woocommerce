@@ -68,6 +68,9 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		WC()->countries->locale = array();
 		$this->unregister_refresh_ui_callback();
 		delete_option( 'woocommerce_currency' );
+		// Dispatching here may build the REST server, and the hooks rest_api_init added go when this test's hooks are
+		// restored. Drop the server so a later test builds a fresh one with its hooks.
+		$GLOBALS['wp_rest_server'] = null;
 		parent::tearDown();
 	}
 
