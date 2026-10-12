@@ -3245,37 +3245,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'] )
 		)->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, true ) );
 
-		$payment_operations = new class( $outcome ) extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService {
-			/**
-			 * Outcome the charge returns.
-			 *
-			 * @var PaymentOutcome
-			 */
-			private PaymentOutcome $outcome;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param PaymentOutcome $outcome Outcome the charge returns.
-			 */
-			public function __construct( PaymentOutcome $outcome ) {
-				$this->outcome = $outcome;
-			}
-
-			/**
-			 * Return the succeeded PaymentIntent without a platform request.
-			 *
-			 * @param PaymentOperationContext $context         Payment context.
-			 * @param string                  $idempotency_key Charge idempotency key.
-			 * @return PaymentOutcome
-			 */
-			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-				unset( $context, $idempotency_key );
-
-				return $this->outcome;
-			}
-		};
-		$token_service      = new class() extends WooPaymentsTokenService {
+		$token_service = new class() extends WooPaymentsTokenService {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
 			 * Fail the token save, as a failed platform payment-method fetch does.
@@ -3292,20 +3262,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 
-		$container = wc_get_container();
-		$applier   = new WooPaymentsOrderEffectApplier();
-		$applier->init(
-			$token_service,
-			$container->get( WooPaymentsOrderDataService::class ),
-			$container->get( WooPaymentsAccountService::class ),
-			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
-			$container->get( WooPaymentsPaymentMethodRegistry::class ),
-			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
-		);
-		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), null, $applier );
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( $container->get( PaymentProcessingService::class ), $provider );
+		$provider = $this->create_provider_charging( $outcome, $token_service );
+		$gateway  = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
 		$logger                        = RecordingWcLogger::install();
 
@@ -3320,6 +3279,73 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
 		$this->assertSame( array(), $order->get_payment_tokens(), 'No token is attached when it could not be saved.' );
 		$this->assertContains( 'Error when saving payment method.', array_column( $logger->lines, 1 ), 'The token-save failure is logged.' );
+	}
+
+	/**
+	 * @testdox A free-trial checkout whose card cannot be saved after its SetupIntent succeeded completes the order without a token.
+	 *
+	 * Client 11.1.0 catches the token-save failure for any authorized intent on the synchronous checkout and completes the
+	 * order (class-wc-payment-gateway-wcpay.php:2036-2067); nothing is charged on a $0 order.
+	 */
+	public function test_process_payment_completes_free_trial_order_when_token_save_fails_after_succeeded_setup_intent(): void {
+		$user_id = $this->factory()->user->create();
+		$order   = wc_create_order();
+		$order->set_customer_id( $user_id );
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_total( '0.00' );
+		$order->save();
+		// The recorded succeeded SetupIntent (Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-3ds-challenge-results.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ) => 'my_account_setup_intent_challenge_completed' === $entry['pair'] ) )[0]['response']['body'];
+		$outcome   = WooPaymentsIntentCodec::outcome_from_intention(
+			$intent,
+			new WooPaymentsIntentMappingContext( $order->get_id(), $order->get_checkout_order_received_url(), (string) $intent['payment_method'], (string) $intent['customer'], '', 'si' )
+		)->with_effect_plan(
+			WooPaymentsOrderEffectPlan::for_setup_intent(
+				$intent,
+				true,
+				array(
+					'_wcpay_intent_currency' => 'USD',
+					'_wcpay_mode'            => 'test',
+				)
+			)
+		);
+
+		// A failed platform payment-method fetch leaves no details and no token (WooPaymentsTokenService::get_bound_payment_method_details()).
+		$token_service = new class() extends WooPaymentsTokenService {
+			/**
+			 * Answer as the token service does when the platform payment-method fetch fails.
+			 *
+			 * @param string $payment_method_id              Provider payment method ID.
+			 * @param int    $user_id                         User ID.
+			 * @param bool   $include_existing_token_details Whether to retrieve details for an existing token.
+			 * @return array{token:WC_Payment_Token|null,payment_method_details:array<string,mixed>}
+			 */
+			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
+				unset( $payment_method_id, $user_id, $include_existing_token_details );
+
+				return array(
+					'token'                  => null,
+					'payment_method_details' => array(),
+				);
+			}
+		};
+
+		$provider = $this->create_provider_charging( $outcome, $token_service );
+		$gateway  = new WooPaymentsGateway();
+		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$_POST['wcpay-payment-method'] = (string) $intent['payment_method'];
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] ?? '' );
+		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not see an error notice.' );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertTrue( $order->is_paid(), 'The $0 order must complete.' );
+		$this->assertSame( (string) $intent['id'], $order->get_transaction_id() );
+		$this->assertSame( array(), $order->get_payment_tokens(), 'No token is attached when it could not be saved.' );
 	}
 
 	/**
@@ -6112,6 +6138,61 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Create the real WooPayments provider whose charge returns a fixed outcome, with the real effect applier on the given token service.
+	 *
+	 * @param PaymentOutcome          $outcome       Outcome the charge returns.
+	 * @param WooPaymentsTokenService $token_service Token service the effect applier saves tokens with.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_charging( PaymentOutcome $outcome, WooPaymentsTokenService $token_service ): WooPaymentsProvider {
+		$payment_operations = new class( $outcome ) extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService {
+			/**
+			 * Outcome the charge returns.
+			 *
+			 * @var PaymentOutcome
+			 */
+			private PaymentOutcome $outcome;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param PaymentOutcome $outcome Outcome the charge returns.
+			 */
+			public function __construct( PaymentOutcome $outcome ) {
+				$this->outcome = $outcome;
+			}
+
+			/**
+			 * Return the fixed outcome without a platform request.
+			 *
+			 * @param PaymentOperationContext $context         Payment context.
+			 * @param string                  $idempotency_key Charge idempotency key.
+			 * @return PaymentOutcome
+			 */
+			public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
+				unset( $context, $idempotency_key );
+
+				return $this->outcome;
+			}
+		};
+
+		$container = wc_get_container();
+		$applier   = new WooPaymentsOrderEffectApplier();
+		$applier->init(
+			$token_service,
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsAccountService::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ),
+			$container->get( WooPaymentsPaymentMethodRegistry::class ),
+			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
+		);
+		$provider = new WooPaymentsProvider();
+		$provider->init( $payment_operations, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), null, $applier );
+
+		return $provider;
 	}
 
 	/**
