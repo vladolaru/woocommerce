@@ -1481,6 +1481,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$renewal->save();
 
 		$GLOBALS['wcpay_test_renewal_subscription_ids'] = array( $renewal->get_id() => array( $subscription->get_id() ) );
+		// A local token the repair would attach, so the renewal is charged if the network-card guard is skipped.
+		$this->create_card_token( $customer_id, 'pm_repair_123' );
 		$filter = static fn(): bool => true;
 		add_filter( 'wcpay_force_network_saved_cards', $filter );
 
