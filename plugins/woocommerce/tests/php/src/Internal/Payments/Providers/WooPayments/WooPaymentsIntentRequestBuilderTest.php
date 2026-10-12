@@ -33,11 +33,16 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Metadata construction preserves the payment type and three-argument filter shape.
+	 * @testdox Metadata construction hands its filter the order and the payment type, as the WooPayments extension's Payment_Type, and keeps that object in the metadata.
+	 *
+	 * The filter's argument count and declared types are pinned by WooPaymentsHookArityContractTest. This test runs in a
+	 * process of its own because metadata_from_order() declares the WCPay\Constants\Payment_Type alias on first use, and
+	 * another test declaring it first would hide a missing declaration here.
+	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_metadata_hook_preserves_payment_type_and_three_argument_shape(): void {
+	public function test_metadata_hook_preserves_the_payment_type(): void {
 		$order           = wc_create_order();
 		$captured_args   = array();
 		$metadata_filter = static function ( array $metadata, WC_Order $filtered_order, $payment_type ) use ( &$captured_args ): array {
@@ -50,7 +55,6 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 
 		$metadata = WooPaymentsIntentRequestBuilder::metadata_from_order( $order, 'recurring', 'renewal' );
 
-		$this->assertCount( 3, $captured_args, 'The compatibility filter should receive three arguments.' );
 		$this->assertSame( $order, $captured_args[1] );
 		$this->assertInstanceOf( WooPaymentsPaymentType::class, $captured_args[2] );
 		$this->assertTrue( is_a( $captured_args[2], 'WCPay\\Constants\\Payment_Type' ), 'Payment type should satisfy the legacy WooPayments class name.' );

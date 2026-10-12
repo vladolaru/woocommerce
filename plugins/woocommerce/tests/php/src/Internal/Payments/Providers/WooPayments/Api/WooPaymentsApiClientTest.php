@@ -3789,8 +3789,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'id' => 'sub_read_failure' ), $result );
 		$this->assertSame( 1, $http_client->request_count );
-		$read_failures = array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] && 'Native WooPayments could not read the gateway settings; treating it as missing.' === $entry['message'] );
-		$this->assertNotEmpty( $read_failures, 'The read-failure line is written.' );
+		// One error line records the failed read (register row 297 decides the line, not its words).
+		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 'error' === $entry['level'] ), 'The read-failure line is written.' );
 		$this->assertCount( 1, array_filter( $logger->entries, static fn( array $entry ): bool => 0 === strpos( $entry['message'], 'API REQUEST (' ) ), 'The request line before the answer is written.' );
 	}
 
@@ -5029,9 +5029,11 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve admin badge count request filters.
+	 * @testdox The dispute status count request for the admin badge runs its request filter.
+	 *
+	 * The authorization summary's filter is pinned by test_get_authorizations_summary_preserves_filters_and_summary_hook.
 	 */
-	public function test_admin_badge_count_methods_preserve_request_filters(): void {
+	public function test_dispute_status_count_request_runs_its_request_filter(): void {
 		$http_client           = new FakeWooPaymentsHttpClient();
 		$http_client->blog_id  = 123;
 		$http_client->response = array(
@@ -5040,8 +5042,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			'body'     => wp_json_encode( array( 'count' => 3 ) ),
 		);
 
-		$dispute_hook_called       = false;
-		$authorization_hook_called = false;
+		$dispute_hook_called = false;
 
 		$dispute_filter = function ( WooPaymentsApiRequest $request ) use ( &$dispute_hook_called ): WooPaymentsApiRequest {
 			$dispute_hook_called = true;
@@ -5052,37 +5053,20 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			return $request;
 		};
 
-		$authorization_filter = function ( WooPaymentsApiRequest $request ) use ( &$authorization_hook_called ): WooPaymentsApiRequest {
-			$authorization_hook_called = true;
-			$this->assertSame( 'authorizations/summary', $request->get_api() );
-			$this->assertSame( 'GET', $request->get_method() );
-			$request->set_param( 'manual_capture', true );
-
-			return $request;
-		};
-
 		$sut = new WooPaymentsApiClient();
 		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
 		add_filter( 'wcpay_get_dispute_status_counts', $dispute_filter );
-		add_filter( 'wc_pay_get_authorizations_summary', $authorization_filter );
 
 		try {
 			$sut->get_dispute_status_counts();
 			$dispute_path = $http_client->last_path;
-
-			$sut->get_authorizations_summary();
-			$authorization_path = $http_client->last_path;
 		} finally {
 			remove_filter( 'wcpay_get_dispute_status_counts', $dispute_filter );
-			remove_filter( 'wc_pay_get_authorizations_summary', $authorization_filter );
 		}
 
 		$this->assertTrue( $dispute_hook_called, 'Dispute badge count requests should run the preserved request filter.' );
 		$this->assertStringContainsString( 'status_is=needs_response', $dispute_path );
 		$this->assertStringContainsString( 'test_mode=0', $dispute_path );
-		$this->assertTrue( $authorization_hook_called, 'Authorization summary requests should run the preserved request filter.' );
-		$this->assertStringContainsString( 'manual_capture=true', $authorization_path );
-		$this->assertStringContainsString( 'test_mode=0', $authorization_path );
 	}
 
 	/**
