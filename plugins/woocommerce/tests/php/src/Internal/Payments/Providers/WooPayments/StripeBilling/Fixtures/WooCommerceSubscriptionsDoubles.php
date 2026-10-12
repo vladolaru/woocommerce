@@ -243,12 +243,14 @@ final class WooCommerceSubscriptionsDoubles {
 				public static $updated_payment_methods = array();
 				public static $updated_all_payment_methods = array();
 				public static $will_update_all_payment_methods = true;
+				public static $update_all_payment_methods_result = true;
 
 				public static function reset() {
 					self::$is_request_to_change_payment = false;
 					self::$updated_payment_methods = array();
 					self::$updated_all_payment_methods = array();
 					self::$will_update_all_payment_methods = true;
+					self::$update_all_payment_methods_result = true;
 				}
 
 				public static function update_payment_method( $order, $gateway_id ) {
@@ -268,7 +270,7 @@ final class WooCommerceSubscriptionsDoubles {
 						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
 						"gateway_id" => $gateway_id,
 					);
-					return true;
+					return self::$update_all_payment_methods_result;
 				}
 			}
 			}

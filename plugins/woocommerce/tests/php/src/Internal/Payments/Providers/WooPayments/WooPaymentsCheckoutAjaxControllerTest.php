@@ -2503,10 +2503,19 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback should update WC Subscriptions after SCA change-payment confirmation.
+	 * @testdox Order-status callback should update WC Subscriptions after SCA change-payment confirmation ($_dataName).
+	 *
+	 * Client 11.1.0 tells the shopper all subscriptions changed only when Subscriptions' update-all returns true
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:1473-1479).
+	 *
+	 * @dataProvider provider_update_all_results
+	 *
+	 * @param bool   $update_all_result What Subscriptions' update-all returns.
+	 * @param string $expected_notice   Success notice the shopper sees.
 	 */
-	public function test_update_order_status_updates_subscription_payment_method_after_change_payment_confirmation(): void {
+	public function test_update_order_status_updates_subscription_payment_method_after_change_payment_confirmation( bool $update_all_result, string $expected_notice ): void {
 		$this->ensure_wcs_change_payment_gateway_double();
+		\WC_Subscriptions_Change_Payment_Gateway::$update_all_payment_methods_result = $update_all_result;
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
 
@@ -2596,7 +2605,19 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
 		);
-		$this->assertSame( array( 'Payment method updated for all your current subscriptions.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+		$this->assertSame( array( $expected_notice ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+	}
+
+	/**
+	 * Results of Subscriptions' update-all after a change where the shopper asked to update every subscription.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public function provider_update_all_results(): array {
+		return array(
+			'update-all applied' => array( true, 'Payment method updated for all your current subscriptions.' ),
+			'update-all refused' => array( false, 'Payment method updated.' ),
+		);
 	}
 
 	/**
@@ -2629,7 +2650,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$switch_order->save();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $switch_order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
 
-		$api_client    = new class() extends WooPaymentsApiClient {
+		$api_client = new class() extends WooPaymentsApiClient {
 			/**
 			 * Intent IDs fetched as PaymentIntents.
 			 *
@@ -2671,6 +2692,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 					throw new \RuntimeException( 'Unexpected setup intent ID.' );
 				}
 
+				// The fields the callback reads from a succeeded SetupIntent, as the platform returns it (recorded in
+				// Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
 				return array(
 					'id'             => 'seti_change',
 					'status'         => 'succeeded',
@@ -2679,6 +2702,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
+		// The card fields of a Stripe PaymentMethod the token is created from (https://docs.stripe.com/api/payment_methods/object#payment_method_object-card).
 		$token_service = $this->create_token_service(
 			array(
 				'pm_change' => array(
@@ -2694,6 +2718,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$sut           = $this->create_controller( $api_client, null, $token_service );
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
 
 		try {
 			$response = $sut->confirm_order_payment(
@@ -2731,6 +2756,80 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
 		);
 		$this->assertSame( array( 'Payment method updated.' ), array_column( wc_get_notices( 'success' ), 'notice' ) );
+		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
+	}
+
+	/**
+	 * @testdox Order-status callback gives the change request flag its earlier value back when a payment method change confirmation fails.
+	 *
+	 * A subscription with a recurring total whose new card cannot be saved: the confirmation refuses it inside the flag's scope.
+	 */
+	public function test_update_order_status_restores_the_change_request_flag_when_the_change_fails(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->update_meta_data( '_intent_id', 'seti_change' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				// The fields the callback reads from a succeeded SetupIntent, as the platform returns it (recorded in
+				// Fixtures/platform-3ds-challenge-results.json, pair my_account_setup_intent_challenge_completed).
+				return array(
+					'id'             => $setup_intent_id,
+					'status'         => 'succeeded',
+					'customer'       => 'cus_change',
+					'payment_method' => 'pm_change',
+				);
+			}
+		};
+		// No payment method details for pm_change, so the token cannot be created.
+		$sut = $this->create_controller( $api_client, null, $this->create_token_service() );
+		\WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment = false;
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $subscription->get_id(),
+					'intent_id'                  => 'seti_change',
+					'should_save_payment_method' => 'false',
+					'is_changing_payment'        => 'true',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+
+		$this->assertNotSame( 200, $response['status_code'], 'The change is refused.' );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+		$this->assertFalse( \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment, 'The change request flag gets its earlier value back.' );
 	}
 
 	/**
@@ -3904,11 +4003,13 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				public static $updated_payment_methods = array();
 				public static $updated_all_payment_methods = array();
 				public static $will_update_all_payment_methods = true;
+				public static $update_all_payment_methods_result = true;
 
 				public static function reset() {
 					self::$updated_payment_methods = array();
 					self::$updated_all_payment_methods = array();
 					self::$will_update_all_payment_methods = true;
+					self::$update_all_payment_methods_result = true;
 				}
 
 				public static function update_payment_method( $order, $gateway_id ) {
@@ -3928,7 +4029,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
 						"gateway_id" => $gateway_id,
 					);
-					return true;
+					return self::$update_all_payment_methods_result;
 				}
 			}
 			}

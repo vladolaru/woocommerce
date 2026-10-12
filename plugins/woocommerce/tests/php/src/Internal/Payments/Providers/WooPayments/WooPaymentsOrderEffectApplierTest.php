@@ -224,32 +224,14 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$order->set_payment_method_title( 'Card' );
 		$order->save();
 
+		// REC-CAP's manual-capture authorization, a Visa credit card ending 4242 (Fixtures/platform-manual-capture.json); the
+		// other cases change only the intent status.
+		$intent           = $this->load_recorded_fixture_body( 'platform-manual-capture.json', 'authorize_manual_capture' );
+		$intent['status'] = $intent_status;
 		$this->create_applier()->apply(
-			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_incomplete_display' ),
-			new PaymentOutcome( $outcome_status, 'pi_incomplete_display', '', 'pm_incomplete_display' ),
-			WooPaymentsOrderEffectPlan::for_payment_intent(
-				array(
-					'id'       => 'pi_incomplete_display',
-					'status'   => $intent_status,
-					'currency' => 'usd',
-					'charges'  => array(
-						'data' => array(
-							array(
-								'id'                     => 'ch_incomplete_display',
-								'payment_method_details' => array(
-									'type' => 'card',
-									'card' => array(
-										'display_brand' => 'visa',
-										'funding'       => 'credit',
-										'last4'         => '4242',
-									),
-								),
-							),
-						),
-					),
-				),
-				false
-			)
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
+			new PaymentOutcome( $outcome_status, (string) $intent['id'], '', (string) $intent['payment_method'] ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false )
 		);
 		$reloaded = wc_get_order( $order->get_id() );
 
@@ -870,7 +852,9 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				PaymentOutcome::DATA_NOTE_EQUIVALENTS => array( 'Translated successful payment note.' ),
 			)
 		);
-		$plan    = WooPaymentsOrderEffectPlan::for_payment_intent(
+		// The Stripe PaymentIntent fields the plan reads (https://docs.stripe.com/api/payment_intents/object), as in the recorded
+		// sign-up intent (Fixtures/platform-intention-subscription.json, pair signup_initial_setup_future_usage).
+		$plan = WooPaymentsOrderEffectPlan::for_payment_intent(
 			array(
 				'id'             => 'pi_paid',
 				'status'         => 'succeeded',
