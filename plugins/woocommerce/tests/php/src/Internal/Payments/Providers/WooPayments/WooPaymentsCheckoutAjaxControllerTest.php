@@ -2221,6 +2221,40 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				'WooPayments',
 				200,
 			),
+			'uppercase card type'                     => array(
+				array(
+					'id'                     => 'ch_uppercase_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'CARD',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
+			'spaced card type'                        => array(
+				array(
+					'id'                     => 'ch_spaced_card_type',
+					'payment_method'         => 'pm_native',
+					'payment_method_details' => array(
+						'type' => 'ca rd',
+						'card' => array(
+							'brand'   => 'visa',
+							'funding' => 'credit',
+							'last4'   => '4242',
+							'network' => 'visa',
+						),
+					),
+				),
+				'WooPayments',
+				200,
+			),
 			'whitespace card type'                    => array(
 				array(
 					'id'                     => 'ch_whitespace_card_type',

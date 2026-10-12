@@ -2310,7 +2310,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the checkout nonces when WooPay is disabled.
+	 * @testdox Should expose the checkout nonces and keep the WooPay flags off when WooPay is disabled.
 	 *
 	 * The order-status callback and the setup-intent request need their nonces on every store, not only where WooPay is on.
 	 */
@@ -2325,6 +2325,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertArrayHasKey( 'initWooPayNonce', $config );
+		$this->assertSame( array(), $config['woopayMinimumSessionData'] );
+		$this->assertFalse( $config['isWooPayEnabled'] );
+		$this->assertFalse( $config['isWoopayExpressCheckoutEnabled'] );
+		$this->assertFalse( $config['isWoopayFirstPartyAuthEnabled'] );
+		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
 	}
 
 	/**
