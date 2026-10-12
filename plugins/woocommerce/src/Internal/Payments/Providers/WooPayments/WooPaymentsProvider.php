@@ -552,7 +552,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Apply WooPayments display details after the generic payment lifecycle.
+	 * Apply the WooPayments effects that follow the generic payment lifecycle.
 	 *
 	 * It schedules the Fee details job when the lifecycle added the payment's success or capture note, and after a charge
 	 * it also retires the order's charge idempotency key once the outcome is definitive, through
@@ -564,14 +564,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 		$plan = $outcome->get_effect_plan();
-		if (
-			$plan instanceof WooPaymentsOrderEffectPlan
-			&& WooPaymentsOrderEffectPlan::TYPE_PAYMENT_INTENT === $plan->get_type()
-			&& PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
-		) {
-			$this->get_order_effect_applier()->apply_payment_method_display_details( $context->get_order(), $plan->get_provider_result() );
-		}
-
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && false === $plan->success_or_capture_note_existed() ) {
 			$this->get_fee_details_note_controller()->schedule_when_outcome_note_added( $context->get_order(), $outcome );
 		}

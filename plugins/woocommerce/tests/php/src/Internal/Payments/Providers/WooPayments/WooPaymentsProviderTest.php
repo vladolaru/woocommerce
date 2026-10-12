@@ -177,7 +177,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	 * (includes/payment-methods/class-upe-payment-method.php:176-182,
 	 * includes/payment-methods/Configs/Definitions/CardDefinition.php:63-64): "Card".
 	 */
-	public function test_post_lifecycle_effects_title_a_card_payment_without_a_charge_card(): void {
+	public function test_operation_effects_title_a_card_payment_without_a_charge_card(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
 		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-intention-3ds-requires-action.json' ), true );
 		$intent  = array();
@@ -195,7 +195,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		$outcome = ( new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION, (string) $intent['id'] ) )
 			->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
 
-		$this->sut->apply_post_lifecycle_effects(
+		$this->sut->apply_operation_effects(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['payment_method'] ),
 			$outcome,
 			'charge'
