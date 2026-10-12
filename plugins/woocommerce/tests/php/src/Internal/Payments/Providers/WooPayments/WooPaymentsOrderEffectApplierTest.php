@@ -472,6 +472,42 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A succeeded PaymentIntent records its own currency, not the order's.
+	 *
+	 * Client 11.1.0 stores a payment intent's currency and uses the order currency only for other intents
+	 * (class-wc-payments-order-service.php:1361); its intent model upper-cases the currency
+	 * (class-wc-payments-api-payment-intention.php:93).
+	 */
+	public function test_succeeded_payment_intent_records_the_intent_currency(): void {
+		$order = $this->create_woopayments_order( '25.00' );
+		$order->set_currency( 'EUR' );
+		$order->save();
+		$result = array(
+			'id'       => 'pi_currency_source',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'charges'  => array(
+				'data' => array(
+					array(
+						'id'                  => 'ch_currency_source',
+						'currency'            => 'usd',
+						'amount'              => 2500,
+						'balance_transaction' => array( 'id' => 'txn_currency_source' ),
+					),
+				),
+			),
+		);
+
+		$applied = $this->create_applier()->apply(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_currency_source' ),
+			new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_currency_source', '', 'pm_currency_source', 'cus_currency_source' ),
+			WooPaymentsOrderEffectPlan::for_payment_intent( $result, false )
+		);
+
+		$this->assertSame( 'USD', $applied->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ]['_wcpay_intent_currency'] );
+	}
+
+	/**
 	 * @testdox Synchronous test payments compose the test note before payment metadata persists.
 	 */
 	public function test_synchronous_test_payment_uses_test_note_before_mode_metadata_persists(): void {
@@ -1133,26 +1169,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 				return 'pm_card_identity' === $payment_method_id ? $this->payment_method_details : array();
 			}
 		};
-		$token_service          = new class() extends WooPaymentsTokenService {
-			/**
-			 * Number of calls through the explicit token resolution result method.
-			 *
-			 * @var int
-			 */
-			public int $get_or_create_token_and_details_for_user_calls = 0;
-
-			/**
-			 * @param string $payment_method_id Provider payment method ID.
-			 * @param int    $user_id           User ID.
-			 * @param bool   $include_existing_token_details Whether existing-token details are requested.
-			 * @return array{token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>}
-			 */
-			public function get_or_create_token_and_details_for_user( string $payment_method_id, int $user_id, bool $include_existing_token_details = false ): array {
-				++$this->get_or_create_token_and_details_for_user_calls;
-
-				return parent::get_or_create_token_and_details_for_user( $payment_method_id, $user_id, $include_existing_token_details );
-			}
-		};
+		$token_service          = new WooPaymentsTokenService();
 		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 
 		$result = $this->create_applier( $token_service )->apply( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_identity' ), $outcome, $plan );
@@ -1171,7 +1188,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_card_identity', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertStringContainsString( '"last4":"4242"', (string) $order->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertCount( 1, $tokens );
-		$this->assertSame( 1, $token_service->get_or_create_token_and_details_for_user_calls );
+		$this->assertSame( array( reset( $tokens )->get_id() ), array_values( $order->get_payment_tokens() ) );
 		$this->assertSame( 1, $details_service->get_payment_method_details_calls );
 	}
 

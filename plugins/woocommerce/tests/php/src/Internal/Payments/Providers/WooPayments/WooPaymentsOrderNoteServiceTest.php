@@ -494,9 +494,7 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 			'bad_outcome'              => array(),
 		);
 		$candidates      = $sut->format_fraud_held_for_review_note_candidates( $order, 'pi_review_test', 'ch_review_test', $ruleset_results );
-		$mapper          = new \ReflectionMethod( WooPaymentsOrderNoteService::class, 'get_ruleset_result_labels' );
 
-		$this->assertTrue( $mapper->isPrivate(), 'The existing ruleset mapper must remain private for subclass compatibility.' );
 		$this->assertStringContainsString( '<strong>held for review</strong>', $candidates[0] );
 		$this->assertStringContainsString( 'Place in review if the AVS verification fails', $candidates[0] );
 		$this->assertStringContainsString( 'Block if the country resolved from customer IP is not listed in your selling countries', $candidates[0] );

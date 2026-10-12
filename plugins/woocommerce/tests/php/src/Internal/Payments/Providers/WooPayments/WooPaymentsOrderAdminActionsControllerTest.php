@@ -318,7 +318,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Manual capture should delegate the full order total and retain shared success effects.
+	 * @testdox Manual capture should delegate the full order total, retain shared success effects and add no failure note.
 	 */
 	public function test_manual_capture_delegates_full_order_total_and_retains_success_effects(): void {
 		$order                = $this->create_authorized_order();
@@ -349,6 +349,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( WooPaymentsPaymentOperationService::PROVIDER_DATA_CAPTURE_ON_STATUS_CHANGE, $last_capture_context->get_provider_data() );
 		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
 		$this->assert_order_has_note_containing( $order, 'Shared capture success note.' );
+		$this->assertNotContains( 'Capture authorization <strong>failed</strong> to complete.', wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' ) );
 	}
 
 	/**
