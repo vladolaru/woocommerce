@@ -332,6 +332,8 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertStringContainsString( 'klarna', $warnings[0][1], 'The line names the payment method whose promotion failed.' );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

@@ -711,6 +711,11 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $scheduler->scheduled_jobs, 'An event out of retries gets no further attempt.' );
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		// The event, its type and the retry count are only on the line itself.
+		$dropped = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] ) )[0][1];
+		foreach ( array( 'evt_exhausted', 'payment_intent.succeeded', '3 retries' ) as $fact ) {
+			$this->assertStringContainsString( $fact, $dropped );
+		}
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

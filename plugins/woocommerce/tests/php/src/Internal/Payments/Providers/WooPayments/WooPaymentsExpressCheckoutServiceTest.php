@@ -1429,7 +1429,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * Amazon Pay is offered only while `amazon_pay_payments` is exactly `active` (client 11.1.0 class-wc-payment-gateway-wcpay.php:908-913).
 	 * Client 11.1.0 gates it on that capability, never on the account fees: `can_use_amazon_pay()` (express checkout button helper :362-388)
 	 * reaches `check_base_availability()` (class-wc-payment-gateway-wcpay.php:897-947); fees only shape the settings list (:4848-4879)
-	 * and the Link note (:4835-4840).
+	 * and the checkout list filtered by fees (:4835-4840).
 	 *
 	 * @testdox Should offer Amazon Pay in every express checkout surface only while each of the WooPayments extension's availability conditions holds ($_dataName).
 	 *

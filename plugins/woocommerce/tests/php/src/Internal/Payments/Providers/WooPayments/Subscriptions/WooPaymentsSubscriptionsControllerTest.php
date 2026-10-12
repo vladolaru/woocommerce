@@ -1284,6 +1284,11 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $note_added, in_array( 'Subscription renewal failed: No saved payment method found.', $notes, true ) );
 		$repair_lines = array_keys( array_filter( $logger->contexts, static fn( array $context ): bool => $renewal->get_id() === ( $context['order_id'] ?? null ) ) );
 		$this->assertSame( $logged_exceptions, array_map( static fn( int $line ) => $logger->contexts[ $line ]['exception'] ?? null, $repair_lines ) );
+		$this->assertSame(
+			array_fill( 0, count( $repair_lines ), array( 'error', 'woopayments' ) ),
+			array_map( static fn( int $line ): array => array( $logger->lines[ $line ][0], $logger->lines[ $line ][2] ), $repair_lines ),
+			'A PHP Error from the repair is written at error level under woopayments.'
+		);
 	}
 
 	/**

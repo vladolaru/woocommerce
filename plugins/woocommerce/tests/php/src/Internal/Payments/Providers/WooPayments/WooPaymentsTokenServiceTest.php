@@ -579,7 +579,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Reusable token types: a card token saved under the WooPayments gateway, and SEPA, Link and Amazon Pay tokens
-	 * created from their provider payment method details.
+	 * created from their provider payment method details. The details carry the fields client 11.1.0 reads to build each
+	 * token: `sepa_debit.last4`, `link.email` and `billing_details.email` (includes/class-wc-payments-token-service.php:80-99).
 	 *
 	 * @return array<string,array{string,array<string,array<string,mixed>>,callable}>
 	 */
@@ -766,7 +767,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Token types whose default is mirrored to the provider customer: SEPA from its details, a card saved under the
-	 * WooPayments gateway.
+	 * WooPayments gateway. The SEPA details carry `sepa_debit.last4`, the field client 11.1.0 reads to build the token
+	 * (includes/class-wc-payments-token-service.php:81-86).
 	 *
 	 * @return array<string,array{string,array<string,array<string,mixed>>,callable}>
 	 */
