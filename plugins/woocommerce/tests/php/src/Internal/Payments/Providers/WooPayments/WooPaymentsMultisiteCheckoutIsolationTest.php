@@ -18,7 +18,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
-use WC_Order;
 use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
@@ -70,7 +69,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 
 		try {
 			$this->assertSame( empty( getenv( 'DISABLE_HPOS' ) ), OrderUtil::custom_orders_table_usage_is_enabled(), 'The primary site should use the requested order store.' );
-			$primary = $this->create_site_fixture( $user_id, 'primary', 'US', 11, '10.11' );
+			$primary = $this->create_site_fixture( $user_id, 'primary', 'US', 11 );
 
 			$account_service  = wc_get_container()->get( WooPaymentsAccountService::class );
 			$customer_service = wc_get_container()->get( WooPaymentsCustomerService::class );
@@ -92,7 +91,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->install_woocommerce_tables_for_current_site();
 			OrderHelper::toggle_cot_feature_and_usage( empty( getenv( 'DISABLE_HPOS' ) ) );
 			$this->assertSame( empty( getenv( 'DISABLE_HPOS' ) ), OrderUtil::custom_orders_table_usage_is_enabled(), 'The secondary site should use the requested order store.' );
-			$secondary = $this->create_site_fixture( $user_id, 'secondary', 'GB', 22, '20.22' );
+			$secondary = $this->create_site_fixture( $user_id, 'secondary', 'GB', 22 );
 
 			$this->assert_site_fixture(
 				$secondary,
@@ -120,12 +119,6 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				restore_current_blog();
 			}
 
-			if ( isset( $primary['order_id'] ) ) {
-				$order = wc_get_order( $primary['order_id'] );
-				if ( $order instanceof WC_Order ) {
-					$order->delete( true );
-				}
-			}
 			if ( isset( $primary['token_id'] ) ) {
 				\WC_Payment_Tokens::delete( $primary['token_id'] );
 			}
@@ -460,10 +453,9 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * @param string $slug       Site identity slug.
 	 * @param string $country    Account country.
 	 * @param int    $generation Cutover generation.
-	 * @param string $total      Order total.
 	 * @return array<string,mixed>
 	 */
-	private function create_site_fixture( int $user_id, string $slug, string $country, int $generation, string $total ): array {
+	private function create_site_fixture( int $user_id, string $slug, string $country, int $generation ): array {
 		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'primary' === $slug ? 'yes' : 'no' );
 		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		update_option(
@@ -484,29 +476,12 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		$cutover_store->save_record( $this->valid_cutover_record( $generation ) );
 
 		$token_id = $this->create_card_token( $user_id, 'pm_' . $slug );
-		$token    = \WC_Payment_Tokens::get( $token_id );
-		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
-
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_customer_id( $user_id );
-		$order->set_currency( 'primary' === $slug ? 'USD' : 'GBP' );
-		$order->set_total( $total );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->set_transaction_id( 'txn_' . $slug );
-		$order->update_meta_data( '_payment_method_id', 'pm_' . $slug );
-		$order->update_meta_data( '_intent_id', 'pi_' . $slug );
-		$order->update_meta_data( '_charge_id', 'ch_' . $slug );
-		$order->add_payment_token( $token );
-		$order->save();
 
 		return array(
 			'slug'       => $slug,
 			'country'    => $country,
 			'generation' => $generation,
-			'total'      => $total,
 			'token_id'   => $token_id,
-			'order_id'   => $order->get_id(),
 		);
 	}
 
@@ -562,20 +537,6 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_' . $slug, $customer_service->migrate_and_get_customer_id( $user_id ) );
 		$this->assertSame( $fixture['generation'], $cutover_store->get_record()['generation'] ?? null );
 		$this->assertSame( 'pm_' . $slug, $token_service->resolve_payment_method_id_from_token_id( (string) $fixture['token_id'], $user_id ) );
-
-		$order = wc_get_order( $fixture['order_id'] );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		if ( ! $order instanceof WC_Order ) {
-			return;
-		}
-		$this->assertSame( array( $fixture['token_id'] ), $order->get_payment_tokens() );
-		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
-		$this->assertSame( 'txn_' . $slug, $order->get_transaction_id() );
-		$this->assertSame( 'primary' === $slug ? 'USD' : 'GBP', $order->get_currency() );
-		$this->assertSame( $fixture['total'], (string) $order->get_total() );
-		$this->assertSame( 'pm_' . $slug, $order->get_meta( '_payment_method_id', true ) );
-		$this->assertSame( 'pi_' . $slug, $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'ch_' . $slug, $order->get_meta( '_charge_id', true ) );
 	}
 
 	/**

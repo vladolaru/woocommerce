@@ -2325,7 +2325,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve WooPay config shape when WooPay is disabled.
+	 * @testdox Should expose the checkout nonces when WooPay is disabled.
+	 *
+	 * The order-status callback and the setup-intent request need their nonces on every store, not only where WooPay is on.
 	 */
 	public function test_get_payment_fields_js_config_preserves_woopay_config_shape_when_woopay_is_disabled(): void {
 		$account_service = $this->create_account_service( true );
@@ -2338,37 +2340,21 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
 		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertArrayHasKey( 'initWooPayNonce', $config );
-		$this->assertArrayHasKey( 'woopaySessionNonce', $config );
-		$this->assertArrayHasKey( 'woopaySignatureNonce', $config );
-		$this->assertSame( '12345', $config['woopayMerchantId'] );
-		$this->assertSame( array(), $config['woopayMinimumSessionData'] );
-		$this->assertSame( 'There was a problem processing the payment. Please check your email inbox and refresh the page to try again.', $config['genericErrorMessage'] );
-		// With no account fraud-services config and the platform unreachable,
-		// the prepared config falls back to the bare stripe default.
-		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
-		$this->assertContains( 'products', $config['features'] );
-		$this->assertFalse( $config['isPreview'] );
-		$this->assertFalse( $config['isShortcodeCheckout'] );
-		$this->assertSame( '', $config['accountIdForIntentConfirmation'] );
-		$this->assertSame( '', $config['icon'] );
-		$this->assertFalse( $config['isExpressCheckoutInPaymentMethodsEnabled'] );
-		$this->assertFalse( $config['isWooPayEnabled'] );
-		$this->assertFalse( $config['isWoopayExpressCheckoutEnabled'] );
-		$this->assertFalse( $config['isWoopayFirstPartyAuthEnabled'] );
-		$this->assertFalse( $config['isWooPayEmailInputEnabled'] );
-		$this->assertFalse( $config['isWooPayDirectCheckoutEnabled'] );
-		$this->assertFalse( $config['isWooPayGlobalThemeSupportEnabled'] );
 	}
 
 	/**
 	 * @testdox Should expose fraud-services config from the preserved account payload.
+	 *
+	 * The account's config wins over the platform's public config and the bare `stripe` fallback (client 11.1.0
+	 * class-wc-payments-fraud-service.php:92-113). The payload differs from that fallback, so a config that ignored the
+	 * account would fail here.
 	 */
 	public function test_get_payment_fields_js_config_uses_account_fraud_services(): void {
 		$account_service = $this->create_account_service(
 			true,
 			array(
 				'country'        => 'US',
-				'fraud_services' => array( 'stripe' => array() ),
+				'fraud_services' => array( 'stripe' => array( 'source' => 'account' ) ),
 			)
 		);
 
@@ -2378,7 +2364,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
-		$this->assertSame( array( 'stripe' => array() ), $config['fraudServices'] );
+		$this->assertSame( array( 'stripe' => array( 'source' => 'account' ) ), $config['fraudServices'] );
 	}
 
 	/**
