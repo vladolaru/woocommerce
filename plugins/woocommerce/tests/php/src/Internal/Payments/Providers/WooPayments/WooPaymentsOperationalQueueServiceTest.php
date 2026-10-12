@@ -1469,10 +1469,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox IPP receipt email registration preserves the WooPayments email settings key and template paths.
 	 */
 	public function test_ipp_receipt_email_registration_preserves_settings_key_and_template_paths(): void {
-		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before it can be registered.' );
 		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
-		$this->assertTrue( method_exists( $service, 'add_ipp_receipt_email' ), 'Operational queue service should register the native IPP receipt email.' );
-		$emails = $service->add_ipp_receipt_email( array() );
+		$emails  = $service->add_ipp_receipt_email( array() );
 
 		$this->assertArrayHasKey( 'WC_Payments_Email_IPP_Receipt', $emails );
 		$this->assertInstanceOf( WooPaymentsIppReceiptEmail::class, $emails['WC_Payments_Email_IPP_Receipt'] );

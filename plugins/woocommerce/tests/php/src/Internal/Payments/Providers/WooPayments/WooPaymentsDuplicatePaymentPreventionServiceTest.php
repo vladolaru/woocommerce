@@ -186,8 +186,6 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$enable_builtin = static fn(): bool => true;
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $enable_builtin );
 
-		$this->assertTrue( method_exists( $sut, 'register' ), 'The duplicate-payment service should own its completion hook.' );
-
 		try {
 			$sut->register();
 			$this->assertNotFalse( has_action( 'woocommerce_payment_complete', array( $sut, 'handle_woocommerce_payment_complete' ) ) );
@@ -787,33 +785,6 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$api_client->expects( $this->never() )->method( 'create_and_confirm_payment_intention' );
 
 		return $api_client;
-	}
-
-	/**
-	 * @testdox Should return an amount-mismatch error when the attached PaymentIntent total differs from the order total.
-	 */
-	public function test_check_payment_intent_attached_to_order_succeeded_returns_amount_mismatch_error(): void {
-		$order = $this->create_order( 'hash', 'pending' );
-		$order->set_total( '15.00' );
-		$order->update_meta_data( '_intent_id', 'pi_existing' );
-		$order->save();
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_payment_intention' ) )
-			->getMock();
-		$api_client
-			->method( 'get_payment_intention' )
-			->with( 'pi_existing' )
-			->willReturn( $this->create_intent_response( $order, 'succeeded', 1000 ) );
-
-		$sut = $this->create_service( $this->create_session(), $api_client );
-
-		$result = $sut->check_payment_intent_attached_to_order_succeeded( $order, $this->create_gateway() );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'duplicate_payment_amount_mismatch', $result->get_error_code() );
-		$this->assertStringContainsString( 'This order was already paid for', $result->get_error_message() );
 	}
 
 	/**

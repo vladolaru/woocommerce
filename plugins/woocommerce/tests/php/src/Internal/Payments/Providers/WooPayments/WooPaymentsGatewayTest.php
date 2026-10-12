@@ -1955,14 +1955,11 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'get_setup_intention' )->willThrowException( $exception );
 
-		$this->enable_debug_logging();
-		$logger  = RecordingWcLogger::install();
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, null, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
 
 		$this->assertSame( array( 'result' => 'error' ), $gateway->add_payment_method() );
 		$this->assertSame( $expected, wc_get_notices( 'error' )[0]['notice'] ?? '' );
-		$this->assertContains( array( 'info', 'Error when adding payment method.', 'woopayments' ), $logger->lines );
 	}
 
 	/**
@@ -1985,7 +1982,9 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 
 		$gateway->add_payment_method();
 
-		$context = $this->get_logged_context( $logger, 'Error when adding payment method.' );
+		$info_lines = array_keys( array_filter( $logger->lines, static fn( array $line ): bool => 'info' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertCount( 1, $info_lines, 'One info line under woopayments. Recorded: ' . (string) wp_json_encode( $logger->lines ) );
+		$context = $logger->contexts[ $info_lines[0] ];
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

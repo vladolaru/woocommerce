@@ -536,7 +536,6 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 * @return object
 	 */
 	private function create_meta_box( bool $builtin_register ) {
-		$this->assertTrue( class_exists( WooPaymentsOrderFraudMetaBox::class ), 'WooPaymentsOrderFraudMetaBox should exist.' );
 
 		$meta_box = new WooPaymentsOrderFraudMetaBox();
 		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ) );

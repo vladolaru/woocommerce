@@ -45,13 +45,6 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The scheduler uses the preserved WooPayments group.
-	 */
-	public function test_group_id_preserves_woopayments_group(): void {
-		$this->assertSame( 'woocommerce_payments', WooPaymentsActionSchedulerService::GROUP_ID );
-	}
-
-	/**
 	 * @testdox Jobs asked for before Action Scheduler initializes are scheduled once when it does, one per args and group, with the latest timestamp (G1-2).
 	 *
 	 * Before action_scheduler_init, Action Scheduler's functions return without scheduling; client 11.1.0

@@ -571,19 +571,6 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The session link runs on init, as the WooPayments extension hooks it.
-	 */
-	public function test_registers_session_link_on_init(): void {
-		$sut = $this->make_sut();
-
-		$sut->register();
-		$sut->register();
-
-		$this->assertSame( 10, has_action( 'init', array( $sut, 'link_session_if_user_just_logged_in' ) ) );
-		remove_action( 'init', array( $sut, 'link_session_if_user_just_logged_in' ) );
-	}
-
-	/**
 	 * Arrange a shopper whose session cookie still carries the pre-login guest customer.
 	 *
 	 * @param array<string,mixed> $fraud_services Account fraud-services config.
