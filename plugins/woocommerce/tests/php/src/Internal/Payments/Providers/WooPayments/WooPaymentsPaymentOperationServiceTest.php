@@ -9548,7 +9548,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Re-fetches that show no expired authorization: one that fails, and one that finds the intent still capturable. The
 	 * capturable answer is the recorded authorize_manual_capture (Fixtures/platform-manual-capture.json) reduced to its ID
-	 * and status; client 11.1.0 reads only the status of this re-fetch (includes/class-wc-payment-gateway-wcpay.php:4014-4021).
+	 * and status. On these rows native reads only the re-fetched status, which client 11.1.0 also uses to decide expiry
+	 * (includes/class-wc-payment-gateway-wcpay.php:4019-4021). The client also reads the re-fetched charge and ID for its
+	 * note and answer (:4035-4036, :4056); these rows do not cover that.
 	 *
 	 * @return array<string,array{0:callable}>
 	 */

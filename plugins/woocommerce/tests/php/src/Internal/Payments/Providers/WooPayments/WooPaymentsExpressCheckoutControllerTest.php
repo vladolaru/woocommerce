@@ -394,6 +394,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->sut = $this->create_controller( true, false );
 		$this->set_checkout_shortcode_page();
 
+		$this->sut->enqueue_frontend_assets();
 		ob_start();
 		$this->sut->display_express_checkout_buttons();
 		$output = (string) ob_get_clean();
@@ -722,12 +723,13 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provide_valid_cookie_redirect_targets
-	 * @testdox Should preserve valid cookie target $target byte-for-byte and clear it exactly once.
+	 * @testdox Should preserve valid cookie target $target byte-for-byte and clear it exactly once ($_dataName).
 	 *
-	 * @param string $target      Valid cookie redirect target.
+	 * @param string $target     Valid cookie redirect target.
 	 * @param bool   $allow_host Whether the target host is explicitly allowed.
+	 * @param string $filter     Core redirect filter to reach the controller through after register(), or '' to call it directly.
 	 */
-	public function test_consume_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host ): void {
+	public function test_consume_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host, string $filter ): void {
 		$this->sut = $this->create_controller( true, true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = $target;
@@ -751,7 +753,15 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$this->assertSame( $target, $this->sut->consume_login_redirect_url( home_url( '/my-account/' ) ) );
+			if ( '' === $filter ) {
+				$result = $this->sut->consume_login_redirect_url( home_url( '/my-account/' ) );
+			} else {
+				$this->sut->register();
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Core's hook, fired as WC_Form_Handler does after login or registration.
+				$result = apply_filters( $filter, home_url( '/my-account/' ) );
+			}
+
+			$this->assertSame( $target, $result );
 			$this->assertSame( array( '' ), $cookie_values );
 		} finally {
 			if ( $allow_host && null !== $allowed_hosts ) {
@@ -763,15 +773,19 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide valid cookie redirect targets.
+	 * Provide valid cookie redirect targets. The filter rows are the shopper who logs in or registers from the express
+	 * checkout login dialog and returns to the product or cart page it stashed (WC_Form_Handler::process_login() and
+	 * process_registration()).
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,bool,string}>
 	 */
 	public function provide_valid_cookie_redirect_targets(): array {
 		return array(
-			'local absolute target retains percent escape' => array( home_url( '/checkout/?next=%2Faccount' ), false ),
-			'relative target'                              => array( '/checkout/', false ),
-			'allowed external target'                      => array( 'https://allowed.example/checkout/', true ),
+			'local absolute target retains percent escape' => array( home_url( '/checkout/?next=%2Faccount' ), false, '' ),
+			'relative target'                              => array( '/checkout/', false, '' ),
+			'allowed external target'                      => array( 'https://allowed.example/checkout/', true, '' ),
+			'product page through the login filter'        => array( home_url( '/product/beanie/' ), false, 'woocommerce_login_redirect' ),
+			'cart page through the registration filter'    => array( home_url( '/cart/' ), false, 'woocommerce_registration_redirect' ),
 		);
 	}
 

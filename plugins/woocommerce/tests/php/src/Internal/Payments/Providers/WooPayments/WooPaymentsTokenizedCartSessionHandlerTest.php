@@ -477,7 +477,9 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Send a signed tokenized session header for a session ID, as the session controller mints it.
+	 * Send a signed tokenized session header for a session ID, as the session controller mints it. It signs with the
+	 * secret core's Store API Cart-Token uses ('@' . wp_salt(), CartTokenUtils::get_cart_token_secret()), not with the
+	 * handler's own getter, so a handler secret that no longer depends on the site salt fails to load the session.
 	 *
 	 * @param string $session_id Session ID.
 	 */
@@ -488,7 +490,7 @@ class WooPaymentsTokenizedCartSessionHandlerTest extends WC_Unit_Test_Case {
 				'exp'        => time() + HOUR_IN_SECONDS,
 				'iss'        => 'woopayments/product-page',
 			),
-			WooPaymentsTokenizedCartSessionHandler::get_token_secret()
+			'@' . wp_salt()
 		);
 	}
 
