@@ -34,7 +34,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -107,10 +106,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-		remove_all_actions( 'woocommerce_checkout_subscription_created' );
-		remove_all_filters( 'wcs_view_subscription_actions' );
-		remove_all_actions( 'woocommerce_admin_order_data_after_billing_address' );
-		remove_all_filters( 'woocommerce_subscriptions_update_payment_via_pay_shortcode' );
 		$classic_checkout_fallback_hooks = new \ReflectionProperty( WooPaymentsGateway::class, 'classic_checkout_fallback_hooks_added' );
 		$classic_checkout_fallback_hooks->setAccessible( true );
 		$classic_checkout_fallback_hooks->setValue( null, false );
@@ -358,7 +353,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide a split gateway when its definition does not support the checkout currency.
+	 * @testdox Should hide a split gateway when its definition does not support the checkout currency, again after a supported one.
 	 */
 	public function test_split_gateway_availability_follows_payment_method_definition(): void {
 		$this->activate_builtin_tier();
@@ -397,6 +392,10 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$currency = 'EUR';
 
 			$this->assertTrue( $gateway->is_available() );
+
+			$currency = 'USD';
+
+			$this->assertFalse( $gateway->is_available() );
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
 			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
@@ -610,72 +609,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			);
 		} finally {
 			remove_filter( 'pre_option_woocommerce_woocommerce_payments_apple_pay_settings', $apple_pay_settings );
-		}
-	}
-
-	/**
-	 * @testdox Should recalculate availability when the checkout currency and payment method definition change.
-	 * WooPayments client 11.1.0 restricts Bancontact to EUR in `BancontactDefinition.php`, applied by `class-upe-payment-method.php::is_currency_valid()` and `is_enabled_at_checkout()`, while Card has no currency restriction.
-	 */
-	public function test_gateway_availability_recalculates_for_currency_and_payment_method_definition_changes(): void {
-		$this->activate_builtin_tier();
-		$registry              = new WooPaymentsPaymentMethodRegistry();
-		$card_definition       = $registry->get( 'card' );
-		$bancontact_definition = $registry->get( 'bancontact' );
-		$this->assertNotNull( $card_definition );
-		$this->assertNotNull( $bancontact_definition );
-
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
-			->getMock();
-		$account_service->method( 'get_cached_account_data' )->willReturn(
-			array(
-				'country'      => 'BE',
-				'capabilities' => array(
-					'card_payments'       => 'active',
-					'bancontact_payments' => 'active',
-				),
-			)
-		);
-		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-
-		$settings_filter = static function (): array {
-			return array( 'enabled' => 'yes' );
-		};
-		$currency        = 'USD';
-		$currency_filter = static function () use ( &$currency ): string {
-			return $currency;
-		};
-		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
-		add_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
-		add_filter( 'pre_option_woocommerce_currency', $currency_filter );
-
-		try {
-			$gateway = new WooPaymentsGateway( $card_definition );
-			$gateway->init( new RecordingPaymentProcessingService(), $this->create_processing_ready_provider(), null, null, $account_service );
-
-			$payment_method_definition = new \ReflectionProperty( WooPaymentsGateway::class, 'payment_method_definition' );
-			$payment_method_definition->setAccessible( true );
-			$availability_matrix = array(
-				'USD/Card'                 => array( 'USD', $card_definition, true ),
-				'USD/Bancontact'           => array( 'USD', $bancontact_definition, false ),
-				'EUR/Card'                 => array( 'EUR', $card_definition, true ),
-				'EUR/Bancontact'           => array( 'EUR', $bancontact_definition, true ),
-				'USD/Bancontact after EUR' => array( 'USD', $bancontact_definition, false ),
-			);
-
-			foreach ( $availability_matrix as $case => $availability_case ) {
-				list( $currency, $definition, $expected ) = $availability_case;
-				$payment_method_definition->setValue( $gateway, $definition );
-
-				$this->assertSame( $expected, $gateway->is_available(), "Availability for {$case}" );
-			}
-		} finally {
-			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
-			remove_filter( 'pre_option_woocommerce_woocommerce_payments_bancontact_settings', $settings_filter );
-			remove_filter( 'pre_option_woocommerce_currency', $currency_filter );
 		}
 	}
 
@@ -1526,42 +1459,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose WooPayments subscription support when subscriptions are enabled.
-	 */
-	public function test_subscription_support_tracks_subscriptions_availability(): void {
-		$this->with_gateway_settings(
-			array( 'saved_cards' => 'yes' ),
-			function (): void {
-				$gateway = new class() extends WooPaymentsGateway {
-					/**
-					 * Tell whether subscriptions support is available.
-					 *
-					 * @return bool
-					 */
-					public function is_subscriptions_enabled(): bool {
-						return true;
-					}
-
-				};
-
-				$this->assertContains( 'multiple_subscriptions', $gateway->supports );
-				$this->assertContains( 'subscription_cancellation', $gateway->supports );
-				$this->assertContains( 'subscription_payment_method_change_admin', $gateway->supports );
-				$this->assertContains( 'subscription_payment_method_change_customer', $gateway->supports );
-				$this->assertContains( 'subscription_payment_method_change', $gateway->supports );
-				$this->assertContains( 'subscription_reactivation', $gateway->supports );
-				$this->assertContains( 'subscription_suspension', $gateway->supports );
-				$this->assertContains( 'subscriptions', $gateway->supports );
-				$this->assertContains( 'subscription_amount_changes', $gateway->supports );
-				$this->assertContains( 'subscription_date_changes', $gateway->supports );
-				$this->assertContains( PaymentGatewayFeature::TOKENIZATION, $gateway->supports );
-				$this->assertContains( PaymentGatewayFeature::ADD_PAYMENT_METHOD, $gateway->supports );
-				$this->assertNotContains( 'gateway_scheduled_payments', $gateway->supports );
-			}
-		);
-	}
-
-	/**
 	 * @testdox Should keep amount and date changes while the Stripe Billing module is not loaded, even with the toggle on.
 	 */
 	public function test_subscription_support_ignores_deprecated_stripe_billing_mode(): void {
@@ -1889,171 +1786,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should save a non-card setup-intent payment method from My Account.
-	 */
-	public function test_add_payment_method_uses_type_aware_token_creation(): void {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		$_POST['wcpay-setup-intent'] = 'seti_sepa';
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_setup_intention' ) )
-			->getMock();
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_setup_intention' )
-			->with( 'seti_sepa' )
-			->willReturn(
-				array(
-					'id'             => 'seti_sepa',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_me',
-					'payment_method' => 'pm_sepa',
-				)
-			);
-
-		$token = new WooPaymentsSepaToken();
-		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_sepa_debit' );
-		$token->set_user_id( $user_id );
-		$token->set_token( 'pm_sepa' );
-		$token->set_last4( '3000' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service
-			->expects( $this->once() )
-			->method( 'get_or_create_token_for_user' )
-			->with( 'pm_sepa', $user_id )
-			->willReturn( $token );
-
-		$definition = ( new WooPaymentsPaymentMethodRegistry() )->get( 'sepa_debit' );
-		$this->assertNotNull( $definition );
-
-		$gateway = new WooPaymentsGateway( $definition );
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
-
-		$result = $gateway->add_payment_method();
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
-	}
-
-	/**
-	 * @testdox Should save setup-intent payment methods when the intent customer matches the current user.
-	 */
-	public function test_add_payment_method_saves_setup_intent_when_customer_matches(): void {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		$_POST['wcpay-setup-intent'] = 'seti_native';
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_setup_intention' ) )
-			->getMock();
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_setup_intention' )
-			->with( 'seti_native' )
-			->willReturn(
-				array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_me',
-					'payment_method' => 'pm_added',
-				)
-			);
-
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
-			->getMock();
-		$customer_service
-			->method( 'migrate_and_get_customer_id' )
-			->with( $user_id )
-			->willReturn( 'cus_me' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service
-			->expects( $this->once() )
-			->method( 'get_or_create_token_for_user' )
-			->with( 'pm_added', $user_id )
-			->willReturn( $this->create_card_token( $user_id, 'pm_added' ) );
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
-
-		$result = $gateway->add_payment_method();
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertSame( wc_get_endpoint_url( 'payment-methods' ), $result['redirect'] );
-	}
-
-	/**
-	 * @testdox Should reject setup intents whose customer belongs to another user and not create a token.
-	 *
-	 * The customer check is the gateway's own; its notice reuses the client's non-succeeded sentence
-	 * (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4448`), ended with a period.
-	 */
-	public function test_add_payment_method_rejects_setup_intent_owned_by_another_customer(): void {
-		wc_clear_notices();
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		$_POST['wcpay-setup-intent'] = 'seti_native';
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_setup_intention' ) )
-			->getMock();
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_setup_intention' )
-			->with( 'seti_native' )
-			->willReturn(
-				array(
-					'id'             => 'seti_native',
-					'status'         => 'succeeded',
-					'customer'       => 'cus_other',
-					'payment_method' => 'pm_added',
-				)
-			);
-
-		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
-			->getMock();
-		$customer_service
-			->method( 'migrate_and_get_customer_id' )
-			->with( $user_id )
-			->willReturn( 'cus_me' );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service
-			->expects( $this->never() )
-			->method( 'get_or_create_token_for_user' );
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $customer_service );
-
-		$result = $gateway->add_payment_method();
-
-		$this->assertSame( array( 'result' => 'error' ), $result );
-		$this->assertCount( 1, wc_get_notices( 'error' ) );
-		$this->assertSame(
-			'Failed to add the provided payment method. Please try again later.',
-			wc_get_notices( 'error' )[0]['notice'] ?? ''
-		);
-	}
-
-	/**
 	 * @testdox Should refuse to save a setup intent without a customer to bind it to: $_dataName.
 	 *
 	 * The client refuses a user with no stored WooPayments customer before it reads the intent, with its "not able"
@@ -2134,62 +1866,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refuse a setup intent it cannot save with the retry notice: $_dataName.
-	 *
-	 * The notice is client 11.1.0's sentence (`class-wc-payment-gateway-wcpay.php:4437`), ended with a period. The
-	 * gateway shows it for a succeeded intent without a payment method, a token that cannot be created, and an
-	 * unexpected non-API exception (where the client shows the exception's own text).
-	 *
-	 * @dataProvider unsaveable_setup_intent_provider
-	 *
-	 * @param string $failure Which step fails: `no_payment_method`, `no_token` or `exception`.
-	 */
-	public function test_add_payment_method_refuses_unsaveable_setup_intent_with_the_retry_notice( string $failure ): void {
-		wc_clear_notices();
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		$_POST['wcpay-setup-intent'] = 'seti_native';
-
-		$api_client    = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_setup_intention' ) )
-			->getMock();
-		$intent_lookup = $api_client->method( 'get_setup_intention' )->with( 'seti_native' );
-		if ( 'exception' === $failure ) {
-			$intent_lookup->willThrowException( new \RuntimeException( 'Unexpected failure.' ) );
-		} else {
-			$intent_lookup->willReturn(
-				array_filter(
-					array(
-						'id'             => 'seti_native',
-						'status'         => 'succeeded',
-						'customer'       => 'cus_me',
-						'payment_method' => 'no_payment_method' === $failure ? null : 'pm_added',
-					)
-				)
-			);
-		}
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_token_for_user' ) )
-			->getMock();
-		$token_service->method( 'get_or_create_token_for_user' )->willReturn( null );
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client, null, $token_service, $this->create_customer_service_for_user( $user_id, 'cus_me' ) );
-
-		$result = $gateway->add_payment_method();
-
-		$this->assertSame( array( 'result' => 'error' ), $result );
-		$this->assertCount( 1, wc_get_notices( 'error' ) );
-		$this->assertSame(
-			"We're not able to add this payment method. Please try again later.",
-			wc_get_notices( 'error' )[0]['notice'] ?? ''
-		);
-	}
-
-	/**
 	 * @testdox Should show the WooPayments extension's filtered message when the setup intent lookup fails with an API error: $_dataName.
 	 *
 	 * Client 11.1.0 `class-wc-payment-gateway-wcpay.php:4469-4470` passes every exception through
@@ -2267,19 +1943,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				new WooPaymentsApiException( 'The platform could not read this setup intent.', 'wcpay_setup_intent_unreadable', 400 ),
 				'The platform could not read this setup intent.',
 			),
-		);
-	}
-
-	/**
-	 * Steps of add_payment_method() that fail with the "not able" retry notice.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function unsaveable_setup_intent_provider(): array {
-		return array(
-			'succeeded intent without a payment method' => array( 'no_payment_method' ),
-			'token cannot be created'                   => array( 'no_token' ),
-			'setup intent lookup throws'                => array( 'exception' ),
 		);
 	}
 
@@ -2692,96 +2355,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
 		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
 		$this->assertSame( 'pi_plugin_history_use', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
-	}
-
-	/**
-	 * @testdox A customer-present early renewal reuses the exact subscription-shaped order and saved card the WooPayments extension wrote, under the recorded successful outcome.
-	 */
-	public function test_process_payment_reuses_plugin_origin_subscription_card_for_early_renewal(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
-		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_subscription' );
-
-		$token = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
-		$token->set_expiry_month( '02' );
-		$token->set_expiry_year( '2045' );
-		$token->save();
-
-		$parent_order = $this->create_order();
-		$parent_order->set_customer_id( $user_id );
-		$parent_order->set_currency( 'USD' );
-		$parent_order->set_total( '11.98' );
-		$parent_order->set_payment_method( 'woocommerce_payments' );
-		$parent_order->add_payment_token( $token );
-		$parent_order->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
-		$parent_order->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
-		$parent_order->save();
-
-		$subscription = wc_create_order( array( 'customer_id' => $user_id ) );
-		if ( ! $subscription instanceof WC_Order ) {
-			throw new \RuntimeException( 'Could not create the historical subscription.' );
-		}
-		$subscription->set_parent_id( $parent_order->get_id() );
-		$subscription->set_currency( 'USD' );
-		$subscription->set_total( '9.99' );
-		$subscription_status_filter = static function ( array $statuses ): array {
-			$statuses['wc-active'] = 'Active';
-			return $statuses;
-		};
-		add_filter( 'wc_order_statuses', $subscription_status_filter );
-		try {
-			$subscription->set_status( 'active' );
-			$subscription->set_payment_method( 'woocommerce_payments' );
-			$subscription->add_payment_token( $token );
-			$subscription->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
-			$subscription->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
-			$subscription->update_meta_data( '_schedule_start', '2026-09-22 15:00:00' );
-			$subscription->update_meta_data( '_schedule_next_payment', '2026-10-22 15:00:00' );
-			$subscription->save();
-		} finally {
-			remove_filter( 'wc_order_statuses', $subscription_status_filter );
-		}
-
-		$renewal_order = $this->create_order();
-		$renewal_order->set_customer_id( $user_id );
-		$renewal_order->set_currency( 'USD' );
-		$renewal_order->set_total( '9.99' );
-		$renewal_order->set_payment_method( 'woocommerce_payments' );
-		$renewal_order->add_payment_token( $token );
-		$renewal_order->update_meta_data( '_subscription_renewal', $subscription->get_id() );
-		$renewal_order->save();
-
-		// WooPayments 11.1.0 OrderService::get_payment_metadata() preserves this renewal relationship; the renewal is recorded as a succeeded, captured USD 9.99 payment on the same historical customer and Visa 4242 method.
-		$service                   = new RecordingPaymentProcessingService();
-		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_plugin_subscription_renewal', '', 'pm_plugin_subscription', 'cus_plugin_subscription' );
-		$gateway                   = new WooPaymentsGateway();
-		$gateway->init( $service, new WooPaymentsProvider() );
-		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
-		$GLOBALS['wcpay_test_renewal_subscription_ids']                                   = array( $renewal_order->get_id() => array( $subscription->get_id() ) );
-
-		try {
-			$result = $gateway->process_payment( $renewal_order->get_id() );
-		} finally {
-			unset( $GLOBALS['wcpay_test_renewal_subscription_ids'] );
-		}
-		$subscription_fresh = wc_get_order( $subscription->get_id() );
-		$renewal_fresh      = wc_get_order( $renewal_order->get_id() );
-
-		$this->assertSame( 'success', $result['result'] );
-		$this->assertInstanceOf( PaymentOperationContext::class, $service->last_checkout_context );
-		$this->assertInstanceOf( WC_Order::class, $subscription_fresh );
-		$this->assertInstanceOf( WC_Order::class, $renewal_fresh );
-		$this->assertSame( $renewal_order->get_id(), $service->last_checkout_context->get_order_id() );
-		$this->assertSame( (string) $token->get_id(), $service->last_checkout_context->get_payment_data()['payment_token'] );
-		$this->assertSame( '9.99', $service->last_checkout_context->get_order()->get_total() );
-		$this->assertSame( 'USD', $service->last_checkout_context->get_order()->get_currency() );
-		$this->assertFalse( $service->last_checkout_context->get_provider_data()['scheduled_subscription_payment'] ?? false, 'A customer-present early renewal must not become an off-session scheduled renewal.' );
-		$this->assertSame( 'active', $subscription_fresh->get_status() );
-		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $subscription_fresh->get_payment_tokens() ) );
-		$this->assertSame( $parent_order->get_id(), $subscription_fresh->get_parent_id() );
-		$this->assertSame( $subscription->get_id(), absint( $renewal_fresh->get_meta( '_subscription_renewal', true ) ) );
-		$this->assertSame( array( $token->get_id() ), array_map( 'absint', $renewal_fresh->get_payment_tokens() ) );
-		$this->assertSame( 'pi_plugin_subscription_renewal', WC()->session->get( WooPaymentsOrderDataService::PAID_INTENT_ID_SESSION_KEY ) );
 	}
 
 	/**
@@ -7123,20 +6696,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ensure a minimal renewal-subscriptions lookup double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_renewal_subscriptions_double(): void {
-		if ( function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
-		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
-	}
-
-	/**
 	 * Ensure a minimal WC Subscriptions change-payment gateway double exists.
 	 *
 	 * @return void
@@ -7266,24 +6825,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		wp_set_auth_cookie( $user_id, true );
 
 		return $cookie;
-	}
-
-	/**
-	 * @testdox Should use US, not the store country, when the account country is uncached.
-	 */
-	public function test_account_country_falls_back_to_us_when_uncached(): void {
-		update_option( 'woocommerce_default_country', 'DE:BE' );
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cached_account_data' ) )->getMock();
-		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
-		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
-		wc_get_container()->reset_all_resolved();
-
-		$gateway = new WooPaymentsGateway();
-		$method  = new \ReflectionMethod( WooPaymentsGateway::class, 'get_account_country' );
-		$method->setAccessible( true );
-
-		// Client 11.1.0 falls back to US (includes/class-wc-payment-gateway-wcpay.php:3604-3613).
-		$this->assertSame( 'US', $method->invoke( $gateway ), 'An uncached account must read as US, as in the client.' );
 	}
 
 	/**

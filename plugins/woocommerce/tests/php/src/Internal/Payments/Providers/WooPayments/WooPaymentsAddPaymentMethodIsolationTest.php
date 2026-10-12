@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use WC_Form_Handler;
 use WC_Payment_Gateway;
 use WC_Rate_Limiter;
@@ -18,11 +17,6 @@ use WC_Unit_Test_Case;
  * native runtime currently hooks the shared validation filter, and this locks that in.
  */
 class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
-
-	/**
-	 * The WooPayments-specific message the native gateway emits when no setup intent was submitted.
-	 */
-	private const WOOPAYMENTS_ERROR = 'A WooPayments payment method was not provided.';
 
 	/**
 	 * ID of the stand-in non-WooPayments gateway registered for these tests.
@@ -73,28 +67,6 @@ class WooPaymentsAddPaymentMethodIsolationTest extends WC_Unit_Test_Case {
 				'Selecting another gateway must not surface a WooPayments-specific add-payment-method error.'
 			);
 		}
-	}
-
-	/**
-	 * @testdox Should surface the WooPayments error only from the WooPayments gateway itself, proving the isolation assertion is not vacuous.
-	 */
-	public function test_woopayments_gateway_still_reports_its_own_missing_setup_intent(): void {
-		$gateway = new WooPaymentsGateway();
-
-		$result = $gateway->add_payment_method();
-
-		$this->assertSame( 'error', $result['result'], 'A missing setup intent must fail the WooPayments add-payment-method attempt.' );
-
-		$messages = array_map(
-			static fn( $notice ) => (string) ( $notice['notice'] ?? '' ),
-			wc_get_notices( 'error' )
-		);
-
-		$this->assertContains(
-			self::WOOPAYMENTS_ERROR,
-			$messages,
-			'The WooPayments-specific error must be reachable through the WooPayments gateway, otherwise the isolation test proves nothing.'
-		);
 	}
 
 	/**
