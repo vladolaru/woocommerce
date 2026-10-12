@@ -310,10 +310,7 @@ class PayWithCryptoModule implements ServiceModule, ExecutableModule {
 		add_filter( 'woocommerce_order_has_status', '__return_true' );
 
 		if ( ! wp_doing_ajax() && ! is_admin() ) {
-			$clean_url = isset( $_SERVER['REQUEST_URI'] )
-				? remove_query_arg( 'cancelled', esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) )
-				: '';
-			wp_safe_redirect( home_url( $clean_url ) );
+			wp_safe_redirect( remove_query_arg( 'cancelled', $order->get_checkout_order_received_url() ) );
 			exit;
 		}
 	}

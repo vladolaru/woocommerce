@@ -280,6 +280,34 @@ class PWCGatewayTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should redirect to a payer action link with two query arguments with its ampersand intact, not HTML-encoded.
+	 */
+	public function test_keeps_the_ampersand_of_the_payer_action_link(): void {
+		$order = $this->make_order( 'USD' );
+		$this->stub_request_parts();
+		$this->orders->shouldReceive( 'create' )->once()->andReturn(
+			array(
+				'body' => (string) wp_json_encode(
+					array(
+						'id'    => 'PAYPAL-ORDER-3',
+						'links' => array(
+							array(
+								'rel'  => 'payer-action',
+								'href' => 'https://paypal.example.test/pay?token=3&country.x=US',
+							),
+						),
+					)
+				),
+			)
+		);
+
+		$result = $this->gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( 'https://paypal.example.test/pay?token=3&country.x=US', $result['redirect'] );
+	}
+
+	/**
 	 * @testdox Should fail with the retry notice when the PayPal response carries no payer action link.
 	 */
 	public function test_fails_when_the_response_has_no_payer_action_link(): void {

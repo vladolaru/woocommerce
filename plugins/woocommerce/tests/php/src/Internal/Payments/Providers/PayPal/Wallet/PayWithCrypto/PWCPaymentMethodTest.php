@@ -78,20 +78,45 @@ class PWCPaymentMethodTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should register the ppcp-pwc-payment-method script with the asset getter's URL and the assets version.
+	 * @testdox Should register the ppcp-pwc-payment-method script with the dependencies and version of the build's asset file.
 	 */
-	public function test_registers_the_script(): void {
-		$this->asset_getter->shouldReceive( 'get_asset_url' )->with( 'pwc-payment-method.js' )->andReturn( 'https://example.test/assets/ppcp-local-alternative-payment-methods-js-pwc-payment-method.js' );
+	public function test_registers_the_script_with_the_asset_files_dependencies(): void {
+		$dir = trailingslashit( get_temp_dir() ) . 'pwc-payment-method-test-' . wp_generate_password( 8, false );
+		wp_mkdir_p( $dir );
+		$asset_file = $dir . '/ppcp-local-alternative-payment-methods-js-pwc-payment-method.asset.php';
+		file_put_contents( $asset_file, "<?php return array( 'dependencies' => array( 'react-jsx-runtime', 'wc-blocks-registry' ), 'version' => 'abc123' );" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture.
+		$asset_getter   = new AssetGetter( 'https://example.test/assets/', $dir, 'ppcp-local-alternative-payment-methods' );
+		$payment_method = new PWCPaymentMethod( $asset_getter, '1.2.3', $this->gateway );
 
-		$handles = $this->payment_method->get_payment_method_script_handles();
+		try {
+			$handles = $payment_method->get_payment_method_script_handles();
+		} finally {
+			wp_delete_file( $asset_file );
+			rmdir( $dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture.
+		}
 
 		$this->assertSame( array( 'ppcp-pwc-payment-method' ), $handles );
 		$script = wp_scripts()->query( 'ppcp-pwc-payment-method' );
 		$this->assertNotFalse( $script );
 		$this->assertSame( 'https://example.test/assets/ppcp-local-alternative-payment-methods-js-pwc-payment-method.js', $script->src );
-		$this->assertSame( '1.2.3', $script->ver );
-		$this->assertSame( array(), $script->deps );
+		$this->assertSame( array( 'react-jsx-runtime', 'wc-blocks-registry' ), $script->deps );
+		$this->assertSame( 'abc123', $script->ver );
 		$this->assertSame( array( 'group' => 1 ), $script->extra );
+	}
+
+	/**
+	 * @testdox Should register the script with no dependencies and the assets version when the build's asset file is missing.
+	 */
+	public function test_registers_the_script_with_the_fallbacks_when_the_asset_file_is_missing(): void {
+		$asset_getter   = new AssetGetter( 'https://example.test/assets/', trailingslashit( get_temp_dir() ) . 'pwc-payment-method-test-missing', 'ppcp-local-alternative-payment-methods' );
+		$payment_method = new PWCPaymentMethod( $asset_getter, '1.2.3', $this->gateway );
+
+		$payment_method->get_payment_method_script_handles();
+
+		$script = wp_scripts()->query( 'ppcp-pwc-payment-method' );
+		$this->assertNotFalse( $script );
+		$this->assertSame( array(), $script->deps );
+		$this->assertSame( '1.2.3', $script->ver );
 	}
 
 	/**

@@ -217,7 +217,7 @@ class PWCGateway extends WC_Payment_Gateway {
 
 			return array(
 				'result'   => 'success',
-				'redirect' => esc_url( $payer_action_url ),
+				'redirect' => esc_url_raw( $payer_action_url ),
 			);
 
 		} catch ( Exception $exception ) {

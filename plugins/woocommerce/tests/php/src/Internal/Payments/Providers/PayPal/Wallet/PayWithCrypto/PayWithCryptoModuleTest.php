@@ -312,6 +312,40 @@ class PayWithCryptoModuleTest extends WalletTestCase {
 	}
 
 	/**
+	 * @testdox Should send the shopper of a store installed in a subdirectory to the order-received URL, without the cancelled argument and with the subdirectory once.
+	 */
+	public function test_redirects_a_cancelled_payment_to_the_order_received_url_on_a_subdirectory_install(): void {
+		$this->run_module( true, true );
+		$home = static fn(): string => 'http://example.org/shop';
+		add_filter( 'option_home', $home );
+		add_filter( 'option_siteurl', $home );
+		$order = wc_create_order();
+		$order->set_payment_method( PWCGateway::ID );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$_SERVER['REQUEST_URI'] = '/shop/checkout/order-received/' . $order->get_id() . '/?cancelled=true&key=' . $order->get_order_key();
+		add_filter(
+			'wp_redirect',
+			static function ( $location ) {
+				throw new \RuntimeException( 'redirect:' . (string) $location ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test double.
+			}
+		);
+
+		$target = null;
+		try {
+			$this->module->handle_cancelled_local_apm( $order->get_id() );
+		} catch ( \RuntimeException $e ) {
+			$target = substr( $e->getMessage(), strlen( 'redirect:' ) );
+		}
+
+		$this->assertNotNull( $target, 'The handler redirects' );
+		$this->assertSame( $order->get_checkout_order_received_url(), $target );
+		$this->assertStringStartsWith( 'http://example.org/shop', $target );
+		$this->assertSame( 1, substr_count( $target, '/shop' ), 'The subdirectory appears once' );
+		$this->assertStringNotContainsString( 'cancelled', $target );
+	}
+
+	/**
 	 * @testdox Should leave an on-hold Pay with Crypto order alone when the cancelled URL carries another order's key.
 	 */
 	public function test_keeps_the_order_when_the_key_does_not_match(): void {

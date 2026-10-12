@@ -72,11 +72,13 @@ class PWCPaymentMethod extends AbstractPaymentMethodType {
 	 * {@inheritDoc}
 	 */
 	public function get_payment_method_script_handles(): array {
+		$asset = $this->asset_getter->get_asset_data( 'pwc-payment-method.js', $this->version );
+
 		wp_register_script(
 			'ppcp-pwc-payment-method',
 			$this->asset_getter->get_asset_url( 'pwc-payment-method.js' ),
-			array(),
-			$this->version,
+			$asset['dependencies'],
+			$asset['version'],
 			true
 		);
 
