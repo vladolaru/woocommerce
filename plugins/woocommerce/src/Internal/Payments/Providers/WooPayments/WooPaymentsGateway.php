@@ -1357,10 +1357,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$minor_unit = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
-		$amount     = (int) round( $total * ( 10 ** $minor_unit ) );
-		$minimum    = $range['min'] ?? null;
-		$maximum    = $range['max'] ?? null;
+		$amount  = WooPaymentsCurrencyUtils::amount_to_minor_units( $total, $currency );
+		$minimum = $range['min'] ?? null;
+		$maximum = $range['max'] ?? null;
 
 		return ( null === $minimum || $amount >= $minimum )
 			&& ( null === $maximum || $amount <= $maximum );
@@ -2613,7 +2612,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		wc_get_logger()->warning(
 			sprintf( 'Payment intent already succeeded; downstream %s on order #%d suppressed to preserve order status.', $failure, $order->get_id() ),
 			array(
-				'source'   => 'woopayments',
+				'source'   => WooPaymentsLogger::SOURCE,
 				'order_id' => $order->get_id(),
 			)
 		);

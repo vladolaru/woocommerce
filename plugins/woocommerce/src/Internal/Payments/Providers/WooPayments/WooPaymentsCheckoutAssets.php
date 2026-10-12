@@ -729,13 +729,7 @@ class WooPaymentsCheckoutAssets {
 		wp_enqueue_script( self::CLASSIC_SCRIPT_HANDLE );
 
 		if ( '' !== $config['fraudPreventionToken'] ) {
-			wp_register_script( WooPaymentsFraudPreventionService::TOKEN_NAME, false, array(), WC_VERSION, true );
-			wp_enqueue_script( WooPaymentsFraudPreventionService::TOKEN_NAME );
-			wp_add_inline_script(
-				WooPaymentsFraudPreventionService::TOKEN_NAME,
-				"window.wcpayFraudPreventionToken = '" . esc_js( (string) $config['fraudPreventionToken'] ) . "';",
-				'after'
-			);
+			$this->get_fraud_prevention_service()->maybe_enqueue_token_script();
 		}
 
 		if ( $this->should_expose_checkout_surface() ) {
@@ -1129,7 +1123,7 @@ class WooPaymentsCheckoutAssets {
 
 				return array(
 					'currency'        => $currency,
-					'total'           => $this->prepare_amount( (float) $order->get_total(), $currency ),
+					'total'           => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ),
 					'order_id'        => $order->get_id(),
 					'billing_country' => strtoupper( $order->get_billing_country() ),
 				);
@@ -1143,23 +1137,10 @@ class WooPaymentsCheckoutAssets {
 
 		return array(
 			'currency'        => $currency,
-			'total'           => $this->prepare_amount( $total, $currency ),
+			'total'           => WooPaymentsCurrencyUtils::amount_to_minor_units( $total, $currency ),
 			'order_id'        => 0,
 			'billing_country' => '',
 		);
-	}
-
-	/**
-	 * Convert a display amount to the provider minor-unit convention.
-	 *
-	 * @param float  $amount   Display amount.
-	 * @param string $currency Currency code.
-	 * @return int
-	 */
-	private function prepare_amount( float $amount, string $currency ): int {
-		$minor_unit = WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency );
-
-		return (int) round( $amount * ( 10 ** $minor_unit ) );
 	}
 
 	/**
