@@ -417,13 +417,14 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				true,
 				array( 'result' => 'ok' ),
 			),
+			// A global route, without the site prefix, as client 11.1.0's get_woopay_compatibility() sends it.
 			'get_woopay_compatibility'               => array(
 				static fn( WooPaymentsApiClient $sut ) => $sut->get_woopay_compatibility(),
 				false,
 				false,
 				$woopay_compat,
 				'GET',
-				'/sites/123/wcpay/woopay/compatibility',
+				'/wcpay/woopay/compatibility',
 				array( 'test_mode' => '0' ),
 				null,
 				false,

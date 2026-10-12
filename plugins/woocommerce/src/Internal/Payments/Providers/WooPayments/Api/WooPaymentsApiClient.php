@@ -834,10 +834,13 @@ class WooPaymentsApiClient {
 	/**
 	 * Retrieve WooPay extension compatibility data.
 	 *
+	 * The platform serves this route for every site, so the path carries no site ID, as in client 11.1.0
+	 * (class-wc-payments-api-client.php:2559-2565).
+	 *
 	 * @return array<string,mixed>
 	 */
 	public function get_woopay_compatibility(): array {
-		return $this->request( array(), self::WOOPAY_COMPATIBILITY_API, 'GET' );
+		return $this->request( array(), self::WOOPAY_COMPATIBILITY_API, 'GET', false );
 	}
 
 	/**
