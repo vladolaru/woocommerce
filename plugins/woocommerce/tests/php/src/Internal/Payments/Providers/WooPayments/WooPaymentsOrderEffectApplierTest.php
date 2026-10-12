@@ -1874,10 +1874,11 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A refund note-rendering failure reaches the caller.
+	 * @testdox A refund note-rendering failure reaches the caller with nothing written to the order.
 	 */
 	public function test_refund_note_rendering_failure_reaches_the_caller(): void {
 		$order        = $this->create_woopayments_order();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$result       = array(
 			'id'     => 're_retained',
 			'status' => 'succeeded',
@@ -1893,11 +1894,17 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->expectException( RuntimeException::class );
 		$this->expectExceptionMessage( 'Local refund note formatting failed.' );
 
-		$this->create_applier( null, null, null, $note_service )->apply(
-			PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ),
-			$outcome->with_effect_plan( $plan ),
-			$plan
-		);
+		try {
+			$this->create_applier( null, null, null, $note_service )->apply(
+				PaymentOperationContext::for_refund( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 2.50, 'Adjustment' ),
+				$outcome->with_effect_plan( $plan ),
+				$plan
+			);
+		} finally {
+			$stored = wc_get_order( $order->get_id() );
+			$this->assertSame( '', $stored->get_meta( '_wcpay_refund_status', true ), 'No refund status is written before the note renders.' );
+			$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
+		}
 	}
 
 	/**
