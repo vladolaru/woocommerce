@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Payment_Token;
@@ -2594,6 +2595,128 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_all_payment_methods
+		);
+	}
+
+	/**
+	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent.
+	 *
+	 * Client 11.1.0 fetches the SetupIntent for any payment method change, whatever the amount (class-wc-payment-gateway-wcpay.php:4217, 4238-4242).
+	 */
+	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
+		$this->ensure_wcs_change_payment_gateway_double();
+		WooCommerceSubscriptionsDoubles::load();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+
+		$subscription = new SubscriptionDouble();
+		$subscription->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$subscription->set_currency( 'USD' );
+		$subscription->set_total( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->set_status( 'active' );
+		$subscription->update_meta_data( '_intent_id', 'seti_change' );
+		$subscription->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+
+		$api_client    = new class() extends WooPaymentsApiClient {
+			/**
+			 * Intent IDs fetched as PaymentIntents.
+			 *
+			 * @var string[]
+			 */
+			public array $payment_intent_fetches = array();
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
+			/**
+			 * Refuse a PaymentIntent fetch, which a payment method change never needs.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 * @throws \LogicException Always.
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				$this->payment_intent_fetches[] = $intent_id;
+				throw new \LogicException( 'A payment method change must not fetch a PaymentIntent.' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Retrieve a SetupIntent.
+			 *
+			 * @param string $setup_intent_id SetupIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_setup_intention( string $setup_intent_id ): array {
+				if ( 'seti_change' !== $setup_intent_id ) {
+					throw new \RuntimeException( 'Unexpected setup intent ID.' );
+				}
+
+				return array(
+					'id'             => 'seti_change',
+					'status'         => 'succeeded',
+					'customer'       => 'cus_change',
+					'payment_method' => 'pm_change',
+				);
+			}
+		};
+		$token_service = $this->create_token_service(
+			array(
+				'pm_change' => array(
+					'id'   => 'pm_change',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '4242',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$sut           = $this->create_controller( $api_client, null, $token_service );
+
+		try {
+			$response = $sut->confirm_order_payment(
+				array(
+					'_ajax_nonce'                => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'                   => $subscription->get_id(),
+					'intent_id'                  => 'seti_change',
+					'should_save_payment_method' => 'false',
+					'is_changing_payment'        => 'true',
+				)
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] );
+		}
+		$subscription = wc_get_order( $subscription->get_id() );
+		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$token        = $tokens[0] ?? null;
+
+		$this->assertSame( array(), $api_client->payment_intent_fetches, 'The SetupIntent ID must not be fetched as a PaymentIntent.' );
+		$this->assertSame( 200, $response['status_code'] );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertInstanceOf( WC_Payment_Token_CC::class, $token );
+		$this->assertContains( $token->get_id(), $subscription->get_payment_tokens() );
+		$this->assertSame(
+			array(
+				array(
+					'order_id'   => $subscription->get_id(),
+					'gateway_id' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				),
+			),
+			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
 		);
 	}
 

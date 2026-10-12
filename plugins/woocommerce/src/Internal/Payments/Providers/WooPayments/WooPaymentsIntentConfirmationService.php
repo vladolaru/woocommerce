@@ -98,7 +98,8 @@ class WooPaymentsIntentConfirmationService {
 	 * @since 11.2.0
 	 */
 	public function confirm_intent_for_order( WC_Order $order, string $intent_id, bool $save_payment_method, bool $is_payment_method_change = false ): void {
-		$intent = 0.0 >= (float) $order->get_total()
+		// Client 11.1.0 gw:4217, 4238-4242: a payment method change confirms a SetupIntent whatever the subscription's total.
+		$intent = $is_payment_method_change || 0.0 >= (float) $order->get_total()
 			? $this->api_client->get_setup_intention( $intent_id )
 			: $this->api_client->get_payment_intention( $intent_id );
 
