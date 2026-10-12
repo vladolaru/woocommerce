@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
@@ -192,6 +193,11 @@ class WooPaymentsRefundEventHandler {
 				if ( ! $this->has_created_refund_note( $order, $linked_refund, $refund_id ) ) {
 					$this->add_note_and_metadata_for_created_refund( $order, $linked_refund, $refund_id, $balance_txn_id, $is_pending_refund );
 				}
+				return;
+			}
+
+			// A delivery retried after the platform failed or canceled the refund finds that update's note and records nothing.
+			if ( $this->has_failed_refund_note( $order, $refund_id ) ) {
 				return;
 			}
 
@@ -590,6 +596,24 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Tell whether the order has the note a failed or canceled charge.refund.updated wrote for a provider refund.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $refund_id Provider refund ID.
+	 * @return bool
+	 */
+	private function has_failed_refund_note( WC_Order $order, string $refund_id ): bool {
+		$order_payment_notes = wc_get_container()->get( OrderPaymentNotes::class );
+		foreach ( array( 'failed', 'canceled' ) as $note_type ) {
+			if ( 0 < $order_payment_notes->find_by_identity( $order, 'refund:' . $refund_id . ':' . $note_type, $this->persistence_vocabulary ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

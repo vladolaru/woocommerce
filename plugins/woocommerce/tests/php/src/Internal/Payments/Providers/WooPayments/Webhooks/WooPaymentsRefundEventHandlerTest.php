@@ -1316,6 +1316,38 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge.refunded retried after its refund was $status records no refund and keeps the failed status.
+	 * @testWith ["failed", "insufficient_funds"]
+	 *           ["canceled", ""]
+	 *
+	 * The first charge.refunded delivery failed before it wrote anything, and the charge.refund.updated for the same refund
+	 * landed before the store's retry. The Refund object fields are Stripe's (https://docs.stripe.com/api/refunds/object).
+	 *
+	 * @param string $status         Refund status the update reports.
+	 * @param string $failure_reason Refund failure reason.
+	 */
+	public function test_charge_refunded_retried_after_its_refund_failed_records_no_refund( string $status, string $failure_reason ): void {
+		$order  = $this->create_refundable_order();
+		$update = array(
+			'id'       => 're_123',
+			'charge'   => 'ch_123',
+			'amount'   => 400,
+			'currency' => 'usd',
+			'status'   => $status,
+		);
+		if ( '' !== $failure_reason ) {
+			$update['failure_reason'] = $failure_reason;
+		}
+
+		$this->sut->process( 'charge.refund.updated', $update );
+		$this->sut->process( 'charge.refunded', $this->get_successful_refund_charge() );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertCount( 0, $order->get_refunds() );
+		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
+	}
+
+	/**
 	 * @testdox A charge.refunded event on a charge two orders share refunds the order created last, whatever their IDs.
 	 *
 	 * Client 11.1.0 finds a charge's order with the wc_get_orders() defaults, the newest by creation date
