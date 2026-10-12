@@ -2599,9 +2599,11 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent.
+	 * @testdox Order-status callback confirms a 3DS payment method change on a subscription with a recurring total through its SetupIntent, leaving its failed switch order unpaid.
 	 *
 	 * Client 11.1.0 fetches the SetupIntent for any payment method change, whatever the amount (class-wc-payment-gateway-wcpay.php:4217, 4238-4242).
+	 * Completing it must not pay the subscription's newest unpaid order: WooCommerce Subscriptions 9.0.1 skips that only while the
+	 * change request flag is set (includes/core/class-wc-subscription.php:2025-2041).
 	 */
 	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
 		$this->ensure_wcs_change_payment_gateway_double();
@@ -2620,6 +2622,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->update_meta_data( '_intent_id', 'seti_change' );
 		$subscription->save();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ] = array( $subscription->get_id() );
+		$switch_order = $this->create_woopayments_order( '20.00' );
+		$switch_order->set_status( 'failed' );
+		$switch_order->save();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $switch_order->get_id() => array( 'switch' => array( $subscription->get_id() ) ) );
 
 		$api_client    = new class() extends WooPaymentsApiClient {
 			/**
@@ -2704,6 +2710,10 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$tokens       = array_values( WC_Payment_Tokens::get_customer_tokens( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
 		$token        = $tokens[0] ?? null;
 
+		$switch_order = wc_get_order( $switch_order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $switch_order );
+		$this->assertSame( 'failed', $switch_order->get_status(), 'A payment method change must not pay the failed switch order.' );
+		$this->assertSame( '', $switch_order->get_transaction_id() );
 		$this->assertSame( array(), $api_client->payment_intent_fetches, 'The SetupIntent ID must not be fetched as a PaymentIntent.' );
 		$this->assertSame( 200, $response['status_code'] );
 		$this->assertInstanceOf( WC_Order::class, $subscription );

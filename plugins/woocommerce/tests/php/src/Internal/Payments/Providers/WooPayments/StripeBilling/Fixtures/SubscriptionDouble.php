@@ -130,6 +130,37 @@ class SubscriptionDouble extends \WC_Order {
 	}
 
 	/**
+	 * Complete a payment on the subscription as WooCommerce Subscriptions does: nothing during a payment method change request,
+	 * otherwise the last parent, renewal or switch order that needs payment is paid and the subscription is marked paid.
+	 *
+	 * WooCommerce Subscriptions 9.0.1 `WC_Subscription::payment_complete()` and `payment_complete_for_order()`
+	 * (includes/core/class-wc-subscription.php:2025-2077); the suspension count, role update and renewal-only meta and hook are left out.
+	 *
+	 * @param string $transaction_id Transaction ID stored on the paid order.
+	 * @return bool
+	 */
+	public function payment_complete( $transaction_id = '' ) {
+		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) && \WC_Subscriptions_Change_Payment_Gateway::$is_request_to_change_payment ) {
+			return false;
+		}
+
+		$last_order = $this->get_last_order( 'all', 'any' );
+		if ( $last_order instanceof \WC_Order && $last_order->needs_payment() ) {
+			$last_order->payment_complete( $transaction_id );
+		}
+
+		$this->add_order_note( 'Payment status marked complete.' );
+		if ( 'active' !== $this->get_status( 'edit' ) ) {
+			$this->update_status( 'active' );
+		} else {
+			$this->save();
+		}
+		do_action( 'woocommerce_subscription_payment_complete', $this );
+
+		return true;
+	}
+
+	/**
 	 * Get the related order with the highest ID among the given relations, as WooCommerce Subscriptions does; `any` means parent, renewal and switch.
 	 *
 	 * Relations are read from the `WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS` registry.
