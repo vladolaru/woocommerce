@@ -7422,10 +7422,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'failed'          => array( 'failed', array() ),
 			'canceled, found' => array(
 				'canceled',
-				array(
-					'found_refund_id' => self::F458_REFUND_555,
-					'found_amount'    => 555,
-				),
+				self::found_hold_record(),
 			),
 		);
 	}
@@ -7559,10 +7556,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -7591,11 +7585,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => time() - 1000,
-				'last_failed_at'  => time() - 1000,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
 			)
 		);
 		$this->link_local_refund_row( $order, 5.55, self::F458_REFUND_555 );
@@ -7632,10 +7626,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 40.00, 're_f458_other_refund' );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -7665,11 +7656,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => time() - 1000,
-				'last_failed_at'  => time() - 1000,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
 			)
 		);
 		$manual_row             = $this->create_refund_row( $order, 5.55, 'Recorded from the Stripe dashboard' );
@@ -7710,11 +7701,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => time() - 1000,
-				'last_failed_at'  => time() - 1000,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
 			)
 		);
 		if ( $webhook_row ) {
@@ -7823,10 +7814,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 37.66, 're_f458_other_refund' );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -7905,11 +7893,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order     = $this->create_refund_hold_order();
 		$hold      = $this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => $failed_at,
-				'last_failed_at'  => $failed_at,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => $failed_at,
+					'last_failed_at' => $failed_at,
+				)
 			)
 		);
 		$row       = $this->create_refund_row( $order, $amount, 'Recorded locally' );
@@ -8090,12 +8078,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_refund_hold_order();
 		$hold                   = $this->seed_refund_hold(
 			$order,
-			array(
-				'key'             => 'key_f458_located',
-				'failed_at'       => time() - 1000,
-				'last_failed_at'  => time() - 1000,
-				'found_refund_id' => 're_f458_located',
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'key'             => 'key_f458_located',
+					'failed_at'       => time() - 1000,
+					'last_failed_at'  => time() - 1000,
+					'found_refund_id' => 're_f458_located',
+				)
 			)
 		);
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -8122,10 +8111,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_refund_hold_order();
 		$hold                   = $this->seed_refund_hold(
 			$order,
-			array(
-				'key'             => 'key_f458_located',
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'key' => 'key_f458_located',
+				)
 			)
 		);
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -8225,11 +8214,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order                  = $this->create_refund_hold_order();
 		$hold                   = $this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => time() - 2 * DAY_IN_SECONDS,
-				'last_failed_at'  => time() - 2 * DAY_IN_SECONDS,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => time() - 2 * DAY_IN_SECONDS,
+					'last_failed_at' => time() - 2 * DAY_IN_SECONDS,
+				)
 			)
 		);
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -9032,10 +9021,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$hold  = $this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->create_in_flight_gateway_row( $order, 40.00 );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -9067,10 +9053,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->create_completed_gateway_row( $order, 40.00, $refund_id );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -9110,11 +9093,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$hold  = $this->seed_refund_hold(
 			$order,
-			array(
-				'failed_at'       => time() - 1000,
-				'last_failed_at'  => time() - 1000,
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
+			self::found_hold_record(
+				array(
+					'failed_at'      => time() - 1000,
+					'last_failed_at' => time() - 1000,
+				)
 			)
 		);
 		$this->create_unmarked_row( $order, 40.00, time() - 2000 );
@@ -9143,10 +9126,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$linked = $this->create_unmarked_row( $order, 40.00, time() );
 		$linked->update_meta_data( '_wcpay_refund_id', 're_f458_linked_before_the_mark' );
@@ -9194,10 +9174,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order = $this->create_refund_hold_order();
 		$hold  = $this->seed_refund_hold(
 			$order,
-			array(
-				'found_refund_id' => self::F458_REFUND_555,
-				'found_amount'    => 555,
-			)
+			self::found_hold_record()
 		);
 		$this->link_local_refund_row( $order, 40.00, 're_f458_other_refund' );
 		$http_client            = new FakeWooPaymentsHttpClient();
@@ -9634,6 +9611,24 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->save_meta_data();
 
 		return $hold;
+	}
+
+	/**
+	 * The fields of a refund hold that holds a found refund, as refuse_earlier_found() writes them together
+	 * (WooPaymentsRefundAmbiguityService.php:402-408): by default the recorded 5.55 refund in USD.
+	 *
+	 * @param array<string,mixed> $fields Fields to add or change.
+	 * @return array<string,mixed>
+	 */
+	private static function found_hold_record( array $fields = array() ): array {
+		return array_merge(
+			array(
+				'found_refund_id' => self::F458_REFUND_555,
+				'found_amount'    => 555,
+				'found_currency'  => 'usd',
+			),
+			$fields
+		);
 	}
 
 	/**
