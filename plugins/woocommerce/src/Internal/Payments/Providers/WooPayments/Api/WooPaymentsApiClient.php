@@ -2742,9 +2742,9 @@ class WooPaymentsApiClient {
 	 * Rotate the card-testing prevention token after a fraud-flagged decline.
 	 *
 	 * A fraud-flagged decline (`fraudulent`) or the platform's card-testing code rotates the shopper's card-testing token
-	 * here, where every platform error is mapped, so the next attempt from that session sends a fresh token whichever
-	 * request failed. Client 11.1.0 rotates on the same two codes in maybe_act_on_fraud_prevention()
-	 * (wc-payment-api/class-wc-payments-api-client.php:2950).
+	 * where every platform error is mapped, so the next attempt from that session sends a fresh token whichever request
+	 * failed. Like client 11.1.0 (wc-payment-api/class-wc-payments-api-client.php:2867, :2873-2874, :2950), only a nested
+	 * error's decline code or a top-level error code is checked, never a nested error's own code.
 	 *
 	 * @param string $error_code Platform error or decline code.
 	 */
@@ -2824,10 +2824,10 @@ class WooPaymentsApiClient {
 		} elseif ( isset( $response_body['code'] ) ) {
 			$error_code    = (string) $response_body['code'];
 			$error_message = isset( $response_body['message'] ) ? (string) $response_body['message'] : $error_message;
+			$this->maybe_rotate_fraud_prevention_token( $error_code );
 		}
 
 		$this->maybe_rotate_fraud_prevention_token( $decline_code );
-		$this->maybe_rotate_fraud_prevention_token( $error_code );
 
 		$this->transport_log->error( $error_message, $error_code );
 

@@ -5570,7 +5570,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform fraud-flagged decline or card-testing error rotates the card-testing prevention token; ordinary declines leave it alone.
+	 * @testdox A platform fraud-flagged decline or card-testing error rotates the card-testing prevention token; ordinary declines and a fraud code nested as the error's own code leave it alone.
 	 *
 	 * Client 11.1.0 rotates on a nested error's decline code and on a top-level error code (wc-payment-api/class-wc-payments-api-client.php:2867, :2873-2874).
 	 */
@@ -5628,6 +5628,20 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 			402
 		);
 		$this->assertNotSame( $rotated_token, $fraud_prevention_service->get_token() );
+
+		// The same code nested as the error object's own code must not rotate: the client acts only on a nested
+		// decline code or a top-level code, and no platform error nests either fraud code in error.code.
+		$current_token = $fraud_prevention_service->get_token();
+		$this->capture_api_error(
+			array(
+				'error' => array(
+					'code'    => 'wcpay_card_testing_prevention',
+					'message' => 'blocked',
+				),
+			),
+			402
+		);
+		$this->assertSame( $current_token, $fraud_prevention_service->get_token() );
 
 		// The container's account service memoizes the account cache per
 		// instance; reset the shared instance to a non-eligible payload so the
