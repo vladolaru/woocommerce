@@ -45,9 +45,10 @@ class ServedSettingsPanelTest extends WalletTestCase {
 	 * The wallet's stored onboarding profile: the wizard was never completed.
 	 */
 	private const STORED_ONBOARDING = array(
-		'completed'       => false,
-		'step'            => 2,
-		'gateways_synced' => false,
+		'completed'          => false,
+		'step'               => 2,
+		'gateways_synced'    => false,
+		'gateways_refreshed' => false,
 	);
 
 	/**
@@ -203,7 +204,7 @@ class ServedSettingsPanelTest extends WalletTestCase {
 	}
 
 	/**
-	 * @testdox Should report the wallet's onboarding as completed and the gateways as synced while served ($state), and write nothing on a save.
+	 * @testdox Should report the wallet's onboarding as completed and the gateways as synced and refreshed while served ($state), and write nothing on a save.
 	 * @testWith ["collecting"]
 	 *           ["platform"]
 	 *
@@ -221,11 +222,13 @@ class ServedSettingsPanelTest extends WalletTestCase {
 		$data = $endpoint->get_details()->get_data()['data'];
 		$this->assertTrue( $data['completed'] );
 		$this->assertTrue( $data['gatewaysSynced'] );
+		$this->assertTrue( $data['gatewaysRefreshed'], 'Otherwise the app reloads the payment methods on the first Payment Methods visit after each page load (D1)' );
 		$this->assertSame( 2, $data['step'], 'The other fields are the stored ones' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/wc_paypal/onboarding' );
 		$request->set_param( 'completed', true );
 		$request->set_param( 'gatewaysSynced', true );
+		$request->set_param( 'gatewaysRefreshed', true );
 		$saved = $endpoint->update_details( $request )->get_data()['data'];
 
 		$this->assertTrue( $saved['completed'] );

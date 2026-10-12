@@ -15,10 +15,14 @@ use WP_REST_Response;
 
 /**
  * The settings app's onboarding route for a store the platform serves: onboarding reads as completed and the gateways
- * as synced, so the app opens on its settings and the Overview, and a save writes nothing.
+ * as synced and refreshed, so the app opens on its settings and the Overview, and a save writes nothing.
  *
  * The platform serves the store without the wallet's own onboarding wizard, so its stored onboarding profile is only
- * read, never changed: the app's gateway sync, which would otherwise save the profile, is answered without a write.
+ * read, never changed: the app's gateway sync and refresh, which would otherwise save the profile, are answered without
+ * a write. The refresh must read as done: otherwise the app runs it on the first Payment Methods visit after each page
+ * load, and its late reload of the payment methods overwrites a toggle the merchant has not saved yet. The app then
+ * keeps the payment methods it loaded with the page, so a server-side change made while the page is open shows after
+ * a reload, as in the extension once its profile stores the flag.
  *
  * @since 11.3.0
  * @internal POC component for the PayPal Wallet in core proof of concept.
@@ -28,7 +32,7 @@ class PlatformServedOnboardingRestEndpoint extends OnboardingRestEndpoint {
 	/**
 	 * The settings app's onboarding fields that read as done while served.
 	 */
-	private const DONE_FIELDS = array( 'completed', 'gatewaysSynced' );
+	private const DONE_FIELDS = array( 'completed', 'gatewaysSynced', 'gatewaysRefreshed' );
 
 	/**
 	 * The connection state.
@@ -49,7 +53,7 @@ class PlatformServedOnboardingRestEndpoint extends OnboardingRestEndpoint {
 	}
 
 	/**
-	 * The onboarding details, completed and synced while served.
+	 * The onboarding details, completed, synced and refreshed while served.
 	 *
 	 * @since 11.3.0
 	 *
