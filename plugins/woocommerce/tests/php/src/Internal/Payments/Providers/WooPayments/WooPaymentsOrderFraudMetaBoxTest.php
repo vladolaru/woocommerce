@@ -79,18 +79,20 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider fraud_meta_box_type_provider
 	 *
-	 * @param string      $meta_box_type        Fraud meta box type.
-	 * @param string      $expected_status      Expected status copy.
-	 * @param string      $expected_description Expected description copy.
-	 * @param string|null $expected_link_label  Optional expected action link label.
-	 * @param string|null $expected_status_arg  Optional status tracking query value.
+	 * @param string   $meta_box_type         Fraud meta box type.
+	 * @param string   $fraud_outcome_status  Fraud outcome status meta.
+	 * @param string   $expected_status       Expected status copy.
+	 * @param string   $expected_description  Expected description copy.
+	 * @param string[] $expected_link_parts   Parts of the transaction details link the panel shows, with {order_id} for the order ID.
+	 * @param string[] $unexpected_link_parts Parts of a transaction details link the panel must not show.
 	 */
-	public function test_renders_extension_copy_for_each_fraud_meta_box_type( string $meta_box_type, string $expected_status, string $expected_description, ?string $expected_link_label, ?string $expected_status_arg ): void {
+	public function test_renders_extension_copy_for_each_fraud_meta_box_type( string $meta_box_type, string $fraud_outcome_status, string $expected_status, string $expected_description, array $expected_link_parts, array $unexpected_link_parts ): void {
 		$order = $this->create_woopayments_order(
 			array(
-				'_wcpay_fraud_meta_box_type' => $meta_box_type,
-				'_intent_id'                 => 'pi_mock',
-				'_charge_id'                 => 'ch_mock',
+				'_wcpay_fraud_meta_box_type'  => $meta_box_type,
+				'_wcpay_fraud_outcome_status' => $fraud_outcome_status,
+				'_intent_id'                  => 'pi_mock',
+				'_charge_id'                  => 'ch_mock',
 			)
 		);
 
@@ -103,50 +105,12 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 		// Client 11.1.0 `class-order-fraud-and-risk-meta-box.php:108`: the main settings page at its Fraud protection section.
 		$this->assertStringContainsString( 'href="' . esc_url( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings#fraud-protection' ) ) . '"', $html );
 		$this->assertStringNotContainsString( '/woopayments/settings/fraud-protection', $html );
-
-		if ( null === $expected_link_label ) {
-			$this->assertStringNotContainsString( '/woopayments/transactions/details', $html );
-			return;
+		foreach ( str_replace( '{order_id}', (string) $order->get_id(), $expected_link_parts ) as $part ) {
+			$this->assertStringContainsString( $part, $html );
 		}
-
-		$this->assertStringContainsString( $expected_link_label, $html );
-		$this->assertStringContainsString( 'path=/woopayments/transactions/details', $html );
-
-		if ( 'block' === $meta_box_type ) {
-			$this->assertStringContainsString( 'id=' . $order->get_id(), $html );
-		} else {
-			$this->assertStringContainsString( 'id=pi_mock', $html );
+		foreach ( $unexpected_link_parts as $part ) {
+			$this->assertStringNotContainsString( $part, $html );
 		}
-
-		if ( null !== $expected_status_arg ) {
-			$this->assertStringContainsString( 'status_is=' . $expected_status_arg, $html );
-			$this->assertStringContainsString( 'type_is=meta_box', $html );
-		}
-	}
-
-	/**
-	 * @testdox Should honor the fraud outcome status when the preserved meta box type is allow.
-	 *
-	 * @dataProvider fraud_outcome_status_provider
-	 *
-	 * @param string $fraud_outcome_status Expected fraud outcome status.
-	 * @param string $expected_status      Expected status copy.
-	 * @param string $expected_description Expected description copy.
-	 */
-	public function test_honors_fraud_outcome_status_when_meta_box_type_is_allow( string $fraud_outcome_status, string $expected_status, string $expected_description ): void {
-		$order = $this->create_woopayments_order(
-			array(
-				'_wcpay_fraud_meta_box_type'  => 'allow',
-				'_wcpay_fraud_outcome_status' => $fraud_outcome_status,
-				'_intent_id'                  => 'pi_mock',
-				'_charge_id'                  => 'ch_mock',
-			)
-		);
-
-		$html = $this->render_meta_box( $order );
-
-		$this->assertStringContainsString( $expected_status, $html );
-		$this->assertStringContainsString( $expected_description, $html );
 	}
 
 	/**
@@ -347,42 +311,39 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render Learn more copy without risk-filter settings for non-card WooPayments orders.
+	 * @testdox Should render Learn more copy without risk-filter settings for $_dataName orders.
+	 * @dataProvider provider_non_card_orders
+	 *
+	 * @param string $payment_method       Payment method ID.
+	 * @param string $payment_method_title Payment method title.
 	 */
-	public function test_renders_non_card_woopayments_copy_without_adjust_filters_link(): void {
+	public function test_renders_learn_more_copy_without_adjust_filters_link_for_non_card_orders( string $payment_method, string $payment_method_title ): void {
 		$order = $this->create_woopayments_order(
 			array(
 				'_wcpay_fraud_meta_box_type' => 'allow',
 			),
-			'woocommerce_payments_bancontact',
-			'Bancontact'
+			$payment_method,
+			$payment_method_title
 		);
 
 		$html = $this->render_meta_box( $order );
 
-		$this->assertStringContainsString( 'Risk filtering is only available for orders processed using credit cards with WooPayments. This order was processed with Bancontact.', $html );
+		$this->assertStringContainsString( 'Risk filtering is only available for orders processed using credit cards with WooPayments. This order was processed with ' . $payment_method_title . '.', $html );
 		$this->assertStringContainsString( 'Learn more', $html );
 		$this->assertStringContainsString( 'fraud-meta-box-not-wcpay-learn-more', $html );
 		$this->assertStringNotContainsString( 'Adjust risk filters', $html );
 	}
 
 	/**
-	 * @testdox Should render Learn more copy without risk-filter settings for non-WooPayments orders.
+	 * Orders paid without a WooPayments card.
+	 *
+	 * @return array<string,array{string,string}>
 	 */
-	public function test_renders_non_woopayments_copy_without_adjust_filters_link(): void {
-		$order = $this->create_woopayments_order(
-			array(
-				'_wcpay_fraud_meta_box_type' => 'allow',
-			),
-			'bacs',
-			'Direct bank transfer'
+	public static function provider_non_card_orders(): array {
+		return array(
+			'non-card WooPayments' => array( 'woocommerce_payments_bancontact', 'Bancontact' ),
+			'non-WooPayments'      => array( 'bacs', 'Direct bank transfer' ),
 		);
-
-		$html = $this->render_meta_box( $order );
-
-		$this->assertStringContainsString( 'Risk filtering is only available for orders processed using credit cards with WooPayments. This order was processed with Direct bank transfer.', $html );
-		$this->assertStringContainsString( 'Learn more', $html );
-		$this->assertStringNotContainsString( 'Adjust risk filters', $html );
 	}
 
 	/**
@@ -401,19 +362,29 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	/**
 	 * Fraud meta box type render cases.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:string|null,4:string|null}>
+	 * @return array<string,array{string,string,string,string,string[],string[]}>
 	 */
 	public function fraud_meta_box_type_provider(): array {
+		$details        = 'path=/woopayments/transactions/details';
+		$no_link        = array( '/woopayments/transactions/details' );
+		$block_link     = array( 'View more details', $details, 'id={order_id}', 'status_is=block', 'type_is=meta_box' );
+		$review_link    = array( 'Review payment', $details, 'id=pi_mock', 'status_is=review', 'type_is=meta_box' );
+		$reviewed_link  = array( 'Review payment', $details, 'id=pi_mock' );
+		$blocked_copy   = 'The payment for this order was blocked by your risk filtering. There is no pending authorization, and the order can be cancelled to reduce any held stock.';
+		$in_review_copy = 'The payment for this order was held for review by your risk filtering. You can review the details and determine whether to approve or block the payment.';
+
 		return array(
-			'allow'            => array( 'allow', 'No action taken', 'The payment for this order passed your risk filtering.', null, null ),
-			'block'            => array( 'block', 'Blocked', 'The payment for this order was blocked by your risk filtering. There is no pending authorization, and the order can be cancelled to reduce any held stock.', 'View more details', 'block' ),
-			'payment started'  => array( 'payment_started', 'No action taken', 'The payment for this order has not yet been passed to the fraud and risk filters to determine its outcome status.', null, null ),
-			'review'           => array( 'review', 'Held for review', 'The payment for this order was held for review by your risk filtering. You can review the details and determine whether to approve or block the payment.', 'Review payment', 'review' ),
-			'review allowed'   => array( 'review_allowed', 'Approved', 'The payment for this order was held for review by your risk filtering and manually approved.', null, null ),
-			'review blocked'   => array( 'review_blocked', 'Held for review', 'This transaction was held for review by your risk filters, and the charge was manually blocked after review.', 'Review payment', null ),
-			'review expired'   => array( 'review_expired', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have expired.', 'Review payment', null ),
-			'review failed'    => array( 'review_failed', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have failed.', 'Review payment', null ),
-			'terminal payment' => array( 'terminal_payment', 'No action taken', 'The payment for this order was done in person and has bypassed your risk filtering.', null, null ),
+			'allow'                       => array( 'allow', '', 'No action taken', 'The payment for this order passed your risk filtering.', array(), $no_link ),
+			'block'                       => array( 'block', '', 'Blocked', $blocked_copy, $block_link, array() ),
+			'payment started'             => array( 'payment_started', '', 'No action taken', 'The payment for this order has not yet been passed to the fraud and risk filters to determine its outcome status.', array(), $no_link ),
+			'review'                      => array( 'review', '', 'Held for review', $in_review_copy, $review_link, array() ),
+			'review allowed'              => array( 'review_allowed', '', 'Approved', 'The payment for this order was held for review by your risk filtering and manually approved.', array(), $no_link ),
+			'review blocked'              => array( 'review_blocked', '', 'Held for review', 'This transaction was held for review by your risk filters, and the charge was manually blocked after review.', $reviewed_link, array() ),
+			'review expired'              => array( 'review_expired', '', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have expired.', $reviewed_link, array() ),
+			'review failed'               => array( 'review_failed', '', 'Held for review', 'The payment for this order was held for review by your risk filtering. The authorization for the charge appears to have failed.', $reviewed_link, array() ),
+			'terminal payment'            => array( 'terminal_payment', '', 'No action taken', 'The payment for this order was done in person and has bypassed your risk filtering.', array(), $no_link ),
+			'allow with a block outcome'  => array( 'allow', 'block', 'Blocked', $blocked_copy, $block_link, array() ),
+			'allow with a review outcome' => array( 'allow', 'review', 'Held for review', $in_review_copy, $review_link, array() ),
 		);
 	}
 
@@ -442,18 +413,6 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 			'review approved'  => array( 'review_allowed', '{"avs_verification":"review"}' ),
 			'non-card'         => array( 'not_card', '{"avs_verification":"review"}' ),
 			'terminal'         => array( 'terminal_payment', '{"avs_verification":"review"}' ),
-		);
-	}
-
-	/**
-	 * Native fraud outcome render cases.
-	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
-	 */
-	public function fraud_outcome_status_provider(): array {
-		return array(
-			'block outcome'  => array( 'block', 'Blocked', 'The payment for this order was blocked by your risk filtering. There is no pending authorization, and the order can be cancelled to reduce any held stock.' ),
-			'review outcome' => array( 'review', 'Held for review', 'The payment for this order was held for review by your risk filtering. You can review the details and determine whether to approve or block the payment.' ),
 		);
 	}
 

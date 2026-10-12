@@ -314,16 +314,18 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Referrer CTA handler skips recording and never redirects when the stage is not allowlisted.
+	 * @testdox Referrer CTA handler skips recording and never redirects for $_dataName.
+	 * @dataProvider provider_referrer_cta_not_recorded
+	 *
+	 * @param string $role  Role of the current user.
+	 * @param string $stage The referrer stage in the CTA link.
 	 */
-	public function test_referrer_cta_skips_recording_with_non_allowlisted_stage(): void {
-		$service  = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
-		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		wp_set_current_user( $admin_id );
+	public function test_referrer_cta_skips_recording( string $role, string $stage ): void {
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 
-		$_GET['wcpay_referrer'] = 'post_kyc_email';
-		// Stage 3 is not in POST_KYC_STAGE_DAYS.
-		$_GET['wcpay_referrer_stage'] = '3';
+		$_GET['wcpay_referrer']       = 'post_kyc_email';
+		$_GET['wcpay_referrer_stage'] = $stage;
 
 		$redirected = false;
 		add_filter(
@@ -342,38 +344,20 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			unset( $e );
 		}
 
-		$this->assertFalse( $redirected, 'A non-allowlisted stage must not record analytics or trigger a redirect.' );
+		$this->assertFalse( $redirected, 'The handler must not record analytics or trigger a redirect.' );
 	}
 
 	/**
-	 * @testdox Referrer CTA handler skips recording and never redirects without the manage_woocommerce capability.
+	 * CTA clicks the handler must not record.
+	 *
+	 * @return array<string,array{string,string}>
 	 */
-	public function test_referrer_cta_skips_recording_without_manage_woocommerce(): void {
-		$service     = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
-		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		wp_set_current_user( $customer_id );
-
-		$_GET['wcpay_referrer']       = 'post_kyc_email';
-		$_GET['wcpay_referrer_stage'] = '7';
-
-		$redirected = false;
-		add_filter(
-			'wp_redirect',
-			function ( $location ) use ( &$redirected ) {
-				unset( $location );
-				$redirected = true;
-				// Guard the test run: a redirect here would otherwise reach the handler's exit.
-				throw new \Exception( 'unexpected redirect' );
-			}
+	public static function provider_referrer_cta_not_recorded(): array {
+		return array(
+			// Stage 3 is not in POST_KYC_STAGE_DAYS.
+			'a stage that is not allowlisted'   => array( 'administrator', '3' ),
+			'a user without manage_woocommerce' => array( 'customer', '7' ),
 		);
-
-		try {
-			$service->handle_wcpay_post_kyc_activation_email_cta();
-		} catch ( \Exception $e ) {
-			unset( $e );
-		}
-
-		$this->assertFalse( $redirected, 'A user without manage_woocommerce must not record analytics or trigger a redirect.' );
 	}
 
 	/**
@@ -430,37 +414,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
-	}
-
-	/**
-	 * @testdox Should report real duplicate gateways and the Multi-Currency flag in the store setup snapshot.
-	 */
-	public function test_store_setup_sync_reports_duplicates_and_multi_currency(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		update_option( '_wcpay_feature_customer_multi_currency', '0' );
-
-		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
-			->onlyMethods( array( 'get_duplicated_payment_method_ids' ) )
-			->getMock();
-		$settings_service->method( 'get_duplicated_payment_method_ids' )
-			->willReturn( array( 'card' => array( 'woocommerce_payments', 'stripe' ) ) );
-
-		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
-		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->expects( $this->once() )
-			->method( 'send_store_setup' )
-			->with(
-				$this->callback(
-					function ( array $snapshot ): bool {
-						return array( 'card' => array( 'woocommerce_payments', 'stripe' ) ) === $snapshot['payment_methods']['duplicates']
-							&& false === $snapshot['multi_currency_enabled']
-							&& false === $snapshot['stripe_billing_enabled'];
-					}
-				)
-			)
-			->willReturn( array( 'result' => 'success' ) );
-
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, $settings_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -645,11 +598,12 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the store setup sync and return the one snapshot it sends to the platform.
 	 *
-	 * @param array<string,mixed>            $settings        Gateway settings to store first.
-	 * @param WooPaymentsAccountService|null $account_service Account service, or the default double.
+	 * @param array<string,mixed>             $settings         Gateway settings to store first.
+	 * @param WooPaymentsAccountService|null  $account_service  Account service, or the default double.
+	 * @param WooPaymentsSettingsService|null $settings_service Settings service, or none.
 	 * @return array<string,mixed>
 	 */
-	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null ): array {
+	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsSettingsService $settings_service = null ): array {
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 
 		$snapshots  = array();
@@ -662,7 +616,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
 
@@ -670,119 +624,136 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report Multi-Currency as enabled by default when the flag option was never written, matching the WooPayments extension.
+	 * @testdox Should report real duplicate gateways and the Multi-Currency flag in the store setup snapshot: $_dataName.
+	 * @dataProvider provider_store_setup_sync_multi_currency_flag
+	 *
+	 * @param array<string,string>   $flag_options        Multi-Currency flag option to write; none leaves it never written.
+	 * @param array<string,string[]> $duplicates          Duplicate gateways the settings service finds, by payment method.
+	 * @param bool                   $expected_mc_enabled The Multi-Currency flag the snapshot reports.
 	 */
-	public function test_store_setup_sync_defaults_multi_currency_flag_to_enabled(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+	public function test_store_setup_sync_reports_duplicates_and_multi_currency( array $flag_options, array $duplicates, bool $expected_mc_enabled ): void {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		foreach ( $flag_options as $option => $value ) {
+			update_option( $option, $value );
+		}
 
 		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
 			->onlyMethods( array( 'get_duplicated_payment_method_ids' ) )
 			->getMock();
 		$settings_service->method( 'get_duplicated_payment_method_ids' )
-			->willReturn( array() );
+			->willReturn( $duplicates );
 
-		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
-		$api_client->method( 'is_available' )->willReturn( true );
-		$api_client->expects( $this->once() )
-			->method( 'send_store_setup' )
-			->with(
-				$this->callback(
-					function ( array $snapshot ): bool {
-						return true === $snapshot['multi_currency_enabled']
-							&& array() === $snapshot['payment_methods']['duplicates'];
-					}
-				)
-			)
-			->willReturn( array( 'result' => 'success' ) );
+		$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), null, $settings_service );
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, null, $settings_service )->handle_wcpay_store_setup_sync();
+		$this->assertSame( $duplicates, $snapshot['payment_methods']['duplicates'] );
+		$this->assertSame( $expected_mc_enabled, $snapshot['multi_currency_enabled'] );
+		$this->assertFalse( $snapshot['stripe_billing_enabled'] );
 	}
 
 	/**
-	 * @testdox Should propagate a site-language change to the connected account's locale.
-	 */
-	public function test_site_language_change_propagates_locale_to_account(): void {
-		update_option( 'WPLANG', '' );
-		$api_client = $this->create_api_client( array( 'update_account' ) );
-		$api_client->expects( $this->once() )
-			->method( 'update_account' )
-			->with( array( 'locale' => 'de_DE' ) )
-			->willReturn( array() );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
-		$service->register();
-
-		update_option( 'WPLANG', 'de_DE' );
-	}
-
-	/**
-	 * @testdox Should send the en_US locale fallback when the site language is reset to the default.
-	 */
-	public function test_site_language_reset_sends_default_locale(): void {
-		update_option( 'WPLANG', 'de_DE' );
-		$api_client = $this->create_api_client( array( 'update_account' ) );
-		$api_client->expects( $this->once() )
-			->method( 'update_account' )
-			->with( array( 'locale' => 'en_US' ) )
-			->willReturn( array() );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
-		$service->register();
-
-		update_option( 'WPLANG', '' );
-	}
-
-	/**
-	 * @testdox Should not contact the platform for a language change without a connected account.
-	 */
-	public function test_site_language_change_without_account_skips_platform(): void {
-		update_option( 'WPLANG', '' );
-		$api_client = $this->create_api_client( array( 'update_account' ) );
-		$api_client->expects( $this->never() )
-			->method( 'update_account' );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( array() ) );
-		$service->register();
-
-		update_option( 'WPLANG', 'de_DE' );
-	}
-
-	/**
-	 * @testdox Should re-send the account's business URL once when the store goes live.
-	 */
-	public function test_store_launch_resends_business_url(): void {
-		update_option( 'woocommerce_coming_soon', 'yes' );
-		$api_client = $this->create_api_client( array( 'update_account' ) );
-		$api_client->expects( $this->once() )
-			->method( 'update_account' )
-			->with( array( 'business_url' => 'https://shop.example.com' ) )
-			->willReturn( array() );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( self::get_account_with_business_url() ) );
-		$service->register();
-
-		update_option( 'woocommerce_coming_soon', 'no' );
-	}
-
-	/**
-	 * @testdox Should not contact the platform when the store does not go live, has no account or has no business URL.
-	 * @testWith ["store goes private", "no", "yes", true, true]
-	 *           ["no connected account", "yes", "no", false, true]
-	 *           ["no business URL", "yes", "no", true, false]
+	 * Multi-Currency flag states and duplicate gateways, with the flag the snapshot should report.
 	 *
-	 * @param string $scenario         Scenario label.
-	 * @param string $old_value        Coming-soon value before the write.
-	 * @param string $new_value        Coming-soon value written.
-	 * @param bool   $has_account      Whether the store has a connected account.
-	 * @param bool   $has_business_url Whether the account has a business URL.
+	 * @return array<string,array{array<string,string>,array<string,string[]>,bool}>
 	 */
-	public function test_store_launch_skips_platform( string $scenario, string $old_value, string $new_value, bool $has_account, bool $has_business_url ): void {
-		unset( $scenario );
+	public static function provider_store_setup_sync_multi_currency_flag(): array {
+		return array(
+			'flag off, one duplicate'           => array(
+				array( '_wcpay_feature_customer_multi_currency' => '0' ),
+				array( 'card' => array( 'woocommerce_payments', 'stripe' ) ),
+				false,
+			),
+			// The WooPayments extension defaults the flag to enabled.
+			'flag never written, no duplicates' => array( array(), array(), true ),
+		);
+	}
+
+	/**
+	 * @testdox Should send the account locale to the platform when the site language changes: $_dataName.
+	 * @dataProvider provider_site_language_change
+	 *
+	 * @param string                         $old_language     WPLANG before the change.
+	 * @param string                         $new_language     WPLANG written.
+	 * @param array<string,mixed>            $account_data     Cached account data.
+	 * @param array<int,array<string,mixed>> $expected_updates Account updates sent to the platform.
+	 */
+	public function test_site_language_change_updates_the_account_locale( string $old_language, string $new_language, array $account_data, array $expected_updates ): void {
+		update_option( 'WPLANG', $old_language );
+		$updates = array();
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
+		$service->register();
+
+		update_option( 'WPLANG', $new_language );
+
+		$this->assertSame( $expected_updates, $updates );
+	}
+
+	/**
+	 * Site language changes, with the account updates each should send.
+	 *
+	 * @return array<string,array{string,string,array<string,mixed>,array<int,array<string,mixed>>}>
+	 */
+	public static function provider_site_language_change(): array {
+		$account = array( 'account_id' => 'acct_native_test' );
+
+		return array(
+			'a new language is sent'             => array( '', 'de_DE', $account, array( array( 'locale' => 'de_DE' ) ) ),
+			'a reset to the default sends en_US' => array( 'de_DE', '', $account, array( array( 'locale' => 'en_US' ) ) ),
+			'nothing is sent without an account' => array( '', 'de_DE', array(), array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should re-send the account's business URL once only when the store goes live: $_dataName.
+	 * @dataProvider provider_store_launch
+	 *
+	 * @param string                         $old_value        Coming-soon value before the write.
+	 * @param string                         $new_value        Coming-soon value written.
+	 * @param array<string,mixed>            $account_data     Cached account data.
+	 * @param array<int,array<string,mixed>> $expected_updates Account updates sent to the platform.
+	 */
+	public function test_store_launch_resends_the_business_url_only_when_the_store_goes_live( string $old_value, string $new_value, array $account_data, array $expected_updates ): void {
 		update_option( 'woocommerce_coming_soon', $old_value );
-		$api_client = $this->create_api_client( array( 'update_account' ) );
-		$api_client->expects( $this->never() )->method( 'update_account' );
-		$account_data = $has_business_url ? self::get_account_with_business_url() : array( 'account_id' => 'acct_native_test' );
-		$service      = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( $has_account ? $account_data : array() ) );
+		$updates = array();
+		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
 		$service->register();
 
 		update_option( 'woocommerce_coming_soon', $new_value );
+
+		$this->assertSame( $expected_updates, $updates );
+	}
+
+	/**
+	 * Coming-soon changes and accounts, with the account updates each should send.
+	 *
+	 * @return array<string,array{string,string,array<string,mixed>,array<int,array<string,mixed>>}>
+	 */
+	public static function provider_store_launch(): array {
+		$account_with_url = self::get_account_with_business_url();
+
+		return array(
+			'the store goes live'    => array( 'yes', 'no', $account_with_url, array( array( 'business_url' => 'https://shop.example.com' ) ) ),
+			'the store goes private' => array( 'no', 'yes', $account_with_url, array() ),
+			'no connected account'   => array( 'yes', 'no', array(), array() ),
+			'no business URL'        => array( 'yes', 'no', array( 'account_id' => 'acct_native_test' ), array() ),
+		);
+	}
+
+	/**
+	 * Create an API client that records each account update it is asked to send.
+	 *
+	 * @param array<int,array<string,mixed>> $updates Receives each update body.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_account_update_recorder( array &$updates ): WooPaymentsApiClient {
+		$api_client = $this->create_api_client( array( 'update_account' ) );
+		$api_client->method( 'update_account' )->willReturnCallback(
+			static function ( array $body ) use ( &$updates ): array {
+				$updates[] = $body;
+				return array();
+			}
+		);
+
+		return $api_client;
 	}
 
 	/**
@@ -799,63 +770,32 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should auto-enable the currencies a newly enabled payment method requires.
-	 */
-	public function test_settings_save_auto_adds_currencies_for_enabled_methods(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		$this->register_unavailable_rate_provider();
-		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
-			array(
-				'data'               => array(
-					'currencies' => array( 'eur' => 0.9 ),
-					'updated'    => 123456,
-				),
-				'fetched'            => time(),
-				'errored'            => false,
-				'consecutive_errors' => 0,
-			),
-			false
-		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
-
-		$account_service = $this->create_account_service(
-			array(
-				'account_id'       => 'acct_native_test',
-				'country'          => 'US',
-				'store_currencies' => array( 'default' => 'usd' ),
-			)
-		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
-		$service->register();
-
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
-
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-		$this->assertIsArray( $enabled_currencies );
-		$this->assertContains( 'EUR', $enabled_currencies, 'Enabling iDEAL must auto-enable its EUR requirement.' );
-	}
-
-	/**
 	 * Client 11.1.0 adds the currencies of the methods in its payment method map (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-70,96-135`),
 	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 * A domestic-only method requires the account's domestic currency, the currency of the account's country, not the account's default currency (`:71`, `:81`).
 	 *
-	 * @testdox Should auto-enable Amazon Pay's currencies only while its feature is on.
-	 * @testWith ["1", true]
-	 *           ["0", false]
+	 * @testdox Should auto-enable the currencies a newly enabled payment method requires: $_dataName.
+	 * @dataProvider provider_settings_save_currency_auto_add
 	 *
-	 * @param string $flag  The Amazon Pay feature flag option value.
-	 * @param bool   $added Whether Amazon Pay's EUR requirement should be enabled.
+	 * @param array<string,string> $feature_flags        Feature flag options to write.
+	 * @param string               $country              Account country.
+	 * @param string               $default_currency     Account default currency.
+	 * @param array<string,float>  $rates                Cached currency rates.
+	 * @param string               $method               Payment method enabled beside card.
+	 * @param string[]             $expected_enabled     Currencies that must be enabled after the save.
+	 * @param string[]             $expected_not_enabled Currencies that must not be enabled after the save.
 	 */
-	public function test_settings_save_auto_adds_amazon_pay_currencies_only_while_its_feature_is_on( string $flag, bool $added ): void {
+	public function test_settings_save_auto_adds_the_currencies_a_method_requires( array $feature_flags, string $country, string $default_currency, array $rates, string $method, array $expected_enabled, array $expected_not_enabled ): void {
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		update_option( '_wcpay_feature_amazon_pay', $flag );
+		foreach ( $feature_flags as $option => $value ) {
+			update_option( $option, $value );
+		}
 		$this->register_unavailable_rate_provider();
 		update_option(
 			MultiCurrencyCacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
-					'currencies' => array( 'eur' => 0.9 ),
+					'currencies' => $rates,
 					'updated'    => 123456,
 				),
 				'fetched'            => time(),
@@ -866,70 +806,49 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 
-		// A GB account: Amazon Pay's supported currencies there include EUR (client 11.1.0
-		// `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`). The account fields follow the
-		// recorded Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
+		// The account fields follow the recorded Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
 		$account_service = $this->create_account_service(
 			array(
 				'account_id'       => 'acct_native_test',
-				'country'          => 'GB',
-				'store_currencies' => array( 'default' => 'gbp' ),
+				'country'          => $country,
+				'store_currencies' => array( 'default' => $default_currency ),
 			)
 		);
 		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
 		$service->register();
 
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ) ) );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', $method ) ) );
 
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-		$this->assertSame( $added, is_array( $enabled_currencies ) && in_array( 'EUR', $enabled_currencies, true ) );
+		// A save that needs no currency leaves the option unwritten.
+		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$this->assertSame( $expected_enabled, array_values( array_intersect( $expected_enabled, $enabled_currencies ) ), 'The method\'s required currencies must be auto-enabled.' );
+		$this->assertSame( array(), array_values( array_intersect( $expected_not_enabled, $enabled_currencies ) ), 'A currency the method does not require must stay disabled.' );
 	}
 
 	/**
-	 * Client 11.1.0 requires the account's domestic currency, the currency of the account's country, for a domestic-only method
-	 * (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:71`, `:81`).
+	 * Accounts and newly enabled methods, with the currencies the save should and should not enable.
 	 *
-	 * @testdox Should auto-enable the account country's currency for a domestic-only method, not the account's default currency.
+	 * @return array<string,array{array<string,string>,string,string,array<string,float>,string,string[],string[]}>
 	 */
-	public function test_settings_save_auto_adds_the_domestic_currency_for_a_domestic_only_method(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		$this->register_unavailable_rate_provider();
-		update_option(
-			MultiCurrencyCacheInterface::CURRENCIES_KEY,
-			array(
-				'data'               => array(
-					'currencies' => array(
-						'cad' => 1.37,
-						'eur' => 0.9,
-					),
-					'updated'    => 123456,
+	public static function provider_settings_save_currency_auto_add(): array {
+		return array(
+			'iDEAL on a US account'                     => array( array(), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array( 'EUR' ), array() ),
+			// Amazon Pay's supported currencies on a GB account include EUR (client 11.1.0 `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
+			'Amazon Pay with its feature on'            => array( array( '_wcpay_feature_amazon_pay' => '1' ), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array() ),
+			'Amazon Pay with its feature off'           => array( array( '_wcpay_feature_amazon_pay' => '0' ), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array(), array( 'EUR' ) ),
+			'Affirm on a CA account with a EUR default' => array(
+				array(),
+				'CA',
+				'eur',
+				array(
+					'cad' => 1.37,
+					'eur' => 0.9,
 				),
-				'fetched'            => time(),
-				'errored'            => false,
-				'consecutive_errors' => 0,
+				'affirm',
+				array( 'CAD' ),
+				array( 'EUR' ),
 			),
-			false
 		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
-
-		// A CA account whose default currency is EUR. The account fields follow the recorded
-		// Fixtures/platform-test-drive-account.json `account` (`account_id`, `country`, `store_currencies.default`).
-		$account_service = $this->create_account_service(
-			array(
-				'account_id'       => 'acct_native_test',
-				'country'          => 'CA',
-				'store_currencies' => array( 'default' => 'eur' ),
-			)
-		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
-		$service->register();
-
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'affirm' ) ) );
-
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies' );
-		$this->assertIsArray( $enabled_currencies );
-		$this->assertContains( 'CAD', $enabled_currencies, 'Enabling Affirm on a CA account must auto-enable CAD.' );
-		$this->assertNotContains( 'EUR', $enabled_currencies, 'The account default currency is not what Affirm requires.' );
 	}
 
 	/**
@@ -1350,43 +1269,46 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC completion does not re-schedule activation emails when the scheduled marker already exists.
+	 * @testdox Post-KYC completion schedules no activation emails when another request already claimed the gate: $_dataName.
+	 * @dataProvider provider_post_kyc_gate_already_claimed
+	 *
+	 * @param callable $claim_gate Writes the gate marker as the concurrent request left it.
 	 */
-	public function test_post_kyc_completion_does_not_reschedule_when_marker_already_exists(): void {
+	public function test_post_kyc_completion_does_not_schedule_when_the_gate_is_claimed( callable $claim_gate ): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
-
-		// Simulate a concurrent account-refresh handler that already won the scheduling gate.
-		update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
+		$claim_gate();
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
 
-		$this->assertSame( array(), $scheduler->scheduled_jobs, 'No activation email stages should be scheduled when the gate marker already exists.' );
+		$this->assertSame( array(), $scheduler->scheduled_jobs, 'No activation email stages should be scheduled once the gate row exists.' );
 	}
 
 	/**
-	 * @testdox Post-KYC completion uses an atomic insert so a concurrent loser schedules nothing.
+	 * Gate markers a concurrent request left behind.
+	 *
+	 * @return array<string,array{callable}>
 	 */
-	public function test_post_kyc_completion_atomic_gate_blocks_concurrent_loser(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
-
-		// A concurrent caller already inserted the gate row, while this request's cache still records the option as
-		// missing, as it would if it read just before that insert committed. add_option() then skips its own existence
-		// check and runs INSERT ... ON DUPLICATE KEY UPDATE, which affects no row for the same value and returns false.
-		update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
-		wp_cache_delete( 'wcpay_post_kyc_activation_emails_scheduled', 'options' );
-		$notoptions = wp_cache_get( 'notoptions', 'options' );
-		$notoptions = is_array( $notoptions ) ? $notoptions : array();
-		$notoptions['wcpay_post_kyc_activation_emails_scheduled'] = true;
-		wp_cache_set( 'notoptions', $notoptions, 'options' );
-
-		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
-
-		$this->assertSame(
-			array(),
-			$scheduler->scheduled_jobs,
-			'A concurrent loser must schedule nothing once the gate row exists, even when the cached read misses it.'
+	public static function provider_post_kyc_gate_already_claimed(): array {
+		return array(
+			'marker in the option cache' => array(
+				static function (): void {
+					update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
+				},
+			),
+			// The cache still records the option as missing, as it would for a read just before the other insert committed.
+			// add_option() then skips its existence check and runs INSERT ... ON DUPLICATE KEY UPDATE, which affects no row
+			// for the same value and returns false.
+			'marker missed by the cache' => array(
+				static function (): void {
+					update_option( 'wcpay_post_kyc_activation_emails_scheduled', '1', false );
+					wp_cache_delete( 'wcpay_post_kyc_activation_emails_scheduled', 'options' );
+					$notoptions = wp_cache_get( 'notoptions', 'options' );
+					$notoptions = is_array( $notoptions ) ? $notoptions : array();
+					$notoptions['wcpay_post_kyc_activation_emails_scheduled'] = true;
+					wp_cache_set( 'notoptions', $notoptions, 'options' );
+				},
+			),
 		);
 	}
 
@@ -1481,43 +1403,17 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC activation email jobs mark the stage only after successful delivery.
+	 * @testdox Post-KYC activation email jobs record the stage only after a delivery: $_dataName.
+	 * @dataProvider provider_post_kyc_email_job_stage_recording
+	 *
+	 * @param callable             $send_mail            pre_wp_mail filter that decides the delivery.
+	 * @param callable             $arrange_store        Sets up the store state the row needs.
+	 * @param array<int,int>|false $expected_sent_stages The sent stages option after the job.
+	 * @param string|false         $expected_live_sale   The live-sale marker option after the job.
 	 */
-	public function test_post_kyc_activation_email_job_marks_stage_after_successful_delivery(): void {
+	public function test_post_kyc_activation_email_job_records_the_stage_only_after_delivery( callable $send_mail, callable $arrange_store, $expected_sent_stages, $expected_live_sale ): void {
 		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
-		add_filter( 'pre_wp_mail', '__return_true' );
-
-		$account_service = $this->create_account_service(
-			array(
-				'is_live'           => true,
-				'is_test_drive'     => false,
-				'payments_enabled'  => true,
-				'details_submitted' => true,
-				'capabilities'      => array(
-					'card_payments' => 'active',
-				),
-			),
-			false,
-			true,
-			false
-		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
-		$service->register();
-		$this->reset_mailer_emails();
-
-		$service->handle_wcpay_post_kyc_activation_email_send( 7 );
-
-		remove_filter( 'pre_wp_mail', '__return_true' );
-
-		$this->assertSame( array( 7 ), get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-	}
-
-	/**
-	 * @testdox Post-KYC activation email jobs leave the stage unrecorded when delivery fails, so a later job can retry it.
-	 */
-	public function test_post_kyc_activation_email_job_leaves_stage_unrecorded_after_failed_delivery(): void {
-		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
-		add_filter( 'pre_wp_mail', '__return_false' );
+		$arrange_store();
 
 		// Account flags per client 11.1.0 `includes/class-wc-payments-account.php:367-377`; card_payments in the
 		// capabilities map, as the client's account validity check reads it (`:290-292`).
@@ -1539,77 +1435,51 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$service->register();
 		$this->reset_mailer_emails();
 
-		$service->handle_wcpay_post_kyc_activation_email_send( 7 );
+		add_filter( 'pre_wp_mail', $send_mail );
+		try {
+			$service->handle_wcpay_post_kyc_activation_email_send( 7 );
+		} finally {
+			remove_filter( 'pre_wp_mail', $send_mail );
+		}
 
-		remove_filter( 'pre_wp_mail', '__return_false' );
-		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
+		$this->assertSame( $expected_sent_stages, get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
+		$this->assertSame( $expected_live_sale, get_option( 'wcpay_has_live_sale' ) );
 	}
 
 	/**
-	 * @testdox Post-KYC activation email jobs fail closed when the WooCommerce email registry omits the preserved email.
+	 * Delivery outcomes and store states, with the sent stages and live-sale marker each should leave.
+	 *
+	 * @return array<string,array{callable,callable,array<int,int>|false,string|false}>
 	 */
-	public function test_post_kyc_activation_email_job_skips_when_email_registry_omits_preserved_email(): void {
-		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
-		add_filter( 'pre_wp_mail', '__return_true' );
-		add_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
-		$this->reset_mailer_emails();
+	public static function provider_post_kyc_email_job_stage_recording(): array {
+		$nothing = static function (): void {};
 
-		$account_service = $this->create_account_service(
-			array(
-				'is_live'           => true,
-				'is_test_drive'     => false,
-				'payments_enabled'  => true,
-				'details_submitted' => true,
-				'capabilities'      => array(
-					'card_payments' => 'active',
-				),
+		return array(
+			'delivered'                         => array( '__return_true', $nothing, array( 7 ), false ),
+			// A later job can retry the stage.
+			'delivery failed'                   => array( '__return_false', $nothing, false, false ),
+			'the email registry omits it'       => array(
+				'__return_true',
+				static function (): void {
+					add_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
+				},
+				false,
+				false,
 			),
-			false,
-			true,
-			false
-		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
-
-		$service->handle_wcpay_post_kyc_activation_email_send( 7 );
-
-		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
-		remove_filter( 'pre_wp_mail', '__return_true' );
-
-		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-	}
-
-	/**
-	 * @testdox Post-KYC activation email jobs do not consume stages when the merchant already has a live sale.
-	 */
-	public function test_post_kyc_activation_email_job_skips_live_sale_stores(): void {
-		update_option( 'wcpay_kyc_completion_date', time() - 8 * DAY_IN_SECONDS, false );
-		add_filter( 'pre_wp_mail', '__return_true' );
-		$order = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( 'woocommerce_payments' );
-		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'prod' );
-		$order->save();
-
-		$account_service = $this->create_account_service(
-			array(
-				'is_live'           => true,
-				'is_test_drive'     => false,
-				'payments_enabled'  => true,
-				'details_submitted' => true,
+			// The order exists before the service registers, so only the job's own live-sale check can find it.
+			'the store already has a live sale' => array(
+				'__return_true',
+				static function (): void {
+					$order = wc_create_order();
+					$order->set_payment_method( 'woocommerce_payments' );
+					$order->set_status( 'completed' );
+					$order->update_meta_data( '_wcpay_mode', 'prod' );
+					$order->save();
+				},
+				false,
+				'1',
 			),
-			false,
-			true,
-			false
 		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
-
-		$service->handle_wcpay_post_kyc_activation_email_send( 7 );
-
-		remove_filter( 'pre_wp_mail', '__return_true' );
-
-		$this->assertFalse( get_option( 'wcpay_post_kyc_activation_email_sent_stages' ) );
-		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 	}
 
 	/**

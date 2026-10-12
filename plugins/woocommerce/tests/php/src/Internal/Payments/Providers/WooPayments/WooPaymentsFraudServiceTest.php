@@ -213,58 +213,40 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should swap in the sandbox beacon key and drop it from the sift config when test mode is enabled.
+	 * @testdox Should prepare the Sift beacon key for $_dataName and never ship the sandbox key.
+	 * @dataProvider provider_sift_beacon_key_by_mode
+	 *
+	 * @param string               $test_mode      The test_mode gateway setting.
+	 * @param array<string,string> $sift           Sift config on the account payload.
+	 * @param array<string,string> $expected_beacon The beacon_key entry the prepared config holds, or none.
 	 */
-	public function test_prepares_sift_config_in_test_mode(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$this->seed_account_fraud_services(
-			array(
-				'sift' => array(
-					'beacon_key'         => 'prod_beacon',
-					'sandbox_beacon_key' => 'sandbox_beacon',
-				),
-			)
-		);
+	public function test_prepares_the_sift_beacon_key_by_mode( string $test_mode, array $sift, array $expected_beacon ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => $test_mode ) );
+		$this->seed_account_fraud_services( array( 'sift' => $sift ) );
 
 		$config = $this->make_sut()->get_fraud_services_config();
 
 		$this->assertArrayHasKey( 'sift', $config );
-		$this->assertSame( 'sandbox_beacon', $config['sift']['beacon_key'] );
+		$this->assertSame( $expected_beacon, array_intersect_key( $config['sift'], array( 'beacon_key' => true ) ) );
 		$this->assertArrayNotHasKey( 'sandbox_beacon_key', $config['sift'] );
 	}
 
 	/**
-	 * @testdox Should keep the production beacon key and drop the sandbox key when test mode is disabled.
+	 * Gateway modes and account Sift configs, with the beacon key each should prepare.
+	 *
+	 * @return array<string,array{string,array<string,string>,array<string,string>}>
 	 */
-	public function test_prepares_sift_config_in_live_mode(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
-		$this->seed_account_fraud_services(
-			array(
-				'sift' => array(
-					'beacon_key'         => 'prod_beacon',
-					'sandbox_beacon_key' => 'sandbox_beacon',
-				),
-			)
+	public static function provider_sift_beacon_key_by_mode(): array {
+		$both_keys = array(
+			'beacon_key'         => 'prod_beacon',
+			'sandbox_beacon_key' => 'sandbox_beacon',
 		);
 
-		$config = $this->make_sut()->get_fraud_services_config();
-
-		$this->assertSame( 'prod_beacon', $config['sift']['beacon_key'] );
-		$this->assertArrayNotHasKey( 'sandbox_beacon_key', $config['sift'] );
-	}
-
-	/**
-	 * @testdox Should ship no beacon key at all in test mode when the platform sent no sandbox key.
-	 */
-	public function test_drops_beacon_key_in_test_mode_without_sandbox_key(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
-		$this->seed_account_fraud_services(
-			array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) )
+		return array(
+			'test mode with a sandbox key'    => array( 'yes', $both_keys, array( 'beacon_key' => 'sandbox_beacon' ) ),
+			'live mode'                       => array( 'no', $both_keys, array( 'beacon_key' => 'prod_beacon' ) ),
+			'test mode without a sandbox key' => array( 'yes', array( 'beacon_key' => 'prod_beacon' ), array() ),
 		);
-
-		$config = $this->make_sut()->get_fraud_services_config();
-
-		$this->assertArrayNotHasKey( 'beacon_key', $config['sift'] );
 	}
 
 	/**

@@ -198,31 +198,36 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Scheduling avoids duplicate pending actions with the same hook, args, and group.
-	 */
-	public function test_schedule_job_avoids_duplicate_pending_actions(): void {
-		$args = array( 'event_id' => 'evt_123' );
-
-		$this->sut->schedule_job( $this->hook, $args );
-		$this->sut->schedule_job( $this->hook, $args );
-
-		$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args ) );
-	}
-
-	/**
-	 * @testdox Scheduling under a given group avoids duplicate pending actions in that group.
+	 * @testdox Scheduling in the $_dataName avoids duplicate pending actions with the same hook, args, and group.
 	 *
 	 * Client 11.1.0 class-wc-payments-action-scheduler-service.php:207-220 takes an optional group
 	 * and only replaces a job with the same hook, args and group.
+	 *
+	 * @dataProvider provider_schedule_job_dedupes_in_its_group
+	 *
+	 * @param array<string,mixed> $args          Action args.
+	 * @param array<int,mixed>    $trailing_args Arguments after the args, left out for the default group.
+	 * @param string              $group         Group the action should land in.
+	 * @param string              $other_group   Group that must stay empty.
 	 */
-	public function test_schedule_job_avoids_duplicate_pending_actions_in_given_group(): void {
-		$args = array( 'stage' => 7 );
+	public function test_schedule_job_avoids_duplicate_pending_actions_in_its_group( array $args, array $trailing_args, string $group, string $other_group ): void {
+		$this->sut->schedule_job( $this->hook, $args, ...$trailing_args );
+		$this->sut->schedule_job( $this->hook, $args, ...$trailing_args );
 
-		$this->sut->schedule_job( $this->hook, $args, null, 'woocommerce-payments' );
-		$this->sut->schedule_job( $this->hook, $args, null, 'woocommerce-payments' );
+		$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args, $group ) );
+		$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args, $other_group ) );
+	}
 
-		$this->assertSame( 1, $this->count_pending_actions( $this->hook, $args, 'woocommerce-payments' ) );
-		$this->assertSame( 0, $this->count_pending_actions( $this->hook, $args ) );
+	/**
+	 * Groups a job is scheduled in, with the group it must stay out of.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<int,mixed>,string,string}>
+	 */
+	public static function provider_schedule_job_dedupes_in_its_group(): array {
+		return array(
+			'default group' => array( array( 'event_id' => 'evt_123' ), array(), 'woocommerce_payments', 'woocommerce-payments' ),
+			'given group'   => array( array( 'stage' => 7 ), array( null, 'woocommerce-payments' ), 'woocommerce-payments', 'woocommerce_payments' ),
+		);
 	}
 
 	/**

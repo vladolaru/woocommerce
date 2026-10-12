@@ -823,64 +823,59 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should let the payment proceed when only the in-memory status looks paid.
+	 * @testdox Should let the payment through the already-paid guard when $_dataName.
+	 * @dataProvider provider_already_paid_guard_lets_payment_through
+	 *
+	 * @param string                 $stored_status          Order status saved to the store.
+	 * @param string                 $in_memory_status       Order status set on the instance after saving, not stored.
+	 * @param bool                   $is_subscription_change Whether the payment is a subscription payment-method change.
+	 * @param array<string,callable> $filters                Filters to add for the check, by hook.
 	 */
-	public function test_check_order_already_paid_lets_unpaid_stored_status_through(): void {
-		$order = $this->create_order( 'hash', 'pending' );
-		// In-memory only; the stored status stays pending.
-		$order->set_status( 'processing' );
-
-		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
-
-		$this->assertNull( $result );
-	}
-
-	/**
-	 * @testdox Should exempt subscription payment-method changes from the already-paid guard.
-	 */
-	public function test_check_order_already_paid_exempts_subscription_payment_method_change(): void {
-		$order = $this->create_order( 'hash', 'processing' );
-
-		$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway(), true );
-
-		$this->assertNull( $result );
-	}
-
-	/**
-	 * @testdox Should defer to a store that declares a paid status still payable.
-	 */
-	public function test_check_order_already_paid_defers_to_store_declared_payable_statuses(): void {
-		$order  = $this->create_order( 'hash', 'processing' );
-		$filter = static function ( $statuses ) {
-			$statuses[] = 'processing';
-			return $statuses;
-		};
-		add_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+	public function test_check_order_already_paid_lets_payment_through( string $stored_status, string $in_memory_status, bool $is_subscription_change, array $filters ): void {
+		$order = $this->create_order( 'hash', $stored_status );
+		$order->set_status( $in_memory_status );
+		foreach ( $filters as $hook => $filter ) {
+			add_filter( $hook, $filter );
+		}
 
 		try {
-			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
+			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway(), $is_subscription_change );
 		} finally {
-			remove_filter( 'woocommerce_valid_order_statuses_for_payment', $filter );
+			foreach ( $filters as $hook => $filter ) {
+				remove_filter( $hook, $filter );
+			}
 		}
 
 		$this->assertNull( $result );
 	}
 
 	/**
-	 * @testdox Should let a recognised flow re-run payment through the escape-hatch filter.
+	 * Orders and store hooks the already-paid guard lets through.
+	 *
+	 * @return array<string,array{string,string,bool,array<string,callable>}>
 	 */
-	public function test_check_order_already_paid_honors_escape_hatch_filter(): void {
-		$order  = $this->create_order( 'hash', 'completed' );
-		$filter = static fn(): bool => false;
-		add_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
-
-		try {
-			$result = $this->create_service()->check_order_already_paid( $order, $this->create_gateway() );
-		} finally {
-			remove_filter( 'wcpay_should_prevent_payment_for_paid_order', $filter );
-		}
-
-		$this->assertNull( $result );
+	public static function provider_already_paid_guard_lets_payment_through(): array {
+		return array(
+			'only the in-memory status is paid'            => array( 'pending', 'processing', false, array() ),
+			'the payment method of a subscription changes' => array( 'processing', 'processing', true, array() ),
+			'the store declares processing payable'        => array(
+				'processing',
+				'processing',
+				false,
+				array(
+					'woocommerce_valid_order_statuses_for_payment' => static function ( $statuses ) {
+						$statuses[] = 'processing';
+						return $statuses;
+					},
+				),
+			),
+			'the escape-hatch filter returns false'        => array(
+				'completed',
+				'completed',
+				false,
+				array( 'wcpay_should_prevent_payment_for_paid_order' => static fn(): bool => false ),
+			),
+		);
 	}
 
 	/**
