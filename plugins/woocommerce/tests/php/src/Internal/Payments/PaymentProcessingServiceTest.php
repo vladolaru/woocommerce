@@ -39,6 +39,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionRelationshipsProbe;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Exception;
@@ -1227,8 +1228,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		if ( ! $is_renewal ) {
 			$payment_data['save_payment_method'] = 0.0 === (float) $total;
 		}
-		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->response  = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the payment gets it.
+		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		// Shape: the intent the platform returns, reduced to the fields this path reads: a confirmed card PaymentIntent
+		// (Fixtures/platform-intention-basic-card.json, basic_card_usd_create_and_confirm) or a succeeded SetupIntent
+		// (Fixtures/platform-3ds-challenge-results.json, my_account_setup_intent_challenge_completed).
 		$http_client->responses = array(
 			$this->json_transport_response(
 				200,
@@ -1295,15 +1300,18 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * customer does not own the saved card, so the renewal fails and the user's saved cards are lost. Here the user's own
 	 * stored customer is used when it is not the missing one; the successful renewal stores it on the renewal order and,
 	 * through the saved token, on the subscription, so the next renewal sends it first. When the missing customer is the
-	 * user's own, it is recreated, as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:5417-5433).
+	 * user's own, it is recreated, as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:5417-5433); the new
+	 * customer does not own the saved card, so the platform refuses the retried charge and the renewal fails, with the
+	 * subscription left on its customer.
 	 *
 	 * @dataProvider provider_renewals_with_a_missing_customer
 	 *
 	 * @param string   $renewal_customer_id Customer on the renewal order and the subscription.
 	 * @param string[] $expected_trail      Platform requests, in order.
-	 * @param string   $expected_customer   Customer the retried charge carries, stored on the user, the renewal and the subscription.
+	 * @param string   $expected_customer   Customer the retried charge carries, stored on the user and the renewal order.
+	 * @param bool     $is_paid             Whether the retried charge pays the renewal.
 	 */
-	public function test_renewal_with_a_missing_customer_uses_the_users_customer( string $renewal_customer_id, array $expected_trail, string $expected_customer ): void {
+	public function test_renewal_with_a_missing_customer_uses_the_users_customer( string $renewal_customer_id, array $expected_trail, string $expected_customer, bool $is_paid ): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
 		$token = new WC_Payment_Token_CC();
@@ -1325,7 +1333,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$renewal->update_meta_data( '_stripe_customer_id', $renewal_customer_id );
 		$renewal->add_payment_token( $token );
 		$renewal->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shape: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing), which the platform passes on, as WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it.
 		$http_client->responses = array(
 			$this->json_transport_response(
 				404,
@@ -1340,21 +1349,38 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		if ( in_array( 'POST /sites/123/wcpay/customers', $expected_trail, true ) ) {
+			// Shape: Stripe's Customer object (https://docs.stripe.com/api/customers/object), reduced to the id client 11.1.0
+			// reads from it (includes/wc-payment-api/class-wc-payments-api-client.php:1377-1383).
 			$http_client->responses[] = $this->json_transport_response( 200, array( 'id' => $expected_customer ) );
 		}
-		$http_client->responses[] = $this->json_transport_response(
-			200,
-			array(
-				'id'             => 'pi_renewal',
-				'object'         => 'payment_intent',
-				'status'         => 'succeeded',
-				'amount'         => 1000,
-				'currency'       => 'usd',
-				'customer'       => $expected_customer,
-				'payment_method' => 'pm_saved',
-				'metadata'       => array( 'order_id' => (string) $renewal->get_id() ),
-			)
-		);
+		if ( $is_paid ) {
+			// Shape: the PaymentIntent the platform returns for a confirmed card charge (Fixtures/platform-intention-basic-card.json, basic_card_usd_create_and_confirm), reduced to the fields this path reads.
+			$http_client->responses[] = $this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_renewal',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => $expected_customer,
+					'payment_method' => 'pm_saved',
+					'metadata'       => array( 'order_id' => (string) $renewal->get_id() ),
+				)
+			);
+		} else {
+			// Shape: Stripe's invalid_request_error object (https://docs.stripe.com/api/errors), with the message Stripe
+			// returned when a test store renewed a saved card on a newly created customer.
+			$http_client->responses[] = $this->json_transport_response(
+				400,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'message' => "The PaymentMethod pm_saved does not belong to the Customer you supplied $expected_customer. Please use this PaymentMethod with the Customer that it belongs to instead.",
+					),
+				)
+			);
+		}
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
@@ -1373,13 +1399,18 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		}
 
-		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( $is_paid ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( $is_paid ? 'completed' : 'failed', wc_get_order( $renewal->get_id() )->get_status(), 'The renewal has no shippable items, so a paid one completes.' );
 		$this->assertSame( $expected_trail, array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
 		$this->assertSame( $renewal_customer_id, json_decode( (string) $http_client->requests[0]['body'], true )['customer'] ?? null );
 		$this->assertSame( $expected_customer, json_decode( (string) end( $http_client->requests )['body'], true )['customer'] ?? null );
 		$this->assertSame( $expected_customer, get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertSame( $expected_customer, wc_get_order( $renewal->get_id() )->get_meta( '_stripe_customer_id', true ) );
-		$this->assertSame( $expected_customer, wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'The next renewal sends this customer first.' );
+		$this->assertSame(
+			$is_paid ? $expected_customer : $renewal_customer_id,
+			wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ),
+			$is_paid ? 'The next renewal sends this customer first.' : 'A failed renewal syncs nothing to the subscription.'
+		);
 	}
 
 	/**
@@ -1408,7 +1439,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$renewal->update_meta_data( '_stripe_customer_id', 'cus_StripeGatewayLeftover' );
 		$renewal->add_payment_token( $token );
 		$renewal->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shapes, in order: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing),
+		// as WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it; the platform's 502 when its own call to
+		// Stripe failed, as WooPaymentsPaymentOperationServiceTest::platform_bad_gateway() models it; the PaymentIntent the
+		// platform returns for a confirmed card charge (Fixtures/platform-intention-basic-card.json), reduced to the fields read.
 		$http_client->responses = array(
 			$this->json_transport_response(
 				404,
@@ -1471,7 +1506,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * A WooCommerce Stripe Gateway customer left on the subscription, and the user's own customer gone from the platform.
 	 *
-	 * @return array<string,array{string,string[],string}>
+	 * @return array<string,array{string,string[],string,bool}>
 	 */
 	public function provider_renewals_with_a_missing_customer(): array {
 		return array(
@@ -1479,11 +1514,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				'cus_StripeGatewayLeftover',
 				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/intentions' ),
 				'cus_user',
+				true,
 			),
 			"the user's own customer" => array(
 				'cus_user',
 				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/customers', 'POST /sites/123/wcpay/intentions' ),
 				'cus_recreated',
+				false,
 			),
 		);
 	}
@@ -1495,12 +1532,17 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	 * (includes/class-wc-payment-gateway-wcpay.php:1554-1583), so a platform error on the update cannot fail the payment.
 	 */
 	public function test_customer_refresh_runs_at_shutdown_and_a_failure_does_not_fail_the_payment(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$logger  = RecordingWcLogger::install();
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
 		$order = $this->create_woopayments_order( '10.00' );
 		$order->set_customer_id( $user_id );
 		$order->save();
-		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shapes, in order: the PaymentIntent the platform returns for a confirmed card charge
+		// (Fixtures/platform-intention-basic-card.json), reduced to the fields read; the platform's own failure as a WordPress
+		// REST error (code, message, data.status; WP_REST_Server::error_to_response()).
 		$http_client->responses = array(
 			$this->json_transport_response(
 				200,
@@ -1533,6 +1575,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 
 		$this->customers_over_transport->refresh_queued_customers();
 
+		$this->assertCount(
+			1,
+			array_filter( $logger->lines, static fn( array $line ): bool => 'error' === $line[0] && 'woopayments' === $line[2] && str_starts_with( $line[1], 'Failed to update customer during shutdown: ' ) ),
+			'The failed refresh is logged, as client 11.1.0 logs it (includes/class-wc-payment-gateway-wcpay.php:1581-1582).'
+		);
 		$this->assertSame( 'POST /sites/123/wcpay/customers/cus_user', end( $http_client->requests )['method'] . ' ' . end( $http_client->requests )['path'] );
 		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertTrue( wc_get_order( $order->get_id() )->is_paid() );
