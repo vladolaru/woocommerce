@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+
 /**
  * Provider-owned helpers for WooPayments Express Checkout Stripe payment method types.
  *
@@ -375,7 +377,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 
 		$currency = '' === $currency ? get_woocommerce_currency() : $currency;
 
-		return self::is_amazon_pay_currency_supported( strtolower( $currency ), strtoupper( (string) ( $account_data['country'] ?? '' ) ) );
+		return self::is_amazon_pay_currency_supported( $currency, (string) ( $account_data['country'] ?? '' ) );
 	}
 
 	/**
@@ -429,36 +431,22 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Tell whether Amazon Pay supports a currency for the connected account country.
 	 *
-	 * The same table as client 11.1.0's Amazon Pay definition, applied to the order currency on the order-pay page and the store
-	 * currency elsewhere (client 11.1.0 AmazonPayDefinition.php:106-128, through `is_currency_valid()`,
-	 * class-upe-payment-method.php:311-326,491-504).
+	 * The currencies are the Amazon Pay payment method definition's, the list the gateway checks too, applied to the order
+	 * currency on the order-pay page and the store currency elsewhere (client 11.1.0 AmazonPayDefinition.php:106-128, through
+	 * `is_currency_valid()`, class-upe-payment-method.php:311-326,491-504).
 	 *
 	 * @param string $currency        Currency code.
 	 * @param string $account_country Connected account country.
 	 * @return bool
 	 */
 	private static function is_amazon_pay_currency_supported( string $currency, string $account_country ): bool {
-		if ( 'US' === $account_country ) {
-			return 'usd' === $currency;
+		$definition = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get( self::STRIPE_TYPE_AMAZON_PAY );
+		if ( null === $definition ) {
+			return false;
 		}
 
-		return in_array(
-			$currency,
-			array(
-				'usd',
-				'aud',
-				'gbp',
-				'dkk',
-				'eur',
-				'hkd',
-				'jpy',
-				'nzd',
-				'nok',
-				'sek',
-				'chf',
-				'zar',
-			),
-			true
-		);
+		$supported_currencies = $definition->get_supported_currencies( $account_country );
+
+		return array() === $supported_currencies || in_array( strtoupper( $currency ), $supported_currencies, true );
 	}
 }
