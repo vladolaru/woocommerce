@@ -469,7 +469,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return 'card';
 		}
 
-		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_';
+		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;
 		if ( str_starts_with( $gateway_id, $gateway_prefix ) ) {
 			return (string) substr( $gateway_id, strlen( $gateway_prefix ) );
 		}

@@ -612,7 +612,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 					static function ( WooPaymentsPaymentMethodDefinition $definition ): string {
 						$payment_method_id = $definition->get_id();
 
-						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_id );
+						return sprintf( 'woocommerce_%s_settings', 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id );
 					},
 					$definitions
 				)
@@ -645,7 +645,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			return 'card';
 		}
 
-		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_';
+		$gateway_prefix = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;
 		if ( str_starts_with( $payment_method_or_gateway_id, $gateway_prefix ) ) {
 			return (string) substr( $payment_method_or_gateway_id, strlen( $gateway_prefix ) );
 		}

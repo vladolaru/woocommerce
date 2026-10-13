@@ -918,7 +918,7 @@ class WooPaymentsCheckoutAssets {
 			return WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		}
 
-		return WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_definition->get_id();
+		return WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_definition->get_id();
 	}
 
 	/**

@@ -824,9 +824,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	/**
 	 * Delete order stats from WooCommerce Analytics.
 	 *
-	 * @param int $order_id Refund ID.
+	 * @param int $refund_id Refund ID.
 	 */
-	protected function delete_refund_order_stats( int $order_id ): void {
+	protected function delete_refund_order_stats( int $refund_id ): void {
 		if ( ! class_exists( 'Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore' ) ) {
 			return;
 		}
@@ -835,27 +835,27 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 
 		try {
 			$table_name = \Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::get_db_table_name();
-			$result     = $wpdb->delete( $table_name, array( 'order_id' => $order_id ), array( '%d' ) );
+			$result     = $wpdb->delete( $table_name, array( 'order_id' => $refund_id ), array( '%d' ) );
 			if ( false === $result ) {
 				wc_get_logger()->warning(
-					sprintf( 'Failed to delete stats for refund %d: Database delete failed.', $order_id ),
+					sprintf( 'Failed to delete stats for refund %d: Database delete failed.', $refund_id ),
 					array( 'source' => 'wcpay-fee-remediation' )
 				);
 				return;
 			}
 
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's own hook, fired as the order stats data store fires it after deleting a stats row; the refund is already deleted, so the customer ID is 0.
-			do_action( 'woocommerce_analytics_delete_order_stats', $order_id, 0 );
+			do_action( 'woocommerce_analytics_delete_order_stats', $refund_id, 0 );
 			if ( class_exists( ReportsCache::class ) ) {
 				ReportsCache::invalidate();
 			}
 			wc_get_logger()->info(
-				sprintf( 'Deleted stats row for refund %d', $order_id ),
+				sprintf( 'Deleted stats row for refund %d', $refund_id ),
 				array( 'source' => 'wcpay-fee-remediation' )
 			);
 		} catch ( Exception $exception ) {
 			wc_get_logger()->warning(
-				sprintf( 'Failed to delete stats for refund %d: %s', $order_id, $exception->getMessage() ),
+				sprintf( 'Failed to delete stats for refund %d: %s', $refund_id, $exception->getMessage() ),
 				array( 'source' => 'wcpay-fee-remediation' )
 			);
 		}

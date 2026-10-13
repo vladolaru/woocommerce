@@ -243,7 +243,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->payment_method_definition = $payment_method_definition ?? $this->get_default_payment_method_definition();
 		$payment_method_id               = $this->payment_method_definition->get_id();
 
-		$this->id                 = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_' . $payment_method_id;
+		$this->id                 = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id;
 		$this->title              = $this->payment_method_definition->get_title();
 		$this->method_title       = $this->get_untranslated_method_title();
 		$this->method_description = self::METHOD_DESCRIPTION;
