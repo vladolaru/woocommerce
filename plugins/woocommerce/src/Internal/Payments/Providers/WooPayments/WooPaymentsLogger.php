@@ -120,9 +120,10 @@ class WooPaymentsLogger {
 	);
 
 	/**
-	 * WP_Error codes WordPress's HTTP API sets on a failed request (`WP_Http::request()`), logged as they are.
+	 * WP_Error codes a failed request carries, from WordPress's HTTP API (`WP_Http::request()`) or from
+	 * WooPaymentsHttpClient, logged as they are.
 	 */
-	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure' );
+	private const LOGGABLE_TRANSPORT_ERROR_CODES = array( 'http_request_failed', 'http_request_not_executed', 'http_failure', 'wcpay_transport_invalid_response' );
 
 	/**
 	 * Account service.

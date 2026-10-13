@@ -3454,6 +3454,52 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A transport answer that is neither a response nor a WP_Error is logged with the HTTP client's own error code.
+	 *
+	 * A pre_http_request callback that returns any value other than false ends WP_Http::request() with that value, so a
+	 * plugin that answers `true` reaches WooPaymentsHttpClient::request() through Jetpack's Client::remote_request().
+	 */
+	public function test_invalid_transport_answer_logs_the_http_client_error_code(): void {
+		\Jetpack_Options::update_option( 'id', 123 );
+		\Jetpack_Options::update_option( 'blog_token', 'tokenkey.blogsecret' );
+		\Jetpack_Options::update_option( 'time_diff', 0 );
+		$answer_true = static fn() => true;
+		add_filter( 'pre_http_request', $answer_true );
+		$http_client = new class() extends \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient {
+			/**
+			 * Treat the store as connected; signing reads the blog token itself.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
+		};
+		$sut         = new WooPaymentsApiClient();
+		$sut->init( $http_client, $this->create_account_service( false ), $this->transport_log() );
+
+		$caught = null;
+		try {
+			$sut->send_site_request( array(), 'subscriptions', 'POST' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$caught = $exception;
+		} finally {
+			remove_filter( 'pre_http_request', $answer_true );
+			\Jetpack_Options::delete_option( array( 'id', 'blog_token', 'time_diff' ) );
+		}
+
+		$this->assertInstanceOf( WooPaymentsApiException::class, $caught );
+		$this->assertSame(
+			array(
+				'http_status'          => 500,
+				'error_code'           => 'wcpay_http_request_failed',
+				'transport_error_code' => 'wcpay_transport_invalid_response',
+			),
+			WooPaymentsLogger::get_api_error_context( $caught )
+		);
+	}
+
+	/**
 	 * @testdox The gated transport log redacts the shopper's name, email and country the Stripe Billing transaction update sends.
 	 *
 	 * The params are exactly what StripeBillingInvoiceService::update_transaction_details() sends (client
