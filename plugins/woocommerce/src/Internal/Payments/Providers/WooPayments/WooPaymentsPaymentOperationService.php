@@ -604,8 +604,9 @@ class WooPaymentsPaymentOperationService {
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $sent_key );
 		} catch ( WooPaymentsApiException $exception ) {
-			if ( $this->is_unresolved_key_refusal_after_ambiguity( $order, $attempt_key, $sent_key, $exception, $context ) ) {
-				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key );
+			$record = $this->get_charge_ambiguity_record( $order );
+			if ( null !== $record && $this->is_unresolved_key_refusal_after_ambiguity( $attempt_key, $sent_key, $exception, $context ) ) {
+				return $this->settle_earlier_charge( $context, $request_data, $attempt_key, $sent_key, $record );
 			}
 
 			if ( $attempt_key !== $sent_key && $this->is_idempotency_key_conflict( $exception ) && ! $exception->has_ambiguous_outcome() ) {
@@ -614,7 +615,7 @@ class WooPaymentsPaymentOperationService {
 
 			// While the record exists the recovery would charge under a key Stripe never saw, with no lookup of the earlier
 			// request; the failure keeps the key and the record instead, so a later attempt reaches the lookup.
-			if ( ! $this->is_missing_customer_exception( $exception ) || null !== $this->get_charge_ambiguity_record( $order ) ) {
+			if ( ! $this->is_missing_customer_exception( $exception ) || null !== $record ) {
 				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ) );
 			}
 		}
@@ -636,24 +637,22 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether Stripe refused the order's unresolved charge key after an ambiguous failure because the new request differs.
 	 *
-	 * All four must hold: a kept key was sent instead of the attempt's own; Stripe answered with an idempotency error, which
-	 * it raises only when it holds a finished result for the key, and the answer is not ambiguous (a 409 or a server error
-	 * means the earlier request may still be running, so its intent may not be listable yet); this order's ambiguity
-	 * record exists; the payment is not a scheduled renewal (a renewal retry resends the same body, so Stripe replays the
-	 * stored result instead).
+	 * The caller has found this order's ambiguity record. All three must hold too: a kept key was sent instead of the
+	 * attempt's own; Stripe answered with an idempotency error, which it raises only when it holds a finished result for the
+	 * key, and the answer is not ambiguous (a 409 or a server error means the earlier request may still be running, so its
+	 * intent may not be listable yet); the payment is not a scheduled renewal (a renewal retry resends the same body, so
+	 * Stripe replays the stored result instead).
 	 *
-	 * @param WC_Order                $order       Order being charged.
 	 * @param string                  $attempt_key Key minted fresh for this payment attempt.
 	 * @param string                  $sent_key    Key the request was sent with.
 	 * @param WooPaymentsApiException $exception   Provider request failure.
 	 * @param PaymentOperationContext $context     Payment context.
 	 * @return bool
 	 */
-	private function is_unresolved_key_refusal_after_ambiguity( WC_Order $order, string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
+	private function is_unresolved_key_refusal_after_ambiguity( string $attempt_key, string $sent_key, WooPaymentsApiException $exception, PaymentOperationContext $context ): bool {
 		return $attempt_key !== $sent_key
 			&& $this->is_idempotency_key_conflict( $exception )
 			&& ! $exception->has_ambiguous_outcome()
-			&& null !== $this->get_charge_ambiguity_record( $order )
 			&& ! self::is_scheduled_renewal( $context );
 	}
 
@@ -753,20 +752,16 @@ class WooPaymentsPaymentOperationService {
 	 * record, so the next attempt looks again. When neither the customer's nor the account's intents can be listed, the
 	 * attempt is refused the same way and the merchant gets one note asking them to check the payment.
 	 *
-	 * @param PaymentOperationContext $context      Payment context.
-	 * @param array<string,mixed>     $request_data Charge request.
-	 * @param string                  $attempt_key  Key minted fresh for this payment attempt.
-	 * @param string                  $sent_key     Kept key Stripe refused.
+	 * @param PaymentOperationContext                                             $context      Payment context.
+	 * @param array<string,mixed>                                                 $request_data Charge request.
+	 * @param string                                                              $attempt_key  Key minted fresh for this payment attempt.
+	 * @param string                                                              $sent_key     Kept key Stripe refused.
+	 * @param array{customers:array<int,string>,failed_at:int,last_failed_at:int} $record       The order's ambiguity record, which the caller found.
 	 * @return array<string,mixed>|PaymentOutcome The new charge's PaymentIntent response, or the outcome to return instead.
 	 * @throws WooPaymentsApiException When recreating a missing customer for the new charge fails.
 	 */
-	private function settle_earlier_charge( PaymentOperationContext $context, array &$request_data, string $attempt_key, string $sent_key ) {
+	private function settle_earlier_charge( PaymentOperationContext $context, array &$request_data, string $attempt_key, string $sent_key, array $record ) {
 		$order  = $context->get_order();
-		$record = $this->get_charge_ambiguity_record( $order ) ?? array(
-			'customers'      => array( '' ),
-			'failed_at'      => 0,
-			'last_failed_at' => time(),
-		);
 		$lookup = $this->ambiguity_service->find_order_intents( $order, $record['customers'], $record['failed_at'], $record['last_failed_at'] );
 		if ( WooPaymentsChargeAmbiguityService::LOOKUP_CANNOT_CHECK === $lookup['status'] ) {
 			$this->ambiguity_service->log_lookup_cannot_check( $order, $sent_key );
