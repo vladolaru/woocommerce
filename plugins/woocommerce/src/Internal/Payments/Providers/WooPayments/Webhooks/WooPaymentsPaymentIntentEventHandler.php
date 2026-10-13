@@ -111,6 +111,20 @@ class WooPaymentsPaymentIntentEventHandler {
 	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
 
 	/**
+	 * Order payment lock.
+	 *
+	 * @var OrderPaymentLock
+	 */
+	private OrderPaymentLock $order_payment_lock;
+
+	/**
+	 * WooPayments persistence vocabulary.
+	 *
+	 * @var WooPaymentsPersistenceVocabulary
+	 */
+	private WooPaymentsPersistenceVocabulary $persistence_vocabulary;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -125,8 +139,10 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param WooPaymentsEventOrderResolver       $event_order_resolver        Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder      $other_charge_recorder       Recorder of events on a charge that does not pay the order.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
+	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
+	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary      WooPayments persistence vocabulary.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;
@@ -137,6 +153,8 @@ class WooPaymentsPaymentIntentEventHandler {
 		$this->event_order_resolver        = $event_order_resolver;
 		$this->other_charge_recorder       = $other_charge_recorder;
 		$this->fee_details_note_controller = $fee_details_note_controller;
+		$this->order_payment_lock          = $order_payment_lock;
+		$this->persistence_vocabulary      = $persistence_vocabulary;
 	}
 
 	/**
@@ -217,11 +235,9 @@ class WooPaymentsPaymentIntentEventHandler {
 	 */
 	public function apply_succeeded_payment_intent( WC_Order $order, array $payment_intent ): void {
 		// One claim covers the payment meta, the token repair and the status update, so a refusal leaves the order untouched.
-		$vocabulary         = new WooPaymentsPersistenceVocabulary();
-		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
-		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $this->get_object_id( $payment_intent ), 'payment status update' );
 		if ( null === $lock_token ) {
-			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
@@ -231,7 +247,7 @@ class WooPaymentsPaymentIntentEventHandler {
 			$this->lifecycle_service->reread_order_from_data_store( $order );
 			$this->apply_succeeded_payment_intent_under_lock( $order, $payment_intent );
 		} finally {
-			$order_payment_lock->release( $order, $vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}
 
 		$this->maybe_send_ipp_receipt_email( $order, $payment_intent );
@@ -254,12 +270,10 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @throws OrderPaymentLockRefusedException When another operation holds the order payment lock; nothing is written.
 	 */
 	private function process_order_payment_event( WC_Order $order, string $event_type, array $event_object, bool $record_only = false ): void {
-		$vocabulary         = new WooPaymentsPersistenceVocabulary();
-		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
-		$lock_value         = $this->get_object_id( $event_object );
-		$lock_token         = $order_payment_lock->claim( $order, $vocabulary, $lock_value, 'payment status update' );
+		$lock_value = $this->get_object_id( $event_object );
+		$lock_token = $this->order_payment_lock->claim( $order, $this->persistence_vocabulary, $lock_value, 'payment status update' );
 		if ( null === $lock_token ) {
-			$this->log_payment_event_refusal( $order, $vocabulary, $event_type, $lock_value );
+			$this->log_payment_event_refusal( $order, $event_type, $lock_value );
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built in the exception from an order ID and a fixed operation name, not HTML output.
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
@@ -282,11 +296,11 @@ class WooPaymentsPaymentIntentEventHandler {
 			} else {
 				$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 				if ( null !== $lifecycle_event ) {
-					$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $vocabulary );
+					$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
 				}
 			}
 		} finally {
-			$order_payment_lock->release( $order, $vocabulary, $lock_token );
+			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
 		}
 
 		if ( $is_own_payment && 'payment_intent.succeeded' === $event_type ) {
@@ -300,21 +314,19 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * A failed payment or an expiry logs the lifecycle refusal line, with its payment reference and status; a succeeded
 	 * intent logs the plain refusal line.
 	 *
-	 * @param WC_Order                         $order      Order the event resolved to.
-	 * @param WooPaymentsPersistenceVocabulary $vocabulary WooPayments persistence vocabulary.
-	 * @param string                           $event_type Event type.
-	 * @param string                           $lock_value Lock value the event claimed with.
+	 * @param WC_Order $order      Order the event resolved to.
+	 * @param string   $event_type Event type.
+	 * @param string   $lock_value Lock value the event claimed with.
 	 */
-	private function log_payment_event_refusal( WC_Order $order, WooPaymentsPersistenceVocabulary $vocabulary, string $event_type, string $lock_value ): void {
-		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
+	private function log_payment_event_refusal( WC_Order $order, string $event_type, string $lock_value ): void {
 		if ( 'payment_intent.succeeded' === $event_type ) {
-			$order_payment_lock->log_refusal( $order, $vocabulary, 'payment status update' );
+			$this->order_payment_lock->log_refusal( $order, $this->persistence_vocabulary, 'payment status update' );
 			return;
 		}
 
-		$order_payment_lock->log_refusal(
+		$this->order_payment_lock->log_refusal(
 			$order,
-			$vocabulary,
+			$this->persistence_vocabulary,
 			'payment status update',
 			null,
 			array(

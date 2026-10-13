@@ -4125,8 +4125,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		);
 		wc_get_container()->replace( OrderPaymentLock::class, $store );
+		$sut = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), wc_get_container()->get( WooPaymentsApiClient::class ) );
 
-		$this->sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
+		$sut->process( $this->create_payment_intent_event( 'payment_intent.succeeded', $order ) );
 
 		$this->assertTrue( $store->hook_ran, 'The other gateway must pay the order inside the claim.' );
 		$order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );

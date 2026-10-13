@@ -95,7 +95,9 @@ trait WooPaymentsEventHandlerTestTrait {
 			$container->get( WooPaymentsAdminMenuBadgeService::class ),
 			$container->get( WooPaymentsEventOrderResolver::class ),
 			$container->get( WooPaymentsOtherChargeRecorder::class ),
-			$container->get( WooPaymentsFeeDetailsNoteController::class )
+			$container->get( WooPaymentsFeeDetailsNoteController::class ),
+			$container->get( OrderPaymentLock::class ),
+			$container->get( WooPaymentsPersistenceVocabulary::class )
 		);
 		$ingestor = new WooPaymentsEventIngestor();
 		$ingestor->init(
