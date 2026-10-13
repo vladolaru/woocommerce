@@ -372,6 +372,8 @@ class WooPaymentsCheckoutAssets {
 		/**
 		 * Filters the account ID used for payment intent confirmation.
 		 *
+		 * Keeps this name because the WooPay platform site sets it to the account that confirms intents on its checkout.
+		 *
 		 * @since 11.0.0
 		 *
 		 * @param string $account_id The account ID for intent confirmation.

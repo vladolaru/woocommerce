@@ -17,6 +17,9 @@ class WooPaymentsExpressPaymentMethodTypes {
 
 	/**
 	 * WooPayments Express Checkout method ID for Apple Pay / Google Pay.
+	 *
+	 * `payment_request` is the stored gateway setting, and settings key, that turns on the Apple Pay and Google Pay
+	 * buttons, so the methods that read it keep the word.
 	 */
 	public const EXPRESS_METHOD_PAYMENT_REQUEST = 'payment_request';
 

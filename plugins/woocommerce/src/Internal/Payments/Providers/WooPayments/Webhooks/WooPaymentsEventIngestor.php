@@ -89,9 +89,10 @@ class WooPaymentsEventIngestor {
 	 *
 	 * A refusal comes before the handler writes anything, so a retry cannot duplicate a write. What remains is whether
 	 * the event is safe to apply late, after a newer event: charge.expired is terminal, and a fraud warning only
-	 * records its warning and a note, so a late one changes no status and moves no money. Refund and dispute events
-	 * are not, since a late created or pending event would undo a newer close or failure; their refusal keeps one
-	 * attempt and is noted on the order.
+	 * records its warning and a note, so a late one changes no status and moves no money. A late created warning can
+	 * replace a newer stored warning; that is accepted, since the warning only informs the merchant. Refund and dispute
+	 * events are not, since a late created or pending event would undo a newer close or failure; their refusal keeps
+	 * one attempt and is noted on the order.
 	 *
 	 * @var string[]
 	 */

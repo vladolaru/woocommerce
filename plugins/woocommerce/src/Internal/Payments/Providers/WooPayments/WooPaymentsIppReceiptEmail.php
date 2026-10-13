@@ -20,7 +20,8 @@ use WC_Order;
 class WooPaymentsIppReceiptEmail extends WC_Email {
 
 	/**
-	 * Email registry key, the WooPayments extension's class name.
+	 * The email's key in WooCommerce's email list, the WooPayments extension's class name: the email settings use it as
+	 * the section of this email's settings page, and other code uses it to find the email.
 	 */
 	public const EMAIL_CLASS_KEY = 'WC_Payments_Email_IPP_Receipt';
 

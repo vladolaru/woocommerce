@@ -1270,6 +1270,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Determine whether a remote detach should be skipped for the current environment.
 	 *
+	 * Deleting a saved method in wp-admin on a non-production copy of a live store must not detach it from the live
+	 * account the production store still charges.
+	 *
 	 * @return bool
 	 */
 	private function should_skip_remote_detach_for_environment(): bool {

@@ -367,6 +367,8 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return;
 		}
 
+		// Only an intent that needed the shopper's action in the browser reaches this callback, which on a payment method
+		// change is a card or Link authentication, so the subscription moves to the card gateway that saves both.
 		\WC_Subscriptions_Change_Payment_Gateway::update_payment_method( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		// Client 11.1.0 trait-wc-payment-gateway-wcpay-subscriptions.php:1473-1479: the shopper is told which subscriptions changed.
 		$notice = __( 'Payment method updated.', 'woocommerce' );

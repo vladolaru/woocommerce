@@ -174,6 +174,8 @@ class WooPaymentsOrderEffectPlan {
 	/**
 	 * Build the effect plan of a $0 order confirmed without an intent (client 11.1.0 gw:1673-1771).
 	 *
+	 * With no intent there is no provider result, so the plan carries the saved token's ID in its place.
+	 *
 	 * @param array<string,string> $setup_meta Order meta the plan writes (the order mode).
 	 * @param int                  $token_id   Saved token the shopper used, or 0 for a payment method that is not saved.
 	 * @return self

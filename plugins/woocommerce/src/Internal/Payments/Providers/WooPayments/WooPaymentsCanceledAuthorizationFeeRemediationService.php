@@ -18,7 +18,8 @@ use WC_Order_Refund;
 
 /**
  * Removes the transaction fee meta and refund rows WooPayments wrote on canceled authorizations between April 2023 and
- * November 2025, in batches through Action Scheduler.
+ * November 2025, in batches through Action Scheduler. Orders are matched by the shape that defect left, from its start
+ * date on, with no end date.
  *
  * Its hooks, options and Action Scheduler group are the WooPayments extension's, so a remediation the extension queued
  * goes on here after the switch.

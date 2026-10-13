@@ -246,6 +246,8 @@ class WooPaymentsIntentRequestBuilder {
 			);
 		}
 
+		// Thrown as the transport's exception, so the charge fails with this message as a refused request would; no
+		// request is sent.
 		throw new WooPaymentsApiException( esc_html__( 'A valid shipping address is required for Afterpay payments.', 'woocommerce' ), 'wcpay_invalid_address' );
 	}
 

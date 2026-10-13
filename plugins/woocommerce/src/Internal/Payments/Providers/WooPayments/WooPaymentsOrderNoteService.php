@@ -1429,6 +1429,10 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Get the WooPayments transaction details URL.
 	 *
+	 * Notes are stored text, so their links keep the `page=wc-admin&path=/payments/transactions/details` address, which
+	 * the WooPayments admin redirects to the transaction page; live screens such as the order's fraud meta box link to
+	 * the settings route directly.
+	 *
 	 * @param string $intent_id              Payment intent ID.
 	 * @param string $charge_id              Charge ID.
 	 * @param string $balance_transaction_id Balance transaction ID.

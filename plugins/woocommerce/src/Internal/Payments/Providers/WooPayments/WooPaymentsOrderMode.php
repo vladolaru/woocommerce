@@ -13,6 +13,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Client 11.1.0's `WCPay\Constants\Order_Mode` (includes/constants/class-order-mode.php). These are
  * order values, not the account mode: a live account writes `prod`, never `live`.
  *
+ * It sits with the WooPayments provider rather than in `src/Enums`, whose classes are public API: these are values of
+ * the provider's own stored data.
+ *
  * @since 11.2.0
  * @internal
  */

@@ -2550,6 +2550,9 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Add WooPayments subscription emails to WooCommerce.
 	 *
+	 * Each email is listed under a fixed class-name key: WooCommerce's email settings use that key as the section of the
+	 * email's settings page, and other code uses it to find the email in the mailer's list.
+	 *
 	 * @internal
 	 *
 	 * @param mixed $email_classes WooCommerce email classes; another callback may have left a non-array.
