@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
@@ -17,14 +17,14 @@ use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsOrderTrackingService class.
+ * Tests for the WooPaymentsFraudOrderTrackingService class.
  */
-class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
+class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Created services whose hooks must be removed after each test.
 	 *
-	 * @var WooPaymentsOrderTrackingService[]
+	 * @var WooPaymentsFraudOrderTrackingService[]
 	 */
 	private array $services = array();
 
@@ -594,7 +594,7 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient|null              $api_client      API client.
 	 * @param WooPaymentsAccountService|null         $account_service Account service.
 	 * @param WooPaymentsFraudService|null           $fraud_service   Fraud service.
-	 * @return WooPaymentsOrderTrackingService
+	 * @return WooPaymentsFraudOrderTrackingService
 	 */
 	private function create_service(
 		WooPaymentsRuntimeArbiter $arbiter,
@@ -602,8 +602,8 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
 		?WooPaymentsFraudService $fraud_service = null
-	): WooPaymentsOrderTrackingService {
-		$service = new WooPaymentsOrderTrackingService();
+	): WooPaymentsFraudOrderTrackingService {
+		$service = new WooPaymentsFraudOrderTrackingService();
 		$service->init(
 			$arbiter,
 			$scheduler ?? new RecordingActionSchedulerService(),
@@ -702,9 +702,9 @@ class WooPaymentsOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Remove registered order-tracking hooks for a service.
 	 *
-	 * @param WooPaymentsOrderTrackingService $service Service instance.
+	 * @param WooPaymentsFraudOrderTrackingService $service Service instance.
 	 */
-	private function remove_tracking_hooks( WooPaymentsOrderTrackingService $service ): void {
+	private function remove_tracking_hooks( WooPaymentsFraudOrderTrackingService $service ): void {
 		remove_action( 'woocommerce_update_order', array( $service, 'handle_woocommerce_update_order' ) );
 		remove_action( 'wcpay_track_new_order', array( $service, 'handle_wcpay_track_new_order' ) );
 		remove_action( 'wcpay_track_update_order', array( $service, 'handle_wcpay_track_update_order' ) );

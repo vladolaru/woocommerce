@@ -155,14 +155,14 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 				self::WCPAY . 'WooPaymentsOrderAdminActionsController',
 				self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
 				self::WCPAY . 'WooPaymentsApplePayDomainService',
-				self::WCPAY . 'WooPaymentsOrderTrackingService',
+				self::WCPAY . 'WooPaymentsFraudOrderTrackingService',
 				self::WCPAY . 'WooPaymentsOperationalQueueService',
 			) as $observer
 		) {
 			$this->assertContains( $observer, $connected_rest, $observer . ' must observe connected REST mutations.' );
 		}
 
-		$this->assertContains( self::WCPAY . 'WooPaymentsOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
+		$this->assertContains( self::WCPAY . 'WooPaymentsFraudOrderTrackingService', $active_front, 'Active shopper order creation must retain tracking hooks.' );
 	}
 
 	/** @testdox Registers the express checkout Store API cart extension on active page requests, where the Cart and Checkout blocks preload the cart. */

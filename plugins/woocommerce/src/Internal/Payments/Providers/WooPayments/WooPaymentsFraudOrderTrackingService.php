@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOrderTrackingService class file.
+ * WooPaymentsFraudOrderTrackingService class file.
  */
 
 declare( strict_types = 1 );
@@ -24,7 +24,7 @@ use WC_Payment_Tokens;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsOrderTrackingService implements RegisterHooksInterface {
+class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 
 	/**
 	 * Action Scheduler hook that tracks a new order.

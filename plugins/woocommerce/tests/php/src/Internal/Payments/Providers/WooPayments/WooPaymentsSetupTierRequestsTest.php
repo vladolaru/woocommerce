@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
@@ -280,11 +280,11 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 
 		$this->run_bootstrap( '__return_false' );
-		$action_id = as_enqueue_async_action( WooPaymentsOrderTrackingService::TRACK_NEW_ORDER_ACTION, array( $order->get_id() ) );
+		$action_id = as_enqueue_async_action( WooPaymentsFraudOrderTrackingService::TRACK_NEW_ORDER_ACTION, array( $order->get_id() ) );
 		ActionScheduler::runner()->process_action( $action_id, 'WP CLI' );
 
 		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $action_id ) );
-		$this->assertSame( 'yes', wc_get_order( $order->get_id() )->get_meta( WooPaymentsOrderTrackingService::NEW_ORDER_TRACKING_COMPLETE_META_KEY ), 'The handler must have tracked the order.' );
+		$this->assertSame( 'yes', wc_get_order( $order->get_id() )->get_meta( WooPaymentsFraudOrderTrackingService::NEW_ORDER_TRACKING_COMPLETE_META_KEY ), 'The handler must have tracked the order.' );
 	}
 
 	/**
