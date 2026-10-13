@@ -575,7 +575,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		// The fast-path read misses; the re-read after losing the lock finds the
 		// ID that the winning concurrent request just persisted.
@@ -613,7 +613,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 		$sut->method( 'migrate_and_get_customer_id' )->willReturnOnConsecutiveCalls( null, 'cus_existing' );
 
 		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
@@ -645,7 +645,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		// Both the fast-path read and the re-read after losing the lock miss: the
 		// lock holder has not persisted the ID yet, so this request must create.

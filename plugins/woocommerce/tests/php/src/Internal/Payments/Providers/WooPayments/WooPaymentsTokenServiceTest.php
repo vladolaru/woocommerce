@@ -2096,7 +2096,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy() );
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 		$this->create_service( array(), $api_client, $customer_service, $account_service );
 
 		$this->assertSame( $account_is_live, $account_service->get_account_is_live(), 'The fixture must hold a valid cached account with this liveness.' );

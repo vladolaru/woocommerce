@@ -27,12 +27,6 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 		WooPaymentsAmazonPayToken::TYPE => WooPaymentsAmazonPayToken::class,
 	);
 
-	private const DERIVED_CLASS_MAP = array(
-		'WC_Payment_Token_wcpay_sepa'       => WooPaymentsSepaToken::class,
-		'WC_Payment_Token_wcpay_link'       => WooPaymentsLinkToken::class,
-		'WC_Payment_Token_wcpay_amazon_pay' => WooPaymentsAmazonPayToken::class,
-	);
-
 	private const COMPAT_TOKEN_CLASS_MAP = array(
 		'WC_Payment_Token_WCPay_SEPA'       => WooPaymentsSepaToken::class,
 		'WC_Payment_Token_WCPay_Link'       => WooPaymentsLinkToken::class,
@@ -88,8 +82,6 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 			return $class_name;
 		}
 
-		$class_map = array_merge( self::DERIVED_CLASS_MAP, self::COMPAT_TOKEN_CLASS_MAP );
-
-		return $class_map[ $class_name ] ?? $class_name;
+		return self::COMPAT_TOKEN_CLASS_MAP[ $class_name ] ?? $class_name;
 	}
 }

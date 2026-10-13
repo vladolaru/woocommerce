@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Admin\PageController;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -602,7 +603,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$session_service  = new WooPaymentsSessionService();
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $api_client, $account_service, $session_service );
+		$customer_service->init( $api_client, $account_service, $session_service, new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$sut = new WooPaymentsFraudService();
 		$sut->init( $account_service, $customer_service, $session_service, $api_client );
@@ -676,7 +677,7 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		$api_client = new WooPaymentsApiClient();
 
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
+		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$sut = new WooPaymentsFraudService();
 		$sut->init( $account_service, $customer_service, new WooPaymentsSessionService(), $api_client );

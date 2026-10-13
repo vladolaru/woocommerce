@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
+use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -2581,7 +2582,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
+		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
 
 		$controller = $controller ?? new WooPaymentsMobileRestController();
 		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ) );

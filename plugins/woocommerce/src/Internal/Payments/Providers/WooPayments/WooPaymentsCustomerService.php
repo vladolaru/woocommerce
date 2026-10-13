@@ -66,21 +66,21 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Runtime owner arbiter.
 	 *
-	 * @var WooPaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private ?WooPaymentsRuntimeArbiter $arbiter = null;
+	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
-	 * @param WooPaymentsAccountService      $account_service WooPayments account service.
-	 * @param WooPaymentsSessionService      $session_service WooPayments session service.
-	 * @param WooPaymentsRuntimeArbiter|null $arbiter         Runtime owner arbiter.
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsSessionService $session_service WooPayments session service.
+	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 		$this->session_service = $session_service;
@@ -96,8 +96,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	public function register() {
 		if (
-			null !== $this->arbiter
-			&& $this->arbiter->is_builtin_owner()
+			$this->arbiter->is_builtin_owner()
 			&& false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) )
 		) {
 			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
