@@ -5,13 +5,13 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\S
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingInvoiceService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -80,11 +80,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	private bool $stripe_billing_enabled = true;
 
 	/**
-	 * Card gateway stand-in that records the payment method copied to a subscription.
+	 * Subscriptions controller stand-in that records the payment method copied to a subscription.
 	 *
-	 * @var WooPaymentsGateway&MockObject
+	 * @var WooPaymentsSubscriptionsController&MockObject
 	 */
-	private $gateway;
+	private $subscriptions_controller;
 
 	/**
 	 * Set up the service over a fake transport, connected to the recorded account in test mode.
@@ -117,11 +117,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$module = $this->createMock( WooPaymentsStripeBillingModule::class );
 		$module->method( 'is_stripe_billing_enabled' )->willReturnCallback( fn() => $this->stripe_billing_enabled );
 
-		$this->gateway = $this->getMockBuilder( WooPaymentsGateway::class )
+		$this->subscriptions_controller = $this->getMockBuilder( WooPaymentsSubscriptionsController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'update_failing_payment_method' ) )
 			->getMock();
-		wc_get_container()->replace( WooPaymentsGateway::class, $this->gateway );
+		wc_get_container()->replace( WooPaymentsSubscriptionsController::class, $this->subscriptions_controller );
 
 		$this->sut = new StripeBillingInvoiceService();
 		$this->sut->init( $api, $api_client, $module, $logger );
@@ -154,7 +154,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$this->queue_recorded_responses( 'charge_invoice' );
 		$order        = \WC_Helper_Order::create_order();
 		$subscription = $this->create_stripe_billed_subscription( $order, 'parent' );
-		$this->gateway->expects( $this->never() )->method( 'update_failing_payment_method' );
+		$this->subscriptions_controller->expects( $this->never() )->method( 'update_failing_payment_method' );
 
 		$this->sut->maybe_record_invoice_payment( $order->get_id() );
 
@@ -265,7 +265,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$order        = \WC_Helper_Order::create_order();
 		$subscription = $this->create_stripe_billed_subscription( $order, 'renewal', array( '_requires_manual_renewal' => 'true' ) );
 		$copied       = array();
-		$this->gateway->expects( $this->once() )
+		$this->subscriptions_controller->expects( $this->once() )
 			->method( 'update_failing_payment_method' )
 			->willReturnCallback(
 				function ( $from_subscription, $from_order ) use ( &$copied ) {

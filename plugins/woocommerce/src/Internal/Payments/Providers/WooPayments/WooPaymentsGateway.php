@@ -21,8 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
@@ -2545,37 +2543,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if ( WooPaymentsPersistenceVocabulary::GATEWAY_ID === $this->id && $this->is_subscriptions_enabled() && wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
 			$this->get_subscriptions_controller()->handle_plugins_loaded();
 		}
-	}
-
-	/**
-	 * Add WooPayments subscription emails to WooCommerce.
-	 *
-	 * Each email is listed under a fixed class-name key: WooCommerce's email settings use that key as the section of the
-	 * email's settings page, and other code uses it to find the email in the mailer's list.
-	 *
-	 * @internal
-	 *
-	 * @param mixed $email_classes WooCommerce email classes; another callback may have left a non-array.
-	 * @return mixed The email classes with the WooPayments ones added, or the input unchanged when it is not an array.
-	 */
-	public static function add_subscription_emails( $email_classes ) {
-		if ( ! is_array( $email_classes ) ) {
-			return $email_classes;
-		}
-
-		if ( ! class_exists( 'WC_Email_Failed_Order' ) ) {
-			require_once WC_ABSPATH . 'includes/emails/class-wc-email-failed-order.php';
-		}
-
-		$failed_renewal_authentication = new WooPaymentsFailedRenewalAuthenticationEmail( $email_classes );
-		$failed_renewal_authentication->init_hooks();
-		$email_classes['WC_Payments_Email_Failed_Renewal_Authentication'] = $failed_renewal_authentication;
-
-		$failed_authentication_retry = new WooPaymentsFailedAuthenticationRetryEmail();
-		$failed_authentication_retry->init_hooks();
-		$email_classes['WC_Payments_Email_Failed_Authentication_Retry'] = $failed_authentication_retry;
-
-		return $email_classes;
 	}
 
 	/**

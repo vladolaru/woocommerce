@@ -110,7 +110,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $controller, 'scheduled_subscription_payment' ) ), "The $gateway_id renewal handler must be attached." );
 			$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $controller, 'update_failing_payment_method' ) ), "The $gateway_id failing-method handler must be attached." );
 		}
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
 
 		$this->use_order_mode( 'prod' );
 		$this->expectException( \RuntimeException::class );
@@ -165,7 +165,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "No native $gateway_id renewal handler may be attached." );
 		}
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ), 'The native failed-renewal email must not be registered.' );
+		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must not be registered.' );
 	}
 
 	/**
@@ -234,7 +234,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'Nothing may attach before Subscriptions has loaded.' );
 		$root->handle_plugins_loaded();
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ) );
 	}
 
 	/**

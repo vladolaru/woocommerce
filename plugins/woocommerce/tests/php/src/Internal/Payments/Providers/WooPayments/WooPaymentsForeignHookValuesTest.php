@@ -5,9 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser;
@@ -143,7 +143,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'woocommerce_email_classes':
 				// WooPaymentsSubscriptionsController attaches it at this priority when Subscriptions is active.
-				add_filter( 'woocommerce_email_classes', array( WooPaymentsGateway::class, 'add_subscription_emails' ), 20 );
+				add_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ), 20 );
 				break;
 		}
 
