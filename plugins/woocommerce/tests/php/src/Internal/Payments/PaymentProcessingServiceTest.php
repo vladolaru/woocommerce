@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
@@ -1107,6 +1108,78 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $exception->get_outcome()->get_status() );
 		$this->assertSame( 'pi_declined', $order->get_meta( '_intent_id', true ), 'The declined intent stays traceable.' );
 		$this->assertSame( '', $order->get_transaction_id(), 'A declined intent is not a payment the order can claim.' );
+	}
+
+	/**
+	 * @testdox A declined card on a subscription payment-method change keeps the subscription's status; a checkout order fails: $_dataName.
+	 *
+	 * On a WooCommerce Subscriptions payment-method change the order is the subscription itself (an on-hold order stands in
+	 * for it here). Client 11.1.0 notes the decline and leaves the subscription's status alone
+	 * (includes/class-wc-payment-gateway-wcpay.php:1326-1328); failing it moves an active subscription to pending, which
+	 * stops its renewals. The decline is the platform's recorded answer for test card 4000 0000 0000 0002
+	 * (Fixtures/platform-setup-intent-declines.json, generic_decline).
+	 *
+	 * @dataProvider provider_declined_setup_intent_requests
+	 *
+	 * @param array<string,bool> $provider_data   Checkout provider data, as the gateway builds it.
+	 * @param string             $expected_status Order status after the decline.
+	 */
+	public function test_declined_setup_intent_keeps_the_status_of_a_subscription_being_changed( array $provider_data, string $expected_status ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_status( 'on-hold' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_change' );
+		$order->save();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local test fixture.
+		$recording              = json_decode( (string) file_get_contents( __DIR__ . '/Providers/WooPayments/Fixtures/platform-setup-intent-declines.json' ), true );
+		$entry                  = current( array_filter( $recording['entries'], static fn( array $recorded ): bool => 'generic_decline' === $recorded['pair'] ) );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( $this->json_transport_response( (int) $entry['response']['http_status'], $entry['response']['body'] ) );
+
+		$outcome = $this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'pm_card_visa_chargeDeclined',
+				array(
+					'payment_token'       => 'new',
+					'save_payment_method' => true,
+				),
+				$provider_data
+			),
+			$this->timeout_transport_provider( $http_client )
+		);
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( array( 'POST /sites/123/wcpay/setup_intents' ), array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
+		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount(
+			1,
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( wp_strip_all_tags( $note->content ), 'failed to complete with the following message: Error: Your card was declined.' )
+			),
+			'The decline is noted either way.'
+		);
+	}
+
+	/**
+	 * A $0 request that saves a new card, as a subscription payment-method change and as a checkout.
+	 *
+	 * @return array<string,array{array<string,bool>,string}>
+	 */
+	public function provider_declined_setup_intent_requests(): array {
+		return array(
+			'payment-method change' => array(
+				array(
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true,
+				),
+				'on-hold',
+			),
+			'checkout'              => array( array(), 'failed' ),
+		);
 	}
 
 	/**

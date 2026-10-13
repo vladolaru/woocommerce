@@ -219,10 +219,43 @@ class WooPaymentsPaymentOperationService {
 				$outcome = $this->failed_charge_outcome( $context->get_order(), $exception );
 			}
 
-			return $this->normalize_unusable_scheduled_renewal_failure( $context, $outcome );
+			return $this->keep_status_of_failed_subscription_change( $context, $this->normalize_unusable_scheduled_renewal_failure( $context, $outcome ) );
 		}
 
 		return $this->unavailable_outcome( 'charge' );
+	}
+
+	/**
+	 * Keep the subscription's status when its payment-method change fails, such as on a declined card.
+	 *
+	 * On a WooCommerce Subscriptions payment-method change the order is the subscription itself. Client 11.1.0 notes the
+	 * failure and leaves the status alone (includes/class-wc-payment-gateway-wcpay.php:1326-1328).
+	 *
+	 * @param PaymentOperationContext $context Charge context.
+	 * @param PaymentOutcome          $outcome Charge outcome.
+	 * @return PaymentOutcome
+	 */
+	private function keep_status_of_failed_subscription_change( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+		if (
+			PaymentOutcome::STATUS_FAILED !== $outcome->get_status()
+			|| empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] )
+		) {
+			return $outcome;
+		}
+
+		$data = $outcome->get_data();
+		$data[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] = true;
+		$kept        = new PaymentOutcome(
+			$outcome->get_status(),
+			$outcome->get_provider_payment_id(),
+			$outcome->get_redirect_url(),
+			$outcome->get_payment_method_id(),
+			$outcome->get_customer_id(),
+			$data
+		);
+		$effect_plan = $outcome->get_effect_plan();
+
+		return null === $effect_plan ? $kept : $kept->with_effect_plan( $effect_plan );
 	}
 
 	/**
