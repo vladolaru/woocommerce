@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
@@ -3733,26 +3734,70 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An exception applying an authorized outcome still fails the order, as the WooPayments extension's catch does.
+	 * @testdox An exception applying an authorized outcome never fails the order: $_dataName.
 	 *
-	 * Client 11.1.0 `gw:1272-1327` fails an order whose intent has not succeeded; only a PHP error leaves it.
+	 * The authorization or debit stands, so the order is left for the webhook. Client 11.1.0 fails it for an Exception
+	 * (class-wc-payment-gateway-wcpay.php:1272-1328). A third-party callback on woocommerce_order_note_added reaches this
+	 * after the order went on hold: core fires that hook with no catch when the payment note is added, while it catches
+	 * exceptions from status hooks. Once the order shows the authorization, checkout answers as for an authorized payment;
+	 * a failure before that keeps the generic notice and leaves the order pending.
+	 *
+	 * @dataProvider provider_exceptions_applying_an_authorized_outcome
+	 *
+	 * @param string $where            Where the exception is thrown.
+	 * @param string $intention_status Intent status of the authorized outcome.
+	 * @param string $result           Expected checkout result.
+	 * @param string $order_status     Expected order status.
 	 */
-	public function test_process_payment_exception_applying_authorized_outcome_fails_order(): void {
-		$order    = $this->create_order();
-		$provider = $this->create_provider_failing_after_charge(
-			new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' ),
-			'operation_effects',
-			new \RuntimeException( 'Provider effect write failed' )
+	public function test_process_payment_exception_applying_authorized_outcome_keeps_the_order( string $where, string $intention_status, string $result, string $order_status ): void {
+		$order   = $this->create_order();
+		$outcome = new PaymentOutcome(
+			PaymentOutcome::STATUS_AUTHORIZED,
+			'pi_authorized',
+			'',
+			'pm_card_visa',
+			'',
+			array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $intention_status ) )
 		);
-		$gateway  = new WooPaymentsGateway();
+		if ( 'note hook' === $where ) {
+			$provider = $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() );
+			add_action(
+				'woocommerce_order_note_added',
+				static function (): void {
+					throw new \Exception( 'A note listener failed.' );
+				}
+			);
+		} else {
+			$provider = $this->create_provider_failing_after_charge( $outcome, 'operation_effects', new \RuntimeException( 'Provider effect write failed' ) );
+		}
+		$gateway = new WooPaymentsGateway();
 		$gateway->init( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		$logger                        = RecordingWcLogger::install();
 
-		$result = $gateway->process_payment( $order->get_id() );
+		$checkout = $gateway->process_payment( $order->get_id() );
 
-		$this->assertSame( 'failure', $result['result'] ?? '' );
-		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_status() );
-		$this->assertSame( array( 'Provider effect write failed' ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( $result, $checkout['result'] ?? '' );
+		$this->assertSame( $order_status, wc_get_order( $order->get_id() )->get_status() );
+		$this->assertCount(
+			1,
+			array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] && str_contains( $line[1], 'Applying the authorized payment to order #' . $order->get_id() . ' raised' ) ),
+			'The failure is logged whatever the logging setting.'
+		);
+		$this->assertSame( 'success' === $result ? array() : array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+	}
+
+	/**
+	 * Where an exception stops an authorized outcome, for a held card and a debit still processing.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function provider_exceptions_applying_an_authorized_outcome(): array {
+		return array(
+			'a note listener throws after the order went on hold, held card' => array( 'note hook', 'requires_capture', 'success', OrderStatus::ON_HOLD ),
+			'a note listener throws after the order went on hold, debit processing' => array( 'note hook', 'processing', 'success', OrderStatus::ON_HOLD ),
+			'the provider effects throw before the order went on hold' => array( 'provider effects', 'requires_capture', 'failure', OrderStatus::PENDING ),
+		);
 	}
 
 	/**

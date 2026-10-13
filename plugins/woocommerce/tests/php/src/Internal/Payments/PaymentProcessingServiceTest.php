@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
@@ -1400,7 +1401,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( $is_paid ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( $is_paid ? 'completed' : 'failed', wc_get_order( $renewal->get_id() )->get_status(), 'The renewal has no shippable items, so a paid one completes.' );
+		$this->assertSame( $is_paid ? OrderStatus::COMPLETED : OrderStatus::FAILED, wc_get_order( $renewal->get_id() )->get_status(), 'The renewal has no shippable items, so a paid one completes.' );
 		$this->assertSame( $expected_trail, array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
 		$this->assertSame( $renewal_customer_id, json_decode( (string) $http_client->requests[0]['body'], true )['customer'] ?? null );
 		$this->assertSame( $expected_customer, json_decode( (string) end( $http_client->requests )['body'], true )['customer'] ?? null );

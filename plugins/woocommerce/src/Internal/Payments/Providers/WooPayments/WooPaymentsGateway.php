@@ -1401,8 +1401,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				return $this->keep_succeeded_intent_order( $order, $failure->getMessage(), get_class( $failure ) );
 			}
 
-			if ( $exception instanceof PaymentOutcomeApplyException && ! $failure instanceof Exception && PaymentOutcome::STATUS_AUTHORIZED === $exception->get_outcome()->get_status() ) {
-				return $this->keep_authorized_order_after_php_error( $order, $exception );
+			if ( $exception instanceof PaymentOutcomeApplyException && PaymentOutcome::STATUS_AUTHORIZED === $exception->get_outcome()->get_status() ) {
+				return $this->keep_authorized_order_after_apply_failure( $order, $exception );
 			}
 
 			return $this->fail_checkout_after_exception( $order, $failure );
@@ -2606,17 +2606,19 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	}
 
 	/**
-	 * Settle checkout without failing an order whose payment is authorized, after a PHP Error applying the outcome.
+	 * Settle checkout without failing an order whose payment is authorized, whatever failed while applying the outcome.
 	 *
-	 * Client 11.1.0 fatals there (`gw:1272` catches only Exception) and leaves the order as it was, and so does this method.
-	 * When the order already shows the authorization, checkout answers as it does for an authorized payment, so a retry
-	 * cannot authorize the card again on a new order; otherwise it shows the generic notice.
+	 * The authorization or debit stands, so the order is left as it is for the webhook, as the redirect return does after a
+	 * failure confirming such an intent. Client 11.1.0 fails the order for an Exception and fatals on a PHP Error
+	 * (class-wc-payment-gateway-wcpay.php:1272-1328). When the order already shows the authorization, checkout answers as
+	 * it does for an authorized payment, so a retry cannot authorize the card again on a new order; otherwise it shows the
+	 * generic notice.
 	 *
 	 * @param WC_Order                     $order     Order being paid.
-	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the PHP Error that stopped it.
+	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the throwable that stopped it.
 	 * @return array<string,string>
 	 */
-	private function keep_authorized_order_after_php_error( WC_Order $order, PaymentOutcomeApplyException $exception ): array {
+	private function keep_authorized_order_after_apply_failure( WC_Order $order, PaymentOutcomeApplyException $exception ): array {
 		$failure = $exception->get_failure();
 		$outcome = $exception->get_outcome();
 		$context = array(
@@ -2687,7 +2689,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		} catch ( Throwable $read_failure ) {
 			// The order cannot be read, so it is not shown as authorized and checkout keeps the refusal.
 			$this->get_logger()->log_throwable_always(
-				sprintf( 'Reading order #%1$d again after the PHP error raised %2$s: %3$s.', $order->get_id(), get_class( $read_failure ), $read_failure->getMessage() ),
+				sprintf( 'Reading order #%1$d again after applying the authorized payment failed raised %2$s: %3$s.', $order->get_id(), get_class( $read_failure ), $read_failure->getMessage() ),
 				$read_failure,
 				array( 'order_id' => $order->get_id() )
 			);
