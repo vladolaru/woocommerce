@@ -520,71 +520,76 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A charge.dispute.funds_withdrawn push refused by the order payment lock keeps its one attempt and leaves a note on its order.
-	 */
-	public function test_lock_refused_dispute_push_is_noted_on_its_order(): void {
-		$order      = wc_create_order();
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' ) ) );
-
-		$response = $controller->handle_webhook(
-			$this->create_post_request(
-				array(
-					'id'   => 'evt_dispute_lock_controller',
-					'type' => 'charge.dispute.funds_withdrawn',
-				)
-			)
-		);
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_controller' ) );
-		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
-
-		// The same refused push again adds no second note.
-		$controller->handle_webhook(
-			$this->create_post_request(
-				array(
-					'id'   => 'evt_dispute_lock_controller',
-					'type' => 'charge.dispute.funds_withdrawn',
-				)
-			)
-		);
-		$notes = array_filter(
-			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => false !== strpos( $note->content, 'evt_dispute_lock_controller' ) && false !== strpos( $note->content, 'kept the order locked' )
-		);
-		$this->assertCount( 1, $notes );
-	}
-
-	/**
-	 * @testdox A failure writing the lock-refusal note through $hook leaves the refused push's error reply unchanged.
-	 * @testWith ["woocommerce_new_order_note_data"]
-	 *           ["woocommerce_order_note_added"]
+	 * @testdox A charge.dispute.funds_withdrawn push refused while the dispute's created event holds the order payment lock is kept, and its retry writes the funds note once.
 	 *
-	 * @param string $hook Order note hook a third-party callback throws from.
+	 * Stripe sends charge.dispute.created with charge.dispute.funds_withdrawn, and the platform forwards each from its own
+	 * job. Client 11.1.0 takes no lock in its dispute handlers and writes both notes (class-wc-payments-order-service.php:585-700).
 	 */
-	public function test_failing_lock_refusal_note_keeps_the_error_reply( string $hook ): void {
-		$order      = wc_create_order();
-		$controller = $this->create_controller_with_ingestor( new ThrowingEventIngestor( new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' ) ) );
-		$throwing   = static function () {
-			throw new RuntimeException( 'Order note extension failure.' );
-		};
-		add_filter( $hook, $throwing );
+	public function test_lock_refused_funds_withdrawn_push_is_retried_and_writes_its_note(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_funds_retry' );
+		$order->update_meta_data( '_intent_id', 'pi_funds_retry' );
+		$order->update_meta_data( '_charge_id', 'ch_funds_retry' );
+		$order->save();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$event      = array(
+			'id'   => 'evt_funds_lock_retry',
+			'type' => 'charge.dispute.funds_withdrawn',
+			'data' => array(
+				'object' => array(
+					'id'     => 'du_funds_retry',
+					'charge' => 'ch_funds_retry',
+					'status' => 'needs_response',
+				),
+			),
+		);
+		$holder     = $lock->claim( $order, $vocabulary, 'dispute_webhook_du_funds_retry', 'dispute webhook' );
+		$this->assertNotNull( $holder );
 
 		try {
-			$response = $controller->handle_webhook(
-				$this->create_post_request(
-					array(
-						'id'   => 'evt_dispute_note_failure',
-						'type' => 'charge.dispute.funds_withdrawn',
-					)
-				)
-			);
+			$response = $controller->handle_webhook( $this->create_post_request( $event ) );
 		} finally {
-			remove_filter( $hook, $throwing );
+			$lock->release( $order, $vocabulary, $holder );
 		}
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
+		$this->assertSame( $event, ( new FailedEventTransients() )->get_event( 'evt_funds_lock_retry' ) );
+		$this->assertSame(
+			array(
+				array(
+					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => 'evt_funds_lock_retry' ),
+				),
+			),
+			$this->scheduler->scheduled_jobs
+		);
+		$this->assertSame( array(), self::order_notes_containing( $order, 'kept the order locked' ), 'Nothing is noted while a retry is due.' );
+
+		$this->reliability_service->process_event( 'evt_funds_lock_retry' );
+		$this->reliability_service->process_event( 'evt_funds_lock_retry' );
+
+		$this->assertCount( 1, self::order_notes_containing( $order, 'Payment dispute and fees have been deducted from your next payout' ) );
+		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_funds_lock_retry' ) );
+	}
+
+	/**
+	 * Get an order's notes that contain a phrase.
+	 *
+	 * @param \WC_Order $order  Order.
+	 * @param string    $phrase Phrase.
+	 * @return array<int,object>
+	 */
+	private static function order_notes_containing( \WC_Order $order, string $phrase ): array {
+		return array_values(
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( $note->content, $phrase )
+			)
+		);
 	}
 
 	/**

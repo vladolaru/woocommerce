@@ -81,14 +81,17 @@ class WooPaymentsEventIngestor {
 	 * Event types also retried when the order payment lock refused them ({@see OrderPaymentLockRefusedException}).
 	 *
 	 * A refusal comes before the handler writes anything, so a retry cannot duplicate a write. What remains is whether
-	 * the event is safe to apply late, after a newer event: charge.expired is terminal, and a fraud warning only
-	 * records its warning and a note, so a late one changes no status and moves no money. A late created warning can
-	 * replace a newer stored warning; that is accepted, since the warning only informs the merchant.
+	 * the event is safe to apply late, after a newer event: charge.expired is terminal, a fraud warning only records its
+	 * warning and a note, and a dispute funds event only adds a note written once, so a late one changes no status and
+	 * moves no money. A late created warning can replace a newer stored warning; that is accepted, since the warning only
+	 * informs the merchant. With the retried types, these are every type the lock can refuse.
 	 *
 	 * @var string[]
 	 */
 	private const LOCK_REFUSAL_RETRIED_EVENT_TYPES = array(
 		'charge.expired',
+		'charge.dispute.funds_withdrawn',
+		'charge.dispute.funds_reinstated',
 		'radar.early_fraud_warning.created',
 		'radar.early_fraud_warning.updated',
 	);

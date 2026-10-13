@@ -576,51 +576,76 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'fraud warning created' => array( 'radar.early_fraud_warning.created' ),
 			'fraud warning updated' => array( 'radar.early_fraud_warning.updated' ),
 			'capture expiry'        => array( 'charge.expired' ),
+			'funds withdrawn'       => array( 'charge.dispute.funds_withdrawn' ),
+			'funds reinstated'      => array( 'charge.dispute.funds_reinstated' ),
 		);
 	}
 
 	/**
-	 * @testdox A $event_type delivery refused by the order payment lock through the failed-event job keeps its one attempt and is noted on its order once.
-	 * @dataProvider dispute_funds_event_types
+	 * @testdox A failure writing the lock-refusal note through $hook on the last attempt leaves the refusal for Action Scheduler and drops the event.
+	 * @testWith ["woocommerce_new_order_note_data"]
+	 *           ["woocommerce_order_note_added"]
 	 *
-	 * @param string $event_type Dispute funds event type, which only adds a note and is not retried.
+	 * @param string $hook Order note hook a third-party callback throws from.
 	 */
-	public function test_lock_refusal_of_a_dispute_funds_event_is_noted_and_not_retried( string $event_type ): void {
-		$order     = wc_create_order();
-		$store     = new FailedEventTransients();
-		$scheduler = new RecordingActionSchedulerService();
-		$event     = array(
-			'id'   => 'evt_process',
-			'type' => $event_type,
+	public function test_failing_lock_refusal_note_on_the_last_attempt_keeps_the_refusal( string $hook ): void {
+		$order    = wc_create_order();
+		$store    = new FailedEventTransients();
+		$event    = array(
+			'id'   => 'evt_lock_note_failure',
+			'type' => 'charge.dispute.funds_withdrawn',
 		);
-		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
-		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
-		$store->set_event( 'evt_process', $event );
+		$refusal  = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
+		$throwing = static function () {
+			throw new \RuntimeException( 'Order note extension failure.' );
+		};
+		$store->set_event( 'evt_lock_note_failure', $event + array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => count( WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS ) ) );
+		add_filter( $hook, $throwing );
 
-		// The failed action runs twice (Action Scheduler retried it, or someone ran it again by hand).
-		for ( $run = 1; $run <= 2; $run++ ) {
+		$thrown = null;
+		try {
+			$service->process_event( 'evt_lock_note_failure' );
+		} catch ( \Throwable $exception ) {
+			$thrown = $exception;
+		} finally {
+			remove_filter( $hook, $throwing );
+		}
+
+		$this->assertSame( $refusal, $thrown );
+		$this->assertNull( $store->get_event( 'evt_lock_note_failure' ) );
+	}
+
+	/**
+	 * @testdox An event the order payment lock refused until its retries ran out, delivered and exhausted again, leaves one note on its order.
+	 *
+	 * A second cycle needs a second delivery of the same event, such as a push the platform also listed as failed because
+	 * its own request timed out while the store answered.
+	 */
+	public function test_lock_refusal_exhausted_twice_notes_its_order_once(): void {
+		$order   = wc_create_order();
+		$store   = new FailedEventTransients();
+		$event   = array(
+			'id'   => 'evt_lock_exhausted_twice',
+			'type' => 'charge.dispute.funds_withdrawn',
+		);
+		$refusal = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
+		$service = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
+
+		for ( $cycle = 1; $cycle <= 2; $cycle++ ) {
+			$store->set_event( 'evt_lock_exhausted_twice', $event + array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => count( WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS ) ) );
 			try {
-				$service->process_event( 'evt_process' );
-				$this->fail( 'The refusal must still reach Action Scheduler.' );
+				$service->process_event( 'evt_lock_exhausted_twice' );
 			} catch ( OrderPaymentLockRefusedException $exception ) {
 				unset( $exception );
 			}
 		}
 
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
 		$notes = array_filter(
 			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
-			static fn( $note ): bool => false !== strpos( $note->content, 'evt_process' ) && false !== strpos( $note->content, 'kept the order locked' )
+			static fn( $note ): bool => false !== strpos( $note->content, 'evt_lock_exhausted_twice' ) && false !== strpos( $note->content, 'kept the order locked' )
 		);
 		$this->assertCount( 1, $notes );
-	}
-
-	/** @return array<string,array{string}> */
-	public static function dispute_funds_event_types(): array {
-		return array(
-			'funds withdrawn'  => array( 'charge.dispute.funds_withdrawn' ),
-			'funds reinstated' => array( 'charge.dispute.funds_reinstated' ),
-		);
 	}
 
 	/**

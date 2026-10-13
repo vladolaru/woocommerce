@@ -195,8 +195,8 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Keep an event whose processing failed for a passing reason, and schedule a job to process it again, when it is retried.
 	 *
 	 * The platform counts the store's error reply as delivered and never sends the event again, so the store retries
-	 * it itself; client 11.1.0 loses such an event. Types that are not retried get one attempt, and a lock refusal that
-	 * is not retried is noted on its order.
+	 * it itself; client 11.1.0 loses such an event. Types that are not retried get one attempt. Every type the order
+	 * payment lock can refuse is retried after a refusal, and its order is noted only when the retries run out.
 	 *
 	 * @param array<string,mixed> $event   Event payload.
 	 * @param \Throwable|null     $failure Failure of the delivery, when known.
@@ -207,7 +207,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->is_retried_failure( $event, $failure ) ) {
-			$this->note_unretried_lock_refusal( $event['id'], $failure );
 			return;
 		}
 
@@ -250,8 +249,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		} catch ( \Throwable $exception ) {
 			if ( $this->is_retried_failure( $event, $exception ) ) {
 				$this->schedule_retry_or_give_up( $event_id, $event, $attempts, $exception );
-			} else {
-				$this->note_unretried_lock_refusal( $event_id, $exception );
 			}
 			throw $exception;
 		}
@@ -277,18 +274,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		}
 
 		return $this->event_ingestor->is_retried_event( $event );
-	}
-
-	/**
-	 * Note on its order a lock refusal that gets no other attempt, so the merchant sees the update did not reach it.
-	 *
-	 * @param string          $event_id Event ID.
-	 * @param \Throwable|null $failure  Failure of the delivery, when known.
-	 */
-	private function note_unretried_lock_refusal( string $event_id, ?\Throwable $failure ): void {
-		if ( $failure instanceof OrderPaymentLockRefusedException ) {
-			$this->add_lock_refusal_note( $failure->get_order_id(), $event_id );
-		}
 	}
 
 	/**
