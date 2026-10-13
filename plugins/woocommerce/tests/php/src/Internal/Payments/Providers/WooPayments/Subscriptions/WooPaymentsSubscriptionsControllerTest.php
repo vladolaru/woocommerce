@@ -623,7 +623,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'failed', $order->get_status() );
 			$this->assertSame( 1, $status_changes );
 			$this->assertSame( 'pi_unusable_saved_method', $order->get_meta( '_intent_id', true ) );
-			$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
+			// The order is already failed, so the replay writes nothing, as client 11.1.0's mark_payment_failed() does
+			// (class-wc-payments-order-service.php:469-473).
+			$this->assertSame( 'processing', $order->get_meta( '_intention_status', true ) );
 			$this->assertCount( 1, $actionable_notes );
 			$this->assertCount( 0, $raw_notes );
 		} finally {

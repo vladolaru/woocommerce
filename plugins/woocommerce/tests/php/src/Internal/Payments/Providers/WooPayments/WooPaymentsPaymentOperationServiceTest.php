@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
@@ -36,7 +37,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -4641,6 +4645,110 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertCount( 1, $failed_notes, "Exactly one failed-payment note should record the $pair decline." );
+	}
+
+	/**
+	 * @testdox A card declined at checkout ($_dataName) leaves its payment method and customer on the failed order, and Sift order tracking queues the order.
+	 *
+	 * Client 11.1.0 writes both before the charge (class-wc-payment-gateway-wcpay.php:1663-1667), so its declined order keeps
+	 * them, and its order-tracking hook queues any card-gateway order that has a payment method (:577, :4485-4524). The
+	 * decline is REC-1's recorded generic_decline envelope (Fixtures/platform-intention-declines.json); the account's
+	 * fraud_services carries Sift in the shape client 11.1.0 reads (class-wc-payments-fraud-service.php:99-100).
+	 *
+	 * @testWith ["the first request", false, "cus_rec1_checkout"]
+	 *           ["the request retried for a missing customer", true, "cus_rec1_replaced"]
+	 *
+	 * @param string $label                  Which request is declined.
+	 * @param bool   $after_missing_customer Whether the platform first answers that the customer is missing.
+	 * @param string $customer_id            Customer the declined request was sent with.
+	 */
+	public function test_declined_checkout_keeps_payment_method_and_customer_for_sift_tracking( string $label, bool $after_missing_customer, string $customer_id ): void {
+		unset( $label );
+		$order           = $this->create_woopayments_order( '10.00' );
+		$account_service = $this->create_account_service( false, array(), array( 'fraud_services' => array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) ) );
+		$recorded        = $this->load_recorded_decline_entry( 'generic_decline' );
+		$payment_method  = (string) $recorded['error']['payment_intent']['last_payment_error']['payment_method']['id'];
+		$provider        = $this->create_provider_declining_checkout( $recorded, $account_service, $after_missing_customer );
+		$scheduler       = new RecordingActionSchedulerService();
+		$fraud_service   = new WooPaymentsFraudService();
+		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $this->createMock( WooPaymentsSessionService::class ), $this->createMock( WooPaymentsApiClient::class ) );
+		$tracking = new WooPaymentsFraudOrderTrackingService();
+		$tracking->init( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler, $this->createMock( WooPaymentsApiClient::class ), $account_service, $fraud_service );
+		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
+
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method ),
+			$provider
+		);
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( array( $payment_method, $customer_id ), array( $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_stripe_customer_id', true ) ) );
+		$this->assertContains(
+			array( 'wcpay_track_new_order', array( 'order_id' => $order->get_id() ) ),
+			array_map( static fn( array $job ): array => array( $job['hook'], $job['args'] ), $scheduler->scheduled_jobs ),
+			'The declined order is queued for Sift.'
+		);
+	}
+
+	/**
+	 * @testdox The payment_intent.payment_failed webhook for a card declined at checkout leaves the failed order with its one failure note.
+	 *
+	 * Client 11.1.0's mark_payment_failed() adds nothing to an order that is already failed (class-wc-payments-order-service.php:469-473).
+	 * The event object is the PaymentIntent of REC-1's recorded generic_decline envelope (Fixtures/platform-intention-declines.json),
+	 * the object Stripe sends with payment_intent.payment_failed.
+	 */
+	public function test_payment_failed_webhook_after_a_checkout_decline_adds_no_second_failure_note(): void {
+		$order           = $this->create_woopayments_order( '10.00' );
+		$account_service = $this->create_account_service( false );
+		$recorded        = $this->load_recorded_decline_entry( 'generic_decline' );
+		$intent          = $recorded['error']['payment_intent'];
+		$provider        = $this->create_provider_declining_checkout( $recorded, $account_service );
+		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, (string) $intent['last_payment_error']['payment_method']['id'] ),
+			$provider
+		);
+
+		wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class )->process( 'payment_intent.payment_failed', $intent );
+
+		$order        = wc_get_order( $order->get_id() );
+		$failed_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => str_contains( $note->content, '<strong>failed</strong>' )
+		);
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertCount( 1, $failed_notes );
+	}
+
+	/**
+	 * Build the real provider over a transport that answers a recorded REC-1 decline, for a payer whose customer is cus_rec1_checkout.
+	 *
+	 * @param array{http_status:int,error:array<string,mixed>} $recorded               Recorded decline entry.
+	 * @param WooPaymentsAccountService                        $account_service        Account service.
+	 * @param bool                                             $after_missing_customer Whether the platform first answers that the customer is missing, so the decline answers the retry with cus_rec1_replaced.
+	 * @return WooPaymentsProvider
+	 */
+	private function create_provider_declining_checkout( array $recorded, WooPaymentsAccountService $account_service, bool $after_missing_customer = false ): WooPaymentsProvider {
+		$decline     = array(
+			'response' => array( 'code' => $recorded['http_status'] ),
+			'headers'  => array( 'content-type' => 'application/json; charset=UTF-8' ),
+			'body'     => wp_json_encode( array( 'error' => $recorded['error'] ) ),
+		);
+		$http_client = new FakeWooPaymentsHttpClient();
+		if ( $after_missing_customer ) {
+			$http_client->responses = array( self::stripe_no_such_customer(), $decline );
+		} else {
+			$http_client->response = $decline;
+		}
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'replace_missing_customer_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_rec1_checkout' );
+		$customer_service->method( 'replace_missing_customer_for_order' )->willReturn( 'cus_rec1_replaced' );
+
+		return $this->create_provider_over_fake_transport( $http_client, $account_service, $customer_service );
 	}
 
 	/**

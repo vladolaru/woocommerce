@@ -649,7 +649,7 @@ class WooPaymentsPaymentOperationService {
 			// While the record exists the recovery would charge under a key Stripe never saw, with no lookup of the earlier
 			// request; the failure keeps the key and the record instead, so a later attempt reaches the lookup.
 			if ( ! $this->is_missing_customer_exception( $exception ) || null !== $record ) {
-				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ) );
+				return $this->failed_charge_outcome( $order, $exception, true, (string) ( $request_data['customer'] ?? '' ), self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 			}
 		}
 
@@ -665,7 +665,7 @@ class WooPaymentsPaymentOperationService {
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->failed_charge_outcome( $order, $exception, true, $customer_id, self::is_scheduled_renewal( $context ) );
+			return $this->failed_charge_outcome( $order, $exception, true, $customer_id, self::is_scheduled_renewal( $context ), (string) ( $request_data['payment_method'] ?? '' ) );
 		}
 	}
 
@@ -1113,14 +1113,18 @@ class WooPaymentsPaymentOperationService {
 	 * answer other than a card error unless the payment is a scheduled renewal, since such an answer says nothing about
 	 * the earlier request under the key.
 	 *
+	 * A declined request's payment method and customer stay on the outcome, so the failed order keeps them, as client 11.1.0
+	 * writes them before the charge (class-wc-payment-gateway-wcpay.php:1663-1667); Sift order tracking reads the payment method.
+	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
 	 * @param bool                    $is_payment_intent_dispatch Whether the exception came from PaymentIntent dispatch.
 	 * @param string                  $customer_id                 Customer the PaymentIntent request was sent with.
 	 * @param bool                    $is_scheduled_renewal        Whether the payment is a scheduled subscription renewal.
+	 * @param string                  $payment_method_id           Payment method the PaymentIntent request was sent with, if any.
 	 * @return PaymentOutcome
 	 */
-	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false ): PaymentOutcome {
+	private function failed_charge_outcome( WC_Order $order, WooPaymentsApiException $exception, bool $is_payment_intent_dispatch = false, string $customer_id = '', bool $is_scheduled_renewal = false, string $payment_method_id = '' ): PaymentOutcome {
 		$outcome = WooPaymentsIntentCodec::failed_transport_outcome( 'charge', $exception );
 		$data    = $outcome->get_data();
 		if ( $is_payment_intent_dispatch && $exception->has_ambiguous_outcome() ) {
@@ -1159,8 +1163,8 @@ class WooPaymentsPaymentOperationService {
 			PaymentOutcome::STATUS_FAILED,
 			$outcome->get_provider_payment_id(),
 			'',
-			'',
-			'',
+			$payment_method_id,
+			$customer_id,
 			$data
 		);
 	}

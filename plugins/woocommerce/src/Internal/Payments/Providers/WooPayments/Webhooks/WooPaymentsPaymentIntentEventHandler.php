@@ -492,6 +492,12 @@ class WooPaymentsPaymentIntentEventHandler {
 					return null;
 				}
 
+				// An order already failed, such as by the checkout that saw the decline, gets nothing more: client 11.1.0 adds no
+				// note and leaves the order as it is (class-wc-payments-order-service.php:469-473).
+				if ( $order->has_status( OrderStatus::FAILED ) ) {
+					return null;
+				}
+
 				$intent_id       = $this->get_object_id( $event_object );
 				$charge_id       = $this->get_charge_id_from_intent( $event_object );
 				$note_candidates = 'card_present' === $payment_method_type
