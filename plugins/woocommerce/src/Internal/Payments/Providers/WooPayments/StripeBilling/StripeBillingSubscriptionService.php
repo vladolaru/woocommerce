@@ -768,8 +768,11 @@ class StripeBillingSubscriptionService {
 	/**
 	 * Limit what a Stripe-billed subscription supports: Stripe schedules its payments, so its amounts and dates cannot change here.
 	 *
-	 * Every other subscription is answered too: amount and date changes supported and Stripe's scheduled payments not,
-	 * whatever its own gateway answered.
+	 * Every other WooPayments subscription is answered too: amount and date changes supported and Stripe's scheduled
+	 * payments not, since the gateway claims those payments for all its subscriptions while Stripe Billing is on. A
+	 * subscription on another gateway keeps that gateway's answer; client 11.1.0 answers it as well
+	 * (`includes/subscriptions/class-wc-payments-subscription-service.php:705-723`). A Stripe-billed subscription always
+	 * pays with the WooPayments card gateway.
 	 *
 	 * @internal
 	 *
@@ -780,6 +783,10 @@ class StripeBillingSubscriptionService {
 	 */
 	public function prevent_wcpay_subscription_changes( $supported, $feature, $subscription ) {
 		if ( ! $subscription instanceof WC_Order || ! is_string( $feature ) ) {
+			return $supported;
+		}
+
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $subscription->get_payment_method() ) ) {
 			return $supported;
 		}
 

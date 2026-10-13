@@ -197,6 +197,33 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox With the toggle at $toggle, a subscription on another gateway keeps that gateway's answer for scheduled payments; a WooPayments one Stripe does not bill is answered no.
+	 * @testWith ["0"]
+	 *           ["1"]
+	 *
+	 * WooCommerce Subscriptions 9.3.0 passes the gateway's answer through this filter
+	 * (`includes/core/class-wc-subscription.php:331`). Asaas Gateway for WooCommerce lists `gateway_scheduled_payments`
+	 * in its gateway's supports (`woo-asaas/includes/gateway/class-gateway.php:110-121`).
+	 *
+	 * @param string $toggle Toggle value.
+	 */
+	public function test_answers_scheduled_payments_only_for_woopayments_subscriptions( string $toggle ): void {
+		$this->load_subscriptions();
+		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
+		$this->register_module( true );
+		WooCommerceSubscriptionsDoubles::load();
+		$other_gateway = new SubscriptionDouble();
+		$other_gateway->set_payment_method( 'asaas-credit-card' );
+		$other_gateway->save();
+		$woopayments = new SubscriptionDouble();
+		$woopayments->set_payment_method( 'woocommerce_payments' );
+		$woopayments->save();
+
+		$this->assertTrue( apply_filters( 'woocommerce_subscription_payment_gateway_supports', true, 'gateway_scheduled_payments', $other_gateway ), 'Another gateway keeps its answer.' );
+		$this->assertFalse( apply_filters( 'woocommerce_subscription_payment_gateway_supports', true, 'gateway_scheduled_payments', $woopayments ), 'WooPayments schedules nothing for a subscription Stripe does not bill.' );
+	}
+
+	/**
 	 * @testdox The migration route starts the migration off Stripe Billing for a store manager while Stripe-billed subscriptions remain, and does nothing on a staging copy ($role, staging: $is_staging, Stripe-billed: $has_stripe_billed).
 	 * @testWith ["administrator", false, true, 200, true]
 	 *           ["administrator", false, false, 200, false]

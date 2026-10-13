@@ -806,7 +806,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A Stripe-billed subscription supports Stripe's scheduled payments and not amount or date changes; others the reverse (client test_prevent_wcpay_subscription_changes, `class-wc-payments-subscription-service.php:705-723`).
+	 * @testdox A Stripe-billed subscription supports Stripe's scheduled payments and not amount or date changes; other WooPayments ones the reverse; another gateway's keep its answer (client test_prevent_wcpay_subscription_changes, `class-wc-payments-subscription-service.php:705-723`).
 	 * @testWith [false, "gateway_scheduled_payments", true, false]
 	 *           [false, "subscription_amount_changes", false, true]
 	 *           [false, "subscription_date_changes", false, true]
@@ -819,14 +819,23 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	 *           [true, "subscription_cancellation", false, true]
 	 *           [true, "subscription_payment_method_change_customer", false, true]
 	 *           [true, "random_feature", true, false]
+	 *           [false, "gateway_scheduled_payments", true, false, "woocommerce_payments_sepa_debit"]
+	 *           [false, "gateway_scheduled_payments", true, true, "asaas-credit-card"]
+	 *           [false, "subscription_amount_changes", false, false, "asaas-credit-card"]
+	 *           [false, "subscription_date_changes", false, false, "asaas-credit-card"]
+	 *
+	 * The asaas-credit-card rows: Asaas Gateway for WooCommerce lists `gateway_scheduled_payments` in its gateway's
+	 * supports (`woo-asaas/includes/gateway/class-gateway.php:110-121`) and bills on its own schedule. Client 11.1.0
+	 * answers false for it too.
 	 *
 	 * @param bool   $is_stripe_billed Whether the subscription is Stripe-billed.
 	 * @param string $feature          Feature asked about.
 	 * @param bool   $supported        What the gateway answered.
 	 * @param bool   $expected         What the subscription supports.
+	 * @param string $payment_method   The subscription's payment method.
 	 */
-	public function test_supports_follow_stripe_billing( bool $is_stripe_billed, string $feature, bool $supported, bool $expected ): void {
-		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => $is_stripe_billed ? self::MAIN_SUBSCRIPTION_ID : '' ) );
+	public function test_supports_follow_stripe_billing( bool $is_stripe_billed, string $feature, bool $supported, bool $expected, string $payment_method = 'woocommerce_payments' ): void {
+		$subscription = $this->create_subscription( array( '_wcpay_subscription_id' => $is_stripe_billed ? self::MAIN_SUBSCRIPTION_ID : '' ), 2, '49.80', 'USD', $payment_method );
 
 		$this->assertSame( $expected, $this->sut->prevent_wcpay_subscription_changes( $supported, $feature, $subscription ) );
 	}
