@@ -333,9 +333,7 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_checkout_surface(): bool {
-		return is_checkout() ||
-			WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) ||
-			WooPaymentsFrontendAssets::current_post_has_shortcode( 'woocommerce_checkout' );
+		return is_checkout() || WooPaymentsFrontendAssets::current_post_has_shortcode( 'woocommerce_checkout' );
 	}
 
 	/**
