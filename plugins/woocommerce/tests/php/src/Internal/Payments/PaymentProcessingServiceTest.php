@@ -1383,6 +1383,92 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A renewal retried after its recovered charge timed out resends the user's customer under the kept key, so Stripe replays it rather than charging again.
+	 *
+	 * The first attempt finds the leftover Stripe Gateway customer missing and retries with the user's customer under the
+	 * recovery key, which times out after Stripe may have charged. Client 11.1.0 stores the replacement customer on the order
+	 * before that retry (includes/class-wc-payment-gateway-wcpay.php:5430). Without it, the next WooCommerce Subscriptions
+	 * retry reads the leftover customer again and sends a different body under the kept key, which Stripe refuses; the
+	 * renewal then retires the key and charges again under a fresh one.
+	 */
+	public function test_renewal_retry_after_an_ambiguous_recovered_charge_resends_the_same_customer(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$renewal = $this->create_woopayments_order( '10.00' );
+		$renewal->set_customer_id( $user_id );
+		$renewal->update_meta_data( '_stripe_customer_id', 'cus_StripeGatewayLeftover' );
+		$renewal->add_payment_token( $token );
+		$renewal->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				404,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'param'   => 'customer',
+						'message' => "No such customer: 'cus_StripeGatewayLeftover'",
+					),
+				)
+			),
+			$this->json_transport_response(
+				502,
+				array(
+					'code'    => 'wcpay_request_failure',
+					'message' => 'Error: cURL error when connecting to Stripe (see error properties for details).',
+					'data'    => array( 'status' => 502 ),
+				)
+			),
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_renewal',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => 'cus_user',
+					'payment_method' => 'pm_saved',
+					'metadata'       => array( 'order_id' => (string) $renewal->get_id() ),
+				)
+			),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client, true );
+		$renew                  = fn( WC_Order $order ): PaymentOutcome => $this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'',
+				array( 'payment_token' => (string) $token->get_id() ),
+				array( 'scheduled_subscription_payment' => true )
+			),
+			$provider
+		);
+
+		$first = $renew( $renewal );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $first->get_status() );
+		$this->assertSame( 'cus_user', wc_get_order( $renewal->get_id() )->get_meta( '_stripe_customer_id', true ), 'The renewal order holds the customer the timed-out retry sent.' );
+
+		$retry = $renew( wc_get_order( $renewal->get_id() ) );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $retry->get_status() );
+		$this->assertCount( 3, $http_client->requests );
+		$this->assertSame( $http_client->requests[1]['headers']['Idempotency-Key'] ?? null, $http_client->requests[2]['headers']['Idempotency-Key'] ?? null, 'The retry resends under the kept recovery key.' );
+		$this->assertSame( 'cus_user', json_decode( (string) $http_client->requests[2]['body'], true )['customer'] ?? null, 'The same body, so Stripe replays the earlier result.' );
+	}
+
+	/**
 	 * A WooCommerce Stripe Gateway customer left on the subscription, and the user's own customer gone from the platform.
 	 *
 	 * @return array<string,array{string,string[],string}>

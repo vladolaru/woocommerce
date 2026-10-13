@@ -656,9 +656,11 @@ class WooPaymentsPaymentOperationService {
 		$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
 		$request_data['customer'] = $customer_id;
 		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
-		// ambiguous failure of the retry replays the retry.
+		// ambiguous failure of the retry replays the retry. The customer is kept with it, as client 11.1.0 does
+		// (class-wc-payment-gateway-wcpay.php:5430), so a renewal retried later sends the same body under that key.
 		$recovery_key = self::get_customer_recovery_idempotency_key( $sent_key );
 		$order->update_meta_data( self::CHARGE_IDEMPOTENCY_KEY_META, $recovery_key );
+		$order->update_meta_data( '_stripe_customer_id', $customer_id );
 		$order->save_meta_data();
 		try {
 			return $this->api_client->create_and_confirm_payment_intention( $request_data, $recovery_key );
