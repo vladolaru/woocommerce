@@ -494,6 +494,48 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A guest order paid by a logged-in shopper with no customer creates one named for them and stores it on them.
+	 *
+	 * Client 11.1.0 creates the payer's customer with their username in the description and stores it on them
+	 * (includes/class-wc-payment-gateway-wcpay.php:1542-1552, includes/class-wc-payments-customer-service.php:148-165).
+	 */
+	public function test_guest_order_creates_the_logged_in_payers_customer_on_them(): void {
+		$payer_id   = $this->factory->user->create( array( 'user_login' => 'guest-order-payer' ) );
+		$order      = $this->create_checkout_order();
+		$api_client = $this->create_customer_api_client( array( 'cus_created' ) );
+		$sut        = $this->create_sut( false, $api_client );
+		wp_set_current_user( $payer_id );
+
+		$this->assertSame( 'cus_created', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertSame( 'Name: Ada Lovelace, Username: guest-order-payer', $api_client->created_customers[0]['description'] );
+		$this->assertSame( 'cus_created', get_user_option( '_wcpay_customer_id_live', $payer_id ) );
+	}
+
+	/**
+	 * @testdox The shutdown refresh updates the customer of the payer resolved for the payment, whoever is logged in by then.
+	 *
+	 * Client 11.1.0 refreshes the payer it resolved for the payment, with their username in the description
+	 * (includes/class-wc-payment-gateway-wcpay.php:1563-1582, :1507).
+	 */
+	public function test_shutdown_refresh_updates_the_queued_payers_customer(): void {
+		$payer_id   = $this->factory->user->create( array( 'user_login' => 'guest-order-payer' ) );
+		$order      = $this->create_checkout_order();
+		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
+		$sut        = $this->create_sut( false, $api_client );
+		update_user_option( $payer_id, '_wcpay_customer_id_live', 'cus_payer' );
+		WC()->session->set( 'wcpay_customer_id', 'cus_session' );
+		wp_set_current_user( $payer_id );
+
+		$this->assertSame( 'cus_payer', $sut->get_or_create_customer_id_for_order( $order ) );
+		wp_set_current_user( 0 );
+		$sut->refresh_queued_customers();
+
+		$this->assertSame( array( 'cus_payer' ), array_column( $api_client->updated_customers, 'customer_id' ) );
+		$this->assertSame( 'Name: Ada Lovelace, Username: guest-order-payer', $api_client->updated_customers[0]['customer_data']['description'] );
+		$this->assertSame( array(), $api_client->created_customers );
+	}
+
+	/**
 	 * @dataProvider provider_customer_update_not_suppressed
 	 * @testdox Ordinary customer resolution should still refresh the customer when the request names no subscription of this order ($_dataName).
 	 *

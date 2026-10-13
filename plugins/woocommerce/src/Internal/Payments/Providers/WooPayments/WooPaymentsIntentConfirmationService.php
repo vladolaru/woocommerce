@@ -176,7 +176,7 @@ class WooPaymentsIntentConfirmationService {
 					if ( empty( $payment_method_details ) ) {
 						$payment_method_details = $this->token_service->get_or_create_token_and_details_for_user(
 							WooPaymentsIntentCodec::result_payment_method_id( $intent ),
-							$this->get_token_user_id( $order ),
+							WooPaymentsCustomerService::get_payer_user_id( $order ),
 							true
 						)['payment_method_details'];
 					}
@@ -434,7 +434,7 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		$payment_method_id = WooPaymentsIntentCodec::result_payment_method_id( $intent );
-		$user_id           = $this->get_token_user_id( $order );
+		$user_id           = WooPaymentsCustomerService::get_payer_user_id( $order );
 		if ( '' === $payment_method_id || 0 >= $user_id ) {
 			return array(
 				'error'                  => $is_recurring ? $this->recurring_token_save_error_response() : null,
@@ -471,18 +471,6 @@ class WooPaymentsIntentConfirmationService {
 			'token'                  => null,
 			'payment_method_details' => array(),
 		);
-	}
-
-	/**
-	 * Get the user ID that should own a saved payment token.
-	 *
-	 * @param WC_Order $order Order object.
-	 * @return int
-	 */
-	private function get_token_user_id( WC_Order $order ): int {
-		$user_id = $order->get_user_id();
-
-		return 0 < $user_id ? $user_id : get_current_user_id();
 	}
 
 	/**

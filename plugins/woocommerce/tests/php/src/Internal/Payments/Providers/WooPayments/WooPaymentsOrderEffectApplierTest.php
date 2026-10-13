@@ -753,6 +753,94 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On a guest order the token effects belong to the logged-in payer, never to anyone else on a user's order: $_dataName.
+	 *
+	 * Client 11.1.0 attaches the payer's saved card to the order and saves a new card to the payer, who is the logged-in
+	 * user when the order has none (includes/class-wc-payment-gateway-wcpay.php:1542-1544, :2061, :2071-2072).
+	 *
+	 * @dataProvider provider_token_effects_by_payer
+	 *
+	 * @param bool $with_saved_card Whether the payment used the logged-in shopper's saved card (else a new card to save).
+	 * @param bool $order_has_user  Whether the order belongs to another user.
+	 * @param bool $belongs_to_them Whether the order ends carrying the card, from the logged-in shopper's saved cards.
+	 */
+	public function test_token_effects_belong_to_the_payer( bool $with_saved_card, bool $order_has_user, bool $belongs_to_them ): void {
+		$shopper_id = $this->factory()->user->create();
+		$order      = $this->create_woopayments_order();
+		$order->set_customer_id( $order_has_user ? $this->factory()->user->create() : 0 );
+		$order->save();
+		$saved = new WC_Payment_Token_CC();
+		$saved->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$saved->set_user_id( $shopper_id );
+		$saved->set_token( 'pm_shopper_saved' );
+		$saved->set_card_type( 'visa' );
+		$saved->set_last4( '4242' );
+		$saved->set_expiry_month( '12' );
+		$saved->set_expiry_year( '2030' );
+		$saved->save();
+		$payment_method_id = $with_saved_card ? 'pm_shopper_saved' : 'pm_new';
+		// Shape: Stripe's PaymentMethod object (https://docs.stripe.com/api/payment_methods/object), reduced to the fields a token reads.
+		$token_service = $this->create_token_service(
+			array(
+				'pm_new' => array(
+					'id'   => 'pm_new',
+					'type' => 'card',
+					'card' => array(
+						'brand'     => 'visa',
+						'last4'     => '1881',
+						'exp_month' => 12,
+						'exp_year'  => 2030,
+					),
+				),
+			)
+		);
+		$context       = PaymentOperationContext::for_checkout(
+			$order,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+			$payment_method_id,
+			$with_saved_card ? array( 'payment_token' => (string) $saved->get_id() ) : array( 'save_payment_method' => true )
+		);
+		$outcome       = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_payer', '', $payment_method_id, 'cus_shopper' );
+		$plan          = WooPaymentsOrderEffectPlan::for_payment_intent(
+			array(
+				'id'             => 'pi_payer',
+				'status'         => 'succeeded',
+				'payment_method' => $payment_method_id,
+			),
+			false
+		);
+		wp_set_current_user( $shopper_id );
+
+		try {
+			$this->create_applier( $token_service )->apply( $context, $outcome, $plan );
+		} finally {
+			wp_set_current_user( 0 );
+		}
+		$order  = wc_get_order( $order->get_id() );
+		$tokens = array_values( \WC_Payment_Tokens::get_customer_tokens( $shopper_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID ) );
+		$card   = current( array_filter( $tokens, static fn( \WC_Payment_Token $token ): bool => $payment_method_id === $token->get_token() ) );
+
+		$this->assertSame(
+			$belongs_to_them ? array( $card instanceof \WC_Payment_Token ? $card->get_id() : -1 ) : array(),
+			array_values( $order->get_payment_tokens() ),
+			"The order carries the card from the shopper's saved cards, or none."
+		);
+	}
+
+	/**
+	 * A guest order paid with the logged-in shopper's saved card or a new card to save, and a user's order paid with the shopper's saved card.
+	 *
+	 * @return array<string,array{bool,bool,bool}>
+	 */
+	public function provider_token_effects_by_payer(): array {
+		return array(
+			'a guest order, the saved card attached' => array( true, false, true ),
+			'a guest order, the new card saved and attached' => array( false, false, true ),
+			"another user's order, the shopper's saved card not attached" => array( true, true, false ),
+		);
+	}
+
+	/**
 	 * @testdox Recurring renewal token effects synchronize the new customer token and provider metadata.
 	 */
 	public function test_recurring_token_effects_synchronize_failed_renewal_subscriptions(): void {

@@ -71,9 +71,9 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Orders whose customer is refreshed at shutdown, by order ID.
+	 * Orders whose payer's customer is refreshed at shutdown, with that payer, by order ID.
 	 *
-	 * @var array<int,WC_Order>
+	 * @var array<int,array{order:WC_Order,user_id:int|null}>
 	 */
 	private array $orders_to_refresh = array();
 
@@ -204,7 +204,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_order( WC_Order $order ): string {
-		return $this->get_or_create_customer_id( $order, true );
+		return $this->get_or_create_customer_id( $order, $this->get_payer_customer_user_id( $order ), true );
 	}
 
 	/**
@@ -216,25 +216,57 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_or_create_customer_id_for_subscription_payment_method_change( WC_Order $order ): string {
-		return $this->get_or_create_customer_id( $order, false );
+		return $this->get_or_create_customer_id( $order, $this->get_payer_customer_user_id( $order ), false );
 	}
 
 	/**
-	 * Get or create the payer's customer ID, refreshing an existing customer from the order at shutdown when asked.
+	 * Get or create the customer ID of the order's own user, or of a guest's session, never the logged-in user's.
+	 *
+	 * For the mobile app's create_customer route, where the logged-in user is the merchant, not the payer.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order the customer is for.
+	 * @return string
+	 */
+	public function get_or_create_customer_id_for_order_user( WC_Order $order ): string {
+		return $this->get_or_create_customer_id( $order, $this->get_order_user_id( $order ), true );
+	}
+
+	/**
+	 * Get the WordPress user paying an order on a shopper path: the order's user, else the logged-in user, else 0.
+	 *
+	 * As client 11.1.0 (includes/class-wc-payment-gateway-wcpay.php:1542-1544). Only the order's user may pay a user's
+	 * order (pay_for_order capability), so the logged-in user stands in only on a guest order.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return int
+	 */
+	public static function get_payer_user_id( WC_Order $order ): int {
+		$user_id = $order->get_user_id();
+
+		return 0 < $user_id ? $user_id : get_current_user_id();
+	}
+
+	/**
+	 * Get or create the customer ID of the given user or, with none, of the guest session, refreshing an existing customer
+	 * from the order at shutdown when asked.
 	 *
 	 * The order's _stripe_customer_id is not read: it can be another customer's or another plugin's.
 	 *
 	 * @param WC_Order $order                   Order being charged.
+	 * @param int|null $user_id                 User whose customer is used, or null for the guest session.
 	 * @param bool     $should_refresh_customer Whether an existing customer is refreshed from the order.
 	 * @return string
 	 */
-	private function get_or_create_customer_id( WC_Order $order, bool $should_refresh_customer ): string {
-		$user_id     = $this->get_order_user_id( $order );
+	private function get_or_create_customer_id( WC_Order $order, ?int $user_id, bool $should_refresh_customer ): string {
 		$customer_id = $this->migrate_and_get_customer_id( $user_id );
 
 		if ( null !== $customer_id ) {
 			if ( $should_refresh_customer ) {
-				$this->refresh_customer_at_shutdown( $order );
+				$this->refresh_customer_at_shutdown( $order, $user_id );
 			}
 
 			return $customer_id;
@@ -260,7 +292,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			if ( null !== $customer_id ) {
 				// The winning request already created and persisted the customer.
 				if ( $should_refresh_customer ) {
-					$this->refresh_customer_at_shutdown( $order );
+					$this->refresh_customer_at_shutdown( $order, $user_id );
 				}
 
 				return $customer_id;
@@ -271,7 +303,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		}
 
 		try {
-			$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order ) ) );
+			$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order, $user_id ) ) );
 			$this->persist_customer_id( $user_id, $customer_id );
 
 			return $customer_id;
@@ -285,10 +317,14 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Queue the payer's customer for a refresh from the order's details at shutdown.
 	 *
-	 * @param WC_Order $order Order being charged.
+	 * @param WC_Order $order   Order being charged.
+	 * @param int|null $user_id Payer whose customer was used, or null for the guest session.
 	 */
-	private function refresh_customer_at_shutdown( WC_Order $order ): void {
-		$this->orders_to_refresh[ $order->get_id() ] = $order;
+	private function refresh_customer_at_shutdown( WC_Order $order, ?int $user_id ): void {
+		$this->orders_to_refresh[ $order->get_id() ] = array(
+			'order'   => $order,
+			'user_id' => $user_id,
+		);
 		if ( false === has_action( 'shutdown', array( $this, 'refresh_queued_customers' ) ) ) {
 			add_action( 'shutdown', array( $this, 'refresh_queued_customers' ) );
 		}
@@ -297,19 +333,19 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Refresh the customers queued in this request from their orders, after the payment answered.
 	 *
-	 * The customer ID is read again, in case a missing customer was recreated during the payment. A failure is only logged,
-	 * as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:1563-1582).
+	 * The queued payer's customer ID is read again, in case a missing customer was recreated during the payment. A failure
+	 * is only logged, as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:1563-1582).
 	 *
 	 * @internal
 	 */
 	public function refresh_queued_customers(): void {
-		$orders                  = $this->orders_to_refresh;
+		$queued                  = $this->orders_to_refresh;
 		$this->orders_to_refresh = array();
-		foreach ( $orders as $order ) {
+		foreach ( $queued as $entry ) {
 			try {
-				$customer_id = $this->migrate_and_get_customer_id( $this->get_order_user_id( $order ) );
+				$customer_id = $this->migrate_and_get_customer_id( $entry['user_id'] );
 				if ( null !== $customer_id ) {
-					$this->update_customer_for_order( $customer_id, $order );
+					$this->update_customer( $customer_id, $entry['order'], $entry['user_id'] );
 				}
 			} catch ( \Exception $exception ) {
 				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to update customer during shutdown: ' . $exception->getMessage() );
@@ -329,7 +365,22 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
 	 */
 	public function update_customer_for_order( string $customer_id, WC_Order $order ): string {
-		$customer_data = $this->map_customer_data( $order );
+		return $this->update_customer( $customer_id, $order, $this->get_order_user_id( $order ) );
+	}
+
+	/**
+	 * Update a WooPayments customer from an order, naming the given user in its description.
+	 *
+	 * A missing remote customer is replaced as for the order; see replace_missing_customer_for_order().
+	 *
+	 * @param string   $customer_id WooPayments customer ID.
+	 * @param WC_Order $order       Order being charged.
+	 * @param int|null $user_id     User the customer belongs to, or null for a guest.
+	 * @return string Updated or replacement WooPayments customer ID.
+	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
+	 */
+	private function update_customer( string $customer_id, WC_Order $order, ?int $user_id ): string {
+		$customer_data = $this->map_customer_data( $order, $user_id );
 
 		try {
 			$this->api_client->update_customer( $customer_id, $customer_data );
@@ -366,7 +417,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 
 		$this->delete_customer_id( $user_id );
 
-		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order ) ) );
+		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order, $user_id ) ) );
 		$this->persist_customer_id( $user_id, $customer_id );
 
 		return $customer_id;
@@ -435,13 +486,15 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Map WooCommerce order data to the WooPayments customer payload.
+	 * Map WooCommerce order data to the WooPayments customer payload, naming the given user in the description.
 	 *
-	 * @param WC_Order $order Order being charged.
+	 * On a shopper path the user is the payer, as client 11.1.0 maps it (includes/class-wc-payment-gateway-wcpay.php:1507, :1551).
+	 *
+	 * @param WC_Order $order   Order being charged.
+	 * @param int|null $user_id User the customer belongs to, or null for a guest.
 	 * @return array<string,mixed>
 	 */
-	public function map_customer_data( WC_Order $order ): array {
-		$user_id     = $this->get_order_user_id( $order );
+	public function map_customer_data( WC_Order $order, ?int $user_id ): array {
 		$user        = $user_id > 0 ? get_user_by( 'id', $user_id ) : false;
 		$wc_customer = new WC_Customer( $user_id > 0 ? $user_id : 0 );
 		$name        = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
@@ -655,6 +708,18 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 */
 	private function get_order_user_id( WC_Order $order ): ?int {
 		$user_id = (int) $order->get_customer_id();
+
+		return $user_id > 0 ? $user_id : null;
+	}
+
+	/**
+	 * Get the payer's user ID for a customer lookup, or null when the payer is a guest; see get_payer_user_id().
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return int|null
+	 */
+	private function get_payer_customer_user_id( WC_Order $order ): ?int {
+		$user_id = self::get_payer_user_id( $order );
 
 		return $user_id > 0 ? $user_id : null;
 	}

@@ -909,6 +909,9 @@ class WooPaymentsOrderEffectApplier {
 	/**
 	 * Apply saved or newly created token effects; a token that cannot be saved or attached is left out, and a failure is logged.
 	 *
+	 * The token belongs to the payer (WooPaymentsCustomerService::get_payer_user_id()), as client 11.1.0 attaches and saves
+	 * it for that user (includes/class-wc-payment-gateway-wcpay.php:2061, :2071-2072).
+	 *
 	 * @param PaymentOperationContext $context      Payment context.
 	 * @param PaymentOutcome          $outcome      Provider outcome.
 	 * @param bool                    $is_recurring Whether recurring token persistence is required.
@@ -920,11 +923,12 @@ class WooPaymentsOrderEffectApplier {
 		$payment_method_id = $outcome->get_payment_method_id();
 		$customer_id       = $outcome->get_customer_id();
 		$order             = $context->get_order();
+		$payer_user_id     = WooPaymentsCustomerService::get_payer_user_id( $order );
 
 		try {
 			if ( WooPaymentsTokenService::is_using_saved_payment_token( $payment_data ) ) {
 				$payment_token_id = isset( $payment_data['payment_token'] ) ? (string) $payment_data['payment_token'] : '';
-				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $order->get_user_id() );
+				$token            = $this->token_service->get_valid_token_from_token_id( $payment_token_id, $payer_user_id );
 				return $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ? array() : null;
 			}
 
@@ -932,16 +936,16 @@ class WooPaymentsOrderEffectApplier {
 				return array();
 			}
 
-			if ( '' === $payment_method_id || 0 >= $order->get_user_id() ) {
+			if ( '' === $payment_method_id || 0 >= $payer_user_id ) {
 				return null;
 			}
 
 			if ( 0 === strpos( $outcome->get_provider_payment_id(), 'seti_' ) ) {
-				$token_result           = $this->token_service->get_or_create_token_and_details_for_user( $payment_method_id, $order->get_user_id() );
+				$token_result           = $this->token_service->get_or_create_token_and_details_for_user( $payment_method_id, $payer_user_id );
 				$token                  = $token_result['token'];
 				$payment_method_details = $token_result['payment_method_details'];
 			} else {
-				$token                  = $this->token_service->get_or_create_token_for_user( $payment_method_id, $order->get_user_id() );
+				$token                  = $this->token_service->get_or_create_token_for_user( $payment_method_id, $payer_user_id );
 				$payment_method_details = array();
 			}
 			if ( $token instanceof WC_Payment_Token && $this->attach_and_sync_token( $order, $token, $payment_method_id, $customer_id ) ) {

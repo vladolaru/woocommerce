@@ -396,7 +396,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			if ( '' !== $customer_id ) {
 				$customer_id = $this->customer_service->update_customer_for_order( $customer_id, $order );
 			} else {
-				$customer_id = $this->customer_service->get_or_create_customer_id_for_order( $order );
+				$customer_id = $this->customer_service->get_or_create_customer_id_for_order_user( $order );
 			}
 
 			$order->update_meta_data( '_stripe_customer_id', $customer_id );

@@ -724,6 +724,55 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A logged-in shopper's saved Link token on a guest order declares card and link, even when the checkout fold is off.
+	 *
+	 * The token's type is read for the payer, the logged-in user when the order has none, as client 11.1.0 resolves the
+	 * payer (includes/class-wc-payment-gateway-wcpay.php:1542-1544). Link can be enabled while not folded into card for
+	 * the order's currency; without the token's type the intent would declare card alone and the platform refuse the charge.
+	 */
+	public function test_guest_order_link_token_of_the_logged_in_payer_declares_card_and_link(): void {
+		$shopper_id = $this->factory()->user->create();
+		$order      = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '10.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => $fallback
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn( array() );
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$token_service = $this->createMock( WooPaymentsTokenService::class );
+		$token_service->method( 'resolve_payment_method_type_from_token_id' )->willReturnCallback(
+			static fn( string $token_id, int $user_id ): string => '42' === $token_id && $shopper_id === $user_id ? 'link' : ''
+		);
+
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$token_service,
+			new WooPaymentsPaymentMethodRegistry()
+		);
+		wp_set_current_user( $shopper_id );
+
+		try {
+			$context = $request_builder->with_saved_payment_token_method_type(
+				PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, '', array( 'payment_token' => '42' ) )
+			);
+		} finally {
+			wp_set_current_user( 0 );
+		}
+		$request = $request_builder->charge_request_data( $context, 'pm_link', 'cus_shopper', false );
+
+		$this->assertSame( array( 'card', 'link' ), $request['payment_method_types'] );
+	}
+
+	/**
 	 * @testdox Saved-card-token charges follow the card/link fold like fresh card payments.
 	 */
 	public function test_saved_card_token_charges_follow_the_card_link_fold(): void {

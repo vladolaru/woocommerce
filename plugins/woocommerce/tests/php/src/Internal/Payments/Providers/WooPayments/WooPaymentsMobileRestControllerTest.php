@@ -1018,6 +1018,32 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer creation for a guest order creates a guest customer and leaves the logged-in merchant's customer alone.
+	 *
+	 * The app's request is the merchant's, so the payer comes from the order, as client 11.1.0's route reads it
+	 * (includes/admin/class-wc-rest-payments-orders-controller.php:479-494).
+	 */
+	public function test_create_customer_for_a_guest_order_does_not_use_the_logged_in_merchants_customer(): void {
+		$merchant_id = get_current_user_id();
+		update_user_option( $merchant_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_merchant' );
+		$order = $this->create_order();
+		$order->set_customer_id( 0 );
+		$order->save();
+		$this->api_client->created_customer_id = 'cus_guest_created';
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_guest_created' ), $response->get_data() );
+		$this->assertSame( array(), $this->api_client->updated_customers );
+		$this->assertStringEndsWith( ', Guest', $this->api_client->created_customers[0]['description'] );
+		$this->assertSame( 'cus_merchant', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $merchant_id ) );
+	}
+
+	/**
 	 * @testdox Customer creation updates a cached user customer with the order billing data.
 	 */
 	public function test_create_customer_updates_cached_user_customer_with_order_data(): void {

@@ -29,6 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHt
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectPlan;
@@ -1584,6 +1585,240 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'POST /sites/123/wcpay/customers/cus_user', end( $http_client->requests )['method'] . ' ' . end( $http_client->requests )['path'] );
 		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
 		$this->assertTrue( wc_get_order( $order->get_id() )->is_paid() );
+	}
+
+	/**
+	 * @testdox A guest order paid on order-pay is charged on the payer's customer, a logged-in shopper's own when there is one: $_dataName.
+	 *
+	 * Client 11.1.0 takes the logged-in user as the payer when the order has none (includes/class-wc-payment-gateway-wcpay.php:1542-1544),
+	 * so a shopper who pays a guest order's link logged in pays on their own customer, with their saved card if they pick
+	 * one, and the shutdown refresh names them in the customer's description (:1551). A guest stays on the session's customer.
+	 *
+	 * @dataProvider provider_guest_order_payers
+	 *
+	 * @param bool   $logged_in             Whether a shopper with a stored customer and a saved card is logged in.
+	 * @param bool   $with_saved_card       Whether the shopper picks their saved card instead of entering a new one.
+	 * @param string $expected_customer     Customer the charge and the shutdown refresh carry.
+	 * @param string $expected_description  Description the shutdown refresh sends.
+	 */
+	public function test_order_pay_charges_a_guest_order_on_the_payers_customer( bool $logged_in, bool $with_saved_card, string $expected_customer, string $expected_description ): void {
+		$shopper_id = self::factory()->user->create(
+			array(
+				'role'       => 'customer',
+				'user_login' => 'guest-order-payer',
+			)
+		);
+		update_user_option( $shopper_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_shopper' );
+		$token = $this->create_saved_card( $shopper_id, 'pm_shopper_saved' );
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->save();
+		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_session' );
+		$expected_payment_method = $with_saved_card ? 'pm_shopper_saved' : 'pm_card_visa';
+		$http_client             = new FakeWooPaymentsHttpClient();
+		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the expected ones gets it.
+		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		// Shapes, in order: the PaymentIntent the platform returns for a confirmed card charge
+		// (Fixtures/platform-intention-basic-card.json, basic_card_usd_create_and_confirm), reduced to the fields this path
+		// reads; Stripe's Customer object (https://docs.stripe.com/api/customers/object), reduced to its id, for the refresh.
+		$http_client->responses = array(
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_guest_order',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => $expected_customer,
+					'payment_method' => $expected_payment_method,
+					'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+				)
+			),
+			$this->json_transport_response( 200, array( 'id' => $expected_customer ) ),
+		);
+		$gateway                = new WooPaymentsGateway();
+		$gateway->init( $this->sut, $this->timeout_transport_provider( $http_client, true ) );
+		wp_set_current_user( $logged_in ? $shopper_id : 0 );
+		// As the order-pay form posts it.
+		$_POST['woocommerce_pay']                       = '1';
+		$_POST['payment_method']                        = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$_POST['wc-woocommerce_payments-payment-token'] = $with_saved_card ? (string) $token->get_id() : 'new';
+		if ( ! $with_saved_card ) {
+			$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		}
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+
+			$this->assertSame( 'success', $result['result'] ?? '' );
+			$this->assertSame( 'POST /sites/123/wcpay/intentions', $http_client->requests[0]['method'] . ' ' . $http_client->requests[0]['path'] );
+			$body = json_decode( (string) $http_client->requests[0]['body'], true );
+			$this->assertSame( $expected_customer, $body['customer'] ?? null );
+			$this->assertSame( $expected_payment_method, $body['payment_method'] ?? null );
+			$this->assertCount( 1, $http_client->requests, 'No customer is looked up, created or updated before the charge.' );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertTrue( $order->is_paid() );
+			$this->assertSame( $with_saved_card ? array( $token->get_id() ) : array(), array_values( $order->get_payment_tokens() ), 'The saved card is attached to the order, as client 11.1.0 attaches it (gw:2071-2072).' );
+
+			$this->customers_over_transport->refresh_queued_customers();
+
+			$this->assertSame( 'POST /sites/123/wcpay/customers/' . $expected_customer, $http_client->requests[1]['method'] . ' ' . $http_client->requests[1]['path'] );
+			$this->assertSame( $expected_description, json_decode( (string) $http_client->requests[1]['body'], true )['description'] ?? null );
+			$this->assertSame( 'cus_shopper', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $shopper_id ) );
+		} finally {
+			wp_set_current_user( 0 );
+			WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
+			$_POST = array();
+		}
+	}
+
+	/**
+	 * A logged-in shopper with a saved card or a new one, and a guest.
+	 *
+	 * @return array<string,array{bool,bool,string,string}>
+	 */
+	public function provider_guest_order_payers(): array {
+		return array(
+			'a logged-in shopper with their saved card' => array( true, true, 'cus_shopper', 'Name: Ada Lovelace, Username: guest-order-payer' ),
+			'a logged-in shopper with a new card'       => array( true, false, 'cus_shopper', 'Name: Ada Lovelace, Username: guest-order-payer' ),
+			'a guest with a new card'                   => array( false, false, 'cus_session', 'Name: Ada Lovelace, Guest' ),
+		);
+	}
+
+	/**
+	 * @testdox Order-pay refuses a saved card the payer does not own and sends nothing to the platform: $_dataName.
+	 *
+	 * The card must belong to the payer: the order's user, else the logged-in user. Client 11.1.0 checks it against the
+	 * logged-in user (includes/class-payment-information.php:345); only a user's own order is payable by them (core's
+	 * pay_for_order capability), so on every reachable order-pay the two are the same user.
+	 *
+	 * @dataProvider provider_saved_cards_the_payer_does_not_own
+	 *
+	 * @param bool $order_has_user  Whether the order belongs to another user.
+	 * @param bool $shoppers_own    Whether the card posted is the logged-in shopper's own (else a third user's).
+	 */
+	public function test_order_pay_refuses_a_saved_card_the_payer_does_not_own( bool $order_has_user, bool $shoppers_own ): void {
+		$shopper_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$other_id   = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $shopper_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_shopper' );
+		update_user_option( $other_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_other' );
+		$token = $this->create_saved_card( $shoppers_own ? $shopper_id : $other_id, 'pm_not_the_payers' );
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $order_has_user ? self::factory()->user->create( array( 'role' => 'customer' ) ) : 0 );
+		$order->save();
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). No request is expected.
+		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		$gateway               = new WooPaymentsGateway();
+		$gateway->init( $this->sut, $this->timeout_transport_provider( $http_client, true ) );
+		wp_set_current_user( $shopper_id );
+		$_POST['woocommerce_pay']                       = '1';
+		$_POST['payment_method']                        = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$_POST['wc-woocommerce_payments-payment-token'] = (string) $token->get_id();
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+
+			$this->assertNotSame( 'success', $result['result'] ?? '' );
+			$this->assertSame( array(), $http_client->requests );
+			$this->assertFalse( wc_get_order( $order->get_id() )->is_paid() );
+		} finally {
+			wp_set_current_user( 0 );
+			$_POST = array();
+			wc_clear_notices();
+		}
+	}
+
+	/**
+	 * The logged-in shopper's own card on another user's order, and a third user's card on a guest order.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function provider_saved_cards_the_payer_does_not_own(): array {
+		return array(
+			"the shopper's own card on another user's order" => array( true, true ),
+			"another user's card on a guest order" => array( false, false ),
+		);
+	}
+
+	/**
+	 * @testdox A guest order whose logged-in payer's customer is missing is recovered as the order's guest, on a new session customer.
+	 *
+	 * The charge recovery resolves the customer from the order, not from the payer (replace_missing_customer_for_order()), as
+	 * the mobile route and renewals need. Client 11.1.0 recreates the payer's customer here (gw:5427-5428); this keeps the
+	 * payer's stored customer and charges a new guest customer.
+	 */
+	public function test_order_pay_recovery_on_a_guest_order_resolves_the_customer_from_the_order(): void {
+		$shopper_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $shopper_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_shopper_gone' );
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_billing_first_name( 'Ada' );
+		$order->set_billing_last_name( 'Lovelace' );
+		$order->save();
+		$http_client = new FakeWooPaymentsHttpClient();
+		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). Any request after the expected ones gets it.
+		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		// Shapes, in order: Stripe's resource_missing error with its 404 (https://docs.stripe.com/error-codes/resource-missing),
+		// which the platform passes on, as WooPaymentsPaymentOperationServiceTest::stripe_no_such_customer() models it;
+		// Stripe's Customer object (https://docs.stripe.com/api/customers/object), reduced to the id client 11.1.0 reads from
+		// it (includes/wc-payment-api/class-wc-payments-api-client.php:1377-1383); the PaymentIntent the platform returns for
+		// a confirmed card charge (Fixtures/platform-intention-basic-card.json, basic_card_usd_create_and_confirm), reduced.
+		$http_client->responses = array(
+			$this->json_transport_response(
+				404,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'param'   => 'customer',
+						'message' => "No such customer: 'cus_shopper_gone'",
+					),
+				)
+			),
+			$this->json_transport_response( 200, array( 'id' => 'cus_recovered' ) ),
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_recovered',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => 'cus_recovered',
+					'payment_method' => 'pm_card_visa',
+					'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+				)
+			),
+		);
+		$gateway                = new WooPaymentsGateway();
+		$gateway->init( $this->sut, $this->timeout_transport_provider( $http_client, true ) );
+		wp_set_current_user( $shopper_id );
+		$_POST['woocommerce_pay']                       = '1';
+		$_POST['payment_method']                        = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$_POST['wc-woocommerce_payments-payment-token'] = 'new';
+		$_POST['wcpay-payment-method']                  = 'pm_card_visa';
+
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+
+			$this->assertSame( 'success', $result['result'] ?? '' );
+			$this->assertSame(
+				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/customers', 'POST /sites/123/wcpay/intentions' ),
+				array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests )
+			);
+			$this->assertSame( 'cus_shopper_gone', json_decode( (string) $http_client->requests[0]['body'], true )['customer'] ?? null );
+			$this->assertSame( 'Name: Ada Lovelace, Guest', json_decode( (string) $http_client->requests[1]['body'], true )['description'] ?? null );
+			$this->assertSame( 'cus_recovered', json_decode( (string) $http_client->requests[2]['body'], true )['customer'] ?? null );
+			$this->assertSame( 'cus_shopper_gone', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $shopper_id ), "The payer's stored customer is not replaced." );
+			$this->assertSame( 'cus_recovered', WC()->session->get( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY ) );
+			$this->assertTrue( wc_get_order( $order->get_id() )->is_paid() );
+		} finally {
+			wp_set_current_user( 0 );
+			WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, null );
+			$_POST = array();
+		}
 	}
 
 	/**
@@ -5631,6 +5866,27 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * Save a WooPayments card for a user.
+	 *
+	 * @param int    $user_id           Owner.
+	 * @param string $payment_method_id Stripe payment method ID the token holds.
+	 * @return WC_Payment_Token_CC
+	 */
+	private function create_saved_card( int $user_id, string $payment_method_id ): WC_Payment_Token_CC {
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( $payment_method_id );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+
+		return $token;
 	}
 
 	/**

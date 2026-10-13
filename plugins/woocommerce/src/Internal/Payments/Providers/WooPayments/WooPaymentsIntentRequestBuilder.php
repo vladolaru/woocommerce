@@ -502,7 +502,7 @@ class WooPaymentsIntentRequestBuilder {
 		$provider_data       = $context->get_provider_data();
 		$payment_method_type = ! empty( $provider_data['scheduled_subscription_payment'] )
 			? $this->token_service->resolve_payment_method_type_from_order_token_id( $payment_token, $context->get_order() )
-			: $this->token_service->resolve_payment_method_type_from_token_id( $payment_token, $context->get_order()->get_user_id() );
+			: $this->token_service->resolve_payment_method_type_from_token_id( $payment_token, WooPaymentsCustomerService::get_payer_user_id( $context->get_order() ) );
 
 		if ( '' === $payment_method_type ) {
 			return $context;
@@ -534,7 +534,7 @@ class WooPaymentsIntentRequestBuilder {
 				return $this->token_service->resolve_payment_method_id_from_order_token_id( $payment_token, $context->get_order() );
 			}
 
-			return $this->token_service->resolve_payment_method_id_from_token_id( $payment_token, $context->get_order()->get_user_id() );
+			return $this->token_service->resolve_payment_method_id_from_token_id( $payment_token, WooPaymentsCustomerService::get_payer_user_id( $context->get_order() ) );
 		}
 
 		return $context->get_payment_method_id();
