@@ -320,12 +320,12 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Update the WooPayments customer associated with an order.
 	 *
-	 * If the remote customer no longer exists, recreate it and update local persistence. An update does not store the
-	 * customer on the user, as client 11.1.0's update_customer_for_user() does not (class-wc-payments-customer-service.php:200-222).
+	 * If the remote customer no longer exists, it is replaced; see replace_missing_customer_for_order(). An update does not
+	 * store the customer on the user, as client 11.1.0's update_customer_for_user() does not (class-wc-payments-customer-service.php:200-222).
 	 *
 	 * @param string   $customer_id WooPayments customer ID.
 	 * @param WC_Order $order       Order being charged.
-	 * @return string Updated or recreated WooPayments customer ID.
+	 * @return string Updated or replacement WooPayments customer ID.
 	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
 	 */
 	public function update_customer_for_order( string $customer_id, WC_Order $order ): string {
@@ -337,7 +337,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			return $customer_id;
 		} catch ( WooPaymentsApiException $exception ) {
 			if ( 'resource_missing' === $exception->get_error_code() ) {
-				return $this->recreate_customer_for_order( $order );
+				return $this->replace_missing_customer_for_order( $order, $customer_id );
 			}
 
 			throw $exception;
@@ -345,13 +345,25 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Recreate the WooPayments customer associated with an order.
+	 * Replace a customer the platform no longer has, for a payment of the order.
 	 *
-	 * @param WC_Order $order Order being charged.
+	 * When the missing customer is not the order's user's stored customer and the user has one, such as a WooCommerce
+	 * Stripe Gateway customer left on a subscription, the user's customer is used, and nothing is deleted. Otherwise the
+	 * user's customer is deleted and recreated, as client 11.1.0 does (class-wc-payment-gateway-wcpay.php:5417-5433).
+	 *
+	 * @param WC_Order $order               Order being charged.
+	 * @param string   $missing_customer_id Customer ID the platform did not find.
 	 * @return string
 	 */
-	public function recreate_customer_for_order( WC_Order $order ): string {
+	public function replace_missing_customer_for_order( WC_Order $order, string $missing_customer_id ): string {
 		$user_id = $this->get_order_user_id( $order );
+		if ( null !== $user_id ) {
+			$user_customer_id = $this->migrate_and_get_customer_id( $user_id );
+			if ( null !== $user_customer_id && $missing_customer_id !== $user_customer_id ) {
+				return $user_customer_id;
+			}
+		}
+
 		$this->delete_customer_id( $user_id );
 
 		$customer_id = $this->api_client->create_customer( $this->with_session_id( $this->map_customer_data( $order ) ) );

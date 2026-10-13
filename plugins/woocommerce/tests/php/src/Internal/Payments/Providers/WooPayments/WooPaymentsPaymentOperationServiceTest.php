@@ -1892,9 +1892,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			),
 			self::succeeded_charge( 'pi_recovered', 'pm_new' ),
 		);
-		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order', 'recreate_customer_for_order' ) )->getMock();
+		$customer_service       = $this->getMockBuilder( WooPaymentsCustomerService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_or_create_customer_id_for_order', 'replace_missing_customer_for_order' ) )->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_sent' );
-		$customer_service->expects( $this->never() )->method( 'recreate_customer_for_order' );
+		$customer_service->expects( $this->never() )->method( 'replace_missing_customer_for_order' );
 		$sut = $this->create_timeout_operation_service( $http_client, 'cus_sent', $customer_service );
 		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
 
@@ -2858,15 +2858,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'recreate_customer_for_order' ) )
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'replace_missing_customer_for_order' ) )
 			->getMock();
 
 		$customer_service->expects( $this->once() )
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_missing' );
 		$customer_service->expects( $this->once() )
-			->method( 'recreate_customer_for_order' )
-			->with( $this->isInstanceOf( WC_Order::class ) )
+			->method( 'replace_missing_customer_for_order' )
+			->with( $this->isInstanceOf( WC_Order::class ), 'cus_missing' )
 			->willReturn( 'cus_recreated' );
 
 		$sut     = $this->create_operation_service( $api_client, $customer_service );
@@ -2969,8 +2969,11 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function test_validated_subscription_change_recovers_missing_remote_customer( string $total, string $expected_intent ): void {
 		$order      = $this->create_woopayments_order( $total );
 		$api_client = $this->create_recording_customer_intent_api_client( true );
+		$user_id    = self::factory()->user->create( array( 'role' => 'customer' ) );
 
-		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_missing' );
+		update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_missing' );
+		$order->set_customer_id( $user_id );
+		$order->save();
 
 		$outcome = $this->create_operation_service( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),
@@ -2987,6 +2990,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'cus_created', $api_client->intent_requests[1]['request_data']['customer'] );
 		$this->assertSame( 'key_recovery_real', $api_client->intent_requests[0]['idempotency_key'] );
 		$this->assertSame( 'key_recovery_real:customer-recovery', $api_client->intent_requests[1]['idempotency_key'], 'The retry sends another customer, so it needs its own key (area 2a #15).' );
+		$this->assertSame( 'cus_created', get_user_option( '_wcpay_customer_id_live', $user_id ), "The user's own missing customer is replaced." );
 	}
 
 	/**

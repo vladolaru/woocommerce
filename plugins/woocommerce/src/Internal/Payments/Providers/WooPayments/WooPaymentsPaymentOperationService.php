@@ -621,14 +621,14 @@ class WooPaymentsPaymentOperationService {
 	 * Send a positive-amount charge under the order's kept key, or under the attempt key when none is kept.
 	 *
 	 * A kept key refused because the new request differs from the earlier one (a new card after a timeout) settles what
-	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is recreated and
+	 * the earlier request did before anything is charged; see settle_earlier_charge(). A missing customer is replaced and
 	 * the charge retried, except while the order's ambiguity record exists.
 	 *
 	 * @param PaymentOperationContext $context      Payment context.
-	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when a missing customer is recreated.
+	 * @param array<string,mixed>     $request_data Charge request; its customer is replaced when the platform does not find it.
 	 * @param string                  $attempt_key  Key minted fresh for this payment attempt.
 	 * @return array<string,mixed>|PaymentOutcome The PaymentIntent response, or the outcome to return instead.
-	 * @throws WooPaymentsApiException When recreating a missing customer fails.
+	 * @throws WooPaymentsApiException When replacing a missing customer fails.
 	 */
 	private function send_charge_request( PaymentOperationContext $context, array &$request_data, string $attempt_key ) {
 		$order    = $context->get_order();
@@ -653,7 +653,7 @@ class WooPaymentsPaymentOperationService {
 			}
 		}
 
-		$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
+		$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
 		$request_data['customer'] = $customer_id;
 		// A different body under the same key would be refused, so the retry gets its own key, kept on the order so that an
 		// ambiguous failure of the retry replays the retry.
@@ -1436,7 +1436,7 @@ class WooPaymentsPaymentOperationService {
 					throw $exception;
 				}
 
-				$customer_id              = $this->customer_service->recreate_customer_for_order( $order );
+				$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
 				$request_data['customer'] = $customer_id;
 				// SetupIntent keys are not kept on the order, so only the key changes for the different body.
 				$result = $this->create_setup_intent( $request_data, $payment_credential, self::get_customer_recovery_idempotency_key( $idempotency_key ) );

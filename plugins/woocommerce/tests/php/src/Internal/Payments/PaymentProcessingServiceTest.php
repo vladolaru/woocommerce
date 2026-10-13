@@ -1286,6 +1286,123 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A renewal whose customer the platform does not find is charged on the user's own customer, or recreates it when that is the one missing: $_dataName.
+	 *
+	 * Here a renewal sends the customer on the renewal order, as client 11.1.0 does
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424). A WooCommerce Stripe Gateway
+	 * customer left on the subscription is not on the WooPayments account, so the platform answers resource_missing. Client
+	 * 11.1.0 then deletes and recreates the user's customer (includes/class-wc-payment-gateway-wcpay.php:5417-5433), whose new
+	 * customer does not own the saved card, so the renewal fails and the user's saved cards are lost. Here the user's own
+	 * stored customer is used when it is not the missing one; the successful renewal stores it on the renewal order and,
+	 * through the saved token, on the subscription, so the next renewal sends it first. When the missing customer is the
+	 * user's own, it is recreated, as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:5417-5433).
+	 *
+	 * @dataProvider provider_renewals_with_a_missing_customer
+	 *
+	 * @param string   $renewal_customer_id Customer on the renewal order and the subscription.
+	 * @param string[] $expected_trail      Platform requests, in order.
+	 * @param string   $expected_customer   Customer the retried charge carries, stored on the user, the renewal and the subscription.
+	 */
+	public function test_renewal_with_a_missing_customer_uses_the_users_customer( string $renewal_customer_id, array $expected_trail, string $expected_customer ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$subscription = $this->create_woopayments_order( '10.00' );
+		$subscription->set_customer_id( $user_id );
+		$subscription->update_meta_data( '_stripe_customer_id', $renewal_customer_id );
+		$subscription->add_payment_token( $token );
+		$subscription->save();
+		$renewal = $this->create_woopayments_order( '10.00' );
+		$renewal->set_customer_id( $user_id );
+		$renewal->update_meta_data( '_stripe_customer_id', $renewal_customer_id );
+		$renewal->add_payment_token( $token );
+		$renewal->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				404,
+				array(
+					'error' => array(
+						'type'    => 'invalid_request_error',
+						'code'    => 'resource_missing',
+						'param'   => 'customer',
+						'message' => "No such customer: '$renewal_customer_id'",
+					),
+				)
+			),
+		);
+		if ( in_array( 'POST /sites/123/wcpay/customers', $expected_trail, true ) ) {
+			$http_client->responses[] = $this->json_transport_response( 200, array( 'id' => $expected_customer ) );
+		}
+		$http_client->responses[] = $this->json_transport_response(
+			200,
+			array(
+				'id'             => 'pi_renewal',
+				'object'         => 'payment_intent',
+				'status'         => 'succeeded',
+				'amount'         => 1000,
+				'currency'       => 'usd',
+				'customer'       => $expected_customer,
+				'payment_method' => 'pm_saved',
+				'metadata'       => array( 'order_id' => (string) $renewal->get_id() ),
+			)
+		);
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $renewal->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
+
+		try {
+			$outcome = $this->sut->process_checkout_outcome(
+				PaymentOperationContext::for_checkout(
+					$renewal,
+					WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+					'',
+					array( 'payment_token' => (string) $token->get_id() ),
+					array( 'scheduled_subscription_payment' => true )
+				),
+				$this->timeout_transport_provider( $http_client, true )
+			);
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( $expected_trail, array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
+		$this->assertSame( $renewal_customer_id, json_decode( (string) $http_client->requests[0]['body'], true )['customer'] ?? null );
+		$this->assertSame( $expected_customer, json_decode( (string) end( $http_client->requests )['body'], true )['customer'] ?? null );
+		$this->assertSame( $expected_customer, get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertSame( $expected_customer, wc_get_order( $renewal->get_id() )->get_meta( '_stripe_customer_id', true ) );
+		$this->assertSame( $expected_customer, wc_get_order( $subscription->get_id() )->get_meta( '_stripe_customer_id', true ), 'The next renewal sends this customer first.' );
+	}
+
+	/**
+	 * A WooCommerce Stripe Gateway customer left on the subscription, and the user's own customer gone from the platform.
+	 *
+	 * @return array<string,array{string,string[],string}>
+	 */
+	public function provider_renewals_with_a_missing_customer(): array {
+		return array(
+			'a Stripe Gateway customer on the subscription' => array(
+				'cus_StripeGatewayLeftover',
+				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/intentions' ),
+				'cus_user',
+			),
+			"the user's own customer" => array(
+				'cus_user',
+				array( 'POST /sites/123/wcpay/intentions', 'POST /sites/123/wcpay/customers', 'POST /sites/123/wcpay/intentions' ),
+				'cus_recreated',
+			),
+		);
+	}
+
+	/**
 	 * @testdox The payer's customer is refreshed from the order at shutdown, after the payment, and a failed refresh is only logged.
 	 *
 	 * Client 11.1.0 refreshes an existing customer in a shutdown callback that only logs a failure

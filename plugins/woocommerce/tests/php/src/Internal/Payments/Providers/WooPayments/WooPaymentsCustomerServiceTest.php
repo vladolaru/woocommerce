@@ -678,7 +678,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recreating a missing customer should replace the persisted customer ID.
+	 * @testdox Replacing the user's own missing customer recreates it and replaces the persisted customer ID.
 	 */
 	public function test_recreate_customer_replaces_a_missing_customer_id_and_updates_storage(): void {
 		$user_id = $this->factory->user->create( array( 'user_login' => 'recreate-me' ) );
@@ -690,7 +690,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_new', $sut->recreate_customer_for_order( $order ) );
+		$this->assertSame( 'cus_new', $sut->replace_missing_customer_for_order( $order, 'cus_old' ) );
 		$this->assertSame( 'cus_new', get_user_option( '_wcpay_customer_id_live', $user_id ) );
 	}
 

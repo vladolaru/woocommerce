@@ -968,6 +968,56 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer creation answers the user's own customer when the platform does not find the order's, and recreates the user's when that is the one missing: $_dataName.
+	 *
+	 * Client 11.1.0 reads the order's customer first and, when the platform does not find it, deletes and recreates the
+	 * user's customer (includes/admin/class-wc-rest-payments-orders-controller.php:480-492,
+	 * includes/class-wc-payments-customer-service.php:200-222, :375-385). Here the user's stored customer is used instead
+	 * when it is not the missing one, so a customer another plugin left on the order does not cost the user their saved cards.
+	 *
+	 * @dataProvider provider_missing_order_customers
+	 *
+	 * @param string $order_customer_id Customer on the order, which the platform does not find.
+	 * @param string $expected_customer Customer answered and stored on the order and the user.
+	 */
+	public function test_create_customer_uses_the_users_customer_when_the_order_customer_is_missing( string $order_customer_id, string $expected_customer ): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', $order_customer_id );
+		$order->save();
+
+		$this->api_client->created_customer_id       = 'cus_recreated';
+		$this->api_client->update_customer_exception = new WooPaymentsApiException( "No such customer: '$order_customer_id'", 'resource_missing', 404 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+		$order    = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => $expected_customer ), $response->get_data() );
+		$this->assertSame( $expected_customer, $order->get_meta( '_stripe_customer_id', true ) );
+		$this->assertCount( 'cus_recreated' === $expected_customer ? 1 : 0, $this->api_client->created_customers );
+		$this->assertSame( $expected_customer, get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
+	 * A customer another plugin left on the order, and the user's own customer gone from the platform.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provider_missing_order_customers(): array {
+		return array(
+			'a Stripe Gateway customer on the order' => array( 'cus_StripeGatewayLeftover', 'cus_user' ),
+			"the user's own customer"                => array( 'cus_user', 'cus_recreated' ),
+		);
+	}
+
+	/**
 	 * @testdox Customer creation updates a cached user customer with the order billing data.
 	 */
 	public function test_create_customer_updates_cached_user_customer_with_order_data(): void {
