@@ -118,7 +118,8 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 
 	/**
 	 * Wallet state values: names that contain another state's name, a wallet code and a local name, which only the
-	 * express checkout state list knows, then values the exact pass leaves to the existing checks.
+	 * express checkout state list knows, then values the exact pass leaves to the existing checks, entries the list keys
+	 * differently from WooCommerce, and names WooCommerce's own list holds exactly.
 	 *
 	 * @return array<string,array{0:string,1:string,2:string}>
 	 */
@@ -132,6 +133,11 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 			'state key already'                        => array( 'US', 'VA', 'VA' ),
 			'name only found inside the value'         => array( 'US', 'Commonwealth of Virginia', 'VA' ),
 			'unknown name left as sent'                => array( 'US', 'Atlantis', 'Atlantis' ),
+			'Chiang Mai, keyed as WooCommerce keys it' => array( 'TH', 'Chiang Mai', 'TH-50' ),
+			'Chiang Rai, keyed as WooCommerce keys it' => array( 'TH', 'Chiang Rai', 'TH-57' ),
+			'Odisha under its current key'             => array( 'IN', 'Odisha', 'OD' ),
+			'Zürich, not Uri found inside it'          => array( 'CH', 'Zürich', 'ZH' ),
+			'a full name before a name inside it'      => array( 'IN', 'Dādra and Nagar Haveli and Damān and Diu', 'DH' ),
 		);
 	}
 

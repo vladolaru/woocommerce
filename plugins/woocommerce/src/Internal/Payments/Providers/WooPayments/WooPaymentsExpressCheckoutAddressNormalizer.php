@@ -314,7 +314,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	/**
 	 * Wallet state values by country and WooCommerce state key: the code, the name and the local name (null when there
 	 * is none) that Chromium's address dialog offers, from Google's libaddressinput. Countries without states are left
-	 * out.
+	 * out. Keys follow WooCommerce's current state keys: Chiang Mai is TH-50, Chiang Rai TH-57 and Odisha OD.
 	 *
 	 * @var array<string,array<string,array{0:string,1:string,2:string|null}>>
 	 */
@@ -605,7 +605,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 			'ML' => array( 'Meghalaya', 'Meghalaya', null ),
 			'MZ' => array( 'Mizoram', 'Mizoram', null ),
 			'NL' => array( 'Nagaland', 'Nagaland', null ),
-			'OR' => array( 'Odisha', 'Odisha', null ),
+			'OD' => array( 'Odisha', 'Odisha', null ),
 			'PB' => array( 'Punjab', 'Punjab', null ),
 			'RJ' => array( 'Rajasthan', 'Rajasthan', null ),
 			'SK' => array( 'Sikkim', 'Sikkim', null ),
@@ -1057,8 +1057,8 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 			'TH-18' => array( 'Chai Nat', 'Chai Nat', 'ชัยนาท' ),
 			'TH-36' => array( 'Chaiyaphum', 'Chaiyaphum', 'ชัยภูมิ' ),
 			'TH-22' => array( 'Chanthaburi', 'Chanthaburi', 'จันทบุรี' ),
-			'TH-50' => array( 'Chiang Rai', 'Chiang Rai', 'เชียงราย' ),
-			'TH-57' => array( 'Chiang Mai', 'Chiang Mai', 'เชียงใหม่' ),
+			'TH-50' => array( 'Chiang Mai', 'Chiang Mai', 'เชียงใหม่' ),
+			'TH-57' => array( 'Chiang Rai', 'Chiang Rai', 'เชียงราย' ),
 			'TH-20' => array( 'Chon Buri', 'Chon Buri', 'ชลบุรี' ),
 			'TH-86' => array( 'Chumpon', 'Chumpon', 'ชุมพร' ),
 			'TH-46' => array( 'Kalasin', 'Kalasin', 'กาฬสินธุ์' ),
@@ -1581,15 +1581,21 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 			return $state;
 		}
 
+		$normalized_state_values = array();
 		foreach ( $wc_states as $wc_state_abbr => $wc_state_value ) {
-			$normalized_state_abbr  = $this->normalize_address_candidate( (string) $wc_state_abbr );
-			$normalized_state_value = $this->normalize_address_candidate( (string) $wc_state_value );
+			$normalized_state_values[ (string) $wc_state_abbr ] = $this->normalize_address_candidate( (string) $wc_state_value );
+		}
 
-			if (
-				$normalized_state === $normalized_state_abbr ||
-				$normalized_state === $normalized_state_value ||
-				( '' !== $normalized_state_value && false !== strpos( $normalized_state, $normalized_state_value ) )
-			) {
+		// A state whose key or whole name matches wins over one whose name only sits inside the value: with accents
+		// folded, "Zürich" contains Uri, and the full Dādra and Nagar Haveli and Damān and Diu contains Daman and Diu.
+		foreach ( $normalized_state_values as $wc_state_abbr => $normalized_state_value ) {
+			if ( $normalized_state === $this->normalize_address_candidate( (string) $wc_state_abbr ) || $normalized_state === $normalized_state_value ) {
+				return (string) $wc_state_abbr;
+			}
+		}
+
+		foreach ( $normalized_state_values as $wc_state_abbr => $normalized_state_value ) {
+			if ( '' !== $normalized_state_value && false !== strpos( $normalized_state, $normalized_state_value ) ) {
 				return (string) $wc_state_abbr;
 			}
 		}
