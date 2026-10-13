@@ -245,7 +245,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$session_order->add_order_note(
 			sprintf(
 				/* translators: %d: Order ID. */
-				__( 'WooCommerce Payments: detected and deleted order ID %d, which has duplicate cart content with this order.', 'woocommerce' ),
+				__( 'WooPayments: detected and deleted order ID %d, which has duplicate cart content with this order.', 'woocommerce' ),
 				$current_order->get_id()
 			)
 		);
