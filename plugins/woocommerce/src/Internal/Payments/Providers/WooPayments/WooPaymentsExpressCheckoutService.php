@@ -136,7 +136,7 @@ class WooPaymentsExpressCheckoutService {
 				'platform_tracker'             => wp_create_nonce( 'platform_tracks_nonce' ),
 				'tracks_rest'                  => wp_create_nonce( 'wp_rest' ),
 				'tokenized_cart_nonce'         => wp_create_nonce( WooPaymentsTokenizedCartSessionController::TOKENIZED_CART_NONCE_ACTION ),
-				'tokenized_cart_session_nonce' => wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' ),
+				'tokenized_cart_session_nonce' => wp_create_nonce( WooPaymentsTokenizedCartSessionController::SESSION_NONCE_ACTION ),
 				'store_api_nonce'              => wp_create_nonce( 'wc_store_api' ),
 			),
 			'checkout'                    => array(

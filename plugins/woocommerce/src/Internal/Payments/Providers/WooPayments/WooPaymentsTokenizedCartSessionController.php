@@ -30,7 +30,10 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 	private const EPHEMERAL_CART_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_IS_EPHEMERAL_CART';
 
-	private const SESSION_NONCE_ACTION = 'woopayments_tokenized_cart_session_nonce';
+	/**
+	 * Nonce action of the product-page tokenized cart session: the express checkout service creates it, this class checks it.
+	 */
+	public const SESSION_NONCE_ACTION = 'woopayments_tokenized_cart_session_nonce';
 
 	public const TOKEN_ISSUER = 'woopayments/product-page';
 
@@ -121,7 +124,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function handle_woocommerce_session_handler( $session_handler ) {
-		if ( ! is_string( $session_handler ) || ! $this->is_store_api_request() || ! $this->has_valid_session_nonce() ) {
+		if ( ! is_string( $session_handler ) || ! WC()->is_store_api_request() || ! $this->has_valid_session_nonce() ) {
 			return $session_handler;
 		}
 
@@ -183,7 +186,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			return $result;
 		}
 
-		if ( null !== $result || ! $this->is_store_api_request() ) {
+		if ( null !== $result || ! WC()->is_store_api_request() ) {
 			return $result;
 		}
 
@@ -340,28 +343,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Tell whether the current request is a Store API request.
-	 *
-	 * @return bool
-	 */
-	private function is_store_api_request(): bool {
-		if ( function_exists( 'rest_get_url_prefix' ) ) {
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REQUEST_URI'] ) ) : '';
-			if ( '' !== $request_uri && false !== strpos( $request_uri, trailingslashit( rest_get_url_prefix() ) . 'wc/store/' ) ) {
-				return true;
-			}
-		}
-
-		if ( ! isset( $_GET['rest_route'] ) || ! is_string( $_GET['rest_route'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return false;
-		}
-
-		$rest_route = rawurldecode( esc_url_raw( wp_unslash( $_GET['rest_route'] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-
-		return 0 === strpos( $rest_route, '/wc/store/' );
-	}
-
-	/**
 	 * Tell whether the product-page session nonce is valid.
 	 *
 	 * @return bool
@@ -390,24 +371,8 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 */
 	private function has_valid_incoming_session_token(): bool {
 		$token = self::get_server_header( self::SESSION_HEADER );
-		if ( '' === $token ) {
-			return true;
-		}
 
-		if ( ! JsonWebToken::validate( $token, WooPaymentsTokenizedCartSessionHandler::get_token_secret() ) ) {
-			return false;
-		}
-
-		$parts   = JsonWebToken::get_parts( $token );
-		$payload = is_object( $parts ) && isset( $parts->payload ) ? $parts->payload : null;
-
-		if ( ! is_object( $payload ) || ! isset( $payload->session_id, $payload->iss ) || self::TOKEN_ISSUER !== $payload->iss ) {
-			return false;
-		}
-
-		$session_id = is_scalar( $payload->session_id ) ? sanitize_text_field( (string) $payload->session_id ) : '';
-
-		return 0 === strpos( $session_id, 't_' );
+		return '' === $token || '' !== WooPaymentsTokenizedCartSessionHandler::get_session_id_from_token( $token );
 	}
 
 	/**

@@ -148,7 +148,16 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	 * @return string
 	 */
 	private function get_session_id_from_header(): string {
-		$token = WooPaymentsTokenizedCartSessionController::get_server_header( WooPaymentsTokenizedCartSessionController::SESSION_HEADER );
+		return self::get_session_id_from_token( WooPaymentsTokenizedCartSessionController::get_server_header( WooPaymentsTokenizedCartSessionController::SESSION_HEADER ) );
+	}
+
+	/**
+	 * Get the tokenized cart session ID a signed session token carries.
+	 *
+	 * @param string $token Session token from the request header.
+	 * @return string The session ID, or '' when the token is empty, unsigned, from another issuer or not a tokenized session.
+	 */
+	public static function get_session_id_from_token( string $token ): string {
 		if ( '' === $token || ! JsonWebToken::validate( $token, self::get_token_secret() ) ) {
 			return '';
 		}

@@ -134,6 +134,21 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the session of a page request alone when only its query string holds the Store API path.
+	 *
+	 * WordPress routes /some-page/?redirect_to=/wp-json/wc/store/v1/cart to the page, not to the REST API, so the request
+	 * keeps its session even with a valid product-page session nonce.
+	 */
+	public function test_keeps_default_handler_for_a_page_whose_query_string_holds_the_store_api_path(): void {
+		$_SERVER['REQUEST_URI']                                     = '/some-page/?redirect_to=/wp-json/wc/store/v1/cart';
+		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
+		$this->sut = $this->create_controller( true );
+
+		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
+		$this->assertFalse( has_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) ) );
+	}
+
+	/**
 	 * @testdox Should isolate and reject Store API requests when the incoming tokenized session is invalid.
 	 */
 	public function test_rejects_invalid_session_token_without_using_default_handler(): void {
@@ -176,6 +191,17 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertWPError( $result );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/**
+	 * @testdox Should leave a REST request outside the Store API untouched during pre-dispatch, tokenized markers or not.
+	 */
+	public function test_pre_dispatch_leaves_other_rest_requests_untouched(): void {
+		$_SERVER['REQUEST_URI']                               = '/wp-json/wc/v3/orders';
+		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'token-without-valid-nonce';
+		$this->sut = $this->create_controller( true );
+
+		$this->assertNull( $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'GET', '/wc/v3/orders' ) ) );
 	}
 
 	/**
