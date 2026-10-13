@@ -605,12 +605,7 @@ class StripeBillingSubscriptionService {
 	 */
 	public function suspend_subscription( WC_Order $subscription ): bool {
 		if ( ! $this->is_wcpay_subscription( $subscription ) ) {
-			$this->logger->log(
-				sprintf(
-					'Aborting WC_Payments_Subscription_Service::suspend_subscription; subscription is a tokenised (non WooPayments) subscription. WC ID: %d.',
-					$subscription->get_id()
-				)
-			);
+			$this->logger->log( sprintf( 'Not suspending subscription %d at Stripe: it is not billed through Stripe Billing.', $subscription->get_id() ) );
 			return false;
 		}
 
