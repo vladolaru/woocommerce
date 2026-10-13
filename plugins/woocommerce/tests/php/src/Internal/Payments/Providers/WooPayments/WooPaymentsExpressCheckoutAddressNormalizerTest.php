@@ -93,6 +93,49 @@ class WooPaymentsExpressCheckoutAddressNormalizerTest extends WC_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox Should match a wallet state exactly by its express checkout code, name or local name before matching a state name inside it ($_dataName).
+	 * @dataProvider express_checkout_state_provider
+	 *
+	 * @param string $country        Country code.
+	 * @param string $state          State value the wallet sends.
+	 * @param string $expected_state Expected state after normalization.
+	 */
+	public function test_matches_express_checkout_state_exactly_before_the_substring_match( string $country, string $state, string $expected_state ): void {
+		$request = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout', wp_create_nonce( 'woopayments_tokenized_cart_nonce' ) );
+		$request->set_param(
+			'shipping_address',
+			array(
+				'country' => $country,
+				'state'   => $state,
+			)
+		);
+
+		$this->sut->normalize_tokenized_cart_store_api_addresses( $request );
+
+		$shipping_address = $request->get_param( 'shipping_address' );
+		$this->assertSame( $expected_state, $shipping_address['state'] );
+	}
+
+	/**
+	 * Wallet state values: names that contain another state's name, a wallet code and a local name, which only the
+	 * express checkout state list knows, then values the exact pass leaves to the existing checks.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function express_checkout_state_provider(): array {
+		return array(
+			'West Virginia, not Virginia'              => array( 'US', 'West Virginia', 'WV' ),
+			'Baja California Sur, not Baja California' => array( 'MX', 'Baja California Sur', 'BS' ),
+			'wallet code B.C.S.'                       => array( 'MX', 'B.C.S.', 'BS' ),
+			'local name Nouvelle-Écosse'               => array( 'CA', 'Nouvelle-Écosse', 'NS' ),
+			'lower case, without the accent'           => array( 'CA', 'nouvelle-ecosse', 'NS' ),
+			'state key already'                        => array( 'US', 'VA', 'VA' ),
+			'name only found inside the value'         => array( 'US', 'Commonwealth of Virginia', 'VA' ),
+			'unknown name left as sent'                => array( 'US', 'Atlantis', 'Atlantis' ),
+		);
+	}
+
+	/**
 	 * @testdox Should recover Hong Kong tokenized checkout regions from district values.
 	 * @dataProvider hong_kong_region_recovery_provider
 	 *
