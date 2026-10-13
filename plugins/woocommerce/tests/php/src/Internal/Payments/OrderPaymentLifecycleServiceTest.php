@@ -453,16 +453,26 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A payment success event skips an equivalent success note rendered by the WooPayments extension before lifecycle mutation.
+	 *
+	 * The extension's note is client 11.1.0's literal (class-wc-payments-order-service.php:2048-2066). With an additional
+	 * currency enabled its amount carries the order's currency code (class-wc-payments-order-service.php:2904-2910;
+	 * class-wc-payments-explicit-price-formatter.php:127-140, :167-187), which the built-in rendering here does not, so
+	 * the two differ.
 	 */
 	public function test_payment_success_replay_with_a_woopayments_extension_equivalent_note_keeps_existing_order_state(): void {
-		// An additional currency makes the built-in (explicit-currency) and WooPayments extension (suffix-free) renderings differ.
 		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$order           = $this->create_woopayments_order();
-		$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_payment_success_note_candidates( $order, 'pi_cutover', 'ch_cutover', 'txn_cutover' );
+		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
+		$note_candidates = $note_service->format_payment_success_note_candidates( $order, 'pi_cutover', 'ch_cutover', 'txn_cutover' );
+		$extension_note  = sprintf(
+			'A payment of %1$s was <strong>successfully charged</strong> using WooPayments (<a href="%2$s" target="_blank" rel="noopener noreferrer">pi_cutover</a>).',
+			wc_price( (float) $order->get_total(), array( 'currency' => $order->get_currency() ) ) . ' ' . $order->get_currency(),
+			$note_service->transaction_url( 'pi_cutover', 'ch_cutover', 'txn_cutover' )
+		);
 
-		$this->assertGreaterThanOrEqual( 2, count( $note_candidates ) );
-		$order->add_order_note( $note_candidates[1] );
+		$this->assertNotSame( $note_candidates[0], $extension_note, 'The built-in rendering must differ from the extension note for this test to cover the equivalent match.' );
+		$order->add_order_note( $extension_note );
 		$order->update_meta_data( '_intention_status', 'requires_payment_method' );
 		$order->update_status( 'on-hold' );
 		$order->save();
@@ -489,7 +499,7 @@ class OrderPaymentLifecycleServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'on-hold', $order->get_status(), 'A replayed payment-success event must not re-complete an order the WooPayments extension paid.' );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ), 'A replayed payment-success event must not overwrite lifecycle metadata.' );
 		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ), 'A replayed payment-success event must not add payment metadata.' );
-		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $note_candidates[1] ), 'The success note the WooPayments extension wrote must remain the only equivalent note.' );
+		$this->assertSame( 1, $this->countOrderNotesMatching( $order, $extension_note ), 'The success note the WooPayments extension wrote must remain the only equivalent note.' );
 		$this->assertSame( 0, $this->countOrderNotesMatching( $order, $note_candidates[0] ), 'A replayed payment-success event must not add the Core rendering.' );
 	}
 
