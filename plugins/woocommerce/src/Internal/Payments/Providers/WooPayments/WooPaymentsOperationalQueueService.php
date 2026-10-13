@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Utilities\PluginUtil;
 use Throwable;
 use WC_Order;
 
@@ -986,7 +987,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'button_border_radius' => $settings['payment_request_button_border_radius'] ?? '',
 			),
 			'woopay'                                      => array(
-				'enabled'                 => ! empty( $woopay_locations ) || $this->is_setting_enabled( $settings, 'platform_checkout' ) || $this->is_setting_enabled( $settings, 'woopay' ),
+				'enabled'                 => $this->is_woopay_enabled( $settings ),
 				'enabled_locations'       => $woopay_locations,
 				'store_logo'              => $settings['platform_checkout_store_logo'] ?? '',
 				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
@@ -1029,6 +1030,20 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		$settings = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
 
 		return is_array( $settings ) ? $settings : array();
+	}
+
+	/**
+	 * Tell whether WooPay is on: the WooPay setting is on, the WooPay express checkout flag is on (on unless written
+	 * off) and the account is eligible, as client 11.1.0 `WC_Payments_Features::is_woopay_enabled()` decides
+	 * (class-wc-payments-features.php:54-60,193-230). Express checkout locations do not turn it on.
+	 *
+	 * @param array<string,mixed> $settings Gateway settings.
+	 * @return bool
+	 */
+	private function is_woopay_enabled( array $settings ): bool {
+		return $this->is_setting_enabled( $settings, 'platform_checkout' )
+			&& '1' === (string) get_option( '_wcpay_feature_woopay_express_checkout', '1' )
+			&& $this->get_settings_service()->is_woopay_eligible();
 	}
 
 	/**
@@ -1177,17 +1192,17 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			return array();
 		}
 
-		$plugins_list      = array();
-		$active_plugin_ids = wp_get_active_and_valid_plugins();
-		foreach ( $active_plugin_ids as $plugin_file ) {
-			$plugin_file = plugin_basename( $plugin_file );
+		// Network-active plugins count too, and a plugin is WooCommerce aware when its headers declare WooCommerce support.
+		$plugin_util  = wc_get_container()->get( PluginUtil::class );
+		$plugins_list = array();
+		foreach ( $plugin_util->get_all_active_valid_plugins() as $plugin_file ) {
 			if ( isset( $all_plugins[ $plugin_file ] ) ) {
 				$plugin_data                  = $all_plugins[ $plugin_file ];
 				$plugins_list[ $plugin_file ] = array(
 					'name'     => $plugin_data['Name'],
 					'slug'     => dirname( $plugin_file ),
 					'version'  => $plugin_data['Version'],
-					'wc_aware' => null,
+					'wc_aware' => $plugin_util->is_woocommerce_aware_plugin( $plugin_data ),
 				);
 			}
 		}

@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -402,7 +403,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 							&& true === $snapshot['debug_log_enabled']
 							&& true === $snapshot['payment_request']['enabled']
 							&& array( 'product', 'cart' ) === $snapshot['payment_request']['enabled_locations']
-							&& true === $snapshot['woopay']['enabled']
 							&& array( 'product', 'checkout' ) === $snapshot['woopay']['enabled_locations'];
 					}
 				)
@@ -598,6 +598,108 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $snapshot['payment_methods']['enabled'] );
 		$this->assertSame( array( 'card', 'apple_pay', 'google_pay' ), $snapshot['payment_methods']['disabled'] );
+	}
+
+	/**
+	 * @testdox Should report WooPay as enabled only when the account is eligible, the WooPay setting is on and the WooPay express checkout flag is on: $_dataName.
+	 * @dataProvider provider_store_setup_sync_woopay_enabled
+	 *
+	 * @param array<string,mixed> $settings     Gateway settings.
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @param string|null         $flag         WooPay express checkout flag option, or null to leave it never written.
+	 * @param bool                $expected     Reported `woopay.enabled`.
+	 */
+	public function test_store_setup_sync_reports_woopay_enabled_by_the_feature_check( array $settings, array $account_data, ?string $flag, bool $expected ): void {
+		delete_option( '_wcpay_feature_woopay_express_checkout' );
+		if ( null !== $flag ) {
+			update_option( '_wcpay_feature_woopay_express_checkout', $flag );
+		}
+
+		$account_service  = $this->create_account_service( $account_data );
+		$settings_service = new WooPaymentsSettingsService();
+		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ) );
+
+		try {
+			$snapshot = $this->send_store_setup_snapshot( $settings, $account_service, $settings_service );
+		} finally {
+			delete_option( '_wcpay_feature_woopay_express_checkout' );
+		}
+
+		$this->assertSame( $expected, $snapshot['woopay']['enabled'] );
+	}
+
+	/**
+	 * WooPay settings, account eligibility and flag states, with the `woopay.enabled` each should report.
+	 *
+	 * @return array<string,array{array<string,mixed>,array<string,mixed>,string|null,bool}>
+	 */
+	public static function provider_store_setup_sync_woopay_enabled(): array {
+		$listed_everywhere = array(
+			'enabled'                           => 'yes',
+			'express_checkout_product_methods'  => array( 'woopay' ),
+			'express_checkout_cart_methods'     => array( 'woopay' ),
+			'express_checkout_checkout_methods' => array( 'woopay' ),
+		);
+		$woopay_on         = array_merge( $listed_everywhere, array( 'platform_checkout' => 'yes' ) );
+		$eligible          = array( 'platform_checkout_eligible' => true );
+
+		return array(
+			'listed at every location, setting off' => array( $listed_everywhere, $eligible, null, false ),
+			'setting on, account not eligible'      => array( $woopay_on, array(), null, false ),
+			'setting on, eligible, flag off'        => array( $woopay_on, $eligible, '0', false ),
+			'setting on, eligible, flag on'         => array( $woopay_on, $eligible, '1', true ),
+			'setting on, eligible, flag never set'  => array( $woopay_on, $eligible, null, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should report whether each active plugin declares WooCommerce support in its headers.
+	 */
+	public function test_store_setup_sync_reports_woocommerce_awareness_of_active_plugins(): void {
+		// Both files exist in the test install, so WordPress keeps them as active and valid.
+		update_option( 'active_plugins', array( 'hello.php', 'sample-woo-plugin.php' ) );
+		// get_plugins() answers from this cache, so the headers are the test's own.
+		wp_cache_set(
+			'plugins',
+			array(
+				'' => array(
+					'hello.php'             => array(
+						'Name'    => 'Hello Dolly',
+						'Version' => '1.7.2',
+					),
+					'sample-woo-plugin.php' => array(
+						'Name'            => 'Sample Woo Plugin',
+						'Version'         => '1.0.0',
+						'WC tested up to' => '11.2',
+					),
+				),
+			),
+			'plugins'
+		);
+
+		try {
+			$snapshot = $this->send_store_setup_snapshot();
+		} finally {
+			wp_cache_delete( 'plugins', 'plugins' );
+		}
+
+		$this->assertSame(
+			array(
+				array(
+					'name'     => 'Hello Dolly',
+					'slug'     => '.',
+					'version'  => '1.7.2',
+					'wc_aware' => false,
+				),
+				array(
+					'name'     => 'Sample Woo Plugin',
+					'slug'     => '.',
+					'version'  => '1.0.0',
+					'wc_aware' => true,
+				),
+			),
+			$snapshot['wp_setup']['active_plugins']
+		);
 	}
 
 	/**
