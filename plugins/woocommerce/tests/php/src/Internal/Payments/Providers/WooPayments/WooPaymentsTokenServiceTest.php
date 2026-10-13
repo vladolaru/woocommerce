@@ -1514,13 +1514,17 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not save a provider payment method again when a lowered token limit hides its stored token from the read.
+	 * @testdox Should not save a provider payment method again when a lowered token limit hides its stored token from the read ($posts_per_page per page).
+	 *
+	 * @dataProvider provide_posts_per_page_for_hidden_methods
+	 *
+	 * @param int $posts_per_page The store's posts_per_page option.
 	 */
-	public function test_reconcile_does_not_resave_methods_hidden_by_a_lowered_token_limit(): void {
+	public function test_reconcile_does_not_resave_methods_hidden_by_a_lowered_token_limit( int $posts_per_page ): void {
 		$this->register_card_gateway_id();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
-		update_option( 'posts_per_page', 10 );
+		update_option( 'posts_per_page', $posts_per_page );
 		$cards = array();
 		foreach ( array( 'pm_card_1', 'pm_card_2', 'pm_card_3' ) as $index => $payment_method_id ) {
 			$this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method_id );
@@ -1549,12 +1553,31 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$stored = array_map(
 			static fn( \WC_Payment_Token $token ): string => $token->get_token(),
-			array_values( WC_Payment_Tokens::get_tokens( array( 'user_id' => $user_id ) ) )
+			array_values(
+				WC_Payment_Tokens::get_tokens(
+					array(
+						'user_id' => $user_id,
+						'limit'   => 100,
+					)
+				)
+			)
 		);
 		sort( $stored );
 
 		$this->assertSame( array( 'pm_card_1', 'pm_card_2', 'pm_card_3' ), $stored, 'Each provider method keeps its one stored token.' );
 		$this->assertCount( 1, $listed, 'The shopper-facing read keeps the lowered limit.' );
+	}
+
+	/**
+	 * Store posts_per_page values: every stored card fits one page, or the third card sits past it.
+	 *
+	 * @return array<string,array{int}>
+	 */
+	public function provide_posts_per_page_for_hidden_methods(): array {
+		return array(
+			'every stored card on one page'   => array( 10 ),
+			'third stored card past the page' => array( 2 ),
+		);
 	}
 
 	/**

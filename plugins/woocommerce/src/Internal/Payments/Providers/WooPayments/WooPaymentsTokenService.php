@@ -1050,11 +1050,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 				}
 
 				// The tokens passed in stop at woocommerce_get_customer_payment_tokens_limit, so a method stored past that
-				// limit is looked up by its value before a token is saved for it.
+				// limit is looked up by its value before a token is saved for it. Core's token read stops at posts_per_page
+				// unless given a limit and has no "all" value (-1 reads one row), so the lookup asks for the largest one.
 				$gateway_tokens = WC_Payment_Tokens::get_tokens(
 					array(
 						'user_id'    => $user_id,
 						'gateway_id' => $method_gateway_id,
+						'limit'      => PHP_INT_MAX,
 					)
 				);
 				if ( in_array( $payment_method_id, array_map( static fn( WC_Payment_Token $stored ): string => (string) $stored->get_token(), $gateway_tokens ), true ) ) {
