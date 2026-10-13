@@ -6931,6 +6931,191 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox An Interac in-person refund recorded from the mobile app (details on the order: $details_on_order, a newer reader refund of the amount: $newer_match) links the oldest succeeded reader refund, with no refund request and no failure.
+	 *
+	 * The WooCommerce mobile app refunds an Interac payment on the card reader, then records it through the order refunds
+	 * REST route, which runs the gateway refund. Client 11.1.0 lists the charge's refunds and links the oldest succeeded one
+	 * of the same amount (class-wc-payment-gateway-wcpay.php:2944-2968), reading the payment method type from the payment
+	 * method (:3031-3049); the platform refuses an online Interac refund. The list is the recorded one
+	 * (`Fixtures/platform-refund-list.json`); the Interac details are HAND-BUILT from Stripe's charge object
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_method_details-interac_present).
+	 *
+	 * @dataProvider interac_payment_method_sources
+	 *
+	 * @param bool $details_on_order Whether the order holds its payment method details; else only its payment method ID.
+	 * @param bool $newer_match      Whether a newer reader refund of the same amount is listed too (HAND-BUILT amount).
+	 */
+	public function test_interac_in_person_refund_links_the_refund_made_on_the_card_reader( bool $details_on_order, bool $newer_match ): void {
+		$order       = $this->create_refund_hold_order();
+		$http_client = new FakeWooPaymentsHttpClient();
+		if ( $details_on_order ) {
+			$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
+		} else {
+			$order->update_meta_data( '_payment_method_id', 'pm_interac_reader' );
+			$http_client->responses[] = self::http_json( 200, array( 'id' => 'pm_interac_reader' ) + self::interac_present_details() );
+		}
+		$order->save();
+		$list = $this->recorded_refund_list();
+		if ( $newer_match ) {
+			$list['data'][0]['amount'] = 777;
+		}
+		$http_client->responses[] = self::http_json( 200, $list );
+		$provider                 = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_gateway_refund( $provider, $order, 7.77 );
+
+		$this->assertTrue( $result );
+		$trail = self::request_trail( $http_client );
+		$this->assertCount( $details_on_order ? 1 : 2, $trail, 'No refund is sent.' );
+		$this->assertSame( self::refund_list_trail(), end( $trail ) );
+		if ( ! $details_on_order ) {
+			$this->assertStringStartsWith( 'GET payment_methods/pm_interac_reader', $trail[0] );
+		}
+		$this->assertSame( 're_3UOv4vBzWlxcwgpP0AwrnrcH', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( array(), self::note_texts_containing( $order, 'failed to complete' ) );
+	}
+
+	/**
+	 * Where the refund reads the Interac payment method type from.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function interac_payment_method_sources(): array {
+		return array(
+			'payment method details on the order' => array( true, false ),
+			'payment method fetched by its ID'    => array( false, false ),
+			'two reader refunds of the amount'    => array( true, true ),
+		);
+	}
+
+	/**
+	 * @testdox An Interac in-person refund whose charge refunds cannot be read fails and is noted on the order, as any refund that fails.
+	 *
+	 * Client 11.1.0 catches the failed list read like a failed refund: a failure note and the failed refund status
+	 * (class-wc-payment-gateway-wcpay.php:2972-2999).
+	 */
+	public function test_interac_refund_whose_charge_refunds_cannot_be_read_fails_and_is_noted(): void {
+		$order = $this->create_refund_hold_order();
+		$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
+		$order->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::stripe_api_error( 404 ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_gateway_refund( $provider, $order, 7.77 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( 'failed', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertCount( 1, self::note_texts_containing( $order, 'failed to complete' ) );
+	}
+
+	/**
+	 * @testdox An Interac in-person refund with no unrecorded reader refund of its amount ($case) is refused with the WooPayments extension's message, sends nothing and records no failure.
+	 *
+	 * Client 11.1.0 answers wcpay_edit_order_refund_not_possible with no failure note or status
+	 * (class-wc-payment-gateway-wcpay.php:2962-2967). A reader refund the order already records is not linked a second time;
+	 * client 11.1.0 links it to the new row too (class-wc-payment-gateway-wcpay.php:2953-2968), after which the refund
+	 * webhook adds the reader refund's own row again.
+	 *
+	 * @dataProvider interac_refunds_without_a_reader_refund
+	 *
+	 * @param string $label            Case label.
+	 * @param float  $amount           Refund amount.
+	 * @param bool   $already_recorded Whether the order already records the reader refund of that amount.
+	 * @param string $listed_status    Status of the listed reader refund of 7.77.
+	 */
+	public function test_interac_in_person_refund_without_its_reader_refund_is_refused( string $label, float $amount, bool $already_recorded, string $listed_status ): void {
+		unset( $label );
+		$order = $this->create_refund_hold_order();
+		$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
+		$order->save();
+		if ( $already_recorded ) {
+			$this->link_local_refund_row( $order, $amount, 're_3UOv4vBzWlxcwgpP0AwrnrcH' );
+		}
+		$list                      = $this->recorded_refund_list();
+		$list['data'][1]['status'] = $listed_status;
+		$http_client               = new FakeWooPaymentsHttpClient();
+		$http_client->responses    = array( self::http_json( 200, $list ) );
+		$provider                  = $this->create_refund_hold_provider( $http_client );
+
+		list( $result ) = $this->run_gateway_refund( $provider, $order, $amount );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'wcpay_edit_order_refund_not_possible', $result->get_error_code() );
+		$this->assertSame( 'You shall refund this payment in the same application where the payment was made.', $result->get_error_message() );
+		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
+		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
+		$this->assertSame( array(), self::note_texts_containing( $order, 'failed to complete' ) );
+	}
+
+	/**
+	 * Interac refunds the card reader made no unrecorded refund for.
+	 *
+	 * The status of a failed reader refund is HAND-BUILT on the recorded list (https://docs.stripe.com/api/refunds/object).
+	 *
+	 * @return array<string,array{string,float,bool,string}>
+	 */
+	public function interac_refunds_without_a_reader_refund(): array {
+		return array(
+			'no reader refund of that amount'     => array( 'no reader refund of that amount', 3.00, false, 'succeeded' ),
+			'reader refund already on the order'  => array( 'reader refund already on the order', 7.77, true, 'succeeded' ),
+			'reader refund of that amount failed' => array( 'reader refund of that amount failed', 7.77, false, 'failed' ),
+		);
+	}
+
+	/**
+	 * @testdox A refund whose payment method type cannot be fetched is sent to the platform, which answers it.
+	 *
+	 * Client 11.1.0 fails the refund when that fetch fails (class-wc-payment-gateway-wcpay.php:2943-2970, :3031-3049);
+	 * sending it refunds a card payment, and the platform refuses an online Interac refund, so no money moves twice. The
+	 * refund answer is the recorded one (`Fixtures/platform-refund-errors.json`, pair
+	 * `reused_key_identical_params_replays_refund`).
+	 */
+	public function test_refund_whose_payment_method_type_cannot_be_fetched_is_sent(): void {
+		$order = $this->create_refund_hold_order();
+		$order->update_meta_data( '_payment_method_id', 'pm_unknown_type' );
+		$order->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( self::stripe_api_error( 404 ), self::http_json( 200, $this->recorded_refund_answer( 're_after_type_fetch_failure', '', 300 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		list( $result, $row ) = $this->run_gateway_refund( $provider, $order, 3.00 );
+
+		$this->assertTrue( $result );
+		$trail = self::request_trail( $http_client );
+		$this->assertCount( 2, $trail );
+		$this->assertStringStartsWith( 'GET payment_methods/pm_unknown_type', $trail[0] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[1] );
+		$this->assertSame( 're_after_type_fetch_failure', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+	}
+
+	/**
+	 * Interac in-person payment method details, HAND-BUILT from Stripe's charge object
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_method_details-interac_present).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function interac_present_details(): array {
+		return array(
+			'type'            => 'interac_present',
+			'interac_present' => array(
+				'brand'       => 'interac',
+				'last4'       => '9969',
+				'funding'     => 'debit',
+				'network'     => 'interac',
+				'read_method' => 'contact_emv',
+				'receipt'     => array(
+					'account_type'               => 'checking',
+					'application_preferred_name' => 'Interac',
+					'dedicated_file_name'        => 'A0000002771010',
+				),
+			),
+		);
+	}
+
+	/**
 	 * Load the hand-built requires_action refund answer.
 	 *
 	 * @return array<string,mixed>

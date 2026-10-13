@@ -68,6 +68,14 @@ class WooPaymentsPaymentOperationService {
 	private const DEFINITIVE_CHARGE_FAILURE_DATA_KEY = '_wcpay_definitive_charge_failure';
 
 	/**
+	 * Error code of an Interac in-person refund whose card reader refund is not on the charge, as client 11.1.0 answers it
+	 * (class-wc-payment-gateway-wcpay.php:2962-2967). No refund request was made.
+	 *
+	 * @var string
+	 */
+	public const IN_PERSON_REFUND_NOT_POSSIBLE_CODE = 'wcpay_edit_order_refund_not_possible';
+
+	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -219,9 +227,11 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Refund an order through the WooPayments platform API.
 	 *
-	 * An earlier refund call of the order whose answer was ambiguous is settled first, from the charge's refunds, so a
-	 * retry never refunds twice: this call may link the earlier refund, resend it under its kept key, or be refused with
-	 * no request. An ambiguous answer to this call's own request keeps its key for the next call.
+	 * An Interac in-person payment is not refunded online: the WooCommerce mobile app refunds it on the card reader and
+	 * then records it here, so the call links that refund. Otherwise an earlier refund call of the order whose answer was
+	 * ambiguous is settled first, from the charge's refunds, so a retry never refunds twice: this call may link the earlier
+	 * refund, resend it under its kept key, or be refused with no request. An ambiguous answer to this call's own request
+	 * keeps its key for the next call.
 	 *
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this refund call.
@@ -239,6 +249,10 @@ class WooPaymentsPaymentOperationService {
 					'reason' => (string) ( $payment_data['reason'] ?? '' ),
 					'source' => 'woocommerce_core',
 				);
+
+				if ( $this->is_interac_present_payment( $order ) ) {
+					return $this->link_card_reader_refund( $order, $request );
+				}
 
 				$own_row_id = (int) ( $payment_data[ PaymentOperationContext::PAYMENT_DATA_REFUND_ID ] ?? 0 );
 				$decision   = $this->refund_ambiguity_service->decide( $order, $request, $own_row_id );
@@ -258,6 +272,76 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		return $this->unavailable_outcome( 'refund' );
+	}
+
+	/**
+	 * Tell whether the order was paid in person with an Interac card.
+	 *
+	 * The type is read from the payment method details saved on the order, else from the payment method, which client
+	 * 11.1.0 fetches on every refund (class-wc-payment-gateway-wcpay.php:3031-3049). A failed fetch reads as another type,
+	 * so the refund is sent and the platform answers it.
+	 *
+	 * @param WC_Order $order Order being refunded.
+	 * @return bool
+	 */
+	private function is_interac_present_payment( WC_Order $order ): bool {
+		$stored_details = $order->get_meta( '_wcpay_payment_method_details', true );
+		$details        = is_string( $stored_details ) ? json_decode( $stored_details, true ) : null;
+		if ( ! is_array( $details ) || array() === $details ) {
+			$payment_method_id = $order->get_meta( '_payment_method_id', true );
+			if ( ! is_string( $payment_method_id ) || '' === $payment_method_id ) {
+				return false;
+			}
+
+			try {
+				$details = $this->api_client->get_payment_method( $payment_method_id );
+			} catch ( WooPaymentsApiException $exception ) {
+				$this->logger->log_throwable( 'Could not read the payment method type of a refunded WooPayments order.', $exception, array( 'order_id' => $order->get_id() ) );
+				return false;
+			}
+		}
+
+		return 'interac_present' === ( $details['type'] ?? null );
+	}
+
+	/**
+	 * Link the refund the card reader made for an Interac in-person payment, with no refund request.
+	 *
+	 * As client 11.1.0 (class-wc-payment-gateway-wcpay.php:2944-2968), the oldest succeeded refund of the requested amount
+	 * is linked, and with none the call is refused. A refund the order already records is skipped, so a second reader
+	 * refund of the same amount is not linked to the first one's refund.
+	 *
+	 * @param WC_Order                                                    $order   Order being refunded.
+	 * @param array{charge:string,amount:int,reason:string,source:string} $request Refund request this call would send.
+	 * @return PaymentOutcome
+	 */
+	private function link_card_reader_refund( WC_Order $order, array $request ): PaymentOutcome {
+		try {
+			$list = $this->api_client->list_charge_refunds( $request['charge'] );
+		} catch ( WooPaymentsApiException $exception ) {
+			return WooPaymentsIntentCodec::failed_transport_outcome( 'refund', $exception );
+		}
+
+		$recorded_refund_ids = array();
+		foreach ( $order->get_refunds() as $wc_refund ) {
+			$recorded_refund_ids[] = (string) $wc_refund->get_meta( '_wcpay_refund_id', true );
+		}
+
+		// Stripe lists a charge's refunds newest first.
+		$refunds = is_array( $list['data'] ?? null ) ? array_reverse( $list['data'] ) : array();
+		foreach ( $refunds as $refund ) {
+			if ( is_array( $refund ) && 'succeeded' === ( $refund['status'] ?? null ) && isset( $refund['amount'] ) && $request['amount'] === $refund['amount']
+				&& is_string( $refund['id'] ?? null ) && ! in_array( $refund['id'], $recorded_refund_ids, true ) ) {
+				return WooPaymentsIntentCodec::outcome_from_refund_result( $refund )->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $refund ) );
+			}
+		}
+
+		return self::refused_refund_outcome(
+			array(
+				'code'    => self::IN_PERSON_REFUND_NOT_POSSIBLE_CODE,
+				'message' => __( 'You shall refund this payment in the same application where the payment was made.', 'woocommerce' ),
+			)
+		);
 	}
 
 	/**
