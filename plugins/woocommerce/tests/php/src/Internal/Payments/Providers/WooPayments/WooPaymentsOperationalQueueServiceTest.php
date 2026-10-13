@@ -64,7 +64,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		delete_transient( 'wcpay_one_and_done_eligible' );
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
-		$this->delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 		$this->delete_instant_deposit_note();
 		remove_filter( 'woocommerce_email_classes', '__return_empty_array', 20 );
 		remove_filter( 'pre_wp_mail', '__return_true' );
@@ -948,50 +947,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Test-to-live inbox sync should be unhooked while the test-mode clock stays active.
-	 */
-	public function test_test_to_live_inbox_sync_is_unhooked(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
-		$service->register();
-
-		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_sync_test_to_live_inbox_note' ) ) );
-		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $service, 'maybe_sync_test_to_live_inbox_note' ) ) );
-		$this->assertNotFalse( has_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $service, 'maybe_handle_test_mode_toggle' ) ) );
-	}
-
-	/**
-	 * @testdox The deprecated test-to-live inbox method should only remove old notes.
-	 */
-	public function test_test_to_live_inbox_note_follows_eligibility(): void {
-		update_option( 'wcpay_test_mode_enabled_date', time() - 8 * DAY_IN_SECONDS, false );
-		$order = \WC_Helper_Order::create_order();
-		$order->set_payment_method( 'woocommerce_payments' );
-		$order->set_status( 'completed' );
-		$order->update_meta_data( '_wcpay_mode', 'test' );
-		$order->save();
-
-		$eligible_account = $this->create_account_service(
-			array(
-				'account_id'       => 'acct_native_test',
-				'payments_enabled' => true,
-			),
-			true
-		);
-		$service          = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $eligible_account );
-		$note             = new \Automattic\WooCommerce\Admin\Notes\Note();
-		$note->set_name( 'wc-payments-notes-test-to-live' );
-		$note->set_title( 'Previous inbox nudge' );
-		$note->set_content( 'Previous inbox nudge' );
-		$note->set_type( \Automattic\WooCommerce\Admin\Notes\Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-		$note->save();
-		$this->assertNotEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ) );
-
-		$service->maybe_sync_test_to_live_inbox_note();
-		$service->maybe_sync_test_to_live_inbox_note();
-		$this->assertEmpty( $this->get_note_ids_with_name( 'wc-payments-notes-test-to-live' ) );
-	}
-
-	/**
 	 * @testdox Recurring store setup sync is scheduled once in the WooPayments group.
 	 */
 	public function test_schedule_recurring_actions_schedules_store_setup_sync_once(): void {
@@ -1577,37 +1532,10 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_add_missing_currencies' ) );
 		remove_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $service, 'maybe_handle_test_mode_toggle' ) );
 		remove_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) );
-		remove_action( 'woocommerce_payments_account_refreshed', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
-		remove_action( 'wcpay_store_setup_sync', array( $service, 'maybe_sync_test_to_live_inbox_note' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) );
 		remove_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) );
 	}
 
-	/**
-	 * Get note IDs stored under a name.
-	 *
-	 * @param string $name Note name.
-	 * @return array<int|string>
-	 */
-	private function get_note_ids_with_name( string $name ): array {
-		$data_store = \Automattic\WooCommerce\Admin\Notes\Notes::load_data_store();
-
-		return $data_store->get_notes_with_name( $name );
-	}
-
-	/**
-	 * Delete all notes stored under a name.
-	 *
-	 * @param string $name Note name.
-	 */
-	private function delete_notes_with_name( string $name ): void {
-		foreach ( $this->get_note_ids_with_name( $name ) as $note_id ) {
-			$note = \Automattic\WooCommerce\Admin\Notes\Notes::get_note( (int) $note_id );
-			if ( $note instanceof \Automattic\WooCommerce\Admin\Notes\Note ) {
-				$note->delete();
-			}
-		}
-	}
 
 	/**
 	 * Rebuild WooCommerce's cached email registry under the currently registered filters.

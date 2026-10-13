@@ -374,7 +374,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * A platform error is logged with its status and code, never its message, and answers null; client 11.1.0 appends
 	 * the platform's message (class-wc-payments-webhook-reliability-service.php:104).
 	 *
-	 * @return array{data:array<int,array<string,mixed>>,has_more:bool}|null The page, or null when the fetch failed.
+	 * @return array{data:array<int,mixed>,has_more:bool}|null The page, or null when the fetch failed; entries without an ID are skipped by the caller.
 	 */
 	private function fetch_failed_events_page(): ?array {
 		try {
@@ -391,7 +391,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		$data = $events['data'] ?? array();
 
 		return array(
-			'data'     => is_array( $data ) ? array_values( array_filter( $data, 'is_array' ) ) : array(),
+			'data'     => is_array( $data ) ? array_values( $data ) : array(),
 			'has_more' => (bool) ( $events['has_more'] ?? false ),
 		);
 	}

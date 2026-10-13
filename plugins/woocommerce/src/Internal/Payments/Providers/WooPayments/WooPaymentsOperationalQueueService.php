@@ -141,13 +141,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private const TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT = 'wcpay_test_to_live_eligible';
 
 	/**
-	 * Test-to-live go-live nudge inbox note name.
-	 *
-	 * @var string
-	 */
-	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
-
-	/**
 	 * Transient caching whether a post-KYC activation email applies.
 	 *
 	 * @var string
@@ -351,15 +344,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 
 		delete_transient( self::TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT );
 		delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
-	}
-
-	/**
-	 * Remove the obsolete test-to-live inbox note for older callers.
-	 *
-	 * @deprecated 11.2.0 The test-to-live journey is now a Payments settings notice.
-	 */
-	public function maybe_sync_test_to_live_inbox_note(): void {
-		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 	}
 
 	/**

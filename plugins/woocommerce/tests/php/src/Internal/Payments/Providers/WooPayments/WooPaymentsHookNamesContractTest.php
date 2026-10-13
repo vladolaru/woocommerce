@@ -133,7 +133,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * not part of `woopayments-hooks.json`. The retired gate itself pinned per-hook *site counts*
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
 	 * hook's fire site directly (`WooPaymentsRuntimeArbiter`, `NativePaymentsShadowMode`, and the
-	 * `WooPaymentsFailedEventsProvider`/`WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
+	 * `WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
 	 * `WooPaymentsTokenService`/`WooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
 	 * `WooPaymentsExpressCheckoutService`/`WooPaymentsCutoverController` sites the gate's `PROVIDER_HOOKS` names).
 	 *
