@@ -64,15 +64,15 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Count the error lines written under the payment-info source. The filter runs once per log handler, so each line
+	 * Count the error lines written under the WooPayments log source. The filter runs once per log handler, so each line
 	 * is counted once.
 	 *
 	 * @return int
 	 */
-	private function count_payment_info_errors(): int {
+	private function count_woopayments_errors(): int {
 		$errors = array_filter(
 			$this->log_lines,
-			static fn( array $line ): bool => 'error' === $line['level'] && 'payment-info' === ( $line['context']['source'] ?? null )
+			static fn( array $line ): bool => 'error' === $line['level'] && 'woopayments' === ( $line['context']['source'] ?? null )
 		);
 
 		return count( array_unique( array_column( $errors, 'message' ) ) );
@@ -129,7 +129,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
 			$this->assertSame( 400, $exception->getCode() );
 		}
-		$this->assertSame( 1, $this->count_payment_info_errors() );
+		$this->assertSame( 1, $this->count_woopayments_errors() );
 		$this->assertStringContainsString( 'element currency: usd, order currency: eur', $this->log_lines[0]['message'] );
 	}
 
@@ -154,7 +154,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		} catch ( RouteException $exception ) {
 			$this->assertSame( 'wcpay_express_checkout_currency_mismatch', $exception->getErrorCode() );
 		}
-		$this->assertSame( 1, $this->count_payment_info_errors() );
+		$this->assertSame( 1, $this->count_woopayments_errors() );
 		$this->assertStringContainsString( 'element currency: (not a currency code), order currency: eur', $this->log_lines[0]['message'] );
 		$this->assertStringNotContainsString( "\n", $this->log_lines[0]['message'] );
 		foreach ( $this->log_lines as $line ) {
@@ -192,7 +192,7 @@ class WooPaymentsExpressCheckoutCurrencyGuardTest extends WC_Unit_Test_Case {
 		$request = $this->create_request( $headers );
 
 		$this->sut->assert_currency_matches_element( $order, $request );
-		$this->assertSame( 0, $this->count_payment_info_errors() );
+		$this->assertSame( 0, $this->count_woopayments_errors() );
 	}
 
 	/**

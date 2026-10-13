@@ -18,10 +18,6 @@ use RuntimeException;
  */
 class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 
-	private const SESSION_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION';
-
-	private const TOKEN_ISSUER = 'woopayments/product-page';
-
 	/**
 	 * Session key holding the customer the tokenized session belongs to: the user ID, or 0 for a guest.
 	 */
@@ -35,7 +31,7 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	final public function init(): void {
 		$this->init_tokenized_session();
 
-		if ( ! $this->is_ephemeral_request() ) {
+		if ( ! WooPaymentsTokenizedCartSessionController::is_ephemeral_request() ) {
 			add_action( 'shutdown', array( $this, 'save_data' ), 20 );
 		}
 	}
@@ -152,45 +148,20 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 	 * @return string
 	 */
 	private function get_session_id_from_header(): string {
-		$token = $this->get_server_header( self::SESSION_HEADER );
+		$token = WooPaymentsTokenizedCartSessionController::get_server_header( WooPaymentsTokenizedCartSessionController::SESSION_HEADER );
 		if ( '' === $token || ! JsonWebToken::validate( $token, self::get_token_secret() ) ) {
 			return '';
 		}
 
 		$parts   = JsonWebToken::get_parts( $token );
 		$payload = is_object( $parts ) && isset( $parts->payload ) ? $parts->payload : null;
-		if ( ! is_object( $payload ) || ! isset( $payload->session_id, $payload->iss ) || self::TOKEN_ISSUER !== $payload->iss ) {
+		if ( ! is_object( $payload ) || ! isset( $payload->session_id, $payload->iss ) || WooPaymentsTokenizedCartSessionController::TOKEN_ISSUER !== $payload->iss ) {
 			return '';
 		}
 
 		$session_id = is_scalar( $payload->session_id ) ? sanitize_text_field( (string) $payload->session_id ) : '';
 
 		return 0 === strpos( $session_id, 't_' ) ? $session_id : '';
-	}
-
-	/**
-	 * Get a sanitized HTTP request header from the server environment.
-	 *
-	 * @param string $key Server header key.
-	 * @return string
-	 */
-	private function get_server_header( string $key ): string {
-		if ( ! isset( $_SERVER[ $key ] ) || ! is_scalar( $_SERVER[ $key ] ) ) {
-			return '';
-		}
-
-		$value = wc_clean( wp_unslash( (string) $_SERVER[ $key ] ) );
-
-		return is_scalar( $value ) ? (string) $value : '';
-	}
-
-	/**
-	 * Tell whether this request should be cleaned up after the response.
-	 *
-	 * @return bool
-	 */
-	private function is_ephemeral_request(): bool {
-		return '1' === $this->get_server_header( 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_IS_EPHEMERAL_CART' );
 	}
 
 	/**

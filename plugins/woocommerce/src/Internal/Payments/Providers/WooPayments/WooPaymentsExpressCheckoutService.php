@@ -81,7 +81,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function should_show_payment_request_button( string $context = 'checkout' ): bool {
-		$context = $this->normalize_button_context( $context );
+		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 
 		// Express methods listed among the checkout payment methods are not shown again as buttons (client 11.1.0 button helper :582-586).
 		if ( WooPaymentsExpressPaymentMethodTypes::is_express_checkout_in_payment_methods_enabled( $this->account_service ) ) {
@@ -122,15 +122,15 @@ class WooPaymentsExpressCheckoutService {
 	 * @return array<string,mixed>
 	 */
 	public function get_express_checkout_params( string $context = 'checkout' ): array {
-		$context          = $this->normalize_button_context( $context );
+		$context          = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 		$context_currency = $this->get_context_currency( $context );
 		$currency         = strtolower( '' === $context_currency ? get_woocommerce_currency() : $context_currency );
 		$decimals         = wc_get_price_decimals();
-		$tracking_enabled = $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled( false, true );
+		$tracking_enabled = $this->frontend_tracking_controller->is_shopper_tracking_enabled( false, true );
 
 		$params = array(
 			'ajax_url'                    => admin_url( 'admin-ajax.php' ),
-			'tracks_url'                  => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'tracks_url'                  => $this->frontend_tracking_controller->get_tracks_rest_url(),
 			'wc_ajax_url'                 => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'nonce'                       => array(
 				'platform_tracker'             => wp_create_nonce( 'platform_tracks_nonce' ),
@@ -181,19 +181,6 @@ class WooPaymentsExpressCheckoutService {
 	}
 
 	/**
-	 * Get the frontend tracking controller.
-	 *
-	 * @return WooPaymentsFrontendTrackingController
-	 */
-	private function get_frontend_tracking_controller(): WooPaymentsFrontendTrackingController {
-		if ( ! isset( $this->frontend_tracking_controller ) ) {
-			$this->frontend_tracking_controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
-		}
-
-		return $this->frontend_tracking_controller;
-	}
-
-	/**
 	 * Get enabled express checkout platform methods for a context.
 	 *
 	 * @param string $context Express checkout context.
@@ -201,7 +188,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return array<int,string>
 	 */
 	public function get_enabled_methods_for_context( string $context = 'checkout', string $currency = '' ): array {
-		return WooPaymentsExpressPaymentMethodTypes::get_enabled_methods_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
+		return WooPaymentsExpressPaymentMethodTypes::get_enabled_methods_for_context( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ), $currency );
 	}
 
 	/**
@@ -212,7 +199,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return array<int,string>
 	 */
 	public function get_allowed_payment_method_types_for_context( string $context = 'checkout', string $currency = '' ): array {
-		return WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $this->account_service, $this->normalize_button_context( $context ), $currency );
+		return WooPaymentsExpressPaymentMethodTypes::get_allowed_payment_method_types_for_context( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ), $currency );
 	}
 
 	/**
@@ -236,7 +223,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	public function is_amazon_pay_usable( string $context = 'checkout', string $currency = '' ): bool {
-		return WooPaymentsExpressPaymentMethodTypes::is_amazon_pay_usable( $this->account_service, $this->normalize_button_context( $context ), $currency );
+		return WooPaymentsExpressPaymentMethodTypes::is_amazon_pay_usable( $this->account_service, WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ), $currency );
 	}
 
 	/**
@@ -269,8 +256,8 @@ class WooPaymentsExpressCheckoutService {
 			'theme'        => $this->get_string_gateway_setting( 'payment_request_button_theme', 'dark' ),
 			'height'       => $this->get_button_height(),
 			'radius'       => $this->get_string_gateway_setting_allow_empty( 'payment_request_button_border_radius', '' ),
-			'size'         => $this->get_string_gateway_setting( 'payment_request_button_size', 'default' ),
-			'context'      => $this->normalize_button_context( $context ),
+			'size'         => $this->get_string_gateway_setting( 'payment_request_button_size', 'medium' ),
+			'context'      => WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ),
 			'locale'       => substr( get_locale(), 0, 2 ),
 			'branded_type' => 'default' === $type ? 'short' : 'long',
 		);
@@ -293,18 +280,6 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return '40';
-	}
-
-	/**
-	 * Normalize an express checkout context.
-	 *
-	 * @param string $context Context.
-	 * @return string
-	 */
-	private function normalize_button_context( string $context ): string {
-		$context = sanitize_key( $context );
-
-		return in_array( $context, array( 'product', 'cart', 'checkout', 'pay_for_order' ), true ) ? $context : 'checkout';
 	}
 
 	/**
@@ -522,7 +497,7 @@ class WooPaymentsExpressCheckoutService {
 		$items     = array(
 			array(
 				'label'  => $product->get_name(),
-				'amount' => $this->prepare_amount( $price, $currency ),
+				'amount' => WooPaymentsCurrencyUtils::amount_to_minor_units( $price, $currency ),
 			),
 		);
 
@@ -531,7 +506,7 @@ class WooPaymentsExpressCheckoutService {
 			$total_tax += $tax;
 			$items[]    = array(
 				'label'   => __( 'Tax', 'woocommerce' ),
-				'amount'  => $this->prepare_amount( $tax, $currency ),
+				'amount'  => WooPaymentsCurrencyUtils::amount_to_minor_units( $tax, $currency ),
 				'pending' => 0.0 === $tax,
 			);
 		}
@@ -549,7 +524,7 @@ class WooPaymentsExpressCheckoutService {
 			'displayItems'   => $items,
 			'total'          => array(
 				'label'   => $total_label,
-				'amount'  => $this->prepare_amount( $price + $total_tax, $currency ),
+				'amount'  => WooPaymentsCurrencyUtils::amount_to_minor_units( $price + $total_tax, $currency ),
 				'pending' => true,
 			),
 			'needs_shipping' => $this->product_needs_shipping( $product ),
@@ -833,17 +808,6 @@ class WooPaymentsExpressCheckoutService {
 		}
 
 		return \WC_Tax::calc_tax( $price, \WC_Tax::get_rates( $product->get_tax_class() ), false );
-	}
-
-	/**
-	 * Convert a decimal WooCommerce amount to a Stripe minor-unit amount.
-	 *
-	 * @param float  $amount   Decimal amount.
-	 * @param string $currency Currency code the amount is in.
-	 * @return int
-	 */
-	private function prepare_amount( float $amount, string $currency ): int {
-		return (int) round( $amount * ( 10 ** WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ) ) );
 	}
 
 	/**

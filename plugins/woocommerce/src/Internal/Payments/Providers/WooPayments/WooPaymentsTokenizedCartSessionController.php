@@ -24,7 +24,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 	private const SESSION_NONCE_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE';
 
-	private const SESSION_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION';
+	public const SESSION_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION';
 
 	private const RESPONSE_SESSION_HEADER = 'X-WooPayments-Tokenized-Cart-Session';
 
@@ -32,7 +32,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 	private const SESSION_NONCE_ACTION = 'woopayments_tokenized_cart_session_nonce';
 
-	private const TOKEN_ISSUER = 'woopayments/product-page';
+	public const TOKEN_ISSUER = 'woopayments/product-page';
 
 	private const RETURN_URL_MARKER = 'woopayments-custom-session';
 
@@ -566,7 +566,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			$response->header( self::RESPONSE_SESSION_HEADER, $this->create_session_token( $session_id ) );
 		}
 
-		if ( $this->is_ephemeral_request() && is_callable( array( WC()->session, 'delete_session' ) ) ) {
+		if ( self::is_ephemeral_request() && is_callable( array( WC()->session, 'delete_session' ) ) ) {
 			WC()->session->delete_session( $session_id );
 		}
 
@@ -1001,7 +1001,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function has_valid_session_nonce(): bool {
-		$nonce = $this->get_server_header( self::SESSION_NONCE_HEADER );
+		$nonce = self::get_server_header( self::SESSION_NONCE_HEADER );
 
 		return '' !== $nonce && function_exists( 'wp_verify_nonce' ) && (bool) \wp_verify_nonce( $nonce, self::SESSION_NONCE_ACTION );
 	}
@@ -1023,7 +1023,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function has_valid_incoming_session_token(): bool {
-		$token = $this->get_server_header( self::SESSION_HEADER );
+		$token = self::get_server_header( self::SESSION_HEADER );
 		if ( '' === $token ) {
 			return true;
 		}
@@ -1050,7 +1050,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @param string $key Server header key.
 	 * @return string
 	 */
-	private function get_server_header( string $key ): string {
+	public static function get_server_header( string $key ): string {
 		if ( ! isset( $_SERVER[ $key ] ) || ! is_scalar( $_SERVER[ $key ] ) ) {
 			return '';
 		}
@@ -1082,8 +1082,8 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 *
 	 * @return bool
 	 */
-	private function is_ephemeral_request(): bool {
-		return '1' === $this->get_server_header( self::EPHEMERAL_CART_HEADER );
+	public static function is_ephemeral_request(): bool {
+		return '1' === self::get_server_header( self::EPHEMERAL_CART_HEADER );
 	}
 
 	/**

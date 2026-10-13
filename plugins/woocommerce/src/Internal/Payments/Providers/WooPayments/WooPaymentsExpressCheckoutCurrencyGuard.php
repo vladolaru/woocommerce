@@ -93,7 +93,7 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 				1 === preg_match( '/^[a-z]{3}\z/', $expected ) ? $expected : '(not a currency code)',
 				$actual
 			),
-			array( 'source' => 'payment-info' )
+			array( 'source' => WooPaymentsLogger::SOURCE )
 		);
 
 		throw new RouteException(
