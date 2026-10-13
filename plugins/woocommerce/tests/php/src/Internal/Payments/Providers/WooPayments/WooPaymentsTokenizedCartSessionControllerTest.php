@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutAddressNormalizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionHandler;
@@ -55,11 +56,9 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) );
 			remove_filter( 'woocommerce_get_return_url', array( $this->sut, 'add_tokenized_cart_return_url_marker' ) );
 			remove_filter( 'rest_post_dispatch', array( $this->sut, 'handle_store_api_response' ), 10 );
-			remove_filter( 'rest_post_dispatch', array( $this->sut, 'clear_tokenized_postcode_validation' ), 10 );
 			remove_filter( 'rest_pre_dispatch', array( $this->sut, 'maybe_reject_invalid_tokenized_cart_session' ), 10 );
 			remove_filter( 'rest_pre_dispatch', array( $this->sut, 'reject_invalid_tokenized_cart_session' ), 10 );
 			remove_filter( 'woocommerce_should_clear_cart_after_payment', array( $this->sut, 'preserve_cart_after_tokenized_payment' ) );
-			remove_filter( 'woocommerce_validate_postcode', array( $this->sut, 'maybe_skip_postcode_validation' ), 10 );
 		}
 
 		WC()->session = $this->original_session;
@@ -219,47 +218,6 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave generic tokenized Hong Kong addresses unchanged without a valid nonce.
-	 * @dataProvider invalid_generic_tokenized_cart_nonce_provider
-	 *
-	 * @param string|null $tokenized_nonce Generic tokenized cart nonce.
-	 */
-	public function test_leaves_generic_tokenized_hong_kong_addresses_unchanged_without_valid_nonce( ?string $tokenized_nonce ): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
-		$request   = $this->create_generic_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout', $tokenized_nonce );
-		$request->set_param(
-			'billing_address',
-			array(
-				'country'  => 'HK',
-				'state'    => '',
-				'postcode' => '',
-				'city'     => 'Tai Po',
-			)
-		);
-
-		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
-
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
-
-		$this->assertNull( $result );
-		$billing_address = $request->get_param( 'billing_address' );
-		$this->assertSame( '', $billing_address['state'] );
-	}
-
-	/**
-	 * Data provider for missing or invalid generic tokenized cart nonces.
-	 *
-	 * @return array<string,array{0:string|null}>
-	 */
-	public function invalid_generic_tokenized_cart_nonce_provider(): array {
-		return array(
-			'Missing nonce' => array( null ),
-			'Invalid nonce' => array( 'invalid-tokenized-cart-nonce' ),
-		);
-	}
-
-	/**
 	 * @testdox Should normalize tokenized checkout address lines before Store API validation.
 	 */
 	public function test_normalizes_tokenized_checkout_address_lines_before_store_api_validation(): void {
@@ -281,124 +239,6 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$billing_address = $request->get_param( 'billing_address' );
 		$this->assertSame( 'Meininger Strasse 58', $billing_address['address_1'] );
 		$this->assertSame( '', $billing_address['address_2'] );
-	}
-
-	/**
-	 * @testdox Should normalize tokenized checkout states before Store API validation.
-	 */
-	public function test_normalizes_tokenized_checkout_states_before_store_api_validation(): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
-		$request   = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout' );
-		$request->set_param(
-			'shipping_address',
-			array(
-				'country' => 'IT',
-				'state'   => 'Venezia',
-			)
-		);
-
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
-
-		$this->assertNull( $result );
-		$shipping_address = $request->get_param( 'shipping_address' );
-		$this->assertSame( 'VE', $shipping_address['state'] );
-	}
-
-	/**
-	 * @testdox Should recover Hong Kong tokenized checkout regions from district values.
-	 * @dataProvider hong_kong_region_recovery_provider
-	 *
-	 * @param string $field           Address field that carries the region candidate.
-	 * @param string $value           Candidate value.
-	 * @param string $expected_region Expected normalized Hong Kong region.
-	 */
-	public function test_recovers_hong_kong_tokenized_checkout_region_from_district( string $field, string $value, string $expected_region ): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
-		$request   = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout' );
-		$address   = array(
-			'country'  => 'HK',
-			'state'    => '',
-			'postcode' => '',
-			'city'     => '',
-		);
-
-		$address[ $field ] = $value;
-		$request->set_param(
-			'billing_address',
-			$address
-		);
-
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
-
-		$this->assertNull( $result );
-		$billing_address = $request->get_param( 'billing_address' );
-		$this->assertSame( $expected_region, $billing_address['state'] );
-	}
-
-	/**
-	 * Data provider for Hong Kong region recovery.
-	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
-	 */
-	public function hong_kong_region_recovery_provider(): array {
-		return array(
-			'Tai Po city'           => array( 'city', 'Tai Po', 'NEW TERRITORIES' ),
-			'Happy Valley state'    => array( 'state', 'happy valley', 'HONG KONG' ),
-			'Hung Hom state'        => array( 'state', 'hung hom', 'KOWLOON' ),
-			'Fanling postcode'      => array( 'postcode', 'fanling', 'NEW TERRITORIES' ),
-			'Chinese Kowloon value' => array( 'city', '紅磡', 'KOWLOON' ),
-		);
-	}
-
-	/**
-	 * @testdox Should normalize redacted tokenized update-customer postcodes before Store API validation.
-	 */
-	public function test_normalizes_tokenized_update_customer_postcodes_before_store_api_validation(): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
-		$request   = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/cart/update-customer' );
-		$request->set_param(
-			'shipping_address',
-			array(
-				'country'  => 'GB',
-				'postcode' => 'N1C',
-			)
-		);
-
-		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
-
-		$this->assertNull( $result );
-		$shipping_address = $request->get_param( 'shipping_address' );
-		$this->assertSame( 'N1C000', $shipping_address['postcode'] );
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C 000', 'GB' ) );
-		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'SW1000', 'GB' ) );
-	}
-
-	/**
-	 * @testdox Should clear the tokenized postcode validation bypass after Store API dispatch.
-	 */
-	public function test_clears_tokenized_postcode_validation_after_store_api_dispatch(): void {
-		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
-		$request   = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/cart/update-customer' );
-		$request->set_param(
-			'shipping_address',
-			array(
-				'country'  => 'GB',
-				'postcode' => 'N1C',
-			)
-		);
-
-		$this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, $request );
-
-		$this->assertTrue( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
-
-		$this->sut->clear_tokenized_postcode_validation( new WP_REST_Response( array() ), null, $request );
-
-		$this->assertFalse( $this->sut->maybe_skip_postcode_validation( false, 'N1C000', 'GB' ) );
 	}
 
 	/**
@@ -489,7 +329,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
 
 		$controller = new WooPaymentsTokenizedCartSessionController();
-		$controller->init( $arbiter );
+		$controller->init( $arbiter, new WooPaymentsExpressCheckoutAddressNormalizer() );
 
 		return $controller;
 	}

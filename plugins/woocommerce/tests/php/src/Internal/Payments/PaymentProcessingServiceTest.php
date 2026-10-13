@@ -180,7 +180,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$tokenized_cart_controller = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController();
-		$tokenized_cart_controller->init( $arbiter );
+		$tokenized_cart_controller->init( $arbiter, new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutAddressNormalizer() );
 		$tokenized_cart_controller->register();
 
 		// Parse the `order-received` id and `key` from the redirect URL itself (not `get_order_key()`),
