@@ -159,10 +159,14 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 	/**
 	 * Trigger the customer authentication email.
 	 *
-	 * @param WC_Order $order Renewal order.
+	 * @param mixed $order Renewal order; anything else is ignored.
 	 * @return void
 	 */
-	public function trigger( WC_Order $order ): void {
+	public function trigger( $order ): void {
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
 		$this->setup_locale();
 
 		if ( ! $this->is_subscription_related_order( $order ) || ! $this->is_enabled() ) {

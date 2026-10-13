@@ -169,7 +169,7 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 		if ( null === $this->retry ) {
 			// Client 11.1.0 logs this only when WooPayments logging is on (class-wc-payments-email-failed-authentication-retry.php:172),
 			// as WooPaymentsLogger::log() does.
-			wc_get_container()->get( WooPaymentsLogger::class )->log( 'WCS_Retry_Manager class does not exist. Not able to send admin email about customer notification for authentication required for renewal payment.' );
+			wc_get_container()->get( WooPaymentsLogger::class )->log( 'No WooCommerce Subscriptions retry is stored for this order. Not sending the admin email about the authentication a renewal payment needs.' );
 			$this->restore_locale();
 			return;
 		}

@@ -694,32 +694,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		$this->token_service->attach_token_to_order( $subscription, $token );
 
 		$subscription->update_meta_data( '_payment_method_id', (string) $token->get_token() );
-
-		if ( '' === (string) $subscription->get_meta( '_stripe_customer_id', true ) ) {
-			$customer_id = $this->get_customer_id_from_token( $token );
-			if ( '' !== $customer_id ) {
-				$subscription->update_meta_data( '_stripe_customer_id', $customer_id );
-			}
-		}
-
 		$subscription->save();
-	}
-
-	/**
-	 * Get a provider customer ID from token metadata when available.
-	 *
-	 * @param WC_Payment_Token $token Token object.
-	 * @return string
-	 */
-	private function get_customer_id_from_token( WC_Payment_Token $token ): string {
-		foreach ( array( '_stripe_customer_id', 'customer_id' ) as $key ) {
-			$value = $token->get_meta( $key, true );
-			if ( is_scalar( $value ) && '' !== (string) $value ) {
-				return (string) $value;
-			}
-		}
-
-		return '';
 	}
 
 	/**
