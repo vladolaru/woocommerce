@@ -4514,11 +4514,14 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 *
 	 * WooCommerce Subscriptions passes the subscription itself as the order and answers "Payment method updated." on a
 	 * success result (subscriptions-core 6.7.1, which client 11.1.0 pins, includes/class-wc-subscriptions-change-payment-gateway.php:319,
-	 * :335-347, :376-378). Client 11.1.0 throws these refusals before its payment information exists
-	 * (class-wc-payment-gateway-wcpay.php:1206-1233; class-payment-information.php:157-162), so its catch answers success
-	 * when the subscription's intention status is succeeded from an earlier change (:1283-1304) and otherwise fails the
-	 * subscription (:1323-1328), which moves an active WooPayments subscription to pending. Here the change is refused and
-	 * the subscription is left as it is.
+	 * :335-347, :376-378). Client 11.1.0 throws the phone, fraud-token, rate-limiter and missing-payment-method refusals
+	 * before its payment information exists (class-wc-payment-gateway-wcpay.php:1206-1233; class-payment-information.php:157-162),
+	 * so its catch answers success when the subscription's intention status is succeeded from an earlier change (:1283-1304)
+	 * and otherwise fails the subscription (:1323-1328), which moves an active WooPayments subscription to pending. It throws
+	 * the payment-method error after building its payment information (class-payment-information.php:288;
+	 * class-wc-payment-gateway-wcpay.php:1664), so that refusal keeps the subscription's status (:1326) but still answers the
+	 * same success after an earlier change. Here every one of them is refused and the subscription left as it is, whether
+	 * the change enters a new card or selects a saved one.
 	 *
 	 * @dataProvider provider_subscription_change_refusals
 	 *
@@ -4549,6 +4552,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		if ( 'phone' === $refusal ) {
 			$order->set_billing_phone( '+1 555 0100 0000 0000 0' );
 			$order->save();
+		} elseif ( 'phone_with_saved_card' === $refusal ) {
+			$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+			$token       = new \WC_Payment_Token_CC();
+			$token->set_token( 'pm_saved_card' );
+			$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+			$token->set_card_type( 'visa' );
+			$token->set_last4( '4242' );
+			$token->set_expiry_month( '12' );
+			$token->set_expiry_year( '2040' );
+			$token->set_user_id( $customer_id );
+			$token->save();
+			$order->set_customer_id( $customer_id );
+			$order->set_billing_phone( '+1 555 0100 0000 0000 0' );
+			$order->save();
+			unset( $_POST['wcpay-payment-method'] );
+			$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
 		} elseif ( 'fraud_token' === $refusal ) {
 			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
 			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
@@ -4590,11 +4609,12 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_subscription_change_refusals(): array {
 		$refusals = array(
-			'billing phone over 20 characters' => array( 'phone', 'Invalid phone number.' ),
-			'fraud-token refusal'              => array( 'fraud_token', "We're not able to process this payment. Please refresh the page and try again." ),
-			'rate-limiter refusal'             => array( 'rate_limiter', 'Your payment was not processed.' ),
-			'no payment method'                => array( 'no_payment_method', 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ),
-			'payment method error'             => array( 'payment_method_error', 'Your card number is invalid.' ),
+			'billing phone over 20 characters'             => array( 'phone', 'Invalid phone number.' ),
+			'billing phone over 20 characters, saved card' => array( 'phone_with_saved_card', 'Invalid phone number.' ),
+			'fraud-token refusal'                          => array( 'fraud_token', "We're not able to process this payment. Please refresh the page and try again." ),
+			'rate-limiter refusal'                         => array( 'rate_limiter', 'Your payment was not processed.' ),
+			'no payment method'                            => array( 'no_payment_method', 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ),
+			'payment method error'                         => array( 'payment_method_error', 'Your card number is invalid.' ),
 		);
 		$cases    = array();
 		foreach ( $refusals as $name => $refusal ) {

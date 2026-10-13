@@ -1424,7 +1424,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$is_subscription_payment_method_change = $this->is_subscription_payment_method_change_request( $order );
 		// On a subscription payment-method change $order is the subscription: a refusal before the charge leaves it as it is,
 		// and never answers success from an earlier change's succeeded intent, which Subscriptions would show as "Payment method
-		// updated." Client 11.1.0 fails the subscription, or answers that success, for these (`gw:1283-1304`, `gw:1323-1328`).
+		// updated." Client 11.1.0 throws the phone, fraud-token, rate-limiter and missing-payment-method refusals before its
+		// payment information exists, so it fails the subscription or answers that success (`gw:1283-1304`, `gw:1323-1328`).
 		$refusal_moves_order = ! $is_subscription_payment_method_change;
 
 		// Client 11.1.0 refuses these first, before any other check (Invalid_Phone_Number_Exception, `gw:1206`).
@@ -2838,8 +2839,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// Client 11.1.0 reaches its catch with payment information built, so the merchant gets the payment-failed note
 		// (client 11.1.0 `gw:1354-1401`). On a subscription payment-method change $order is the subscription itself:
-		// 'failed' is not a valid subscription transition, the existing method stays in place (`gw:1326`), and an earlier
-		// change's succeeded intent does not turn the refusal into a success.
+		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`). An earlier
+		// change's succeeded intent does not turn the refusal into a success, as it does on client 11.1.0 (`gw:1283-1304`).
 		return $this->refuse_checkout(
 			$order,
 			$message,
