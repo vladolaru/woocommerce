@@ -6936,9 +6936,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * The WooCommerce mobile app refunds an Interac payment on the card reader, then records it through the order refunds
 	 * REST route, which runs the gateway refund. Client 11.1.0 lists the charge's refunds and links the oldest succeeded one
 	 * of the same amount (class-wc-payment-gateway-wcpay.php:2944-2968), reading the payment method type from the payment
-	 * method (:3031-3049); the platform refuses an online Interac refund. The list is the recorded one
+	 * method (:3031-3049). Stripe refuses an online Interac refund: in-person refunds are mandatory for Interac in Canada,
+	 * and such a payment cannot be refunded through the API or the Dashboard (https://docs.stripe.com/terminal/features/refunds,
+	 * https://docs.stripe.com/terminal/payments/regional?integration-country=CA). The list is the recorded one
 	 * (`Fixtures/platform-refund-list.json`); the Interac details are HAND-BUILT from Stripe's charge object
-	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_method_details-interac_present).
+	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_method_details-interac_present), and the fetched
+	 * payment method reuses them, since only its type is read.
 	 *
 	 * @dataProvider interac_payment_method_sources
 	 *
@@ -7012,12 +7015,13 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Interac in-person refund with no unrecorded reader refund of its amount ($case) is refused with the WooPayments extension's message, sends nothing and records no failure.
+	 * @testdox An Interac in-person refund with no unrecorded reader refund of its amount ($label) is refused with "$expected_message", sends nothing and records no failure.
 	 *
 	 * Client 11.1.0 answers wcpay_edit_order_refund_not_possible with no failure note or status
 	 * (class-wc-payment-gateway-wcpay.php:2962-2967). A reader refund the order already records is not linked a second time;
 	 * client 11.1.0 links it to the new row too (class-wc-payment-gateway-wcpay.php:2953-2968), after which the refund
-	 * webhook adds the reader refund's own row again.
+	 * webhook adds the reader refund's own row again. That refusal says the refund is already recorded, so the merchant is
+	 * not sent back to the reader to refund the amount again (the delayed charge.refunded recorded it before the app's call).
 	 *
 	 * @dataProvider interac_refunds_without_a_reader_refund
 	 *
@@ -7025,8 +7029,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param float  $amount           Refund amount.
 	 * @param bool   $already_recorded Whether the order already records the reader refund of that amount.
 	 * @param string $listed_status    Status of the listed reader refund of 7.77.
+	 * @param string $expected_message Refusal message.
 	 */
-	public function test_interac_in_person_refund_without_its_reader_refund_is_refused( string $label, float $amount, bool $already_recorded, string $listed_status ): void {
+	public function test_interac_in_person_refund_without_its_reader_refund_is_refused( string $label, float $amount, bool $already_recorded, string $listed_status, string $expected_message ): void {
 		unset( $label );
 		$order = $this->create_refund_hold_order();
 		$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
@@ -7044,7 +7049,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'wcpay_edit_order_refund_not_possible', $result->get_error_code() );
-		$this->assertSame( 'You shall refund this payment in the same application where the payment was made.', $result->get_error_message() );
+		$this->assertSame( $expected_message, $result->get_error_message() );
 		$this->assertSame( array( self::refund_list_trail() ), self::request_trail( $http_client ) );
 		$this->assertSame( '', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( array(), self::note_texts_containing( $order, 'failed to complete' ) );
@@ -7055,13 +7060,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The status of a failed reader refund is HAND-BUILT on the recorded list (https://docs.stripe.com/api/refunds/object).
 	 *
-	 * @return array<string,array{string,float,bool,string}>
+	 * @return array<string,array{string,float,bool,string,string}>
 	 */
 	public function interac_refunds_without_a_reader_refund(): array {
+		$same_application = 'You shall refund this payment in the same application where the payment was made.';
+
 		return array(
-			'no reader refund of that amount'     => array( 'no reader refund of that amount', 3.00, false, 'succeeded' ),
-			'reader refund already on the order'  => array( 'reader refund already on the order', 7.77, true, 'succeeded' ),
-			'reader refund of that amount failed' => array( 'reader refund of that amount failed', 7.77, false, 'failed' ),
+			'no reader refund of that amount'     => array( 'no reader refund of that amount', 3.00, false, 'succeeded', $same_application ),
+			'reader refund already on the order'  => array( 'reader refund already on the order', 7.77, true, 'succeeded', 'This refund is already recorded on the order.' ),
+			'reader refund of that amount failed' => array( 'reader refund of that amount failed', 7.77, false, 'failed', $same_application ),
 		);
 	}
 
@@ -7069,7 +7076,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A refund whose payment method type cannot be fetched is sent to the platform, which answers it.
 	 *
 	 * Client 11.1.0 fails the refund when that fetch fails (class-wc-payment-gateway-wcpay.php:2943-2970, :3031-3049);
-	 * sending it refunds a card payment, and the platform refuses an online Interac refund, so no money moves twice. The
+	 * sending it refunds a card payment, and Stripe refuses an online Interac refund (https://docs.stripe.com/terminal/features/refunds),
+	 * so no money moves twice. The
 	 * refund answer is the recorded one (`Fixtures/platform-refund-errors.json`, pair
 	 * `reused_key_identical_params_replays_refund`).
 	 */

@@ -68,8 +68,9 @@ class WooPaymentsPaymentOperationService {
 	private const DEFINITIVE_CHARGE_FAILURE_DATA_KEY = '_wcpay_definitive_charge_failure';
 
 	/**
-	 * Error code of an Interac in-person refund whose card reader refund is not on the charge, as client 11.1.0 answers it
-	 * (class-wc-payment-gateway-wcpay.php:2962-2967). No refund request was made.
+	 * Error code of an Interac in-person refund with no card reader refund to link, as client 11.1.0 answers it
+	 * (class-wc-payment-gateway-wcpay.php:2962-2967): none of its amount is on the charge, or the order already records it.
+	 * No refund request was made.
 	 *
 	 * @var string
 	 */
@@ -309,7 +310,8 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * As client 11.1.0 (class-wc-payment-gateway-wcpay.php:2944-2968), the oldest succeeded refund of the requested amount
 	 * is linked, and with none the call is refused. A refund the order already records is skipped, so a second reader
-	 * refund of the same amount is not linked to the first one's refund.
+	 * refund of the same amount is not linked to the first one's refund; when only such a refund matches, the refusal says
+	 * it is already recorded, so the merchant is not sent back to the reader to refund it again.
 	 *
 	 * @param WC_Order                                                    $order   Order being refunded.
 	 * @param array{charge:string,amount:int,reason:string,source:string} $request Refund request this call would send.
@@ -328,18 +330,26 @@ class WooPaymentsPaymentOperationService {
 		}
 
 		// Stripe lists a charge's refunds newest first.
-		$refunds = is_array( $list['data'] ?? null ) ? array_reverse( $list['data'] ) : array();
+		$refunds          = is_array( $list['data'] ?? null ) ? array_reverse( $list['data'] ) : array();
+		$already_recorded = false;
 		foreach ( $refunds as $refund ) {
-			if ( is_array( $refund ) && 'succeeded' === ( $refund['status'] ?? null ) && isset( $refund['amount'] ) && $request['amount'] === $refund['amount']
-				&& is_string( $refund['id'] ?? null ) && ! in_array( $refund['id'], $recorded_refund_ids, true ) ) {
+			if ( ! is_array( $refund ) || 'succeeded' !== ( $refund['status'] ?? null ) || ! isset( $refund['amount'] ) || $request['amount'] !== $refund['amount'] || ! is_string( $refund['id'] ?? null ) ) {
+				continue;
+			}
+
+			if ( ! in_array( $refund['id'], $recorded_refund_ids, true ) ) {
 				return WooPaymentsIntentCodec::outcome_from_refund_result( $refund )->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $refund ) );
 			}
+
+			$already_recorded = true;
 		}
 
 		return self::refused_refund_outcome(
 			array(
 				'code'    => self::IN_PERSON_REFUND_NOT_POSSIBLE_CODE,
-				'message' => __( 'You shall refund this payment in the same application where the payment was made.', 'woocommerce' ),
+				'message' => $already_recorded
+					? __( 'This refund is already recorded on the order.', 'woocommerce' )
+					: __( 'You shall refund this payment in the same application where the payment was made.', 'woocommerce' ),
 			)
 		);
 	}

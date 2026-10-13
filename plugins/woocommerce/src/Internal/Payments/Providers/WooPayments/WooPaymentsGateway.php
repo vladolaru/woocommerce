@@ -1638,10 +1638,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// The lock refusal, an Interac in-person refund with no card reader refund to link, and the refusals of a refund
 		// whose earlier attempt is unsettled made no platform refund attempt, so there is no failure to record (a refused
-		// retry must not mark a recorded refund failed). This works by exclusion:
-		// every other WP_Error from the processing service today comes from an actual platform refund attempt. A new
-		// pre-flight refusal must be excluded here too, or it will start recording failures for refunds that never reached
-		// the provider.
+		// retry must not mark a recorded refund failed). This works by exclusion: every other WP_Error from the processing
+		// service today comes from a platform refund attempt, or from a failed read of an Interac charge's refunds, which is
+		// recorded as a failure as client 11.1.0 records it (class-wc-payment-gateway-wcpay.php:2972-2999). A new pre-flight
+		// refusal must be excluded here too, or it will start recording failures for refunds that never reached the provider.
 		$no_attempt_codes = array_merge( array( 'order_payment_refund_locked', WooPaymentsPaymentOperationService::IN_PERSON_REFUND_NOT_POSSIBLE_CODE ), WooPaymentsRefundAmbiguityService::REFUSAL_CODES );
 		if ( is_wp_error( $result ) && ! in_array( $result->get_error_code(), $no_attempt_codes, true ) ) {
 			$this->record_refund_failure( $order, $refund_amount, $result );
