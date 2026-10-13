@@ -1514,6 +1514,50 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not save a provider payment method again when a lowered token limit hides its stored token from the read.
+	 */
+	public function test_reconcile_does_not_resave_methods_hidden_by_a_lowered_token_limit(): void {
+		$this->register_card_gateway_id();
+		$user_id = $this->factory()->user->create();
+		wp_set_current_user( $user_id );
+		update_option( 'posts_per_page', 10 );
+		$cards = array();
+		foreach ( array( 'pm_card_1', 'pm_card_2', 'pm_card_3' ) as $index => $payment_method_id ) {
+			$this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method_id );
+			$cards[] = array(
+				'id'   => $payment_method_id,
+				'type' => 'card',
+				'card' => array(
+					'brand'     => 'visa',
+					'last4'     => '424' . $index,
+					'exp_month' => 12,
+					'exp_year'  => 2030,
+				),
+			);
+		}
+
+		$customer_service = $this->create_reconciling_customer_service( 'cus_1', array( 'card' => $cards ) );
+		$this->create_service( array(), null, $customer_service, $this->create_account_service_with_enabled_methods( array( 'card' ) ) );
+
+		$limit = static fn(): int => 1;
+		add_filter( 'woocommerce_get_customer_payment_tokens_limit', $limit );
+		try {
+			$listed = WC_Payment_Tokens::get_customer_tokens( $user_id );
+		} finally {
+			remove_filter( 'woocommerce_get_customer_payment_tokens_limit', $limit );
+		}
+
+		$stored = array_map(
+			static fn( \WC_Payment_Token $token ): string => $token->get_token(),
+			array_values( WC_Payment_Tokens::get_tokens( array( 'user_id' => $user_id ) ) )
+		);
+		sort( $stored );
+
+		$this->assertSame( array( 'pm_card_1', 'pm_card_2', 'pm_card_3' ), $stored, 'Each provider method keeps its one stored token.' );
+		$this->assertCount( 1, $listed, 'The shopper-facing read keeps the lowered limit.' );
+	}
+
+	/**
 	 * @testdox Reconciliation should not run once the unpaginated token page is full.
 	 */
 	public function test_reconcile_skips_at_the_token_page_limit(): void {

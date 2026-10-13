@@ -1050,6 +1050,18 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 					continue;
 				}
 
+				// The tokens passed in stop at woocommerce_get_customer_payment_tokens_limit, so a method stored past that
+				// limit is looked up by its value before a token is saved for it.
+				$gateway_tokens = WC_Payment_Tokens::get_tokens(
+					array(
+						'user_id'    => $user_id,
+						'gateway_id' => $method_gateway_id,
+					)
+				);
+				if ( in_array( $payment_method_id, array_map( static fn( WC_Payment_Token $stored ): string => (string) $stored->get_token(), $gateway_tokens ), true ) ) {
+					continue;
+				}
+
 				$token = $this->create_token_for_user_from_payment_method( $payment_method, $user_id );
 				if ( $token instanceof WC_Payment_Token ) {
 					$tokens[ $token->get_id() ] = $token;
