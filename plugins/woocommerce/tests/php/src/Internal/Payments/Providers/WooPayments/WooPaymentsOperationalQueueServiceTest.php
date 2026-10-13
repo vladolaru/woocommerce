@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
@@ -474,6 +475,18 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$snapshot = $this->send_store_setup_snapshot();
 
 		$this->assertTrue( $snapshot['wc_setup']['wc_subscriptions_active'] );
+	}
+
+	/**
+	 * @testdox Should report the WooPayments version the store reports everywhere else as the store setup plugin version, not WooCommerce's.
+	 *
+	 * Client 11.1.0 sends its own version there (class-wc-payments-account.php:2981); the user agent reports the same
+	 * WooPaymentsClientVersion, and WooCommerce's version goes under wc_setup.
+	 */
+	public function test_store_setup_sync_reports_the_woopayments_version_as_the_plugin_version(): void {
+		$snapshot = $this->send_store_setup_snapshot();
+
+		$this->assertSame( WooPaymentsClientVersion::VERSION, $snapshot['plugin']['version'] );
 	}
 
 	/**

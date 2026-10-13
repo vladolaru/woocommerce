@@ -997,8 +997,9 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 			// Client 11.1.0 reads the Multi-Currency feature flag with a default of enabled (class-wc-payments-features.php:67-68).
 			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
 			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
+			// Client 11.1.0 sends its own version (class-wc-payments-account.php:2981): the version the user agent reports too.
 			'plugin'                                      => array(
-				'version'              => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
+				'version'              => WooPaymentsClientVersion::VERSION,
 				'activation_timestamp' => get_option( 'wcpay_activation_timestamp', null ),
 			),
 			'wp_setup'                                    => array(
