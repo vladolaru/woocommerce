@@ -983,6 +983,65 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Order-status callback refuses a caller who may not pay for the order before noting a mismatched intent: $_dataName.
+	 *
+	 * A visitor who holds a valid order-status nonce posts another customer's order ID with an intent ID of their choosing.
+	 * The caller check runs first, so the order gets no "payment with ID ... was used in an attempt to pay" note. Client
+	 * 11.1.0 has no caller check and writes that note for any caller with the nonce (class-wc-payment-gateway-wcpay.php:4185-4206,
+	 * :4372-4384), which it hands out only in the confirmation hash of a checkout that needed authentication (:2114, :2421).
+	 *
+	 * @dataProvider provider_mismatched_intent_callers_without_the_order
+	 *
+	 * @param bool $logged_in Whether the caller is logged in as another customer; else a logged-out visitor.
+	 */
+	public function test_update_order_status_refuses_a_caller_without_the_order_before_noting_a_mismatch( bool $logged_in ): void {
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_customer_id( $this->factory()->user->create() );
+		$order->update_meta_data( '_intent_id', 'seti_expected' );
+		$order->save();
+		wp_set_current_user( $logged_in ? $this->factory()->user->create() : 0 );
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+
+		$response = $this->create_controller( $api_client )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => 'seti_chosen_by_the_caller',
+			)
+		);
+
+		$this->assertSame(
+			array(),
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( $note->content, 'was used in an attempt to pay for this order' )
+			)
+		);
+		$this->assertSame( 403, $response['status_code'] );
+	}
+
+	/**
+	 * Callers who may not pay for a customer's order.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provider_mismatched_intent_callers_without_the_order(): array {
+		return array(
+			'logged-out visitor' => array( false ),
+			'another customer'   => array( true ),
+		);
+	}
+
+	/**
 	 * @testdox Order-status callback should reject requests without a valid nonce before mutating the order.
 	 * @dataProvider provider_update_order_status_invalid_nonce
 	 *

@@ -157,6 +157,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 404 );
 		}
 
+		// Before the mismatch note, so a caller who may not pay for the order cannot write notes on it.
+		if ( ! $this->current_user_can_act_on_order( $order ) ) {
+			return $this->error_response( __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' ), 403 );
+		}
+
 		$intent_id = $this->get_request_string( $request, 'intent_id' );
 		if ( '' === $intent_id || $intent_id !== (string) $order->get_meta( '_intent_id', true ) ) {
 			$order->add_order_note(
@@ -171,10 +176,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 				)
 			);
 			return $this->error_response( __( "We're not able to process this payment. Please try again later.", 'woocommerce' ), 409 );
-		}
-
-		if ( ! $this->current_user_can_act_on_order( $order ) ) {
-			return $this->error_response( __( "We're not able to process this payment. Please refresh the page and try again.", 'woocommerce' ), 403 );
 		}
 
 		try {

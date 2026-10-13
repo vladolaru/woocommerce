@@ -66,7 +66,6 @@ class WooPaymentsCheckoutAssets {
 		'confirmationErrorMessage',
 		'customerData',
 		'paymentListWalletsConfig',
-		'updateOrderStatusNonce',
 		'woopayButtonLabels',
 		'woopayAdditionalInfoText',
 		'woopayAgreementText',
@@ -436,7 +435,6 @@ class WooPaymentsCheckoutAssets {
 
 		if ( $this->should_expose_checkout_surface() ) {
 			$config['createSetupIntentNonce'] = wp_create_nonce( 'wcpay_create_setup_intent_nonce' );
-			$config['updateOrderStatusNonce'] = wp_create_nonce( 'wcpay_update_order_status_nonce' );
 			$config                           = array_merge(
 				$config,
 				$this->get_woopay_session_service()->get_woopay_frontend_config( 'checkout' )

@@ -411,7 +411,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'styles-v1', $config['stylesCacheVersion'] );
 		$this->assertSame( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION, $config['wcpayVersionNumber'] );
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
-		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
+		// The order-status nonce travels only in the confirmation hash of a checkout that needs authentication, as on
+		// client 11.1.0 (class-wc-payment-gateway-wcpay.php:2114, :2421); no script reads it from this config.
+		$this->assertArrayNotHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertSame( 'https://pay.woo.com', $config['woopayHost'] );
 		$this->assertSame( '12345', $config['woopayMerchantId'] );
 		$this->assertArrayHasKey( 'initWooPayNonce', $config );
@@ -2222,7 +2224,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the checkout nonces and keep the WooPay flags off when WooPay is disabled.
 	 *
-	 * The order-status callback and the setup-intent request need their nonces on every store, not only where WooPay is on.
+	 * The setup-intent request needs its nonce on every store, not only where WooPay is on.
 	 */
 	public function test_get_payment_fields_js_config_preserves_woopay_config_shape_when_woopay_is_disabled(): void {
 		$account_service = $this->create_account_service( true );
@@ -2233,7 +2235,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
 		$this->assertArrayHasKey( 'createSetupIntentNonce', $config );
-		$this->assertArrayHasKey( 'updateOrderStatusNonce', $config );
 		$this->assertArrayHasKey( 'initWooPayNonce', $config );
 		$this->assertSame( array(), $config['woopayMinimumSessionData'] );
 		$this->assertFalse( $config['isWooPayEnabled'] );
