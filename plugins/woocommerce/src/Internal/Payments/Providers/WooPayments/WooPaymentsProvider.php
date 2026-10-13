@@ -81,39 +81,29 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	private WooPaymentsOrderEffectApplier $order_effect_applier;
 
 	/**
-	 * Fee details note controller.
-	 *
-	 * @var WooPaymentsFeeDetailsNoteController
-	 */
-	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsPaymentOperationService  $payment_operations          WooPayments payment operation service.
-	 * @param WooPaymentsApiClient                $api_client                  WooPayments API client.
-	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
-	 * @param WooPaymentsPaymentMethodRegistry    $payment_method_registry     Payment method registry.
-	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        Order effect applier.
-	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
+	 * @param WooPaymentsPaymentOperationService $payment_operations      WooPayments payment operation service.
+	 * @param WooPaymentsApiClient               $api_client              WooPayments API client.
+	 * @param WooPaymentsAccountService          $account_service         WooPayments account service.
+	 * @param WooPaymentsPaymentMethodRegistry   $payment_method_registry Payment method registry.
+	 * @param WooPaymentsOrderEffectApplier      $order_effect_applier    Order effect applier.
 	 */
 	final public function init(
 		WooPaymentsPaymentOperationService $payment_operations,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
-		WooPaymentsOrderEffectApplier $order_effect_applier,
-		WooPaymentsFeeDetailsNoteController $fee_details_note_controller
+		WooPaymentsOrderEffectApplier $order_effect_applier
 	): void {
-		$this->payment_operations          = $payment_operations;
-		$this->api_client                  = $api_client;
-		$this->account_service             = $account_service;
-		$this->payment_method_registry     = $payment_method_registry;
-		$this->order_effect_applier        = $order_effect_applier;
-		$this->fee_details_note_controller = $fee_details_note_controller;
-		$this->payment_gateways            = null;
+		$this->payment_operations      = $payment_operations;
+		$this->api_client              = $api_client;
+		$this->account_service         = $account_service;
+		$this->payment_method_registry = $payment_method_registry;
+		$this->order_effect_applier    = $order_effect_applier;
+		$this->payment_gateways        = null;
 	}
 
 	/**
@@ -551,7 +541,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		}
 
 		$outcome      = $this->order_effect_applier->apply( $context, $outcome, $plan );
-		$note_existed = $this->fee_details_note_controller->has_outcome_note( $context->get_order(), $outcome );
+		$note_existed = $this->get_fee_details_note_controller()->has_outcome_note( $context->get_order(), $outcome );
 		$plan         = $outcome->get_effect_plan();
 		if ( null === $note_existed || ! $plan instanceof WooPaymentsOrderEffectPlan ) {
 			return $outcome;
@@ -575,7 +565,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 		$plan = $outcome->get_effect_plan();
 		if ( $plan instanceof WooPaymentsOrderEffectPlan && false === $plan->success_or_capture_note_existed() ) {
-			$this->fee_details_note_controller->schedule_when_outcome_note_added( $context->get_order(), $outcome );
+			$this->get_fee_details_note_controller()->schedule_when_outcome_note_added( $context->get_order(), $outcome );
 		}
 
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
@@ -590,6 +580,18 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	private function get_payment_operations(): WooPaymentsPaymentOperationService {
 		return $this->payment_operations;
+	}
+
+	/**
+	 * Get the Fee details note controller.
+	 *
+	 * Read from the container when used, not taken in init(): the onboarding availability check resolves this provider,
+	 * and the controller's collaborators are only needed once a payment outcome is applied.
+	 *
+	 * @return WooPaymentsFeeDetailsNoteController
+	 */
+	private function get_fee_details_note_controller(): WooPaymentsFeeDetailsNoteController {
+		return wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class );
 	}
 
 	/**

@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Blocks\Payments\Api;
 use Automattic\WooCommerce\Blocks\Payments\Integrations\WooPayments;
 use Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry;
 use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -783,7 +782,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->disableOriginalConstructor()
 			->getMock();
 		$provider           = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ), wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ) );
+		$provider->init( $payment_operations, $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 		$asset_api       = $this->getMockBuilder( AssetApi::class )
 			->disableOriginalConstructor()
 			->getMock();

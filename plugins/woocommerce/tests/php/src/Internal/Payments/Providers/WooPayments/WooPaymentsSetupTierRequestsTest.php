@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -115,8 +114,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
 		add_filter(
@@ -175,7 +173,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( wc_get_container()->get( WooPaymentsPaymentOperationService::class ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ), wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ) );
+		$provider->init( wc_get_container()->get( WooPaymentsPaymentOperationService::class ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
 
 		$this->run_bootstrap( '__return_false' );

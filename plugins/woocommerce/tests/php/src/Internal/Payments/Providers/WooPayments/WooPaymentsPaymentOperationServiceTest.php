@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
@@ -7933,7 +7932,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$provider->before_refund = $before_refund;
-		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ), wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ) );
+		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
 
 		return $provider;
 	}
@@ -8795,8 +8794,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			new WooPaymentsPaymentMethodRegistry(),
-			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
@@ -9970,7 +9968,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$settings_service,
 			$ambiguity_service,
 			$refund_ambiguity_service,
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),
 			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);

@@ -10,8 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -4562,7 +4560,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
 			$refund_ambiguity_service,
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),
 			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
@@ -4572,8 +4569,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			new WooPaymentsPaymentMethodRegistry(),
-			$effect_applier,
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			$effect_applier
 		);
 
 		return $provider;
@@ -4648,8 +4644,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
@@ -4737,7 +4732,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
 			$refund_ambiguity_service,
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),
 			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
@@ -4747,8 +4741,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
@@ -4799,7 +4792,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
 			$refund_ambiguity_service,
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),
 			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
@@ -4809,8 +4801,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
@@ -4904,8 +4895,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;

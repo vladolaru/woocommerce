@@ -131,13 +131,6 @@ class WooPaymentsPaymentOperationService {
 	private WooPaymentsRefundAmbiguityService $refund_ambiguity_service;
 
 	/**
-	 * Duplicate payment prevention service.
-	 *
-	 * @var WooPaymentsDuplicatePaymentPreventionService
-	 */
-	private WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention;
-
-	/**
 	 * WooPayments logger.
 	 *
 	 * @var WooPaymentsLogger
@@ -154,20 +147,22 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Initialize the class instance.
 	 *
+	 * The duplicate payment prevention service is read from the container where it is used, not taken here: the
+	 * onboarding availability check resolves the provider, which builds this service.
+	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                         $api_client                   WooPayments API client.
-	 * @param WooPaymentsCustomerService                   $customer_service             Customer service.
-	 * @param WooPaymentsIntentRequestBuilder              $request_builder              Request builder.
-	 * @param WooPaymentsAccountService                    $account_service              Account service.
-	 * @param WooPaymentsOrderDataService                  $order_data_service           Order data service.
-	 * @param WooPaymentsOrderNoteService                  $note_service                 Order note service.
-	 * @param WooPaymentsSettingsService                   $settings_service             Settings service.
-	 * @param WooPaymentsChargeAmbiguityService            $ambiguity_service            Charge ambiguity service.
-	 * @param WooPaymentsRefundAmbiguityService            $refund_ambiguity_service     Refund ambiguity service.
-	 * @param WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention Duplicate payment prevention service.
-	 * @param WooPaymentsLogger                            $logger                       WooPayments logger.
-	 * @param WooPaymentsLevel3Service                     $level3_service               Level 3 data service.
+	 * @param WooPaymentsApiClient              $api_client               WooPayments API client.
+	 * @param WooPaymentsCustomerService        $customer_service         Customer service.
+	 * @param WooPaymentsIntentRequestBuilder   $request_builder          Request builder.
+	 * @param WooPaymentsAccountService         $account_service          Account service.
+	 * @param WooPaymentsOrderDataService       $order_data_service       Order data service.
+	 * @param WooPaymentsOrderNoteService       $note_service             Order note service.
+	 * @param WooPaymentsSettingsService        $settings_service         Settings service.
+	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service        Charge ambiguity service.
+	 * @param WooPaymentsRefundAmbiguityService $refund_ambiguity_service Refund ambiguity service.
+	 * @param WooPaymentsLogger                 $logger                   WooPayments logger.
+	 * @param WooPaymentsLevel3Service          $level3_service           Level 3 data service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
@@ -179,7 +174,6 @@ class WooPaymentsPaymentOperationService {
 		WooPaymentsSettingsService $settings_service,
 		WooPaymentsChargeAmbiguityService $ambiguity_service,
 		WooPaymentsRefundAmbiguityService $refund_ambiguity_service,
-		WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention,
 		WooPaymentsLogger $logger,
 		WooPaymentsLevel3Service $level3_service
 	): void {
@@ -192,10 +186,9 @@ class WooPaymentsPaymentOperationService {
 		$this->settings_service   = $settings_service;
 		$this->ambiguity_service  = $ambiguity_service;
 
-		$this->refund_ambiguity_service     = $refund_ambiguity_service;
-		$this->duplicate_payment_prevention = $duplicate_payment_prevention;
-		$this->logger                       = $logger;
-		$this->level3_service               = $level3_service;
+		$this->refund_ambiguity_service = $refund_ambiguity_service;
+		$this->logger                   = $logger;
+		$this->level3_service           = $level3_service;
 	}
 
 	/**
@@ -700,7 +693,7 @@ class WooPaymentsPaymentOperationService {
 		if ( null !== $paid_intent && WooPaymentsIntentCodec::is_disputed( $paid_intent ) ) {
 			$intent_id = (string) ( $paid_intent['id'] ?? '' );
 			$this->ambiguity_service->log_earlier_payment_disputed( $order, $sent_key, $intent_id );
-			$this->duplicate_payment_prevention->add_disputed_intent_note_once( $order, $intent_id, true );
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->add_disputed_intent_note_once( $order, $intent_id, true );
 
 			return $this->earlier_payment_disputed_outcome();
 		}
@@ -737,7 +730,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return PaymentOutcome
 	 */
 	private function earlier_payment_outcome( WC_Order $order, array $intent, string $customer_id ): PaymentOutcome {
-		$amount_error = $this->duplicate_payment_prevention->get_amount_mismatch_error( $intent, $order, true );
+		$amount_error = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->get_amount_mismatch_error( $intent, $order, true );
 		if ( $amount_error instanceof \WP_Error ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,

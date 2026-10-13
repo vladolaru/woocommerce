@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
@@ -765,7 +764,6 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
-		$notes->init( wc_get_container()->get( OrderPaymentNotes::class ), wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ) );
 		$store->init( new TransientRowLock() );
 		$handler = $this->create_handler( $store, $vocabulary, $notes );
 

@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -989,7 +988,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsSettingsService::class ),
 			$this->createMock( WooPaymentsChargeAmbiguityService::class ),
 			$this->createMock( WooPaymentsRefundAmbiguityService::class ),
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),
 			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
@@ -1000,8 +998,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			$api_client,
 			$account_service,
 			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
 		);
 
 		return $provider;
