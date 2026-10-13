@@ -601,6 +601,29 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A store onboarded natively stores only the keys onboarding writes until the merchant saves the settings page; every
+	 * other setting reads as its form default, as WC_Settings_API::get_option() answers a key that was never saved.
+	 *
+	 * @testdox Should report the settings an onboarded store never saved from their defaults.
+	 */
+	public function test_store_setup_sync_reports_unsaved_settings_from_their_defaults(): void {
+		$snapshot = $this->send_store_setup_snapshot(
+			array(
+				'enabled'   => 'yes',
+				'test_mode' => 'yes',
+			)
+		);
+
+		$this->assertTrue( $snapshot['saved_cards_enabled'] );
+		$this->assertSame( array( 'product', 'cart', 'checkout' ), $snapshot['payment_request']['enabled_locations'] );
+		$this->assertSame( array( 'product', 'cart', 'checkout' ), $snapshot['woopay']['enabled_locations'] );
+		$this->assertSame(
+			array( 'default', 'medium', 'dark' ),
+			array( $snapshot['payment_request']['button_type'], $snapshot['payment_request']['button_size'], $snapshot['payment_request']['button_theme'] )
+		);
+	}
+
+	/**
 	 * @testdox Should report WooPay as enabled only when the account is eligible, the WooPay setting is on and the WooPay express checkout flag is on: $_dataName.
 	 * @dataProvider provider_store_setup_sync_woopay_enabled
 	 *
