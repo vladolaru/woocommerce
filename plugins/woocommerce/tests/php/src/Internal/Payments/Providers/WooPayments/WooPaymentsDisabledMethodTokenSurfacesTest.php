@@ -254,6 +254,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
 		$service = new WooPaymentsTokenService();
 		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$service->register();
 		$this->services[] = $service;
 
 		return $service;

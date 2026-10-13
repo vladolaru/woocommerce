@@ -419,10 +419,18 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register supported saved-payment-method lifecycle hooks.
+	 * @testdox Should register supported saved-payment-method lifecycle hooks when the bootstrap registers it, and none when another service only resolves it.
+	 *
+	 * On a store with no account the cutover preflight resolves the provider, whose effect applier takes this service; the
+	 * service is a bootstrap root only on connected and active stores, so resolving it must not attach its hooks.
 	 */
 	public function test_registers_supported_saved_payment_method_lifecycle_hooks(): void {
-		$sut = $this->create_service();
+		$sut = $this->create_service( array(), null, null, null, null, false );
+
+		$this->assertFalse( has_filter( 'woocommerce_get_customer_payment_tokens', array( $sut, 'handle_woocommerce_get_customer_payment_tokens' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_payment_token_deleted', array( $sut, 'handle_woocommerce_payment_token_deleted' ) ) );
+
+		$sut->register();
 
 		$this->assertSame( 10, has_action( 'woocommerce_payment_token_deleted', array( $sut, 'handle_woocommerce_payment_token_deleted' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_payment_token_set_default', array( $sut, 'handle_woocommerce_payment_token_set_default' ) ) );
@@ -2433,9 +2441,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsCustomerService|null   $customer_service       Optional native customer service.
 	 * @param WooPaymentsAccountService|null    $account_service        Optional native account service.
 	 * @param WooPaymentsRuntimeArbiter|null    $arbiter                Optional native runtime arbiter.
+	 * @param bool                              $register               Whether to register its hooks, as the bootstrap does for a root.
 	 * @return WooPaymentsTokenService
 	 */
-	private function create_service( array $payment_method_details = array(), ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsRuntimeArbiter $arbiter = null ): WooPaymentsTokenService {
+	private function create_service( array $payment_method_details = array(), ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsRuntimeArbiter $arbiter = null, bool $register = true ): WooPaymentsTokenService {
 		$details_service = new class( $payment_method_details ) extends WooPaymentsPaymentMethodDetailsService {
 			/**
 			 * Payment method details keyed by ID.
@@ -2466,6 +2475,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$sut = new WooPaymentsTokenService();
 		$sut->init( $details_service, $arbiter ?? new StaticWooPaymentsRuntimeArbiter( true ), $api_client ?? wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service ?? wc_get_container()->get( WooPaymentsCustomerService::class ), $account_service ?? wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		if ( $register ) {
+			$sut->register();
+		}
 		$this->created_services[] = $sut;
 
 		return $sut;

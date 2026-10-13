@@ -141,14 +141,14 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
 		$this->order_data_service             = $order_data_service;
-		$this->register_hooks();
 	}
 
 	/**
-	 * Bootstrap root entry point. Resolving the service already registered its hooks in `init()`; this makes the
-	 * bootstrap resolve it on every connected or active request instead of only when another service needs it.
+	 * Register the saved-payment-method hooks, as a bootstrap root on every connected or active request. Resolving the
+	 * service for another one attaches nothing.
 	 */
 	public function register(): void {
+		$this->register_hooks();
 	}
 
 	/**
