@@ -187,6 +187,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			$this->log_fetch_error( $order, $intent_id, $exception );
 
+			if ( $is_payment_intent && $this->leave_return_for_webhook_after_failed_fetch( $order, $intent_id ) ) {
+				return;
+			}
+
 			// Client gw:2428-2444 fails the order it read at request start, and its paid check (os:2863) misses on-hold, so a webhook
 			// that authorized the payment during the fetch can leave a charge on a failed order; the failure here reads the order
 			// again under the lock first.
@@ -268,6 +272,41 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 		if ( WooPaymentsIntentCodec::holds_money( $intent_status ) && null !== WC()->cart ) {
 			WC()->cart->empty_cart();
 		}
+	}
+
+	/**
+	 * Leave the order for the webhook when the intent could not be fetched but Stripe's return says the payment went through.
+	 *
+	 * Stripe adds redirect_status to the return URL of a PaymentIntent (https://docs.stripe.com/payments/payment-intents/verifying-status),
+	 * succeeded or processing when the payment went through or is settling. Client 11.1.0 fails the order on any fetch
+	 * failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper who then changes the cart pays again on a new
+	 * order. Here the order keeps its status, the cart is emptied and the shopper stays on order-received with no notice,
+	 * as after a confirmation failure on such an intent; the payment_intent webhook settles the order. The value only
+	 * keeps the shopper's own order pending: nothing is marked paid on it.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Requested intent ID.
+	 * @return bool Whether the return was left for the webhook.
+	 */
+	private function leave_return_for_webhook_after_failed_fetch( WC_Order $order, string $intent_id ): bool {
+		$redirect_status = $this->get_query_string( 'redirect_status' );
+		if ( ! in_array( $redirect_status, array( 'succeeded', 'processing' ), true ) ) {
+			return false;
+		}
+
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			sprintf( 'The intent of order #%1$d could not be fetched on its redirect return, which says %2$s. The order is left for the webhook.', $order->get_id(), $redirect_status ),
+			'warning',
+			array(
+				'order_id'  => $order->get_id(),
+				'intent_id' => $intent_id,
+			)
+		);
+		if ( null !== WC()->cart ) {
+			WC()->cart->empty_cart();
+		}
+
+		return true;
 	}
 
 	/**

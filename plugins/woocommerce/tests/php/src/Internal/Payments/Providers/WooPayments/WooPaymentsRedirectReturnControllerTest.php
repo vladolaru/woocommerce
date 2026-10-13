@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
@@ -970,6 +971,88 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
 		);
 		$this->assertSame( array(), $failure_notes );
+	}
+
+	/**
+	 * @testdox A failed intent fetch on a return whose redirect_status is $redirect_status: $_dataName.
+	 *
+	 * Stripe adds redirect_status to a PaymentIntent's return URL: a test store's Bancontact and iDEAL returns carried
+	 * succeeded when authorized and failed when declined, and Stripe documents processing for a payment still settling
+	 * (https://docs.stripe.com/payments/payment-intents/verifying-status). Client 11.1.0 fails the order on any fetch
+	 * failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper whose bank confirmed the payment can change the
+	 * cart and pay again on a new order. Here a succeeded or processing return leaves the order for the webhook: no failure,
+	 * cart emptied, order-received kept. Any other value, and a SetupIntent return, fail the order as before.
+	 *
+	 * @dataProvider provider_failed_fetch_redirect_statuses
+	 *
+	 * @param string $redirect_status   Value Stripe added to the return URL, or '' for none.
+	 * @param bool   $is_payment_intent Whether the return is a PaymentIntent's (a positive total) or a SetupIntent's.
+	 * @param bool   $left_for_webhook  Whether the order is left for the webhook.
+	 */
+	public function test_handle_wp_failed_fetch_follows_redirect_status( string $redirect_status, bool $is_payment_intent, bool $left_for_webhook ): void {
+		$order   = $this->create_order( $is_payment_intent ? '50.00' : '0.00' );
+		$product = \WC_Helper_Product::create_simple_product();
+		WC()->cart->add_to_cart( $product->get_id() );
+		$fetch_failure                          = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		$api_client                             = new RedirectReturnApiClientStub();
+		$api_client->exception                  = $fetch_failure;
+		$api_client->before_setup_intent_return = static function () use ( $fetch_failure ): void {
+			throw $fetch_failure;
+		};
+		$this->sut                              = $this->create_controller( true, null, $api_client );
+		if ( $is_payment_intent ) {
+			$this->set_payment_intent_return_request( $order, 'pi_fetch_failed' );
+		} else {
+			$this->set_setup_intent_return_request( $order, 'seti_fetch_failed' );
+		}
+		if ( '' !== $redirect_status ) {
+			$_GET['redirect_status'] = $redirect_status;
+		}
+		$logger = new RedirectReturnRecordingLogger();
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+
+		$location = '';
+		try {
+			$this->sut->handle_wp();
+		} catch ( RedirectReturnRedirectIntercepted $redirect ) {
+			$location = $redirect->location;
+		}
+		$reloaded      = wc_get_order( $order->get_id() );
+		$failure_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, '<strong>failed</strong>' )
+		);
+		$left_lines    = array_filter( $logger->warning_calls, static fn( array $call ): bool => str_contains( $call['message'], 'is left for the webhook' ) );
+
+		if ( $left_for_webhook ) {
+			$this->assertSame( '', $location, 'The shopper stays on order-received.' );
+			$this->assertSame( OrderStatus::PENDING, $reloaded->get_status() );
+			$this->assertSame( array(), $failure_notes );
+			$this->assertSame( array(), wc_get_notices( 'error' ) );
+			$this->assertSame( 0, WC()->cart->get_cart_contents_count(), 'The cart is emptied, so a changed cart cannot pay again on a new order.' );
+			$this->assertCount( 1, $left_lines );
+			return;
+		}
+		$this->assertSame( wc_get_checkout_url(), $location );
+		$this->assertSame( OrderStatus::FAILED, $reloaded->get_status() );
+		$this->assertNotSame( array(), $failure_notes );
+		$this->assertSame( 1, WC()->cart->get_cart_contents_count(), 'The cart survives a failed return.' );
+		$this->assertSame( array(), $left_lines );
+	}
+
+	/**
+	 * Return values Stripe adds, and a SetupIntent return.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public function provider_failed_fetch_redirect_statuses(): array {
+		return array(
+			'authorized at the bank, left for the webhook' => array( 'succeeded', true, true ),
+			'still settling, left for the webhook'         => array( 'processing', true, true ),
+			'declined at the bank, the order fails'        => array( 'failed', true, false ),
+			'no value, the order fails'                    => array( '', true, false ),
+			'a SetupIntent return, the order fails'        => array( 'succeeded', false, false ),
+		);
 	}
 
 	/**
