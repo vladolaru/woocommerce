@@ -1276,7 +1276,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
 		wc_get_logger()->error(
 			$message,
-			array_merge( $context, WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'woopayments' ) )
+			array_merge( $context, WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 		);
 	}
 }

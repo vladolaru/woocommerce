@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsFailedEventStore;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -237,7 +236,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( $expected_status, $response->get_status() );
 		$this->assertSame( array( 'result' => $expected_result ), $response->get_data() );
-		$this->assertSame( $kept ? $event : null, wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_failed_push' ) );
+		$this->assertSame( $kept ? $event : null, ( new FailedEventTransients() )->get_event( 'evt_failed_push' ) );
 		$this->assertSame(
 			$kept ? array(
 				array(
@@ -313,7 +312,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertNull( wc_get_container()->get( WooPaymentsFailedEventStore::class )->get_event( 'evt_dispute_lock_controller' ) );
+		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_controller' ) );
 		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
 
 		// The same refused push again adds no second note.
@@ -545,8 +544,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$reliability_service->init(
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			$this->scheduler,
-			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			$ingestor
 		);
 

@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_Unit_Test_Case;
@@ -424,7 +423,6 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 
 		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {},
 			$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),

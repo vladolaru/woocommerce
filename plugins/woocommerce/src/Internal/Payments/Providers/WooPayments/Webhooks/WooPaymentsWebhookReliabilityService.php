@@ -8,6 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -16,7 +18,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * Fetches the WooPayments webhook events the platform could not deliver, and processes and retries failed events
- * through Action Scheduler.
+ * through Action Scheduler, keeping each event in a one-day transient until its job runs.
  *
  * @since 11.0.0
  * @internal
@@ -66,6 +68,20 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	const LAST_FETCH_OPTION_KEY = 'woocommerce_woopayments_last_webhook_fetch';
 
 	/**
+	 * Prefix of the transient that keeps a failed event until its job runs; the event ID's md5 follows it.
+	 *
+	 * @var string
+	 */
+	const FAILED_EVENT_TRANSIENT_PREFIX = 'wcpay_failed_event_';
+
+	/**
+	 * Lifetime of a failed-event transient, in seconds.
+	 *
+	 * @var int
+	 */
+	private const FAILED_EVENT_TRANSIENT_TTL_SECONDS = DAY_IN_SECONDS;
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -80,18 +96,11 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	private WooPaymentsActionSchedulerService $scheduler;
 
 	/**
-	 * Failed event store.
+	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsFailedEventStore
+	 * @var WooPaymentsApiClient
 	 */
-	private WooPaymentsFailedEventStore $failed_event_store;
-
-	/**
-	 * Failed events provider.
-	 *
-	 * @var WooPaymentsFailedEventsProvider
-	 */
-	private WooPaymentsFailedEventsProvider $failed_events_provider;
+	private WooPaymentsApiClient $api_client;
 
 	/**
 	 * Event ingestor.
@@ -105,24 +114,21 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                Runtime owner arbiter.
-	 * @param WooPaymentsActionSchedulerService $scheduler             Action Scheduler service.
-	 * @param WooPaymentsFailedEventStore       $failed_event_store     Failed event store.
-	 * @param WooPaymentsFailedEventsProvider   $failed_events_provider Failed events provider.
-	 * @param WooPaymentsEventIngestor          $event_ingestor         Event ingestor.
+	 * @param WooPaymentsRuntimeArbiter         $arbiter        Runtime owner arbiter.
+	 * @param WooPaymentsActionSchedulerService $scheduler      Action Scheduler service.
+	 * @param WooPaymentsApiClient              $api_client     WooPayments API client.
+	 * @param WooPaymentsEventIngestor          $event_ingestor Event ingestor.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsFailedEventStore $failed_event_store,
-		WooPaymentsFailedEventsProvider $failed_events_provider,
+		WooPaymentsApiClient $api_client,
 		WooPaymentsEventIngestor $event_ingestor
 	): void {
-		$this->arbiter                = $arbiter;
-		$this->scheduler              = $scheduler;
-		$this->failed_event_store     = $failed_event_store;
-		$this->failed_events_provider = $failed_events_provider;
-		$this->event_ingestor         = $event_ingestor;
+		$this->arbiter        = $arbiter;
+		$this->scheduler      = $scheduler;
+		$this->api_client     = $api_client;
+		$this->event_ingestor = $event_ingestor;
 	}
 
 	/**
@@ -155,9 +161,14 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Fetch failed webhook events and schedule processing jobs.
 	 */
 	public function fetch_events_and_schedule_processing_jobs(): void {
-		$response = $this->failed_events_provider->get_failed_webhook_events();
+		$response = $this->fetch_failed_events_page();
 		// The status report shows this as the last fetch; a failed one must not look like a healthy fetch.
-		if ( ! $this->failed_events_provider->did_last_fetch_fail() ) {
+		if ( null === $response ) {
+			$response = array(
+				'data'     => array(),
+				'has_more' => false,
+			);
+		} else {
 			update_option( self::LAST_FETCH_OPTION_KEY, time(), false );
 		}
 
@@ -166,7 +177,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 				continue;
 			}
 
-			$this->failed_event_store->set_event( $event['id'], $event );
+			$this->store_failed_event( $event['id'], $event );
 			$this->scheduler->schedule_job(
 				self::WEBHOOK_PROCESS_EVENT_ACTION,
 				array(
@@ -200,7 +211,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->failed_event_store->set_event( $event['id'], $event );
+		$this->store_failed_event( $event['id'], $event );
 		$this->scheduler->schedule_job( self::WEBHOOK_PROCESS_EVENT_ACTION, array( 'event_id' => $event['id'] ) );
 	}
 
@@ -217,7 +228,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * @throws \Throwable When the ingestor fails other than by refusing the event; the event is kept for the next attempt unless none is left.
 	 */
 	public function process_event( string $event_id ): void {
-		$event = $this->failed_event_store->get_event( $event_id );
+		$event = $this->get_failed_event( $event_id );
 		if ( null === $event ) {
 			return;
 		}
@@ -228,7 +239,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		try {
 			$this->event_ingestor->process( $event );
 		} catch ( \InvalidArgumentException $exception ) {
-			$this->failed_event_store->delete_event( $event_id );
+			$this->delete_failed_event( $event_id );
 			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`. Every refusal's reason is a constant
 			// written here, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
 			wc_get_logger()->error(
@@ -245,7 +256,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			throw $exception;
 		}
 
-		$this->failed_event_store->delete_event( $event_id );
+		$this->delete_failed_event( $event_id );
 	}
 
 	/**
@@ -295,7 +306,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 */
 	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception ): void {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
-			$this->failed_event_store->delete_event( $event_id );
+			$this->delete_failed_event( $event_id );
 			// The note goes first: it contains its own failures, so a throwing logger cannot cost the merchant the trail.
 			if ( $exception instanceof OrderPaymentLockRefusedException ) {
 				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
@@ -313,7 +324,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 		}
 
 		$event[ self::RETRY_ATTEMPTS_EVENT_KEY ] = $attempts + 1;
-		$this->failed_event_store->set_event( $event_id, $event );
+		$this->store_failed_event( $event_id, $event );
 		$this->scheduler->schedule_job(
 			self::WEBHOOK_PROCESS_EVENT_ACTION,
 			array( 'event_id' => $event_id ),
@@ -355,5 +366,74 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 				unset( $logger_exception );
 			}
 		}
+	}
+
+	/**
+	 * Fetch a page of the webhook events the platform could not deliver.
+	 *
+	 * A platform error is logged with its status and code, never its message, and answers null; client 11.1.0 appends
+	 * the platform's message (class-wc-payments-webhook-reliability-service.php:104).
+	 *
+	 * @return array{data:array<int,array<string,mixed>>,has_more:bool}|null The page, or null when the fetch failed.
+	 */
+	private function fetch_failed_events_page(): ?array {
+		try {
+			$events = $this->api_client->get_failed_webhook_events();
+		} catch ( WooPaymentsApiException $exception ) {
+			wc_get_logger()->error(
+				'Can not fetch failed events from the server.',
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+			);
+
+			return null;
+		}
+
+		$data = $events['data'] ?? array();
+
+		return array(
+			'data'     => is_array( $data ) ? array_values( array_filter( $data, 'is_array' ) ) : array(),
+			'has_more' => (bool) ( $events['has_more'] ?? false ),
+		);
+	}
+
+	/**
+	 * Get the transient name that keeps a failed event.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return string
+	 */
+	private function get_failed_event_transient_name( string $event_id ): string {
+		return self::FAILED_EVENT_TRANSIENT_PREFIX . md5( $event_id );
+	}
+
+	/**
+	 * Keep a failed event until its job runs.
+	 *
+	 * @param string              $event_id Event ID.
+	 * @param array<string,mixed> $event    Event payload.
+	 */
+	private function store_failed_event( string $event_id, array $event ): void {
+		set_transient( $this->get_failed_event_transient_name( $event_id ), $event, self::FAILED_EVENT_TRANSIENT_TTL_SECONDS );
+	}
+
+	/**
+	 * Read a kept failed event.
+	 *
+	 * @param string $event_id Event ID.
+	 * @return array<string,mixed>|null Event payload, or null when none is kept.
+	 */
+	private function get_failed_event( string $event_id ): ?array {
+		$event = get_transient( $this->get_failed_event_transient_name( $event_id ) );
+
+		return is_array( $event ) ? $event : null;
+	}
+
+	/**
+	 * Forget a kept failed event.
+	 *
+	 * @param string $event_id Event ID.
+	 */
+	private function delete_failed_event( string $event_id ): void {
+		delete_transient( $this->get_failed_event_transient_name( $event_id ) );
 	}
 }

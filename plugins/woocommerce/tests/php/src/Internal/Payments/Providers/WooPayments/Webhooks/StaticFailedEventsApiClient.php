@@ -3,12 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsFailedEventsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 
 /**
- * Static failed-events provider test double.
+ * API client test double that answers the failed-events fetch with a fixed page.
  */
-class StaticFailedEventsProvider extends WooPaymentsFailedEventsProvider {
+class StaticFailedEventsApiClient extends WooPaymentsApiClient {
 
 	/**
 	 * Failed-events response.

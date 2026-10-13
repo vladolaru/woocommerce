@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
@@ -793,7 +792,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$sut    = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), new LegacyProxy(), $api_client );
+		$sut    = $this->create_ingestor( wc_get_container()->get( OrderPaymentLifecycleService::class ), $api_client );
 		$logger = RecordingWcLogger::install();
 
 		$sut->process( $this->load_recorded_dispute_closed_event( 'accept_closed_lost' ) );
@@ -2202,7 +2201,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$api_client
 		);
 
@@ -2285,7 +2283,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		return $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$api_client
 		);
 	}
@@ -2580,7 +2577,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client()
 		);
 
@@ -2606,7 +2602,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client(
 				array(
 					'disputed_amount' => 500,
@@ -2674,7 +2669,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client( $this->load_recorded_dispute_summary( 'accept_summary_after_close' ) )
 		);
 
@@ -2714,7 +2708,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client(
 				array(
 					'disputed_amount' => 5000,
@@ -2756,7 +2749,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client(
 				array(
 					'disputed_amount' => 500,
@@ -2801,7 +2793,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			$this->create_dispute_summary_api_client(
 				array(
 					'disputed_amount' => 500,
@@ -3040,7 +3031,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		return $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			wc_get_container()->get( LegacyProxy::class ),
 			new class() extends WooPaymentsApiClient {
 				/**
 				 * Retrieve a WooPayments PaymentIntent.
@@ -4459,7 +4449,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		return $this->build_event_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {},
 			$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
@@ -4493,15 +4482,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * and the supplied API client.
 	 *
 	 * @param OrderPaymentLifecycleService                  $lifecycle_service Order lifecycle service.
-	 * @param LegacyProxy                                   $legacy_proxy      Legacy proxy.
 	 * @param WooPaymentsApiClient                          $api_client                       Native WooPayments API client.
 	 * @param WooPaymentsEarlyFraudWarningEventHandler|null $early_fraud_warning_event_handler Optional early fraud warning handler.
 	 * @return WooPaymentsEventIngestor
 	 */
-	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, LegacyProxy $legacy_proxy, WooPaymentsApiClient $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
+	private function create_ingestor( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, ?WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler = null ): WooPaymentsEventIngestor {
 		return $this->build_event_ingestor(
 			$lifecycle_service,
-			$legacy_proxy,
 			$api_client,
 			$this->create_dispute_event_handler( $api_client ),
 			wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
@@ -4620,7 +4607,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$handler    = $this->create_recording_early_fraud_warning_handler( $sequence );
 		$sut        = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {},
 			$handler
 		);
@@ -4665,7 +4651,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$sut        = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new LegacyProxy(),
 			new class() extends WooPaymentsApiClient {}
 		);
 		$hook_calls = array();

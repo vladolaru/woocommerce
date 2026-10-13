@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use InvalidArgumentException;
 use Throwable;
 
@@ -103,13 +102,6 @@ class WooPaymentsEventIngestor {
 	);
 
 	/**
-	 * The LegacyProxy instance.
-	 *
-	 * @var LegacyProxy
-	 */
-	private LegacyProxy $legacy_proxy;
-
-	/**
 	 * Transport log, which writes the received-event line.
 	 *
 	 * @var WooPaymentsTransportLog
@@ -170,7 +162,6 @@ class WooPaymentsEventIngestor {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                              $legacy_proxy                      The LegacyProxy instance.
 	 * @param WooPaymentsTransportLog                  $transport_log                     Transport log.
 	 * @param WooPaymentsDisputeEventHandler           $dispute_event_handler             Dispute event handler.
 	 * @param WooPaymentsRefundEventHandler            $refund_event_handler              Refund event handler.
@@ -180,8 +171,7 @@ class WooPaymentsEventIngestor {
 	 * @param WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler WooPayments early fraud warning event handler.
 	 * @param WooPaymentsPaymentIntentEventHandler     $payment_intent_event_handler      Payment intent and charge expiry event handler.
 	 */
-	final public function init( LegacyProxy $legacy_proxy, WooPaymentsTransportLog $transport_log, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, WooPaymentsAccountService $account_service, WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler ): void {
-		$this->legacy_proxy                      = $legacy_proxy;
+	final public function init( WooPaymentsTransportLog $transport_log, WooPaymentsDisputeEventHandler $dispute_event_handler, WooPaymentsRefundEventHandler $refund_event_handler, WooPaymentsAccountEventHandler $account_event_handler, WooPaymentsNotificationEventHandler $notification_event_handler, WooPaymentsAccountService $account_service, WooPaymentsEarlyFraudWarningEventHandler $early_fraud_warning_event_handler, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler ): void {
 		$this->transport_log                     = $transport_log;
 		$this->dispute_event_handler             = $dispute_event_handler;
 		$this->refund_event_handler              = $refund_event_handler;
@@ -384,7 +374,7 @@ class WooPaymentsEventIngestor {
 	 * @return bool
 	 */
 	private function is_event_already_processed( string $event_id ): bool {
-		return false !== $this->legacy_proxy->call_function( 'get_transient', $this->get_processed_event_transient_name( $event_id ) );
+		return false !== get_transient( $this->get_processed_event_transient_name( $event_id ) );
 	}
 
 	/**
@@ -393,7 +383,7 @@ class WooPaymentsEventIngestor {
 	 * @param string $event_id Event ID.
 	 */
 	private function mark_event_processed( string $event_id ): void {
-		$this->legacy_proxy->call_function( 'set_transient', $this->get_processed_event_transient_name( $event_id ), 1, self::PROCESSED_EVENT_TRANSIENT_TTL );
+		set_transient( $this->get_processed_event_transient_name( $event_id ), 1, self::PROCESSED_EVENT_TRANSIENT_TTL );
 	}
 
 	/**
@@ -529,7 +519,8 @@ class WooPaymentsEventIngestor {
 	 */
 	private function run_delivery_hook( string $hook, string $event_type, array $event ): void {
 		try {
-			$this->legacy_proxy->call_function( 'do_action', $hook, $event_type, $event );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Each hook is documented where process() names it.
+			do_action( $hook, $event_type, $event );
 		} catch ( Throwable $exception ) {
 			// Logging is best-effort: a failing log handler must not turn an isolated hook failure into a failed event.
 			try {

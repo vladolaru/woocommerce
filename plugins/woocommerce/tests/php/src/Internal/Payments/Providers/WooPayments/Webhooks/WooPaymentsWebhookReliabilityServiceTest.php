@@ -11,8 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsFailedEventStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsFailedEventsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -65,7 +63,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
-			delete_transient( WooPaymentsFailedEventStore::TRANSIENT_PREFIX . md5( $event_id ) );
+			delete_transient( FailedEventTransients::name( $event_id ) );
 		}
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		parent::tearDown();
@@ -109,8 +107,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service(
 			$scheduler,
-			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			new RecordingEventIngestor()
 		);
 
@@ -133,8 +130,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	public function test_fetch_events_records_last_fetch_timestamp(): void {
 		$service = $this->create_service(
 			new RecordingActionSchedulerService(),
-			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			new RecordingEventIngestor()
 		);
 
@@ -152,7 +148,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fetch_after_a_failure_records_its_time(): void {
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
-		$client   = new class() extends WooPaymentsApiClient {
+		$client  = new class() extends WooPaymentsApiClient {
 			/**
 			 * Calls made so far.
 			 *
@@ -180,9 +176,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$provider = new WooPaymentsFailedEventsProvider();
-		$provider->init( $client );
-		$service = $this->create_service( new RecordingActionSchedulerService(), wc_get_container()->get( WooPaymentsFailedEventStore::class ), $provider, new RecordingEventIngestor() );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $client, new RecordingEventIngestor() );
 
 		$service->fetch_events_and_schedule_processing_jobs();
 		$before = time();
@@ -196,25 +190,22 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_failed_fetch_does_not_record_a_fetch_time(): void {
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000, false );
-		$provider = new WooPaymentsFailedEventsProvider();
-		$provider->init(
-			new class() extends WooPaymentsApiClient {
-				/**
-				 * Fail as the platform does when it cannot answer.
-				 *
-				 * @return array<string,mixed>
-				 * @throws WooPaymentsApiException Always, while the platform is down.
-				 */
-				public function get_failed_webhook_events(): array {
-					if ( 0 < time() ) {
-						throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
-					}
-
-					return array();
+		$client  = new class() extends WooPaymentsApiClient {
+			/**
+			 * Fail as the platform does when it cannot answer.
+			 *
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Always, while the platform is down.
+			 */
+			public function get_failed_webhook_events(): array {
+				if ( 0 < time() ) {
+					throw new WooPaymentsApiException( 'Service unavailable.', 'wcpay_server_error', 503 );
 				}
+
+				return array();
 			}
-		);
-		$service = $this->create_service( new RecordingActionSchedulerService(), wc_get_container()->get( WooPaymentsFailedEventStore::class ), $provider, new RecordingEventIngestor() );
+		};
+		$service = $this->create_service( new RecordingActionSchedulerService(), $client, new RecordingEventIngestor() );
 
 		$service->fetch_events_and_schedule_processing_jobs();
 
@@ -222,10 +213,88 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A fetched page keeps only its event entries and asks for the next page when the platform has more.
+	 */
+	public function test_fetch_keeps_only_event_entries_and_follows_has_more(): void {
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service(
+			$scheduler,
+			new StaticFailedEventsApiClient(
+				array(
+					'data'     => array(
+						array(
+							'id' => 'evt_1',
+						),
+						'not-an-event',
+					),
+					'has_more' => true,
+				)
+			),
+			new RecordingEventIngestor()
+		);
+
+		$service->fetch_events_and_schedule_processing_jobs();
+
+		$this->assertSame( array( 'id' => 'evt_1' ), ( new FailedEventTransients() )->get_event( 'evt_1' ) );
+		$this->assertSame(
+			array(
+				array(
+					'hook' => 'wcpay_webhook_process_event',
+					'args' => array( 'event_id' => 'evt_1' ),
+				),
+				array(
+					'hook' => 'wcpay_webhook_fetch_events',
+					'args' => array(),
+				),
+			),
+			$scheduler->scheduled_jobs
+		);
+	}
+
+	/**
+	 * @testdox A platform error fetching failed events schedules nothing and is logged with its status and code, never its message.
+	 *
+	 * Client 11.1.0 appends the platform's message to the line (`class-wc-payments-webhook-reliability-service.php`).
+	 *
+	 * @dataProvider provider_fetch_failures
+	 *
+	 * @param WooPaymentsApiException $failure         Error the API client throws.
+	 * @param int                     $expected_status Logged HTTP status.
+	 * @param string                  $expected_code   Logged error code.
+	 */
+	public function test_fetch_failure_log_leaves_out_platform_text( WooPaymentsApiException $failure, int $expected_status, string $expected_code ): void {
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'get_failed_webhook_events' )->willThrowException( $failure );
+		$scheduler = new RecordingActionSchedulerService();
+		$service   = $this->create_service( $scheduler, $api_client, new RecordingEventIngestor() );
+		$logger    = RecordingWcLogger::install();
+
+		$service->fetch_events_and_schedule_processing_jobs();
+
+		$this->assertSame( array(), $scheduler->scheduled_jobs );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( $expected_status, $expected_code ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assertSame( 'woopayments', $context['source'] ?? null, 'Fetch failures land in the WooPayments log with every other webhook line.' );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Platform errors the failed-events fetch can meet.
+	 *
+	 * @return array<string,array{0:WooPaymentsApiException,1:int,2:string}>
+	 */
+	public function provider_fetch_failures(): array {
+		return array(
+			'server error'                => array( new WooPaymentsApiException( 'Remote fetch failed.', 'wcpay_failed_events_unavailable', 500 ), 500, 'unknown_error' ),
+			'error carrying shopper text' => array( self::make_provider_error(), 404, 'resource_missing' ),
+		);
+	}
+
+	/**
 	 * @testdox Fetching failed events with the production scheduler queues every distinct event and skips an event without an ID.
 	 */
 	public function test_fetch_events_schedules_each_distinct_event_with_production_scheduler(): void {
-		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store   = new FailedEventTransients();
 		$events  = array_map(
 			static function ( int $index ): array {
 				return array(
@@ -237,8 +306,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		);
 		$service = $this->create_service(
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class ),
-			$store,
-			new StaticFailedEventsProvider(
+			new StaticFailedEventsApiClient(
 				array(
 					// The last entry is deliberately malformed: an event without an ID, which the fetch skips.
 					'data'     => array_merge( $events, array( array( 'type' => 'missing.id' ) ) ),
@@ -276,8 +344,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service(
 			$scheduler,
-			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
-			new StaticFailedEventsProvider(
+			new StaticFailedEventsApiClient(
 				array(
 					'data'     => array(),
 					'has_more' => true,
@@ -303,13 +370,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Processing a failed event consumes the transient and invokes the ingestor.
 	 */
 	public function test_process_event_consumes_transient_and_invokes_ingestor(): void {
-		$store    = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store    = new FailedEventTransients();
 		$ingestor = new RecordingEventIngestor();
 		$event    = array(
 			'id'   => 'evt_process',
 			'type' => 'payment_intent.succeeded',
 		);
-		$service  = $this->create_service( new RecordingActionSchedulerService(), $store, new StaticFailedEventsProvider(), $ingestor );
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
 
 		$store->set_event( 'evt_process', $event );
 		$service->process_event( 'evt_process' );
@@ -325,8 +392,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		$ingestor = new RecordingEventIngestor();
 		$service  = $this->create_service(
 			new RecordingActionSchedulerService(),
-			wc_get_container()->get( WooPaymentsFailedEventStore::class ),
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			$ingestor
 		);
 
@@ -343,13 +409,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param int $delay    Expected delay of the next attempt, in seconds.
 	 */
 	public function test_process_event_schedules_a_bounded_retry_on_a_passing_failure( int $attempts, int $delay ): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
 			'type' => 'payment_intent.succeeded',
 		);
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 		$store->set_event( 'evt_process', $event + ( $attempts > 0 ? array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => $attempts ) : array() ) );
 
 		$thrown = null;
@@ -418,9 +484,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 		$ingestor  = wc_get_container()->get( WooPaymentsEventIngestor::class );
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), $ingestor );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), $ingestor );
 
 		try {
 			// The webhook route hands the failed delivery to the reliability service.
@@ -471,14 +537,14 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param string $event_type Event type safe to apply late, retried only after a lock refusal.
 	 */
 	public function test_lock_refusal_is_retried_for_an_event_type_safe_to_apply_late( string $event_type ): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
 			'type' => $event_type,
 		);
 		$refusal   = new OrderPaymentLockRefusedException( 123, 'refund webhook' );
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( $refusal ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
 
 		$service->retry_failed_event( $event, new \RuntimeException( 'failed after a write' ) );
 		$this->assertNull( $store->get_event( 'evt_process' ), 'Another failure of this type keeps its one attempt.' );
@@ -517,14 +583,14 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_lock_refusal_of_a_refund_or_dispute_event_is_noted_and_not_retried( string $event_type ): void {
 		$order     = wc_create_order();
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_process',
 			'type' => $event_type,
 		);
 		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( $refusal ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
 		$store->set_event( 'evt_process', $event );
 
 		// The failed action runs twice (Action Scheduler retried it, or someone ran it again by hand).
@@ -570,17 +636,17 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'type' => 'radar.early_fraud_warning.created',
 		);
 		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'early fraud warning webhook' );
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		// Page shape of the platform's failed-events list (wpcom class-webhook-controller.php:346-357: object 'list', data,
 		// has_more). The event is reduced to id and type, all the reliability service reads; the ingestor is a stub.
-		$provider = new StaticFailedEventsProvider(
+		$provider = new StaticFailedEventsApiClient(
 			array(
 				'data'     => 'pull' === $path ? array( $event ) : array(),
 				'has_more' => false,
 			)
 		);
-		$service  = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$service  = $this->create_service( $scheduler, $provider, new ThrowingEventIngestor( $refusal ) );
 		$logged   = array();
 		$logger   = function ( $message, $level ) use ( &$logged ) {
 			$logged[] = array( $level, $message );
@@ -632,16 +698,16 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'type' => 'payment_intent.succeeded',
 		);
 		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'payment webhook' );
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		// Empty page of the platform's failed-events list (wpcom class-webhook-controller.php:346-357); unused here.
-		$provider       = new StaticFailedEventsProvider(
+		$provider       = new StaticFailedEventsApiClient(
 			array(
 				'data'     => array(),
 				'has_more' => false,
 			)
 		);
-		$service        = $this->create_service( $scheduler, $store, $provider, new ThrowingEventIngestor( $refusal ) );
+		$service        = $this->create_service( $scheduler, $provider, new ThrowingEventIngestor( $refusal ) );
 		$logger_failure = new \RuntimeException( 'Log handler failed.' );
 		$logger         = function ( $message ) use ( $logger_failure ) {
 			if ( false !== strpos( (string) $message, 'was dropped' ) ) {
@@ -687,9 +753,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox An event out of retries is dropped with nothing more scheduled, and its line carries the platform error's status and code, never its message.
 	 */
 	public function test_dropped_event_log_leaves_out_platform_text(): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( self::make_provider_error() ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( self::make_provider_error() ) );
 		$store->set_event(
 			'evt_exhausted',
 			array(
@@ -727,11 +793,10 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * the platform's text; every other refusal's reason is a constant and stays on the line.
 	 */
 	public function test_refusal_wrapping_a_platform_error_leaves_out_its_text(): void {
-		$store   = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store   = new FailedEventTransients();
 		$service = $this->create_service(
 			new RecordingActionSchedulerService(),
-			$store,
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			new ThrowingEventIngestor( new \InvalidArgumentException( self::make_provider_error()->getMessage(), 0, self::make_provider_error() ) )
 		);
 		$store->set_event(
@@ -758,13 +823,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @param string $event_type Refund or dispute event type.
 	 */
 	public function test_failed_refund_or_dispute_delivery_is_kept_and_retried( string $event_type ): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_money',
 			'type' => $event_type,
 		);
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 
 		$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
 
@@ -789,13 +854,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox An event type off the retry list that fails gets one attempt, as with the WooPayments extension: no retry is scheduled.
 	 */
 	public function test_process_event_does_not_retry_an_event_type_off_the_list(): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_refund',
 			'type' => 'charge.expired',
 		);
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
 		$store->set_event( 'evt_refund', $event );
 
 		try {
@@ -814,13 +879,13 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A retried event reaches the ingestor without the retry count and is removed once processed.
 	 */
 	public function test_retried_event_is_processed_without_the_retry_count(): void {
-		$store    = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store    = new FailedEventTransients();
 		$ingestor = new RecordingEventIngestor();
 		$event    = array(
 			'id'   => 'evt_retried',
 			'type' => 'payment_intent.succeeded',
 		);
-		$service  = $this->create_service( new RecordingActionSchedulerService(), $store, new StaticFailedEventsProvider(), $ingestor );
+		$service  = $this->create_service( new RecordingActionSchedulerService(), new StaticFailedEventsApiClient(), $ingestor );
 		$store->set_event( 'evt_retried', $event + array( WooPaymentsWebhookReliabilityService::RETRY_ATTEMPTS_EVENT_KEY => 2 ) );
 
 		$service->process_event( 'evt_retried' );
@@ -836,12 +901,11 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 * `Invalid_Webhook_Data_Exception` is logged as "Failed processing event {id}. Reason: {message}" and not re-thrown.
 	 */
 	public function test_process_event_drops_and_logs_a_refused_event_without_failing_the_job(): void {
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service(
 			$scheduler,
-			$store,
-			new StaticFailedEventsProvider(),
+			new StaticFailedEventsApiClient(),
 			new ThrowingEventIngestor( new \InvalidArgumentException( 'malformed event' ) )
 		);
 		$store->set_event(
@@ -876,9 +940,9 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 
-		$store     = wc_get_container()->get( WooPaymentsFailedEventStore::class );
+		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler, $store, new StaticFailedEventsProvider(), wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), wc_get_container()->get( WooPaymentsEventIngestor::class ) );
 		$store->set_event(
 			'evt_process',
 			array(
@@ -995,20 +1059,18 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a reliability service with supplied collaborators.
 	 *
-	 * @param WooPaymentsActionSchedulerService $scheduler Scheduler service.
-	 * @param WooPaymentsFailedEventStore       $store     Failed event store.
-	 * @param WooPaymentsFailedEventsProvider   $provider  Failed events provider.
-	 * @param WooPaymentsEventIngestor          $ingestor  Event ingestor.
+	 * @param WooPaymentsActionSchedulerService $scheduler  Scheduler service.
+	 * @param WooPaymentsApiClient              $api_client API client that answers the failed-events fetch.
+	 * @param WooPaymentsEventIngestor          $ingestor   Event ingestor.
 	 * @return WooPaymentsWebhookReliabilityService
 	 */
 	private function create_service(
 		WooPaymentsActionSchedulerService $scheduler,
-		WooPaymentsFailedEventStore $store,
-		WooPaymentsFailedEventsProvider $provider,
+		WooPaymentsApiClient $api_client,
 		WooPaymentsEventIngestor $ingestor
 	): WooPaymentsWebhookReliabilityService {
 		$service = new WooPaymentsWebhookReliabilityService();
-		$service->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $scheduler, $store, $provider, $ingestor );
+		$service->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $scheduler, $api_client, $ingestor );
 
 		return $service;
 	}

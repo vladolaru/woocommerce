@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use RuntimeException;
 use WC_Order;
@@ -22,13 +23,6 @@ use WC_Order;
  * @internal
  */
 class WooPaymentsOtherChargeRecorder {
-
-	/**
-	 * Log source of the warning line.
-	 *
-	 * @var string
-	 */
-	private const LOG_SOURCE = 'woopayments';
 
 	/**
 	 * WooPayments order note service.
@@ -80,7 +74,7 @@ class WooPaymentsOtherChargeRecorder {
 		wc_get_logger()->warning(
 			sprintf( 'other charge recorded: order %d, %s, charge %s, order payment method %s', $order->get_id(), $event_type, $charge_id, $payment_method ),
 			array(
-				'source'         => self::LOG_SOURCE,
+				'source'         => WooPaymentsLogger::SOURCE,
 				'order_id'       => $order->get_id(),
 				'event_type'     => $event_type,
 				'charge_id'      => $charge_id,
