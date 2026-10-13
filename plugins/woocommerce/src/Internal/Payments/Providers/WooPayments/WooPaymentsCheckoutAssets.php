@@ -548,6 +548,9 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * Get Blocks payment method data.
 	 *
+	 * The Blocks integration registers one payment method per split gateway and passes them one holder, so the
+	 * gateway-independent base is built once per page and each gateway adds only its own keys.
+	 *
 	 * @param string[]                                $supports                  Card gateway support features, shared by every Blocks method.
 	 * @param WooPaymentsPaymentMethodDefinition|null $payment_method_definition Optional payment method definition.
 	 * @param \ArrayObject|null                       $shared                    Holder that lets split gateways share one config base (client 11.1.0 registers one Blocks method).

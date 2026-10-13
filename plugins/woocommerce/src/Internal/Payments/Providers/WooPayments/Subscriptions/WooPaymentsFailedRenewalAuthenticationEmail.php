@@ -37,6 +37,8 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 		$this->description    = __( 'Sent to a customer when a renewal fails because the transaction requires SCA verification. The email contains renewal order information and payment links.', 'woocommerce' );
 		$this->customer_email = true;
 		$this->email_group    = 'payments';
+		// The templates sit at the root of WooCommerce's templates folder, not in emails/, so a theme overrides them at
+		// woocommerce/failed-renewal-authentication.php, the path the WooPayments extension's copy of this email reads too.
 		$this->template_html  = 'failed-renewal-authentication.php';
 		$this->template_plain = 'plain/failed-renewal-authentication.php';
 		$this->placeholders   = array(

@@ -2534,7 +2534,7 @@ class WooPaymentsApiClient {
 			 *
 			 * @param mixed  $response Transport response.
 			 * @param string $method   HTTP method.
-			 * @param string $url      Public WordPress.com API URL.
+			 * @param string $url      Public WordPress.com API URL; on a site-scoped request it holds a `%s` placeholder where the site ID goes.
 			 * @param string $api      WooPayments API path.
 			 */
 			$response      = apply_filters( 'wcpay_api_request_response', $response, $method, $filter_url, $api );

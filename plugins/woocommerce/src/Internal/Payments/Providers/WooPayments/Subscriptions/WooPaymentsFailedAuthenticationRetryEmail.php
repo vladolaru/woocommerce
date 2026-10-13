@@ -32,12 +32,15 @@ class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 	 * Constructor.
 	 */
 	public function __construct() {
-		$this->id             = 'failed_authentication_requested';
-		$this->title          = __( 'Payment authentication requested email', 'woocommerce' );
-		$this->description    = __( 'Payment authentication requested emails are sent to chosen recipient(s) when a subscription renewal payment requires SCA verification and the customer will be asked to authenticate again.', 'woocommerce' );
-		$this->heading        = __( 'Automatic renewal payment failed due to authentication required', 'woocommerce' );
-		$this->subject        = __( '[{site_title}] Automatic payment failed for {order_number}. Customer asked to authenticate payment and will be notified again {retry_time}', 'woocommerce' );
-		$this->email_group    = 'payments';
+		$this->id          = 'failed_authentication_requested';
+		$this->title       = __( 'Payment authentication requested email', 'woocommerce' );
+		$this->description = __( 'Payment authentication requested emails are sent to chosen recipient(s) when a subscription renewal payment requires SCA verification and the customer will be asked to authenticate again.', 'woocommerce' );
+		$this->heading     = __( 'Automatic renewal payment failed due to authentication required', 'woocommerce' );
+		$this->subject     = __( '[{site_title}] Automatic payment failed for {order_number}. Customer asked to authenticate payment and will be notified again {retry_time}', 'woocommerce' );
+		$this->email_group = 'payments';
+		// The templates sit at the root of WooCommerce's templates folder, not in emails/, so a theme overrides them at
+		// woocommerce/failed-renewal-authentication-requested.php, the path the WooPayments extension's copy of this email
+		// reads too.
 		$this->template_html  = 'failed-renewal-authentication-requested.php';
 		$this->template_plain = 'plain/failed-renewal-authentication-requested.php';
 		$this->placeholders   = array(

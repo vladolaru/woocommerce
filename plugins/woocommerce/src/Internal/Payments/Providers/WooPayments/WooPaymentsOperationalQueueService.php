@@ -72,7 +72,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	const POST_KYC_ACTIVATION_EMAIL_GROUP = 'woocommerce-payments';
 
 	/**
-	 * Email registry key of the post-KYC activation email, the WooPayments extension's class name.
+	 * The post-KYC activation email's key in WooCommerce's email list, the WooPayments extension's class name: the email
+	 * settings use it as the section of this email's settings page, and this class uses it to find the email.
 	 *
 	 * @var string
 	 */
