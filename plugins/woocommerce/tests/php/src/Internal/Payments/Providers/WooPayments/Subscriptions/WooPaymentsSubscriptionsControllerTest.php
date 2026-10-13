@@ -398,9 +398,10 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$data = array(
 				WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META => 'key_parent_charge',
 				WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META => array(
-					'order_id'  => 123,
-					'customer'  => 'cus_parent',
-					'failed_at' => 1700000000,
+					'order_id'       => 123,
+					'customers'      => array( 'cus_parent' ),
+					'failed_at'      => 1700000000,
+					'last_failed_at' => 1700000000,
 				),
 				WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META => array(
 					'order_id'  => 123,

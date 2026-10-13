@@ -711,7 +711,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A later ambiguous answer under the unresolved key merges into the record: every customer sent, the earliest failure time and the note flag stay.
 	 *
 	 * Replacing the record would point the lookup at the later customer and move the account window past the earlier
-	 * intent (review 45 F1). A record in the earlier single-customer shape is read as a list of one.
+	 * intent (review 45 F1).
 	 */
 	public function test_later_ambiguous_answer_merges_into_the_record(): void {
 		$order    = $this->create_woopayments_order();
@@ -721,8 +721,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
 			array(
 				'order_id'           => $order->get_id(),
-				'customer'           => 'cus_a',
+				'customers'          => array( 'cus_a' ),
 				'failed_at'          => $earliest,
+				'last_failed_at'     => $earliest,
 				'cannot_check_noted' => true,
 			)
 		);
@@ -794,9 +795,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order->update_meta_data(
 			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
 			array(
-				'order_id'  => $order->get_id(),
-				'customer'  => 'cus_a',
-				'failed_at' => $failed_at,
+				'order_id'       => $order->get_id(),
+				'customers'      => array( 'cus_a' ),
+				'failed_at'      => $failed_at,
+				'last_failed_at' => $failed_at,
 			)
 		);
 		$order->save_meta_data();
@@ -891,44 +893,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An ambiguity record written without a latest failure time bounds the account list by its one failure time, so the earlier payment is still found.
-	 *
-	 * Records written before the window had an end carry only `failed_at`. Reading a missing latest time as 0 would end
-	 * the window before the earlier intent, so a complete page would charge the new card.
-	 */
-	public function test_record_without_a_latest_failure_time_ends_the_account_list_after_its_failure(): void {
-		$order     = $this->create_woopayments_order();
-		$failed_at = time() - 1000;
-		$order->update_meta_data( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, 'key_first' );
-		$order->update_meta_data(
-			WooPaymentsPaymentOperationService::CHARGE_AMBIGUITY_META,
-			array(
-				'order_id'  => $order->get_id(),
-				'customers' => array( 'cus_sent' ),
-				'failed_at' => $failed_at,
-			)
-		);
-		$order->save_meta_data();
-		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array(
-			self::stripe_idempotency_error( 'key_first' ),
-			self::stripe_no_such_customer(),
-			self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, array( 'created' => $failed_at - 60 ) ) ) ),
-			self::succeeded_charge( 'pi_new_card', 'pm_new' ),
-		);
-		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
-
-		$outcome = $this->charge_attempt( $sut, $order, 'pm_new', 'key_second' );
-
-		$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id(), 'The earlier payment pays the order.' );
-		$this->assertSame(
-			array( 'POST intentions key_first', 'GET intentions?test_mode=0&customer=cus_sent&limit=100', self::account_list_trail( $failed_at, $failed_at ) ),
-			self::request_trail( $http_client ),
-			'The new card must not be charged.'
-		);
-	}
-
-	/**
 	 * @testdox An idempotency refusal does not look anything up when $_dataName.
 	 *
 	 * Every other path keeps today's behaviour: the refusal is a definitive failure, the key and any record are retired,
@@ -972,8 +936,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_idempotency_refusals_without_lookup(): array {
 		$record = array(
-			'customer'  => 'cus_sent',
-			'failed_at' => time(),
+			'customers'      => array( 'cus_sent' ),
+			'failed_at'      => time(),
+			'last_failed_at' => time(),
 		);
 
 		return array(
@@ -981,7 +946,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			'the kept key has no ambiguity record'     => array( 'key_kept', array(), array(), 'key_kept' ),
 			'the payment is a scheduled renewal'       => array( 'key_kept', $record, array( 'scheduled_subscription_payment' => true ), 'key_kept' ),
 			'the ambiguity record names another order' => array( 'key_kept', array_merge( $record, array( 'order_id' => 987654 ) ), array(), 'key_attempt' ),
-			'the ambiguity record has no customer to look up' => array( 'key_kept', array_merge( $record, array( 'customer' => '' ) ), array(), 'key_kept' ),
+			'the ambiguity record has no customer to look up' => array( 'key_kept', array_merge( $record, array( 'customers' => array( '' ) ) ), array(), 'key_kept' ),
 		);
 	}
 

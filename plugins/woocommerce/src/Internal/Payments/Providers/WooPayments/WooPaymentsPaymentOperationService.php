@@ -574,9 +574,6 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Read the ambiguity record when it names this order.
 	 *
-	 * A record written with a single `customer` is read as a list of one, and one written without `last_failed_at` as
-	 * failing last at its first failure.
-	 *
 	 * @param WC_Order $order Order being charged.
 	 * @return array{order_id:int,customers:array<int,string>,failed_at:int,last_failed_at:int,cannot_check_noted:bool}|null
 	 */
@@ -586,14 +583,13 @@ class WooPaymentsPaymentOperationService {
 			return null;
 		}
 
-		$customers = $record['customers'] ?? array( $record['customer'] ?? '' );
-		$failed_at = (int) ( $record['failed_at'] ?? 0 );
+		$customers = $record['customers'] ?? array();
 
 		return array(
 			'order_id'           => $order->get_id(),
 			'customers'          => array_values( array_filter( is_array( $customers ) ? $customers : array(), 'is_string' ) ),
-			'failed_at'          => $failed_at,
-			'last_failed_at'     => max( $failed_at, (int) ( $record['last_failed_at'] ?? 0 ) ),
+			'failed_at'          => (int) ( $record['failed_at'] ?? 0 ),
+			'last_failed_at'     => (int) ( $record['last_failed_at'] ?? 0 ),
 			'cannot_check_noted' => ! empty( $record['cannot_check_noted'] ),
 		);
 	}
