@@ -4510,6 +4510,102 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A subscription payment-method change refused before any charge answers the refusal and keeps the subscription as it is: $_dataName.
+	 *
+	 * WooCommerce Subscriptions passes the subscription itself as the order and answers "Payment method updated." on a
+	 * success result (subscriptions-core 6.7.1, which client 11.1.0 pins, includes/class-wc-subscriptions-change-payment-gateway.php:319,
+	 * :335-347, :376-378). Client 11.1.0 throws these refusals before its payment information exists
+	 * (class-wc-payment-gateway-wcpay.php:1206-1233; class-payment-information.php:157-162), so its catch answers success
+	 * when the subscription's intention status is succeeded from an earlier change (:1283-1304) and otherwise fails the
+	 * subscription (:1323-1328), which moves an active WooPayments subscription to pending. Here the change is refused and
+	 * the subscription is left as it is.
+	 *
+	 * @dataProvider provider_subscription_change_refusals
+	 *
+	 * @param string $refusal                   Which refusal runs.
+	 * @param string $message                   The refusal's notice.
+	 * @param bool   $earlier_change_succeeded  Whether an earlier change left the subscription's intention status succeeded.
+	 */
+	public function test_refused_subscription_change_keeps_the_subscription_and_answers_the_refusal( string $refusal, string $message, bool $earlier_change_succeeded ): void {
+		wc_clear_notices();
+		$this->ensure_wcs_change_payment_gateway_double();
+		$this->ensure_wcs_subscription_detector_double();
+		$order = $this->create_order();
+		$order->set_status( 'on-hold' );
+		if ( $earlier_change_succeeded ) {
+			$order->update_meta_data( '_intention_status', 'succeeded' );
+		}
+		$order->save();
+		$session                  = $this->create_session();
+		$fraud_prevention_service = $this->create_fraud_prevention_service( false, $session );
+
+		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
+		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
+		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
+		$_POST['wcpay-payment-method']          = 'pm_card';
+
+		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = 'new';
+
+		if ( 'phone' === $refusal ) {
+			$order->set_billing_phone( '+1 555 0100 0000 0000 0' );
+			$order->save();
+		} elseif ( 'fraud_token' === $refusal ) {
+			$session->set( WooPaymentsFraudPreventionService::TOKEN_NAME, 'valid-token' );
+			$_POST[ WooPaymentsFraudPreventionService::TOKEN_NAME ] = 'tampered-token';
+			$fraud_prevention_service                               = $this->create_fraud_prevention_service( true, $session );
+		} elseif ( 'rate_limiter' === $refusal ) {
+			$session->set( WooPaymentsFailedTransactionRateLimiter::SESSION_KEY, array_fill( 0, 5, time() ) );
+		} elseif ( 'no_payment_method' === $refusal ) {
+			unset( $_POST['wcpay-payment-method'] );
+		} else {
+			$_POST['wcpay-payment-method']               = 'woocommerce_payments_payment_method_error';
+			$_POST['wcpay-payment-method-error-message'] = $message;
+		}
+
+		$service = new RecordingPaymentProcessingService();
+		$gateway = new WooPaymentsGateway();
+		$gateway->init( $service, new WooPaymentsProvider(), null, null, null, null, null, $fraud_prevention_service, new WooPaymentsFailedTransactionRateLimiter( $session ) );
+
+		$result = $gateway->process_payment( $order->get_id() );
+
+		$this->assertSame( 'failure', $result['result'], 'A refused change must not answer success, which WooCommerce Subscriptions shows as "Payment method updated."' );
+		$this->assertSame( array( $message ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( 'on-hold', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertNull( $service->last_checkout_context );
+		$this->assertSame( array(), \WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods );
+		$this->assertSame(
+			array(),
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( $note->content, 'Payment succeeded, but a downstream error occurred' )
+			)
+		);
+	}
+
+	/**
+	 * Refusals a subscription payment-method change can meet before any charge, with and without an earlier change's
+	 * succeeded intention status on the subscription.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function provider_subscription_change_refusals(): array {
+		$refusals = array(
+			'billing phone over 20 characters' => array( 'phone', 'Invalid phone number.' ),
+			'fraud-token refusal'              => array( 'fraud_token', "We're not able to process this payment. Please refresh the page and try again." ),
+			'rate-limiter refusal'             => array( 'rate_limiter', 'Your payment was not processed.' ),
+			'no payment method'                => array( 'no_payment_method', 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ),
+			'payment method error'             => array( 'payment_method_error', 'Your card number is invalid.' ),
+		);
+		$cases    = array();
+		foreach ( $refusals as $name => $refusal ) {
+			$cases[ $name ]                              = array( $refusal[0], $refusal[1], false );
+			$cases[ $name . ' after an earlier change' ] = array( $refusal[0], $refusal[1], true );
+		}
+
+		return $cases;
+	}
+
+	/**
 	 * @testdox An outcome other than completed or authorized does not complete a subscription payment-method change: $_dataName.
 	 *
 	 * The service answers no external payment for a $0 checkout with no credential, which the gateway lets through only with

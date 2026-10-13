@@ -1419,16 +1419,22 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return array<string,string>
 	 */
 	private function process_order_payment( WC_Order $order ): array {
-		$order_id = $order->get_id();
+		$order_id                              = $order->get_id();
+		$is_subscription_change                = $this->is_subscription_change_payment_request( $order );
+		$is_subscription_payment_method_change = $this->is_subscription_payment_method_change_request( $order );
+		// On a subscription payment-method change $order is the subscription: a refusal before the charge leaves it as it is,
+		// and never answers success from an earlier change's succeeded intent, which Subscriptions would show as "Payment method
+		// updated." Client 11.1.0 fails the subscription, or answers that success, for these (`gw:1283-1304`, `gw:1323-1328`).
+		$refusal_moves_order = ! $is_subscription_payment_method_change;
 
 		// Client 11.1.0 refuses these first, before any other check (Invalid_Phone_Number_Exception, `gw:1206`).
 		if ( 20 < strlen( $order->get_billing_phone() ) ) {
-			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number' );
+			return $this->refuse_checkout( $order, __( 'Invalid phone number.', 'woocommerce' ), 'invalid_phone_number', $refusal_moves_order, '', '', $refusal_moves_order );
 		}
 
 		$fraud_prevention_error = $this->get_fraud_prevention_error_message( true );
 		if ( '' !== $fraud_prevention_error ) {
-			return $this->refuse_checkout( $order, $fraud_prevention_error, 'fraud_prevention_enabled' );
+			return $this->refuse_checkout( $order, $fraud_prevention_error, 'fraud_prevention_enabled', $refusal_moves_order, '', '', $refusal_moves_order );
 		}
 
 		$failed_transaction_rate_limiter_error = $this->get_failed_transaction_rate_limiter_error_message();
@@ -1437,8 +1443,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$order,
 				$failed_transaction_rate_limiter_error,
 				'rate_limiter_enabled',
-				true,
-				wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order )
+				$refusal_moves_order,
+				wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_rate_limited_payment_note( $order ),
+				'',
+				$refusal_moves_order
 			);
 		}
 
@@ -1482,9 +1490,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return $existing_intent_result;
 		}
 
-		$is_subscription_change                = $this->is_subscription_change_payment_request( $order );
-		$is_subscription_payment_method_change = $this->is_subscription_payment_method_change_request( $order );
-
 		// Runs after the intent check so that a reachable intent still produces the richer
 		// response, including the amount-mismatch message. This catches the same-order
 		// resubmission when that check returns empty-handed.
@@ -1514,7 +1519,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 				$order,
 				__( 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.', 'woocommerce' ),
 				'payment_method_not_provided',
-				! $is_subscription_payment_method_change
+				$refusal_moves_order,
+				'',
+				'',
+				$refusal_moves_order
 			);
 		}
 
@@ -2830,13 +2838,16 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 
 		// Client 11.1.0 reaches its catch with payment information built, so the merchant gets the payment-failed note
 		// (client 11.1.0 `gw:1354-1401`). On a subscription payment-method change $order is the subscription itself:
-		// 'failed' is not a valid subscription transition, and the existing method stays in place (`gw:1326`).
+		// 'failed' is not a valid subscription transition, the existing method stays in place (`gw:1326`), and an earlier
+		// change's succeeded intent does not turn the refusal into a success.
 		return $this->refuse_checkout(
 			$order,
 			$message,
 			'payment_method_error',
 			! $is_subscription_change,
-			wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, $message, '', '', '' )[0]
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, $message, '', '', '' )[0],
+			'',
+			! $is_subscription_change
 		);
 	}
 
