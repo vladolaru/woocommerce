@@ -211,7 +211,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 *
 	 * @param int $size New batch size.
 	 */
-	public function update_batch_size( int $size ): void {
+	private function update_batch_size( int $size ): void {
 		$size = max( self::MIN_BATCH_SIZE, min( self::MAX_BATCH_SIZE, $size ) );
 		update_option( self::BATCH_SIZE_OPTION_KEY, $size );
 	}
@@ -230,7 +230,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 *
 	 * @param int $order_id Order ID.
 	 */
-	public function update_last_order_id( int $order_id ): void {
+	private function update_last_order_id( int $order_id ): void {
 		update_option( self::LAST_ORDER_ID_OPTION_KEY, $order_id );
 	}
 
@@ -255,7 +255,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 *
 	 * @param string $key Stat key to increment.
 	 */
-	public function increment_stat( string $key ): void {
+	private function increment_stat( string $key ): void {
 		$stats = $this->get_stats();
 		if ( isset( $stats[ $key ] ) ) {
 			++$stats[ $key ];

@@ -481,7 +481,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function charge( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_payment_operations()->charge( $context, $idempotency_key );
+		return $this->payment_operations->charge( $context, $idempotency_key );
 	}
 
 	/**
@@ -492,7 +492,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function capture( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		$outcome = $this->get_payment_operations()->capture( $context, $idempotency_key );
+		$outcome = $this->payment_operations->capture( $context, $idempotency_key );
 		// Client 11.1.0 records this after every capture attempt (class-wc-payment-gateway-wcpay.php:4032).
 		WooPaymentsTracks::record_wcadmin_event( 'wcpay_merchant_captured_auth' );
 
@@ -507,7 +507,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function cancel( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_payment_operations()->cancel( $context, $idempotency_key );
+		return $this->payment_operations->cancel( $context, $idempotency_key );
 	}
 
 	/**
@@ -518,7 +518,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return PaymentOutcome
 	 */
 	public function refund( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
-		return $this->get_payment_operations()->refund( $context, $idempotency_key );
+		return $this->payment_operations->refund( $context, $idempotency_key );
 	}
 
 	/**
@@ -569,17 +569,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		}
 
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
-			$this->get_payment_operations()->finalize_charge_idempotency_key( $context->get_order(), $outcome );
+			$this->payment_operations->finalize_charge_idempotency_key( $context->get_order(), $outcome );
 		}
-	}
-
-	/**
-	 * Get the WooPayments payment operation service.
-	 *
-	 * @return WooPaymentsPaymentOperationService
-	 */
-	private function get_payment_operations(): WooPaymentsPaymentOperationService {
-		return $this->payment_operations;
 	}
 
 	/**
