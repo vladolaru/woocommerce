@@ -976,20 +976,25 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A failed intent fetch on a return whose redirect_status is $redirect_status: $_dataName.
 	 *
-	 * Stripe adds redirect_status to a PaymentIntent's return URL: a test store's Bancontact and iDEAL returns carried
-	 * succeeded when authorized and failed when declined, and Stripe documents processing for a payment still settling
-	 * (https://docs.stripe.com/payments/payment-intents/verifying-status). Client 11.1.0 fails the order on any fetch
-	 * failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper whose bank confirmed the payment can change the
-	 * cart and pay again on a new order. Here a succeeded or processing return leaves the order for the webhook: no failure,
-	 * cart emptied, order-received kept. Any other value, and a SetupIntent return, fail the order as before.
+	 * Stripe adds redirect_status to a PaymentIntent's return URL. Observed on a test store's Bancontact and iDEAL returns:
+	 * succeeded when authorized and failed when declined; processing, for a payment still settling, is kept too but was not
+	 * observed. Client 11.1.0 fails the order on any fetch failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a
+	 * shopper whose bank confirmed the payment can change the cart and pay again on a new order. Here a succeeded or
+	 * processing return leaves the order for the webhook: no failure, cart emptied, order-received kept. Any other value, a
+	 * SetupIntent return, and any return with manual capture on fail the order as before: a held card has no webhook that
+	 * settles it.
 	 *
 	 * @dataProvider provider_failed_fetch_redirect_statuses
 	 *
 	 * @param string $redirect_status   Value Stripe added to the return URL, or '' for none.
 	 * @param bool   $is_payment_intent Whether the return is a PaymentIntent's (a positive total) or a SetupIntent's.
 	 * @param bool   $left_for_webhook  Whether the order is left for the webhook.
+	 * @param bool   $manual_capture    Whether the store captures payments manually.
 	 */
-	public function test_handle_wp_failed_fetch_follows_redirect_status( string $redirect_status, bool $is_payment_intent, bool $left_for_webhook ): void {
+	public function test_handle_wp_failed_fetch_follows_redirect_status( string $redirect_status, bool $is_payment_intent, bool $left_for_webhook, bool $manual_capture = false ): void {
+		if ( $manual_capture ) {
+			update_option( 'woocommerce_woocommerce_payments_settings', array_merge( (array) get_option( 'woocommerce_woocommerce_payments_settings', array() ), array( 'manual_capture' => 'yes' ) ) );
+		}
 		$order   = $this->create_order( $is_payment_intent ? '50.00' : '0.00' );
 		$product = \WC_Helper_Product::create_simple_product();
 		WC()->cart->add_to_cart( $product->get_id() );
@@ -1043,7 +1048,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Return values Stripe adds, and a SetupIntent return.
 	 *
-	 * @return array<string,array{string,bool,bool}>
+	 * @return array<string,array{0:string,1:bool,2:bool,3?:bool}>
 	 */
 	public function provider_failed_fetch_redirect_statuses(): array {
 		return array(
@@ -1052,6 +1057,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			'declined at the bank, the order fails'        => array( 'failed', true, false ),
 			'no value, the order fails'                    => array( '', true, false ),
 			'a SetupIntent return, the order fails'        => array( 'succeeded', false, false ),
+			'manual capture on, the order fails'           => array( 'succeeded', true, false, true ),
 		);
 	}
 

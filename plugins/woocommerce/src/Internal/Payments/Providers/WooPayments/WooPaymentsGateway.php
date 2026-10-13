@@ -2608,11 +2608,12 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Settle checkout without failing an order whose payment is authorized, whatever failed while applying the outcome.
 	 *
-	 * The authorization or debit stands, so the order is left as it is for the webhook, as the redirect return does after a
-	 * failure confirming such an intent. Client 11.1.0 fails the order for an Exception and fatals on a PHP Error
+	 * The authorization or debit stands, so the order is left as it is, as the redirect return does after a failure
+	 * confirming such an intent. Client 11.1.0 fails the order for an Exception and fatals on a PHP Error
 	 * (class-wc-payment-gateway-wcpay.php:1272-1328). When the order already shows the authorization, checkout answers as
 	 * it does for an authorized payment, so a retry cannot authorize the card again on a new order; otherwise it shows the
-	 * generic notice.
+	 * generic notice. A debit is then settled by its webhook; a held card by the shopper's retry on the same order, the
+	 * merchant's capture or cancel, the unpaid-order cron or the authorization's expiry.
 	 *
 	 * @param WC_Order                     $order     Order being paid.
 	 * @param PaymentOutcomeApplyException $exception Handed-back authorized outcome and the throwable that stopped it.
@@ -2670,17 +2671,17 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Tell whether the stored order already shows the authorization of the outcome's intent.
 	 *
-	 * Only a held card (`requires_capture`) or a `processing` intent counts, not a Multibanco voucher. Both put the order
-	 * on hold (client 11.1.0 `class-wc-payments-order-service.php:410-417`); a webhook may since have moved it to a paid status.
+	 * A held card, a `processing` debit and a Multibanco voucher all put the order on hold (client 11.1.0
+	 * `class-wc-payments-order-service.php:410-417`); a webhook may since have moved it to a paid status. A voucher counts
+	 * too: order-received then shows its one voucher, while a refusal lets a retry make a second order and voucher.
 	 *
 	 * @param WC_Order       $order   Order being paid.
 	 * @param PaymentOutcome $outcome Handed-back authorized outcome.
 	 * @return bool
 	 */
 	private function order_shows_authorization( WC_Order $order, PaymentOutcome $outcome ): bool {
-		$intent_id     = $outcome->get_provider_payment_id();
-		$intent_status = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome )['_intention_status'] ?? '';
-		if ( '' === $intent_id || ! in_array( $intent_status, array( 'requires_capture', 'processing' ), true ) ) {
+		$intent_id = $outcome->get_provider_payment_id();
+		if ( '' === $intent_id ) {
 			return false;
 		}
 

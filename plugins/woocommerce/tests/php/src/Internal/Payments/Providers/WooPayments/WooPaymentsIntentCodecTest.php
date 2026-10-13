@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentMappingContext;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use WC_Unit_Test_Case;
 
 /**
@@ -59,7 +60,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Asynchronous debit intents map to authorized outcomes without local effects.
+	 * @testdox Asynchronous debit intents map to authorized outcomes that carry their intent status.
 	 */
 	public function test_outcome_from_intention_maps_processing_intent_to_authorized_outcome(): void {
 		$outcome = WooPaymentsIntentCodec::outcome_from_intention(
@@ -76,7 +77,7 @@ class WooPaymentsIntentCodecTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_AUTHORIZED, $outcome->get_status() );
-		$this->assertSame( array(), $outcome->get_data() );
+		$this->assertSame( array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => 'processing' ) ), $outcome->get_data() );
 	}
 
 	/**

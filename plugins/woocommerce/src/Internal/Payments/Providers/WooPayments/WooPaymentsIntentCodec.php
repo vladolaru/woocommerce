@@ -61,7 +61,7 @@ class WooPaymentsIntentCodec {
 
 			case 'requires_capture':
 			case 'processing':
-				return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', $payment_method_id, $customer_id, $data );
+				return new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, $intent_id, '', $payment_method_id, $customer_id, self::with_authorized_intent_status( $data, $status, $intent_type ) );
 
 			case 'requires_action':
 			case 'requires_confirmation':
@@ -89,7 +89,7 @@ class WooPaymentsIntentCodec {
 						$checkout_redirect,
 						$payment_method_id,
 						$customer_id,
-						$data
+						self::with_authorized_intent_status( $data, $status, $intent_type )
 					);
 				}
 
@@ -539,6 +539,25 @@ class WooPaymentsIntentCodec {
 		}
 
 		return $fallback;
+	}
+
+	/**
+	 * Add the intent status an authorized PaymentIntent outcome was mapped from, as the order meta it implies.
+	 *
+	 * The order effects write it for the lifecycle; this keeps it on the provider's own outcome, which is what is saved
+	 * when applying the outcome fails. A SetupIntent outcome is left as it is.
+	 *
+	 * @param array<string,mixed> $data        Outcome data.
+	 * @param string              $status      Intent status: requires_capture, processing, or requires_action for a voucher.
+	 * @param string              $intent_type `pi` or `si`.
+	 * @return array<string,mixed>
+	 */
+	private static function with_authorized_intent_status( array $data, string $status, string $intent_type ): array {
+		if ( 'si' !== $intent_type ) {
+			$data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] = array( '_intention_status' => $status );
+		}
+
+		return $data;
 	}
 
 	/**

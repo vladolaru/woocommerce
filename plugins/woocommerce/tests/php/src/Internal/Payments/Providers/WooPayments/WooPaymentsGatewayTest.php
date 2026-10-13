@@ -3736,29 +3736,24 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox An exception applying an authorized outcome never fails the order: $_dataName.
 	 *
-	 * The authorization or debit stands, so the order is left for the webhook. Client 11.1.0 fails it for an Exception
-	 * (class-wc-payment-gateway-wcpay.php:1272-1328). A third-party callback on woocommerce_order_note_added reaches this
-	 * after the order went on hold: core fires that hook with no catch when the payment note is added, while it catches
-	 * exceptions from status hooks. Once the order shows the authorization, checkout answers as for an authorized payment;
-	 * a failure before that keeps the generic notice and leaves the order pending.
+	 * The authorization or debit stands, so the order is left for the webhook or the shopper's retry. Client 11.1.0 fails it
+	 * for an Exception (class-wc-payment-gateway-wcpay.php:1272-1328). A third-party callback on woocommerce_order_note_added
+	 * reaches this after the order went on hold: core catches exceptions from status hooks, but the error notes its own
+	 * catch handlers add fire that hook with no catch. Once the order shows the authorization, checkout answers as for an
+	 * authorized payment; a failure before that keeps the generic notice and leaves the order pending. Either way the order
+	 * keeps the intent's own status, which the saved reference carries.
 	 *
 	 * @dataProvider provider_exceptions_applying_an_authorized_outcome
 	 *
 	 * @param string $where            Where the exception is thrown.
-	 * @param string $intention_status Intent status of the authorized outcome.
+	 * @param string $payment          Which authorized payment the platform returned.
 	 * @param string $result           Expected checkout result.
 	 * @param string $order_status     Expected order status.
+	 * @param string $intention_status Expected `_intention_status` on the order.
 	 */
-	public function test_process_payment_exception_applying_authorized_outcome_keeps_the_order( string $where, string $intention_status, string $result, string $order_status ): void {
+	public function test_process_payment_exception_applying_authorized_outcome_keeps_the_order( string $where, string $payment, string $result, string $order_status, string $intention_status ): void {
 		$order   = $this->create_order();
-		$outcome = new PaymentOutcome(
-			PaymentOutcome::STATUS_AUTHORIZED,
-			'pi_authorized',
-			'',
-			'pm_card_visa',
-			'',
-			array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $intention_status ) )
-		);
+		$outcome = $this->create_authorized_outcome( $order, $payment );
 		if ( 'note hook' === $where ) {
 			$provider = $this->create_provider_charging( $outcome, $this->create_unhooked_token_service() );
 			add_action(
@@ -3785,19 +3780,67 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			'The failure is logged whatever the logging setting.'
 		);
 		$this->assertSame( 'success' === $result ? array() : array( WooPaymentsErrorMessages::get_generic_message() ), array_column( wc_get_notices( 'error' ), 'notice' ) );
+		$this->assertSame( $intention_status, (string) wc_get_order( $order->get_id() )->get_meta( '_intention_status', true ) );
 	}
 
 	/**
-	 * Where an exception stops an authorized outcome, for a held card and a debit still processing.
+	 * Where an exception stops an authorized outcome, for a held card, a debit still processing and a Multibanco voucher.
 	 *
-	 * @return array<string,array{string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,string}>
 	 */
 	public function provider_exceptions_applying_an_authorized_outcome(): array {
 		return array(
-			'a note listener throws after the order went on hold, held card' => array( 'note hook', 'requires_capture', 'success', OrderStatus::ON_HOLD ),
-			'a note listener throws after the order went on hold, debit processing' => array( 'note hook', 'processing', 'success', OrderStatus::ON_HOLD ),
-			'the provider effects throw before the order went on hold' => array( 'provider effects', 'requires_capture', 'failure', OrderStatus::PENDING ),
+			'a note listener throws after the order went on hold, held card' => array( 'note hook', 'held card', 'success', OrderStatus::ON_HOLD, 'requires_capture' ),
+			'a note listener throws after the order went on hold, debit processing' => array( 'note hook', 'debit processing', 'success', OrderStatus::ON_HOLD, 'processing' ),
+			'a note listener throws after the order went on hold, Multibanco voucher' => array( 'note hook', 'Multibanco voucher', 'success', OrderStatus::ON_HOLD, 'requires_action' ),
+			'the provider effects throw before the order went on hold' => array( 'provider effects', 'held card', 'failure', OrderStatus::PENDING, 'requires_capture' ),
+			'the provider effects throw before the order went on hold, debit processing' => array( 'provider effects', 'debit processing', 'failure', OrderStatus::PENDING, 'processing' ),
+			'the provider effects throw before the order went on hold, Multibanco voucher' => array( 'provider effects', 'Multibanco voucher', 'failure', OrderStatus::PENDING, 'requires_action' ),
 		);
+	}
+
+	/**
+	 * Build the authorized outcome checkout hands on: the intent mapped by the codec, with its order effect plan.
+	 *
+	 * The held card is REC-CAP's manual-capture authorization, a Visa ending 4242 (Fixtures/platform-manual-capture.json,
+	 * pair authorize_manual_capture); the debit changes only its status to processing. The voucher keeps that intent's ID
+	 * and payment method with the multibanco_display_details next action Stripe returns
+	 * (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-next_action-multibanco_display_details).
+	 *
+	 * @param WC_Order $order   Order being paid.
+	 * @param string   $payment `held card`, `debit processing` or `Multibanco voucher`.
+	 * @return PaymentOutcome
+	 */
+	private function create_authorized_outcome( WC_Order $order, string $payment ): PaymentOutcome {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-manual-capture.json' ), true );
+		$intent    = array_values( array_filter( $recording['entries'], static fn( array $entry ): bool => 'authorize_manual_capture' === $entry['pair'] ) )[0]['response']['body'];
+		if ( 'debit processing' === $payment ) {
+			$intent['status'] = 'processing';
+		}
+		if ( 'Multibanco voucher' === $payment ) {
+			$intent = array(
+				'id'                   => $intent['id'],
+				'status'               => 'requires_action',
+				'amount'               => $intent['amount'],
+				'currency'             => 'eur',
+				'customer'             => $intent['customer'],
+				'payment_method'       => $intent['payment_method'],
+				'payment_method_types' => array( 'multibanco' ),
+				'next_action'          => array(
+					'type'                       => 'multibanco_display_details',
+					'multibanco_display_details' => array(
+						'reference'          => '123 456 789',
+						'entity'             => '12345',
+						'hosted_voucher_url' => 'https://payments.stripe.com/multibanco/voucher/test',
+						'expires_at'         => time() + DAY_IN_SECONDS,
+					),
+				),
+			);
+		}
+
+		return WooPaymentsIntentCodec::outcome_from_intention( $intent, new WooPaymentsIntentMappingContext( $order->get_checkout_order_received_url() ) )
+			->with_effect_plan( WooPaymentsOrderEffectPlan::for_payment_intent( $intent, false ) );
 	}
 
 	/**
@@ -3908,14 +3951,14 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * order on hold; a retry then creates a new order and authorizes the card again. The gateway answers as it does for an
 	 * authorized payment once a fresh read shows the order on hold for the outcome's intent, and keeps the refusal when the
 	 * order is bound to another intent. The error is logged whatever the setting.
-	 * A Multibanco voucher also puts the order on hold but its intent is `requires_action`, so it keeps the refusal: the
-	 * shopper is returned to checkout with the generic error, while the voucher stays on the on-hold order and expires if
-	 * unpaid. When the fresh read itself throws, the original error is still logged
-	 * and checkout keeps the refusal instead of letting the read failure escape.
+	 * A Multibanco voucher also puts the order on hold and answers the same: order-received shows its one voucher, as a
+	 * Multibanco payment ends; a refusal would let a retry make a second order with a second voucher. When the fresh read
+	 * itself throws, the original error is still logged and checkout keeps the refusal instead of letting the read failure
+	 * escape.
 	 *
 	 * @testWith ["its intent", "success"]
 	 *           ["another intent", "failure"]
-	 *           ["its intent, as a Multibanco voucher", "failure"]
+	 *           ["its intent, as a Multibanco voucher", "success"]
 	 *           ["its intent, on an order that cannot be read again", "failure"]
 	 *
 	 * @param string $intent Which intent the order is bound to when the error strikes.
@@ -3950,16 +3993,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				}
 			};
 		}
-		$outcome  = 'its intent, as a Multibanco voucher' === $intent
-			? new PaymentOutcome(
-				PaymentOutcome::STATUS_AUTHORIZED,
-				'pi_authorized',
-				$order->get_checkout_order_received_url(),
-				'pm_card_visa',
-				'',
-				array( WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => 'requires_action' ) )
-			)
-			: new PaymentOutcome( PaymentOutcome::STATUS_AUTHORIZED, 'pi_authorized', '', 'pm_card_visa' );
+		$outcome  = $this->create_authorized_outcome( $order, 'its intent, as a Multibanco voucher' === $intent ? 'Multibanco voucher' : 'held card' );
 		$provider = $this->create_provider_failing_after_charge(
 			$outcome,
 			'post_lifecycle_effects',
@@ -3983,7 +4017,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			return;
 		}
 		$this->assertSame( $reloaded->get_checkout_order_received_url(), $checkout['redirect'] ?? '' );
-		$this->assertSame( 'pm_card_visa', $checkout['payment_method'] ?? '' );
+		$this->assertSame( $outcome->get_payment_method_id(), $checkout['payment_method'] ?? '' );
 		$this->assertSame( 0, wc_notice_count( 'error' ), 'The shopper must not be asked to pay again.' );
 	}
 

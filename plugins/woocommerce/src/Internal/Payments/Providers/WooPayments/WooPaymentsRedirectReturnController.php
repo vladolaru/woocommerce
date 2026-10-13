@@ -277,12 +277,13 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	/**
 	 * Leave the order for the webhook when the intent could not be fetched but Stripe's return says the payment went through.
 	 *
-	 * Stripe adds redirect_status to the return URL of a PaymentIntent (https://docs.stripe.com/payments/payment-intents/verifying-status),
-	 * succeeded or processing when the payment went through or is settling. Client 11.1.0 fails the order on any fetch
-	 * failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper who then changes the cart pays again on a new
-	 * order. Here the order keeps its status, the cart is emptied and the shopper stays on order-received with no notice,
-	 * as after a confirmation failure on such an intent; the payment_intent webhook settles the order. The value only
-	 * keeps the shopper's own order pending: nothing is marked paid on it.
+	 * Stripe adds redirect_status to the return URL of a PaymentIntent. Observed on test returns: succeeded when the payment
+	 * went through and failed when declined; processing, for a payment still settling, is kept too but was not observed.
+	 * Client 11.1.0 fails the order on any fetch failure (class-wc-payment-gateway-wcpay.php:2428-2455), so a shopper who
+	 * then changes the cart pays again on a new order. Here the order keeps its status, the cart is emptied and the shopper
+	 * stays on order-received with no notice, as after a confirmation failure on such an intent; the payment_intent webhook
+	 * settles the order. With manual capture on, the return keeps the failure: a held card has no webhook that settles it.
+	 * The value only keeps the shopper's own order pending: nothing is marked paid on it.
 	 *
 	 * @param WC_Order $order     Order object.
 	 * @param string   $intent_id Requested intent ID.
@@ -291,6 +292,10 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	private function leave_return_for_webhook_after_failed_fetch( WC_Order $order, string $intent_id ): bool {
 		$redirect_status = $this->get_query_string( 'redirect_status' );
 		if ( ! in_array( $redirect_status, array( 'succeeded', 'processing' ), true ) ) {
+			return false;
+		}
+
+		if ( 'yes' === wc_get_container()->get( WooPaymentsAccountService::class )->get_gateway_setting( 'manual_capture', 'no' ) ) {
 			return false;
 		}
 
