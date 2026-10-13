@@ -782,8 +782,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox When the unresolved key was sent with more than one customer, the lookup reads the account's intents from the first failure, so the earlier payment pays the order and the new card is not charged.
 	 *
-	 * Native recreates a deleted customer before every charge (`WooPaymentsCustomerService::update_customer_for_order()`),
-	 * so a resubmit under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
+	 * A customer missing at Stripe is recreated when a charge is refused for it (send_charge_request()), so a resubmit
+	 * under the kept key can go out with a new customer and fail ambiguously again. The earlier request's
 	 * intent belongs to the first customer, so the new customer's complete list proves nothing about it (review 45 F1).
 	 * The first failure is recorded well before the lookup, so the window must start from the record, not the clock
 	 * (review 47 F1). The second request may be the one Stripe ran under the key, so the window ends after its failure
@@ -2891,8 +2891,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order      = $this->create_woopayments_order( $total );
 		$api_client = $this->create_recording_customer_intent_api_client();
 
-		$order->update_meta_data( '_stripe_customer_id', 'cus_change' );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_on_the_subscription' );
 		$order->save();
+		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_change' );
 
 		$sut     = $this->create_operation_service(
 			$api_client,
@@ -2920,22 +2921,25 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ordinary checkout updates an existing customer before creating its intent.
+	 * @testdox Ordinary checkout refreshes an existing customer from the order at shutdown, after its intent.
 	 */
 	public function test_ordinary_charge_updates_existing_customer_with_real_customer_service(): void {
 		$order      = $this->create_woopayments_order();
 		$api_client = $this->create_recording_customer_intent_api_client();
 
 		$order->set_billing_email( 'subject@example.com' );
-		$order->update_meta_data( '_stripe_customer_id', 'cus_ordinary' );
 		$order->save();
+		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_ordinary' );
+		$customer_service = $this->create_real_customer_service( $api_client );
 
-		$outcome = $this->create_operation_service( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
+		$outcome = $this->create_operation_service( $api_client, $customer_service )->charge(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_ordinary' ),
 			'key_ordinary_real'
 		);
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( array(), $api_client->updated_customers, 'The refresh waits for shutdown.' );
+		$customer_service->refresh_queued_customers();
 		$this->assertCount( 1, $api_client->updated_customers );
 		$this->assertSame( 'cus_ordinary', $api_client->updated_customers[0]['customer_id'] );
 		$this->assertSame( 'subject@example.com', $api_client->updated_customers[0]['customer_data']['email'] );
@@ -2966,8 +2970,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$order      = $this->create_woopayments_order( $total );
 		$api_client = $this->create_recording_customer_intent_api_client( true );
 
-		$order->update_meta_data( '_stripe_customer_id', 'cus_missing' );
-		$order->save();
+		WC()->session->set( WooPaymentsCustomerService::CUSTOMER_ID_SESSION_KEY, 'cus_missing' );
 
 		$outcome = $this->create_operation_service( $api_client, $this->create_real_customer_service( $api_client ) )->charge(
 			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_change', array(), array( WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true ) ),

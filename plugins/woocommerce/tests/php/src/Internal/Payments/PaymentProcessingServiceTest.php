@@ -77,6 +77,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	private ProviderPersistenceVocabularyInterface $persistence_vocabulary;
 
 	/**
+	 * Customer service the last real-customer provider resolves customers with.
+	 *
+	 * @var WooPaymentsCustomerService|null
+	 */
+	private ?WooPaymentsCustomerService $customers_over_transport = null;
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -1127,7 +1134,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	public function test_declined_setup_intent_keeps_the_status_of_a_subscription_being_changed( array $provider_data, string $expected_status ): void {
 		$order = $this->create_woopayments_order( '0.00' );
 		$order->set_status( 'on-hold' );
-		$order->update_meta_data( '_stripe_customer_id', 'cus_change' );
 		$order->save();
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local test fixture.
 		$recording              = json_decode( (string) file_get_contents( __DIR__ . '/Providers/WooPayments/Fixtures/platform-setup-intent-declines.json' ), true );
@@ -1180,6 +1186,153 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			),
 			'checkout'              => array( array(), 'failed' ),
 		);
+	}
+
+	/**
+	 * @testdox A payment sends the payer's own customer, never one left on the order, and refreshes nothing before it: $_dataName.
+	 *
+	 * Client 11.1.0 resolves the customer from the order's user at checkout, order-pay and payment-method change
+	 * (includes/class-wc-payment-gateway-wcpay.php:1541-1584) and never reads the order's _stripe_customer_id there; a
+	 * scheduled renewal sends the renewal order's customer with no refresh and nothing stored on the user
+	 * (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424). The key is shared with the
+	 * WooCommerce Stripe Gateway, so it can hold another plugin's customer or an earlier payer's.
+	 *
+	 * @dataProvider provider_payments_with_a_customer_on_the_order
+	 *
+	 * @param string             $total             Order total.
+	 * @param string             $order_customer_id Customer ID left on the order.
+	 * @param array<string,bool> $provider_data     Checkout provider data, as the gateway or the renewal builds it.
+	 * @param string             $expected_path     The platform request the payment sends.
+	 * @param string             $expected_customer The customer that request carries.
+	 */
+	public function test_payment_sends_the_payers_customer_and_not_the_one_on_the_order( string $total, string $order_customer_id, array $provider_data, string $expected_path, string $expected_customer ): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+		$token = new WC_Payment_Token_CC();
+		$token->set_token( 'pm_saved' );
+		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2040' );
+		$token->set_user_id( $user_id );
+		$token->save();
+		$order = $this->create_woopayments_order( $total );
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', $order_customer_id );
+		$order->add_payment_token( $token );
+		$order->save();
+		$is_renewal   = ! empty( $provider_data['scheduled_subscription_payment'] );
+		$payment_data = $is_renewal ? array( 'payment_token' => (string) $token->get_id() ) : array( 'payment_token' => 'new' );
+		if ( ! $is_renewal ) {
+			$payment_data['save_payment_method'] = 0.0 === (float) $total;
+		}
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->response  = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
+		$http_client->responses = array(
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 0.0 === (float) $total ? 'seti_payer' : 'pi_payer',
+					'object'         => 0.0 === (float) $total ? 'setup_intent' : 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => $expected_customer,
+					'payment_method' => 'pm_saved',
+					'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+				)
+			),
+		);
+
+		$this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				$is_renewal ? '' : 'pm_card_visa',
+				$payment_data,
+				$provider_data
+			),
+			$this->timeout_transport_provider( $http_client, true )
+		);
+
+		$this->assertSame( 'POST ' . $expected_path, $http_client->requests[0]['method'] . ' ' . $http_client->requests[0]['path'] );
+		$this->assertSame( $expected_customer, json_decode( (string) $http_client->requests[0]['body'], true )['customer'] ?? null );
+		$this->assertSame( array(), array_values( array_filter( array_column( $http_client->requests, 'path' ), static fn( string $path ): bool => false !== strpos( $path, '/customers' ) ) ), 'No customer is updated, deleted or created before the payment.' );
+		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ), "The user's customer stays theirs." );
+	}
+
+	/**
+	 * Orders carrying a customer that is not the payer's, or a renewal's own.
+	 *
+	 * @return array<string,array{string,string,array<string,bool>,string,string}>
+	 */
+	public function provider_payments_with_a_customer_on_the_order(): array {
+		return array(
+			'checkout, a WooCommerce Stripe Gateway customer left on the order' => array( '10.00', 'cus_StripeGatewayLeftover', array(), '/sites/123/wcpay/intentions', 'cus_user' ),
+			'order-pay, an earlier payer\'s customer on a reassigned order'      => array( '10.00', 'cus_earlier_payer', array(), '/sites/123/wcpay/intentions', 'cus_user' ),
+			'payment-method change, a leftover customer on the subscription'    => array(
+				'0.00',
+				'cus_StripeGatewayLeftover',
+				array(
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true,
+				),
+				'/sites/123/wcpay/setup_intents',
+				'cus_user',
+			),
+			'scheduled renewal, the subscription\'s customer'                   => array( '10.00', 'cus_subscription', array( 'scheduled_subscription_payment' => true ), '/sites/123/wcpay/intentions', 'cus_subscription' ),
+		);
+	}
+
+	/**
+	 * @testdox The payer's customer is refreshed from the order at shutdown, after the payment, and a failed refresh is only logged.
+	 *
+	 * Client 11.1.0 refreshes an existing customer in a shutdown callback that only logs a failure
+	 * (includes/class-wc-payment-gateway-wcpay.php:1554-1583), so a platform error on the update cannot fail the payment.
+	 */
+	public function test_customer_refresh_runs_at_shutdown_and_a_failure_does_not_fail_the_payment(): void {
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+		$order = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $user_id );
+		$order->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				200,
+				array(
+					'id'             => 'pi_refresh',
+					'object'         => 'payment_intent',
+					'status'         => 'succeeded',
+					'amount'         => 1000,
+					'currency'       => 'usd',
+					'customer'       => 'cus_user',
+					'payment_method' => 'pm_card_visa',
+					'metadata'       => array( 'order_id' => (string) $order->get_id() ),
+				)
+			),
+			$this->json_transport_response(
+				500,
+				array(
+					'code'    => 'wcpay_server_error',
+					'message' => 'The platform is unavailable.',
+				)
+			),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client, true );
+
+		$outcome = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card_visa' ), $provider );
+
+		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
+		$this->assertSame( array( 'POST /sites/123/wcpay/intentions' ), array_map( static fn( array $request ): string => $request['method'] . ' ' . $request['path'], $http_client->requests ) );
+		$this->assertSame( 10, has_action( 'shutdown', array( $this->customers_over_transport, 'refresh_queued_customers' ) ) );
+
+		$this->customers_over_transport->refresh_queued_customers();
+
+		$this->assertSame( 'POST /sites/123/wcpay/customers/cus_user', end( $http_client->requests )['method'] . ' ' . end( $http_client->requests )['path'] );
+		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+		$this->assertTrue( wc_get_order( $order->get_id() )->is_paid() );
 	}
 
 	/**
@@ -5005,10 +5158,11 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a real WooPayments provider on the real API client, with only the platform's HTTP answers faked.
 	 *
-	 * @param FakeWooPaymentsHttpClient $http_client Platform answers, in order.
+	 * @param FakeWooPaymentsHttpClient $http_client       Platform answers, in order.
+	 * @param bool                      $real_customers    Whether the real customer service resolves customers over the same transport.
 	 * @return WooPaymentsProvider
 	 */
-	private function timeout_transport_provider( FakeWooPaymentsHttpClient $http_client ): WooPaymentsProvider {
+	private function timeout_transport_provider( FakeWooPaymentsHttpClient $http_client, bool $real_customers = false ): WooPaymentsProvider {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode', 'is_test_mode_enabled' ) )
@@ -5029,9 +5183,15 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->onlyMethods( array( 'get_or_create_customer_id_for_order', 'get_or_create_customer_id_for_subscription_payment_method_change' ) )
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_timeout' );
+		$customer_service->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )->willReturn( 'cus_timeout' );
+		if ( $real_customers ) {
+			$customer_service = new WooPaymentsCustomerService();
+			$customer_service->init( $api_client, $account_service, new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
+			$this->customers_over_transport = $customer_service;
+		}
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
 		$ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();

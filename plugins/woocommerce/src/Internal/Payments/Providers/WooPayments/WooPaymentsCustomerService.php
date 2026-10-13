@@ -71,6 +71,13 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
+	 * Orders whose customer is refreshed at shutdown, by order ID.
+	 *
+	 * @var array<int,WC_Order>
+	 */
+	private array $orders_to_refresh = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -188,7 +195,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get or create the WooPayments customer ID associated with an order.
+	 * Get the payer's WooPayments customer ID for a checkout or order-pay payment, creating one when the payer has none.
+	 *
+	 * An existing customer is refreshed from the order at shutdown, as client 11.1.0 does
+	 * (includes/class-wc-payment-gateway-wcpay.php:1541-1584).
 	 *
 	 * @param WC_Order $order Order being charged.
 	 * @return string
@@ -210,24 +220,24 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get or create the customer ID for an order, updating an existing customer from the order when asked.
+	 * Get or create the payer's customer ID, refreshing an existing customer from the order at shutdown when asked.
 	 *
-	 * @param WC_Order $order                  Order being charged.
-	 * @param bool     $should_update_customer Whether an existing customer should be refreshed.
+	 * The order's _stripe_customer_id is not read: it can be another customer's or another plugin's.
+	 *
+	 * @param WC_Order $order                   Order being charged.
+	 * @param bool     $should_refresh_customer Whether an existing customer is refreshed from the order.
 	 * @return string
 	 */
-	private function get_or_create_customer_id( WC_Order $order, bool $should_update_customer ): string {
-
-		$order_customer_id = (string) $order->get_meta( '_stripe_customer_id', true );
-		if ( '' !== $order_customer_id ) {
-			return $should_update_customer ? $this->update_customer_for_order( $order_customer_id, $order ) : $order_customer_id;
-		}
-
+	private function get_or_create_customer_id( WC_Order $order, bool $should_refresh_customer ): string {
 		$user_id     = $this->get_order_user_id( $order );
 		$customer_id = $this->migrate_and_get_customer_id( $user_id );
 
 		if ( null !== $customer_id ) {
-			return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
+			if ( $should_refresh_customer ) {
+				$this->refresh_customer_at_shutdown( $order );
+			}
+
+			return $customer_id;
 		}
 
 		// Guard against concurrent checkouts creating duplicate remote customers
@@ -249,7 +259,11 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			$customer_id = $this->migrate_and_get_customer_id( $user_id );
 			if ( null !== $customer_id ) {
 				// The winning request already created and persisted the customer.
-				return $should_update_customer ? $this->update_customer_for_order( $customer_id, $order ) : $customer_id;
+				if ( $should_refresh_customer ) {
+					$this->refresh_customer_at_shutdown( $order );
+				}
+
+				return $customer_id;
 			}
 			// The lock holder has not persisted yet (or there is no persistent
 			// object cache); create anyway, as with no lock. We
@@ -269,9 +283,45 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Queue the payer's customer for a refresh from the order's details at shutdown.
+	 *
+	 * @param WC_Order $order Order being charged.
+	 */
+	private function refresh_customer_at_shutdown( WC_Order $order ): void {
+		$this->orders_to_refresh[ $order->get_id() ] = $order;
+		if ( false === has_action( 'shutdown', array( $this, 'refresh_queued_customers' ) ) ) {
+			add_action( 'shutdown', array( $this, 'refresh_queued_customers' ) );
+		}
+	}
+
+	/**
+	 * Refresh the customers queued in this request from their orders, after the payment answered.
+	 *
+	 * The customer ID is read again, in case a missing customer was recreated during the payment. A failure is only logged,
+	 * as client 11.1.0 does (includes/class-wc-payment-gateway-wcpay.php:1563-1582).
+	 *
+	 * @internal
+	 */
+	public function refresh_queued_customers(): void {
+		$orders                  = $this->orders_to_refresh;
+		$this->orders_to_refresh = array();
+		foreach ( $orders as $order ) {
+			try {
+				$customer_id = $this->migrate_and_get_customer_id( $this->get_order_user_id( $order ) );
+				if ( null !== $customer_id ) {
+					$this->update_customer_for_order( $customer_id, $order );
+				}
+			} catch ( \Exception $exception ) {
+				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to update customer during shutdown: ' . $exception->getMessage() );
+			}
+		}
+	}
+
+	/**
 	 * Update the WooPayments customer associated with an order.
 	 *
-	 * If the remote customer no longer exists, recreate it and update local persistence.
+	 * If the remote customer no longer exists, recreate it and update local persistence. An update does not store the
+	 * customer on the user, as client 11.1.0's update_customer_for_user() does not (class-wc-payments-customer-service.php:200-222).
 	 *
 	 * @param string   $customer_id WooPayments customer ID.
 	 * @param WC_Order $order       Order being charged.
@@ -279,12 +329,10 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @throws WooPaymentsApiException When updating the remote customer fails for reasons other than a missing customer.
 	 */
 	public function update_customer_for_order( string $customer_id, WC_Order $order ): string {
-		$user_id       = $this->get_order_user_id( $order );
 		$customer_data = $this->map_customer_data( $order );
 
 		try {
 			$this->api_client->update_customer( $customer_id, $customer_data );
-			$this->persist_customer_id( $user_id, $customer_id );
 
 			return $customer_id;
 		} catch ( WooPaymentsApiException $exception ) {
@@ -527,8 +575,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			$updated = update_user_option( $user_id, $this->get_customer_id_option(), $customer_id, $this->account_service->is_network_saved_cards_enabled() );
 
 			// update_user_option() also returns false when the stored value is already
-			// current, which is routine here (every order update re-persists); only a
-			// write that leaves a different value behind is a real failure.
+			// current; only a write that leaves a different value behind is a real failure.
 			if ( ! $updated && get_user_option( $this->get_customer_id_option(), $user_id ) !== $customer_id ) {
 				wc_get_container()->get( WooPaymentsLogger::class )->error( 'Failed to update the WooPayments customer ID for user ' . $user_id . '.' );
 			}

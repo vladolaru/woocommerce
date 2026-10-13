@@ -430,10 +430,12 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_customer, $sut->get_or_create_customer_id_for_subscription_payment_method_change( $order ) );
 		$this->assertSame( array(), $api_client->updated_customers );
 		$this->assertSame( array(), $api_client->created_customers );
+		$this->assertFalse( has_action( 'shutdown', array( $sut, 'refresh_queued_customers' ) ), 'A change refreshes nothing, not even later.' );
 	}
 
 	/**
-	 * Where the existing customer ID is stored: the guest session, the order meta, or the user option.
+	 * Where the existing customer ID is stored: the guest session or the user option, which wins over a customer on the
+	 * subscription.
 	 *
 	 * @return array<string,array{bool,callable,string}>
 	 */
@@ -446,13 +448,14 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 				},
 				'cus_guest',
 			),
-			'order meta'    => array(
+			'user option, another customer on the subscription' => array(
 				true,
-				static function ( WC_Order $order ): void {
+				static function ( WC_Order $order, int $user_id ): void {
 					$order->update_meta_data( '_stripe_customer_id', 'cus_subscription' );
 					$order->save();
+					update_user_option( $user_id, '_wcpay_customer_id_live', 'cus_user' );
 				},
-				'cus_subscription',
+				'cus_user',
 			),
 			'user option'   => array(
 				true,
@@ -466,10 +469,10 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Orders with WooPayments customer meta should reuse that customer before user storage.
+	 * @testdox A checkout uses the user's customer, not one on the order, and refreshes it from the order at shutdown.
 	 */
-	public function test_get_or_create_customer_id_reuses_order_customer_meta_before_user_storage(): void {
-		$user_id    = $this->factory->user->create( array( 'user_login' => 'renewal-customer' ) );
+	public function test_get_or_create_customer_id_uses_the_users_customer_and_refreshes_it_at_shutdown(): void {
+		$user_id    = $this->factory->user->create( array( 'user_login' => 'order-customer' ) );
 		$order      = $this->create_checkout_order( $user_id );
 		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
 
@@ -479,17 +482,24 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_sut( false, $api_client );
 
-		$this->assertSame( 'cus_order', $sut->get_or_create_customer_id_for_order( $order ) );
-		$this->assertSame( 'cus_order', get_user_option( '_wcpay_customer_id_live', $user_id ) );
+		$this->assertSame( 'cus_user', $sut->get_or_create_customer_id_for_order( $order ) );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertSame( 10, has_action( 'shutdown', array( $sut, 'refresh_queued_customers' ) ) );
+
+		$sut->refresh_queued_customers();
+
+		$this->assertSame( array( 'cus_user' ), array_column( $api_client->updated_customers, 'customer_id' ) );
+		$this->assertSame( 'ada@example.com', $api_client->updated_customers[0]['customer_data']['email'] );
+		$this->assertSame( 'cus_user', get_user_option( '_wcpay_customer_id_live', $user_id ) );
 	}
 
 	/**
 	 * @dataProvider provider_customer_update_not_suppressed
-	 * @testdox Ordinary customer resolution should still update the customer when the request names no subscription of this order ($_dataName).
+	 * @testdox Ordinary customer resolution should still refresh the customer when the request names no subscription of this order ($_dataName).
 	 *
 	 * Only a verified subscription change may skip the customer update.
 	 *
-	 * @param string $stored_customer            Customer ID stored on the order.
+	 * @param string $stored_customer            Customer ID stored on the user.
 	 * @param int    $request_id_offset          Offset from the order ID of the change_payment_method request value.
 	 * @param bool   $request_id_is_subscription Whether the request value is a subscription.
 	 */
@@ -498,8 +508,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$order      = $this->create_checkout_order( $user_id );
 		$api_client = $this->create_customer_api_client( array( 'cus_new' ) );
 
-		$order->update_meta_data( '_stripe_customer_id', $stored_customer );
-		$order->save();
+		update_user_option( $user_id, '_wcpay_customer_id_live', $stored_customer );
 
 		$request_id = $order->get_id() + $request_id_offset;
 		$this->fake_wcs_is_subscription();
@@ -509,6 +518,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_sut( false, $api_client );
 
 		$this->assertSame( $stored_customer, $sut->get_or_create_customer_id_for_order( $order ) );
+		$sut->refresh_queued_customers();
 		$this->assertCount( 1, $api_client->updated_customers );
 	}
 
@@ -589,8 +599,8 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'cus_existing', $result );
 		$this->assertSame( array(), $api_client->created_customers );
-		$this->assertCount( 1, $api_client->updated_customers );
-		$this->assertSame( 'cus_existing', $api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( array(), $api_client->updated_customers );
+		$this->assertSame( 10, has_action( 'shutdown', array( $sut, 'refresh_queued_customers' ) ) );
 		$this->assertNotFalse( wp_cache_get( 'wcpay_customer_create_' . $user_id, 'woopayments' ) );
 
 		wp_cache_delete( 'wcpay_customer_create_' . $user_id, 'woopayments' );

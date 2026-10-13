@@ -1544,6 +1544,13 @@ class WooPaymentsPaymentOperationService {
 			return $this->customer_service->get_or_create_customer_id_for_subscription_payment_method_change( $context->get_order() );
 		}
 
+		// A scheduled renewal charges the customer on the renewal order, with no refresh and nothing stored on the user, as
+		// client 11.1.0 does (includes/compat/subscriptions/trait-wc-payment-gateway-wcpay-subscriptions.php:421-424).
+		$order_customer_id = self::is_scheduled_renewal( $context ) ? (string) $context->get_order()->get_meta( '_stripe_customer_id', true ) : '';
+		if ( '' !== $order_customer_id ) {
+			return $order_customer_id;
+		}
+
 		return $this->customer_service->get_or_create_customer_id_for_order( $context->get_order() );
 	}
 

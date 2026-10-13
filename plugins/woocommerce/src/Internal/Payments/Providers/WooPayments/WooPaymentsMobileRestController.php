@@ -387,7 +387,12 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		}
 
 		try {
+			// Client 11.1.0 reads the order's customer, then its user's, and updates either at once
+			// (includes/admin/class-wc-rest-payments-orders-controller.php:480-492).
 			$customer_id = (string) $order->get_meta( '_stripe_customer_id', true );
+			if ( '' === $customer_id && 0 < $order->get_customer_id() ) {
+				$customer_id = (string) $this->customer_service->migrate_and_get_customer_id( $order->get_customer_id() );
+			}
 			if ( '' !== $customer_id ) {
 				$customer_id = $this->customer_service->update_customer_for_order( $customer_id, $order );
 			} else {

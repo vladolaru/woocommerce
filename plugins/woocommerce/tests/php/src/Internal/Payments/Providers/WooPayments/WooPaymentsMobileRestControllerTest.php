@@ -994,6 +994,32 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Customer creation updates the customer the order carries and leaves the user's own customer stored.
+	 *
+	 * Client 11.1.0 updates the customer it read from the order without storing it on the user
+	 * (includes/class-wc-payments-customer-service.php:200-222); storing it would point the user at another customer.
+	 */
+	public function test_create_customer_keeps_the_users_customer_when_the_order_carries_another(): void {
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_option( $user_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_user' );
+
+		$order = $this->create_order();
+		$order->set_customer_id( $user_id );
+		$order->update_meta_data( '_stripe_customer_id', 'cus_earlier_payer' );
+		$order->save();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		$response = $this->sut->create_customer( $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( array( 'id' => 'cus_earlier_payer' ), $response->get_data() );
+		$this->assertSame( 'cus_earlier_payer', $this->api_client->updated_customers[0]['customer_id'] );
+		$this->assertSame( 'cus_user', get_user_option( WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, $user_id ) );
+	}
+
+	/**
 	 * @testdox Customer creation should update a cached user customer despite an unrelated subscription request value.
 	 */
 	public function test_create_customer_updates_cached_user_customer_with_an_unrelated_subscription_request_value(): void {
