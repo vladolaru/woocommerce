@@ -102,7 +102,7 @@ class WooPaymentsOutcomeMetadataMapperTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep failed captures in the WooPayments requires-capture state.
+	 * @testdox Should keep a failed capture or cancel whose effects composed no intention status in the requires-capture state.
 	 */
 	public function test_capture_failure_meta_keeps_requires_capture_status(): void {
 		$outcome = new PaymentOutcome(
@@ -113,8 +113,7 @@ class WooPaymentsOutcomeMetadataMapperTest extends WC_Unit_Test_Case {
 			'',
 			array(
 				'meta' => array(
-					'_charge_id'        => 'ch_123',
-					'_intention_status' => 'requires_payment_method',
+					'_charge_id' => 'ch_123',
 				),
 			)
 		);

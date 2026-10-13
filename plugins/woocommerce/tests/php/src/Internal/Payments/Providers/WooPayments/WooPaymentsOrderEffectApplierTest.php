@@ -1782,7 +1782,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$plan    = WooPaymentsOrderEffectPlan::for_cancel(
 			array(
 				'id'     => 'pi_cancel_observed',
-				'status' => 'requires_capture',
+				'status' => 'succeeded',
 			)
 		);
 
@@ -1793,7 +1793,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		);
 
 		$data = $result->get_data();
-		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], 'The status the provider still reports must be recorded, as the plugin does.' );
+		$this->assertSame( array( '_intention_status' => 'succeeded' ), $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], 'The status the provider still reports must be recorded, as the plugin does.' );
 		// Client 11.1.0 class-wc-payment-gateway-wcpay.php:4109.
 		$this->assertSame( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>Cancellation rejected.</code>.', $data[ PaymentOutcome::DATA_NOTE ] );
 		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );

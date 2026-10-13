@@ -67,12 +67,18 @@ final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataM
 	/**
 	 * Map a failed capture or cancel to WooPayments order metadata.
 	 *
+	 * The intention status the effects composed is kept, such as the status re-fetched after a failed cancel, which
+	 * client 11.1.0 saves (class-wc-payment-gateway-wcpay.php:4129); with none composed, the authorization stays
+	 * requires_capture.
+	 *
 	 * @param PaymentOutcome $outcome Provider outcome.
 	 * @return array<string,string>
 	 */
 	public function get_failed_capture_or_cancel_outcome_meta( PaymentOutcome $outcome ): array {
-		$meta                      = $this->get_outcome_meta( $outcome );
-		$meta['_intention_status'] = 'requires_capture';
+		$meta = $this->get_outcome_meta( $outcome );
+		if ( ! isset( $outcome->get_data()[ self::OUTCOME_META_KEY ]['_intention_status'] ) ) {
+			$meta['_intention_status'] = 'requires_capture';
+		}
 		ksort( $meta );
 
 		return array_map( 'strval', $meta );

@@ -9651,6 +9651,65 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed cancel whose re-fetched intent already succeeded records it as succeeded, so the captured payment can be refunded.
+	 *
+	 * The platform's capture answer is lost, so the order still records requires_capture, and the merchant cancels the
+	 * authorization before the payment_intent.succeeded webhook applies. Client 11.1.0 saves the re-fetched status after a
+	 * failed cancel (includes/class-wc-payment-gateway-wcpay.php:4083-4092, :4129), and refuses a refund only while the
+	 * status is requires_capture (:2917-2924). The cancel refusal is the platform's 400 envelope as recorded for refunds
+	 * (`Fixtures/platform-refund-errors.json`) with Stripe's message for a PaymentIntent that cannot be canceled in its status,
+	 * HAND-BUILT (https://docs.stripe.com/error-codes/payment-intent-unexpected-state); the re-fetched intent is the
+	 * recorded capture_full_amount (`Fixtures/platform-manual-capture.json`) reduced to its ID and status, and the refund
+	 * answer the recorded one (`Fixtures/platform-refund-errors.json`, pair `reused_key_identical_params_replays_refund`).
+	 */
+	public function test_failed_cancel_of_a_captured_intent_records_succeeded_and_the_payment_can_be_refunded(): void {
+		$order = $this->create_refund_hold_order();
+		$order->set_transaction_id( 'pi_cancel_after_capture' );
+		$order->update_meta_data( '_intent_id', 'pi_cancel_after_capture' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$order->update_status( 'on-hold' );
+		$captured               = $this->load_recorded_intent_entry( 'platform-manual-capture.json', 'capture_full_amount' )['body'];
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			self::http_json(
+				400,
+				array(
+					'code'    => 'wcpay_bad_request',
+					'message' => 'This PaymentIntent could not be canceled because it has a status of succeeded.',
+					'data'    => array( 'status' => 400 ),
+				)
+			),
+			self::http_json(
+				200,
+				array(
+					'id'     => 'pi_cancel_after_capture',
+					'status' => $captured['status'],
+				)
+			),
+			self::http_json( 200, $this->recorded_refund_answer( 're_after_failed_cancel', '', 500 ) ),
+		);
+		$provider               = $this->create_refund_hold_provider( $http_client );
+
+		$outcome = wc_get_container()->get( PaymentProcessingService::class )->cancel( PaymentOperationContext::for_cancel( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+
+		list( $result, $row ) = $this->run_gateway_refund( $provider, wc_get_order( $order->get_id() ), 5.00 );
+
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertTrue( $result, 'A captured payment is refunded, not refused as not captured yet.' );
+		$trail = self::request_trail( $http_client );
+		$this->assertCount( 3, $trail );
+		$this->assertStringStartsWith( 'POST intentions/pi_cancel_after_capture/cancel', $trail[0] );
+		$this->assertStringStartsWith( 'GET intentions/pi_cancel_after_capture', $trail[1] );
+		$this->assertStringStartsWith( 'POST refunds ', $trail[2] );
+		$this->assertSame( 're_after_failed_cancel', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertCount( 1, self::note_texts_containing( $order, 'Canceling authorization <strong>failed</strong>' ) );
+	}
+
+	/**
 	 * @testdox A failed capture re-fetches the intent and flags an expired authorization.
 	 */
 	public function test_capture_exception_detects_expired_authorization_via_refetch(): void {
