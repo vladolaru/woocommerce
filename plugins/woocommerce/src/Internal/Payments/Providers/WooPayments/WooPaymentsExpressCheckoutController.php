@@ -10,8 +10,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Adds the WooPayments Apple Pay and Google Pay express checkout buttons to the storefront: their assets, markup and
- * redirect URL.
+ * Adds the WooPayments express checkout buttons to the storefront, the WooPay button and the Stripe Express Checkout
+ * Element (Apple Pay, Google Pay and Amazon Pay): their assets, markup and redirect URL.
  *
  * @since 11.0.0
  * @internal

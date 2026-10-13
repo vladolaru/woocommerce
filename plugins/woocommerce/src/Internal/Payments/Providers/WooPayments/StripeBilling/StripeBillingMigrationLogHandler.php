@@ -173,7 +173,7 @@ class StripeBillingMigrationLogHandler {
 	}
 
 	/**
-	 * Get the log handler class WooCommerce uses: `WC_LOG_HANDLER`, or the file handler.
+	 * Get the log handler class named by the `WC_LOG_HANDLER` constant, or the file handler when it names no loaded class.
 	 *
 	 * @return string
 	 */

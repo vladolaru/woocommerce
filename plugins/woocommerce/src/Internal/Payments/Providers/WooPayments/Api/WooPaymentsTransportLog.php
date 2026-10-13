@@ -15,9 +15,9 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Writes redacted platform requests and responses to the WooPayments log when debug logging is on.
  *
- * Logging is on in dev mode or with the gateway's `enable_logging` setting, the one check every WooPayments log line
- * uses (WooPaymentsLogger::can_log()). Lines are written through WooPaymentsLogger, so they carry its request context
- * and source, and a line that fails to write is dropped. Redaction runs only when a line is written; info() takes a
+ * Logging is on in dev mode or with the gateway's `enable_logging` setting, as WooPaymentsLogger::can_log() decides.
+ * Lines are written through WooPaymentsLogger, so they carry its request context and source, and a line that fails to
+ * write is dropped. Redaction runs only when a line is written; info() takes a
  * context its caller already passed through redact(). warning() is the one line written whatever the setting.
  *
  * @since 11.2.0

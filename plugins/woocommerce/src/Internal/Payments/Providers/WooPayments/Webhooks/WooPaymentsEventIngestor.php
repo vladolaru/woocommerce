@@ -520,7 +520,7 @@ class WooPaymentsEventIngestor {
 	 */
 	private function run_delivery_hook( string $hook, string $event_type, array $event ): void {
 		try {
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Each hook is documented where process() names it.
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Each hook is documented where dispatch() names it.
 			do_action( $hook, $event_type, $event );
 		} catch ( Throwable $exception ) {
 			// Logging is best-effort: a failing log handler must not turn an isolated hook failure into a failed event.

@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterf
 final class WooPaymentsOutcomeMetadataMapper implements ProviderOutcomeMetadataMapperInterface {
 
 	/**
-	 * Outcome data key: order/refund meta updates.
+	 * Outcome data key: the order meta the payment lifecycle writes; refund meta travels in `PaymentOutcome::DATA_REFUND_META`.
 	 *
 	 * @var string
 	 */

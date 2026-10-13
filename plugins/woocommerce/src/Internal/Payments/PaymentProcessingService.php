@@ -419,7 +419,7 @@ class PaymentProcessingService {
 				);
 			}
 
-			// Always set, so an ID the caller's context already carried never reaches the provider (Codex review 204 F2).
+			// Always set, so an ID the caller's context already carried never reaches the provider.
 			$context = $context->with_payment_data( array( PaymentOperationContext::PAYMENT_DATA_REFUND_ID => $own_row_known ? $wc_refund_id : 0 ) );
 			try {
 				$provider_outcome = $provider->refund( $context, $idempotency_key );

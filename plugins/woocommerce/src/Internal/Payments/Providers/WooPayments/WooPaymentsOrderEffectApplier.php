@@ -19,7 +19,8 @@ use WC_Payment_Token;
 use WC_Payment_Tokens;
 
 /**
- * Writes a plan's meta, notes and token changes to the order.
+ * Applies a plan to the order: writes token, payment method title and setup intent changes, and adds the plan's meta
+ * and note candidates to the outcome, which the payment lifecycle writes.
  *
  * @since 11.0.0
  * @internal

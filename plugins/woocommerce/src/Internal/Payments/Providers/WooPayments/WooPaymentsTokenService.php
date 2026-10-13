@@ -983,9 +983,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	/**
 	 * Reconcile locally stored tokens with the provider's payment methods.
 	 *
-	 * Creates WooCommerce tokens for provider payment methods that have no local
-	 * token and deletes local tokens whose payment method no longer exists at the
-	 * provider (without detaching remotely). Provider failures degrade to the
+	 * Creates WooCommerce tokens for provider payment methods that have no local token and deletes local tokens whose
+	 * payment method no longer exists at the provider (without detaching remotely). Provider failures degrade to the
 	 * locally stored list.
 	 *
 	 * @param array<int|string,mixed> $tokens     Customer payment tokens.
@@ -999,8 +998,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		if ( count( $tokens ) >= (int) get_option( 'posts_per_page' ) ) {
-			// The tokens data store is unpaginated and only the first page is retrieved;
-			// a full page of saved methods is an unsupported edge case for reconciliation.
+			// WooCommerce reads one page of tokens, `posts_per_page` long unless the `woocommerce_get_customer_payment_tokens_limit`
+			// filter changes it; a list that fills `posts_per_page` may leave saved methods unread, so it is not reconciled.
 			return $tokens;
 		}
 
@@ -1071,8 +1070,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
 		}
 
-		// Local tokens whose payment method the provider no longer holds: delete
-		// locally without detaching (there is nothing left to detach remotely).
+		// Local tokens whose payment method the provider no longer holds: delete locally without detaching (there is nothing
+		// left to detach remotely).
 		remove_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10 );
 		foreach ( $stored_tokens as $stored_token ) {
 			unset( $tokens[ $stored_token->get_id() ] );
@@ -1200,8 +1199,8 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return null;
 		}
 
-		// A stale cached provider list would diff the just-created token away on
-		// the next reconcile, deleting it locally while it stays attached remotely.
+		// A stale cached provider list would diff the just-created token away on the next reconcile, deleting it locally while
+		// it stays attached remotely.
 		$this->clear_cached_payment_methods_for_user( $user_id );
 
 		switch ( $method_type ) {

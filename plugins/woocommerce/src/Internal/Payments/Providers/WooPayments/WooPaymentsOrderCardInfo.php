@@ -17,8 +17,9 @@ use WC_Order;
  * Client 11.1.0 `class-wc-payments-payment-method-service.php:55-123`: the stored payment method details are read
  * first, so rendering a paid order (thank-you page, order view, emails) needs no platform call; the payment method is
  * fetched, and stored, only when they are missing. Without it, core's PaymentInfo fallback fetched on the first render
- * of every order the built-in WooPayments paid. It registers on every request, as client 11.1.0 does
- * (class-wc-payments.php:674-675), and resolves the details service only when an order renders without stored details.
+ * of every order the built-in WooPayments paid. It is registered on every request once WooPayments is connected, as
+ * client 11.1.0 registers it on every request (class-wc-payments.php:674-675), and calls the details service only when
+ * an order renders without stored details.
  *
  * @since 11.2.0
  * @internal

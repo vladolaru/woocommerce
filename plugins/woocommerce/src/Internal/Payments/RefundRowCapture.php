@@ -31,8 +31,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 *
 	 * It is written at `woocommerce_create_refund` when wc_create_refund() is not asked to refund the payment, and stored by
 	 * the save that follows the hook (includes/wc-order-functions.php:672-674). Only a row with the mark is taken for the
-	 * merchant's record of an earlier refund, so a row still inside its datastore write, with no mark yet, never is
-	 * (Codex review 205 R1, monitor ruling 2026-10-10 17:40).
+	 * merchant's record of an earlier refund, so a row still inside its datastore write, with no mark yet, never is.
 	 *
 	 * @since 11.2.0
 	 */
@@ -97,8 +96,8 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 *
 	 * The refund first gets the meta its creator passed under REFUND_META_ARG. A refund that does not go through the gateway
 	 * gets MANUAL_REFUND_META, which the save that follows this hook stores, and leaves what was kept alone, so a manual
-	 * refund a callback creates inside a gateway refund's call never takes that call's row away (Codex review 204 F3). Refunds through other plugins' gateways are not kept: no refund call of the
-	 * runtime takes them (Codex review 205 R2).
+	 * refund a callback creates inside a gateway refund's call never takes that call's row away. Refunds through other
+	 * plugins' gateways are not kept: no refund call of the runtime takes them.
 	 *
 	 * @internal
 	 *
@@ -135,7 +134,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 	/**
 	 * Forget a kept refund once its wc_create_refund() call has ended: WooCommerce created it, or it was deleted.
 	 *
-	 * Its gateway call can no longer come (Codex review 205 R2, monitor ruling 2026-10-10 17:25).
+	 * Its gateway call can no longer come.
 	 *
 	 * @internal
 	 *
@@ -155,8 +154,7 @@ class RefundRowCapture implements RegisterHooksInterface {
 	/**
 	 * Forget the refund kept for a refund call that returns before the refund runs.
 	 *
-	 * For a gateway that refuses before the processing service takes the row, so no later call takes it (Codex review
-	 * 205 R2).
+	 * For a gateway that refuses before the processing service takes the row, so no later call takes it.
 	 *
 	 * @param WC_Order $order  Order being refunded.
 	 * @param float    $amount Refund amount of the call.
@@ -185,9 +183,8 @@ class RefundRowCapture implements RegisterHooksInterface {
 	 * Take the row ID of the refund kept for this refund call, once.
 	 *
 	 * The call's refund is the innermost kept one that is a saved refund of this order on this site, for this call's
-	 * amount (Codex review 205 R2, monitor ruling 2026-10-10 17:25); the others stay kept for their own calls. Amounts
-	 * compare at the rounding precision, not the display one, so two amounts that only display the same never match
-	 * (Codex review 204 F4).
+	 * amount; the others stay kept for their own calls. Amounts compare at the rounding precision, not the display one, so
+	 * two amounts that only display the same never match.
 	 *
 	 * @param WC_Order $order  Order being refunded.
 	 * @param float    $amount Refund amount of the call.

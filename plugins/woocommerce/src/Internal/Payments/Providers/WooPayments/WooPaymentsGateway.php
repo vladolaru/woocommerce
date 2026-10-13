@@ -2596,7 +2596,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * Client 11.1.0 `gw:1283-1304`: the order keeps its status, gets a diagnostic note and a warning
 	 * log, and checkout returns success so a shopper who was already charged does not pay again.
-	 * The warning is not behind the debug-log setting, like the gateway's other error logs.
+	 * The warning is written whatever the logging setting, so support sees every failure suppressed
+	 * on an order that was charged.
 	 *
 	 * @param WC_Order $order   Order being paid.
 	 * @param string   $message Error message of the failure.

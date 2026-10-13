@@ -51,8 +51,8 @@ class WooPaymentsCapturedEventNote {
 	/**
 	 * Generate the HTML note.
 	 *
-	 * @return string Empty when the event has neither a renderable envelope nor fee rates; client 11.1.0 stops with a
-	 *                TypeError then and adds no note (class-wc-payments-captured-event-note.php:551-554).
+	 * @return string Empty when the event has no renderable envelope and lacks fee rates or transaction details; client
+	 *                11.1.0 stops with a TypeError then and adds no note (class-wc-payments-captured-event-note.php:551-554).
 	 */
 	public function generate_html_note(): string {
 		if ( ! empty( $this->captured_event['fee_breakdown_v1'] )

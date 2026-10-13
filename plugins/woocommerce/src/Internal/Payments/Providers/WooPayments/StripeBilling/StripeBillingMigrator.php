@@ -27,9 +27,9 @@ defined( 'ABSPATH' ) || exit;
  * Client 11.1.0 does the same in `includes/subscriptions/class-wc-payments-subscriptions-migrator.php`, with the same
  * Action Scheduler hooks, options and meta keys, so a migration the WooPayments extension started finishes here, and
  * the other way round.
- * WooCommerce Subscriptions' background repairer schedules and pages the work. The module builds the one instance with `new`
- * only when that class exists; it is never resolved from the container, which would call `init()`, the repairer's hook
- * registration, on every resolve.
+ * WooCommerce Subscriptions' background repairer schedules and pages the work. The module builds the one instance with `new`,
+ * only when that class exists: resolving it from the container would call `init()`, the repairer's hook registration, at
+ * the first resolve instead of from `init_hooks()`.
  *
  * @since 11.2.0
  * @internal
@@ -52,7 +52,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	public const MIGRATION_BATCH_OPTION = 'wcpay_subscription_migration_batch';
 
 	/**
-	 * Stripe subscription statuses that are cancelled at Stripe.
+	 * Stripe subscription statuses that can still bill; the migration cancels a subscription in one of them at Stripe.
 	 */
 	private const ACTIVE_STATUSES = array( 'active', 'past_due', 'trialing', 'paused' );
 
