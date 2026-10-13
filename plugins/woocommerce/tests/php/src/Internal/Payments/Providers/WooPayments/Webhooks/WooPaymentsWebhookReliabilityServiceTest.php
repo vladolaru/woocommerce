@@ -217,7 +217,11 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fetch_keeps_only_event_entries_and_follows_has_more(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service(
+		// The page envelope client 11.1.0 reads (`includes/class-wc-payments-webhook-reliability-service.php:100-121`):
+		// it stores each entry with an `id` and schedules it by that ID, skips one without, and fetches again on
+		// `has_more`. The event is reduced to its ID because the ingestor is stubbed and nothing reads the rest;
+		// `not-an-event` is deliberately malformed input.
+		$service = $this->create_service(
 			$scheduler,
 			new StaticFailedEventsApiClient(
 				array(

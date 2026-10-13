@@ -20,6 +20,10 @@ class StaticFailedEventsApiClient extends WooPaymentsApiClient {
 	/**
 	 * Constructor.
 	 *
+	 * The default is an empty page in the envelope client 11.1.0 reads
+	 * (`includes/class-wc-payments-webhook-reliability-service.php:100-121`): `data` holds the failed events,
+	 * `has_more` asks for the next page.
+	 *
 	 * @param array<string,mixed> $response Failed-events response.
 	 */
 	public function __construct(
