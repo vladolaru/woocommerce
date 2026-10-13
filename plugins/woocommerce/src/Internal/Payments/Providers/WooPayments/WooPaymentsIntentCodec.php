@@ -283,7 +283,7 @@ class WooPaymentsIntentCodec {
 	 * @param WooPaymentsApiException $exception  Platform error.
 	 * @return array<string,int|string> minimum_amount and minimum_amount_currency, or empty for any other error.
 	 */
-	private static function amount_too_small_details( string $error_code, WooPaymentsApiException $exception ): array {
+	public static function amount_too_small_details( string $error_code, WooPaymentsApiException $exception ): array {
 		$error_data = $exception->get_error_data();
 		if ( 'amount_too_small' !== $error_code || ! isset( $error_data['minimum_amount'], $error_data['currency'] ) || ! is_numeric( $error_data['minimum_amount'] ) || ! is_string( $error_data['currency'] ) ) {
 			return array();
@@ -292,6 +292,29 @@ class WooPaymentsIntentCodec {
 		return array(
 			'minimum_amount'          => (int) $error_data['minimum_amount'],
 			'minimum_amount_currency' => strtoupper( $error_data['currency'] ),
+		);
+	}
+
+	/**
+	 * Add the minimum amount to a capture failure message, as client 11.1.0 does for amount_too_small
+	 * (class-wc-payment-gateway-wcpay.php:3998-4011).
+	 *
+	 * @param string              $message       Capture failure message.
+	 * @param array<string,mixed> $extra_details The failure's amount_too_small_details(), empty for any other error.
+	 * @return string
+	 */
+	public static function with_minimum_capture_amount( string $message, array $extra_details ): string {
+		if ( ! isset( $extra_details['minimum_amount'], $extra_details['minimum_amount_currency'] ) ) {
+			return $message;
+		}
+
+		return $message . ' ' . sprintf(
+			/* translators: %s: formatted minimum amount with currency. */
+			__( 'The minimum amount to capture is %s.', 'woocommerce' ),
+			WooPaymentsCurrencyUtils::format_explicit_currency(
+				WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $extra_details['minimum_amount'], (string) $extra_details['minimum_amount_currency'] ),
+				(string) $extra_details['minimum_amount_currency']
+			)
 		);
 	}
 

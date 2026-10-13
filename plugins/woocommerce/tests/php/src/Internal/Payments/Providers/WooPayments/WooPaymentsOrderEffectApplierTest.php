@@ -1574,7 +1574,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $result->get_data(), 'The note is known by its text, so a failure with another message gets its own note.' );
 		$this->assertNotEmpty( $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] );
 		foreach ( $result->get_data()[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] as $note_equivalent ) {
 			$this->assertStringEndsWith( ' Provider diagnostic.', $note_equivalent );
@@ -1674,7 +1674,8 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$plan
 		);
 
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $result->get_data()[ PaymentOutcome::DATA_NOTE_TYPE ], 'Expiry must be declared at the re-fetch site, never inferred from a capture result status.' );
+		$this->assertSame( array( '_intention_status' => 'requires_capture' ), $result->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], 'Expiry must be declared at the re-fetch site, never inferred from a capture result status.' );
+		$this->assertStringStartsWith( 'A capture of ', $result->get_data()[ PaymentOutcome::DATA_NOTE ] );
 	}
 
 	/**
@@ -1796,7 +1797,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( '_intention_status' => 'succeeded' ), $data[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ], 'The status the provider still reports must be recorded, as the plugin does.' );
 		// Client 11.1.0 class-wc-payment-gateway-wcpay.php:4109.
 		$this->assertSame( 'Canceling authorization <strong>failed</strong> to complete with the following message: <code>Cancellation rejected.</code>.', $data[ PaymentOutcome::DATA_NOTE ] );
-		$this->assertSame( PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED, $data[ PaymentOutcome::DATA_NOTE_TYPE ] );
+		$this->assertArrayNotHasKey( PaymentOutcome::DATA_NOTE_TYPE, $data, 'The note is known by its text, as for a failed capture.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_META_TO_DELETE, $data );
 		$this->assertSame( '1.25', $order->get_meta( '_wcpay_transaction_fee', true ) );
 	}

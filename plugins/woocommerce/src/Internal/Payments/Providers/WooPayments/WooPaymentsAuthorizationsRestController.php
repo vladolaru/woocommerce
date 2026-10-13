@@ -592,16 +592,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		$error_type    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : null;
 		$http_code     = isset( $data['http_code'] ) ? (int) $data['http_code'] : 0;
 		$extra_details = isset( $data['extra_details'] ) && is_array( $data['extra_details'] ) ? $data['extra_details'] : array();
-		if ( isset( $extra_details['minimum_amount'], $extra_details['minimum_amount_currency'] ) ) {
-			$message .= ' ' . sprintf(
-				/* translators: %s: formatted minimum amount with currency. */
-				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
-				WooPaymentsCurrencyUtils::format_explicit_currency(
-					WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $extra_details['minimum_amount'], (string) $extra_details['minimum_amount_currency'] ),
-					(string) $extra_details['minimum_amount_currency']
-				)
-			);
-		}
+		$message       = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, $extra_details );
 
 		return new WP_Error(
 			'wcpay_capture_error',

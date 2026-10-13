@@ -1332,20 +1332,10 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_capture_failure_note_message( WooPaymentsApiException $exception ): string {
-		$message    = $exception->getMessage();
-		$error_data = $exception->get_error_data();
-		if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
-			$message .= ' ' . sprintf(
-				/* translators: %s: formatted minimum amount with currency. */
-				__( 'The minimum amount to capture is %s.', 'woocommerce' ),
-				WooPaymentsCurrencyUtils::format_explicit_currency(
-					WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $error_data['minimum_amount'], (string) $error_data['currency'] ),
-					(string) $error_data['currency']
-				)
-			);
-		}
-
-		return $message;
+		return WooPaymentsIntentCodec::with_minimum_capture_amount(
+			$exception->getMessage(),
+			WooPaymentsIntentCodec::amount_too_small_details( $exception->get_error_code(), $exception )
+		);
 	}
 
 	/**

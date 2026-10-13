@@ -3637,6 +3637,188 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A failed capture of a payment held for review marks the fraud box review_failed, as client 11.1.0 does.
+	 *
+	 * The merchant approves a held-for-review payment and the platform refuses the capture; the re-fetched intent still
+	 * requires capture. Client 11.1.0 mark_payment_capture_failed() sets the fraud meta box type to review_failed when the
+	 * order's fraud outcome is review (includes/class-wc-payments-order-service.php:502-504). The refusal is Stripe's decline
+	 * as the platform passes it on (parsed by includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871).
+	 */
+	public function test_failed_capture_of_a_payment_held_for_review_marks_the_fraud_box_review_failed(): void {
+		$order = $this->create_authorized_order_for_failed_operations();
+		$order->update_meta_data( '_wcpay_fraud_outcome_status', 'review' );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'review' );
+		$order->save();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array( $this->declined_capture_response( 'Your card was declined.' ), $this->still_capturable_intent_response() );
+
+		$outcome = $this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->timeout_transport_provider( $http_client ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( 'review_failed', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 'on-hold', $order->get_status() );
+	}
+
+	/**
+	 * @testdox A capture refused as below the platform minimum notes the minimum amount after the platform message, as client 11.1.0 does.
+	 *
+	 * The merchant removes items from an authorized order until its total is below the minimum and clicks Capture charge.
+	 * Client 11.1.0 appends "The minimum amount to capture is %s." to the message it notes
+	 * (includes/class-wc-payment-gateway-wcpay.php:3998-4011, :4051). The refusal is HAND-BUILT in the platform's top-level
+	 * amount_too_small shape that client 11.1.0 reads (includes/wc-payment-api/class-wc-payments-api-client.php:2845-2851).
+	 */
+	public function test_capture_refused_below_the_minimum_notes_the_minimum_amount(): void {
+		$order                  = $this->create_authorized_order_for_failed_operations();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = array(
+			$this->json_transport_response(
+				400,
+				array(
+					'code'    => 'amount_too_small',
+					'message' => 'Amount must be at least $0.50 usd',
+					'data'    => array(
+						'status'         => 400,
+						'minimum_amount' => 50,
+						'currency'       => 'usd',
+					),
+				)
+			),
+			$this->still_capturable_intent_response(),
+		);
+
+		$this->sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->timeout_transport_provider( $http_client ) );
+
+		$notes = self::failure_note_texts( $order );
+		$this->assertCount( 1, $notes );
+		$this->assertStringEndsWith( 'Amount must be at least $0.50 usd The minimum amount to capture is $0.50 USD.', $notes[0] );
+	}
+
+	/**
+	 * @testdox Each distinct capture or cancel failure on the same authorization gets its own note, and a repeated one is noted once.
+	 *
+	 * The merchant clicks Capture charge, which fails, tries again and it fails with another message, tries a third time
+	 * with the second message again, then clicks Cancel authorization, which fails too. Client 11.1.0 skips a capture
+	 * failure note only when the order has one with the same text (includes/class-wc-payments-order-service.php:496-500)
+	 * and adds every cancel failure note (includes/class-wc-payment-gateway-wcpay.php:4104-4127); two identical cancel
+	 * failures would get one note here. The refusals are Stripe errors as the platform passes them on
+	 * (https://docs.stripe.com/error-codes#lock-timeout).
+	 */
+	public function test_each_distinct_capture_or_cancel_failure_is_noted(): void {
+		$order                  = $this->create_authorized_order_for_failed_operations();
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$lock_timeout           = $this->json_transport_response(
+			429,
+			array(
+				'error' => array(
+					'type'    => 'invalid_request_error',
+					'code'    => 'lock_timeout',
+					'message' => 'This object cannot be accessed right now because another API request or Stripe process is currently accessing it.',
+				),
+			)
+		);
+		$http_client->responses = array(
+			$this->declined_capture_response( 'Your card was declined.' ),
+			$this->still_capturable_intent_response(),
+			$lock_timeout,
+			$this->still_capturable_intent_response(),
+			$lock_timeout,
+			$this->still_capturable_intent_response(),
+			$lock_timeout,
+			$this->still_capturable_intent_response(),
+		);
+		$provider               = $this->timeout_transport_provider( $http_client );
+
+		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
+			$this->sut->capture( PaymentOperationContext::for_capture( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+		}
+		$this->sut->cancel( PaymentOperationContext::for_cancel( wc_get_order( $order->get_id() ), WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $provider );
+
+		$this->assertCount( 8, $http_client->requests, 'Every attempt reaches the platform.' );
+		$notes  = self::failure_note_texts( $order );
+		$listed = implode( PHP_EOL, $notes );
+		$this->assertCount( 3, $notes, $listed );
+		$this->assertCount( 1, preg_grep( '/^A capture of .* Your card was declined\.$/', $notes ), $listed );
+		$this->assertCount( 1, preg_grep( '/^A capture of .* currently accessing it\.$/', $notes ), $listed );
+		$this->assertCount( 1, preg_grep( '/^Canceling authorization failed to complete with the following message: Error: This object cannot be accessed/', $notes ), $listed );
+	}
+
+	/**
+	 * Create an on-hold order whose WooPayments authorization still requires capture.
+	 *
+	 * @return WC_Order
+	 */
+	private function create_authorized_order_for_failed_operations(): WC_Order {
+		$order = $this->create_woopayments_order( '0.30' );
+		$order->set_transaction_id( 'pi_auth' );
+		$order->update_meta_data( '_intent_id', 'pi_auth' );
+		$order->update_meta_data( '_intention_status', 'requires_capture' );
+		$order->save();
+		$order->update_status( 'on-hold' );
+
+		return $order;
+	}
+
+	/**
+	 * Stripe's card decline as the platform passes it on, parsed by client 11.1.0
+	 * includes/wc-payment-api/class-wc-payments-api-client.php:2852-2871 (error.code, error.message, error.type).
+	 *
+	 * @param string $message Decline message.
+	 * @return array<string,mixed>
+	 */
+	private function declined_capture_response( string $message ): array {
+		return $this->json_transport_response(
+			402,
+			array(
+				'error' => array(
+					'type'         => 'card_error',
+					'code'         => 'card_declined',
+					'decline_code' => 'generic_decline',
+					'message'      => $message,
+				),
+			)
+		);
+	}
+
+	/**
+	 * The re-fetch after a failed capture or cancel (client 11.1.0 includes/class-wc-payment-gateway-wcpay.php:4014, :4084):
+	 * the intent still requires capture; the fields are those of a PaymentIntent (https://docs.stripe.com/api/payment_intents/object).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function still_capturable_intent_response(): array {
+		return $this->json_transport_response(
+			200,
+			array(
+				'id'       => 'pi_auth',
+				'object'   => 'payment_intent',
+				'status'   => 'requires_capture',
+				'amount'   => 30,
+				'currency' => 'usd',
+			)
+		);
+	}
+
+	/**
+	 * Get the order's capture and cancel failure notes, tags stripped, oldest first.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private static function failure_note_texts( WC_Order $order ): array {
+		$texts = array();
+		foreach ( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) as $note ) {
+			$text = wp_strip_all_tags( (string) $note->content );
+			if ( false !== strpos( $text, 'failed to complete' ) ) {
+				$texts[] = $text;
+			}
+		}
+
+		return array_reverse( $texts );
+	}
+
+	/**
 	 * @testdox A $operation that releases the authorization of an order already paid leaves the order paid, with one note and one warning naming the event and the amount.
 	 *
 	 * Register row 459 (owner, N-356 item 2): the late-failure guard keeps skipping the status change on a paid order, as

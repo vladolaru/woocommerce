@@ -106,13 +106,6 @@ class PaymentLifecycleEvent {
 	public const NOTE_TYPE_CAPTURE_SUCCESS = 'capture_success';
 
 	/**
-	 * Note type: capture failure.
-	 *
-	 * @var string
-	 */
-	public const NOTE_TYPE_CAPTURE_FAILED = 'capture_failed';
-
-	/**
 	 * Note type: capture authorization canceled.
 	 *
 	 * @var string

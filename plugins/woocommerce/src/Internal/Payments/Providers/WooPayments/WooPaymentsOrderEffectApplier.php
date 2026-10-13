@@ -416,16 +416,23 @@ class WooPaymentsOrderEffectApplier {
 			return array();
 		}
 
-		$message = isset( $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
-			? (string) $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ]
+		$data    = $outcome->get_data();
+		$message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] )
+			? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ]
 			: (string) ( $result['message'] ?? '' );
-
+		// As client 11.1.0's mark_payment_capture_failed() (class-wc-payments-order-service.php:496-504): the note names the
+		// minimum for amount_too_small, a payment held for review is marked review_failed, and the note has no type, so a
+		// failure with another message gets its own note.
+		$message         = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, is_array( $data['extra_details'] ?? null ) ? $data['extra_details'] : array() );
 		$note_candidates = $this->note_service->format_capture_failed_note_candidates( $order, $intent_id, $charge_id, $message );
+		$meta            = WooPaymentsOrderEffects::failed_capture_meta();
+		if ( 'review' === (string) $order->get_meta( '_wcpay_fraud_outcome_status', true ) ) {
+			$meta['_wcpay_fraud_meta_box_type'] = 'review_failed';
+		}
 
 		return array(
-			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => WooPaymentsOrderEffects::failed_capture_meta(),
+			WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => $meta,
 			PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-			PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 			PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 		);
 	}
@@ -485,7 +492,6 @@ class WooPaymentsOrderEffectApplier {
 			return array(
 				WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY => array( '_intention_status' => $provider_status ),
 				PaymentOutcome::DATA_NOTE             => $note_candidates[0],
-				PaymentOutcome::DATA_NOTE_TYPE        => PaymentLifecycleEvent::NOTE_TYPE_CAPTURE_FAILED,
 				PaymentOutcome::DATA_NOTE_EQUIVALENTS => $note_candidates,
 			);
 		}
