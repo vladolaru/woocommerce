@@ -45,18 +45,27 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	private WooPaymentsProvider $provider;
 
 	/**
+	 * Fee details note controller.
+	 *
+	 * @var WooPaymentsFeeDetailsNoteController
+	 */
+	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter            Runtime owner arbiter.
-	 * @param PaymentProcessingService  $processing_service Shared payment processing service.
-	 * @param WooPaymentsProvider       $provider           WooPayments provider.
+	 * @param WooPaymentsRuntimeArbiter           $arbiter                     Runtime owner arbiter.
+	 * @param PaymentProcessingService            $processing_service          Shared payment processing service.
+	 * @param WooPaymentsProvider                 $provider                    WooPayments provider.
+	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
-		$this->arbiter            = $arbiter;
-		$this->processing_service = $processing_service;
-		$this->provider           = $provider;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
+		$this->arbiter                     = $arbiter;
+		$this->processing_service          = $processing_service;
+		$this->provider                    = $provider;
+		$this->fee_details_note_controller = $fee_details_note_controller;
 	}
 
 	/**
@@ -274,7 +283,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			// (class-wc-payments-order-service.php:1862-1874); a job already pending for the order is not scheduled again.
 			if ( $on_status_change && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
 				$intent_id = '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : (string) $order->get_meta( '_intent_id', true );
-				wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )->schedule( $order, $intent_id );
+				$this->fee_details_note_controller->schedule( $order, $intent_id );
 			}
 		} catch ( Throwable $exception ) {
 			unset( $exception );

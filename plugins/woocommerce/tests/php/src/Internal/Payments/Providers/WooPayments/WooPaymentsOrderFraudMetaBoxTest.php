@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderFraudMetaBox;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -497,7 +498,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	private function create_meta_box( bool $builtin_register ) {
 
 		$meta_box = new WooPaymentsOrderFraudMetaBox();
-		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ) );
+		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ), wc_get_container()->get( WooPaymentsOrderNoteService::class ) );
 
 		$this->meta_boxes[] = $meta_box;
 

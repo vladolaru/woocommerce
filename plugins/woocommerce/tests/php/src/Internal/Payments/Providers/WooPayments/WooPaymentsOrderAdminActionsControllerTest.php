@@ -10,6 +10,10 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -740,7 +744,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$arbiter,
 			$processing_service ?? $this->createMock( PaymentProcessingService::class ),
-			$provider ?? new WooPaymentsProvider()
+			$provider ?? new WooPaymentsProvider(),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $controller;
@@ -983,7 +988,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			$this->createMock( WooPaymentsSettingsService::class ),
 			$this->createMock( WooPaymentsChargeAmbiguityService::class ),
-			$this->createMock( WooPaymentsRefundAmbiguityService::class )
+			$this->createMock( WooPaymentsRefundAmbiguityService::class ),
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
 
 		$provider = new WooPaymentsProvider();
@@ -991,8 +999,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			$payment_operations,
 			$api_client,
 			$account_service,
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;

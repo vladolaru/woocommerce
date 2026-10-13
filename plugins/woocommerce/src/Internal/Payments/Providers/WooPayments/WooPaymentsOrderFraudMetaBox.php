@@ -74,19 +74,21 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	/**
 	 * Order-note service used for fraud-rule labels.
 	 *
-	 * @var WooPaymentsOrderNoteService|null
+	 * @var WooPaymentsOrderNoteService
 	 */
-	private ?WooPaymentsOrderNoteService $note_service = null;
+	private WooPaymentsOrderNoteService $note_service;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter   $arbiter      Runtime owner arbiter.
+	 * @param WooPaymentsOrderNoteService $note_service Order-note service used for fraud-rule labels.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderNoteService $note_service ): void {
+		$this->arbiter      = $arbiter;
+		$this->note_service = $note_service;
 	}
 
 	/**
@@ -392,7 +394,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 		}
 
 		$actionable  = $warning['efw_actionable'];
-		$reason      = $this->get_note_service()->get_early_fraud_warning_reason_for_display( $warning['efw_type'] );
+		$reason      = $this->note_service->get_early_fraud_warning_reason_for_display( $warning['efw_type'] );
 		$status      = $actionable ? __( 'Early fraud warning', 'woocommerce' ) : __( 'Early fraud warning resolved', 'woocommerce' );
 		$description = $actionable
 			? __( 'The card issuer flagged this payment as likely fraudulent. Refunding it now can prevent a dispute.', 'woocommerce' )
@@ -510,7 +512,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 			return;
 		}
 
-		$labels = $this->get_note_service()->get_fraud_ruleset_result_labels_for_display( $ruleset_results );
+		$labels = $this->note_service->get_fraud_ruleset_result_labels_for_display( $ruleset_results );
 		if ( array() === $labels ) {
 			return;
 		}
@@ -521,19 +523,6 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 			echo '<li>' . esc_html( $label ) . '</li>';
 		}
 		echo '</ul>';
-	}
-
-	/**
-	 * Get the shared order-note service, resolved on first use.
-	 *
-	 * @return WooPaymentsOrderNoteService
-	 */
-	private function get_note_service(): WooPaymentsOrderNoteService {
-		if ( null === $this->note_service ) {
-			$this->note_service = wc_get_container()->get( WooPaymentsOrderNoteService::class );
-		}
-
-		return $this->note_service;
 	}
 
 	/**

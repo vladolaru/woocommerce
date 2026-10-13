@@ -109,14 +109,23 @@ class WooPaymentsRefundAmbiguityService {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsApiClient $api_client WooPayments API client.
+	 * @param WooPaymentsLogger    $logger     WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsLogger $logger ): void {
 		$this->api_client = $api_client;
+		$this->logger     = $logger;
 	}
 
 	/**
@@ -767,7 +776,7 @@ class WooPaymentsRefundAmbiguityService {
 	 */
 	private function log( string $message, WC_Order $order, string $idempotency_key ): void {
 		try {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			$this->logger->log_always(
 				$message,
 				'warning',
 				array(

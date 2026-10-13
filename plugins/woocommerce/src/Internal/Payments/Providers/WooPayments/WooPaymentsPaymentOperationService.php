@@ -131,19 +131,43 @@ class WooPaymentsPaymentOperationService {
 	private WooPaymentsRefundAmbiguityService $refund_ambiguity_service;
 
 	/**
+	 * Duplicate payment prevention service.
+	 *
+	 * @var WooPaymentsDuplicatePaymentPreventionService
+	 */
+	private WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention;
+
+	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
+	 * Level 3 data service.
+	 *
+	 * @var WooPaymentsLevel3Service
+	 */
+	private WooPaymentsLevel3Service $level3_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
-	 * @param WooPaymentsCustomerService        $customer_service   Customer service.
-	 * @param WooPaymentsIntentRequestBuilder   $request_builder    Request builder.
-	 * @param WooPaymentsAccountService         $account_service    Account service.
-	 * @param WooPaymentsOrderDataService       $order_data_service Order data service.
-	 * @param WooPaymentsOrderNoteService       $note_service       Order note service.
-	 * @param WooPaymentsSettingsService        $settings_service   Settings service.
-	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service  Charge ambiguity service.
-	 * @param WooPaymentsRefundAmbiguityService $refund_ambiguity_service Refund ambiguity service.
+	 * @param WooPaymentsApiClient                         $api_client                   WooPayments API client.
+	 * @param WooPaymentsCustomerService                   $customer_service             Customer service.
+	 * @param WooPaymentsIntentRequestBuilder              $request_builder              Request builder.
+	 * @param WooPaymentsAccountService                    $account_service              Account service.
+	 * @param WooPaymentsOrderDataService                  $order_data_service           Order data service.
+	 * @param WooPaymentsOrderNoteService                  $note_service                 Order note service.
+	 * @param WooPaymentsSettingsService                   $settings_service             Settings service.
+	 * @param WooPaymentsChargeAmbiguityService            $ambiguity_service            Charge ambiguity service.
+	 * @param WooPaymentsRefundAmbiguityService            $refund_ambiguity_service     Refund ambiguity service.
+	 * @param WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention Duplicate payment prevention service.
+	 * @param WooPaymentsLogger                            $logger                       WooPayments logger.
+	 * @param WooPaymentsLevel3Service                     $level3_service               Level 3 data service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
@@ -154,7 +178,10 @@ class WooPaymentsPaymentOperationService {
 		WooPaymentsOrderNoteService $note_service,
 		WooPaymentsSettingsService $settings_service,
 		WooPaymentsChargeAmbiguityService $ambiguity_service,
-		WooPaymentsRefundAmbiguityService $refund_ambiguity_service
+		WooPaymentsRefundAmbiguityService $refund_ambiguity_service,
+		WooPaymentsDuplicatePaymentPreventionService $duplicate_payment_prevention,
+		WooPaymentsLogger $logger,
+		WooPaymentsLevel3Service $level3_service
 	): void {
 		$this->api_client         = $api_client;
 		$this->customer_service   = $customer_service;
@@ -165,7 +192,10 @@ class WooPaymentsPaymentOperationService {
 		$this->settings_service   = $settings_service;
 		$this->ambiguity_service  = $ambiguity_service;
 
-		$this->refund_ambiguity_service = $refund_ambiguity_service;
+		$this->refund_ambiguity_service     = $refund_ambiguity_service;
+		$this->duplicate_payment_prevention = $duplicate_payment_prevention;
+		$this->logger                       = $logger;
+		$this->level3_service               = $level3_service;
 	}
 
 	/**
@@ -670,7 +700,7 @@ class WooPaymentsPaymentOperationService {
 		if ( null !== $paid_intent && WooPaymentsIntentCodec::is_disputed( $paid_intent ) ) {
 			$intent_id = (string) ( $paid_intent['id'] ?? '' );
 			$this->ambiguity_service->log_earlier_payment_disputed( $order, $sent_key, $intent_id );
-			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->add_disputed_intent_note_once( $order, $intent_id, true );
+			$this->duplicate_payment_prevention->add_disputed_intent_note_once( $order, $intent_id, true );
 
 			return $this->earlier_payment_disputed_outcome();
 		}
@@ -707,7 +737,7 @@ class WooPaymentsPaymentOperationService {
 	 * @return PaymentOutcome
 	 */
 	private function earlier_payment_outcome( WC_Order $order, array $intent, string $customer_id ): PaymentOutcome {
-		$amount_error = wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class )->get_amount_mismatch_error( $intent, $order, true );
+		$amount_error = $this->duplicate_payment_prevention->get_amount_mismatch_error( $intent, $order, true );
 		if ( $amount_error instanceof \WP_Error ) {
 			return new PaymentOutcome(
 				PaymentOutcome::STATUS_FAILED,
@@ -864,7 +894,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param string   $idempotency_key Kept charge key that was refused.
 	 */
 	private function log_unresolved_charge_key_refused( WC_Order $order, string $idempotency_key ): void {
-		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+		$this->logger->log_always(
 			sprintf(
 				'The charge idempotency key %1$s kept on order #%2$d was refused because the new payment request differs from the earlier one. The order has no record of an ambiguous failure under this key, the record names no customer to look up, or the payment is a scheduled renewal, so nothing looks up what the earlier request did: the key is retired and the next payment attempt for this order charges under a fresh key, with no protection against a charge the earlier request may have made.',
 				$idempotency_key,
@@ -1574,6 +1604,6 @@ class WooPaymentsPaymentOperationService {
 			return array();
 		}
 
-		return wc_get_container()->get( WooPaymentsLevel3Service::class )->get_data_from_order( $order );
+		return $this->level3_service->get_data_from_order( $order );
 	}
 }

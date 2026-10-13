@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
@@ -764,6 +765,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 				return false;
 			}
 		};
+		$notes->init( wc_get_container()->get( OrderPaymentNotes::class ), wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ) );
 		$store->init( new TransientRowLock() );
 		$handler = $this->create_handler( $store, $vocabulary, $notes );
 
@@ -962,7 +964,7 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_seeded_woopayments_extension_catalog_note_deduplicates_during_cutover(): void {
 		$order           = $this->create_woopayments_order();
-		$note_service    = new WooPaymentsOrderNoteService();
+		$note_service    = wc_get_container()->get( WooPaymentsOrderNoteService::class );
 		$transaction_url = $note_service->transaction_url( '', 'ch_early_warning' );
 		$client_note     = 'Payment has received an early fraud warning with reason &quot;Made with stolen card&quot;. <a href="' . $transaction_url . '" class="wcpay-efw-refund-link" target="_blank" rel="noopener noreferrer">Refunding the payment now</a> can prevent a dispute. See <a href="' . $transaction_url . '" target="_blank" rel="noopener noreferrer">payment details</a> for more information.';
 		$order->add_order_note( $client_note );

@@ -1933,7 +1933,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$token_service,
 			$order_data_service,
 			$account_service,
-			$note_service ?? new WooPaymentsOrderNoteService(),
+			$note_service ?? wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);

@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -6269,7 +6270,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService::class )
 		);
 		$provider = new WooPaymentsProvider();
-		$provider->init( $payment_operations, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), null, $applier );
+		$provider->init( $payment_operations, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ), new WooPaymentsPaymentMethodRegistry(), $applier, wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ) );
 
 		return $provider;
 	}

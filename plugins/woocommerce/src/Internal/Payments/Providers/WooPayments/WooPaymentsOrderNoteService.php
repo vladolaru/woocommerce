@@ -29,6 +29,33 @@ class WooPaymentsOrderNoteService {
 	private const FROD_UNSUPPORTED_COUNTRIES = array( 'HK', 'SG', 'AE' );
 
 	/**
+	 * The payments runtime's order note finder.
+	 *
+	 * @var OrderPaymentNotes
+	 */
+	private OrderPaymentNotes $order_payment_notes;
+
+	/**
+	 * WooPayments persistence vocabulary, which names the note identity key.
+	 *
+	 * @var WooPaymentsPersistenceVocabulary
+	 */
+	private WooPaymentsPersistenceVocabulary $vocabulary;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param OrderPaymentNotes                $order_payment_notes The payments runtime's order note finder.
+	 * @param WooPaymentsPersistenceVocabulary $vocabulary          WooPayments persistence vocabulary.
+	 */
+	final public function init( OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary ): void {
+		$this->order_payment_notes = $order_payment_notes;
+		$this->vocabulary          = $vocabulary;
+	}
+
+	/**
 	 * Build the payment-success note in each wording that counts as the same note.
 	 *
 	 * @param WC_Order $order                  Order object.
@@ -1606,12 +1633,11 @@ class WooPaymentsOrderNoteService {
 			return 0;
 		}
 
-		$order_payment_notes = $this->get_order_payment_notes();
-		$note_id             = $order_payment_notes->find_by_identity( $order, $identity, $this->get_persistence_vocabulary() );
+		$note_id = $this->order_payment_notes->find_by_identity( $order, $identity, $this->vocabulary );
 
 		return 0 < $note_id
 			? $note_id
-			: $order_payment_notes->find_by_content( $order, $note, array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate ) );
+			: $this->order_payment_notes->find_by_content( $order, $note, array_filter( $equivalent_notes, static fn( string $candidate ): bool => '' !== $candidate ) );
 	}
 
 	/**
@@ -1625,7 +1651,7 @@ class WooPaymentsOrderNoteService {
 	 * @since 11.2.0
 	 */
 	public function record_note_identity( int $note_id, string $identity ): void {
-		$this->get_order_payment_notes()->record_identity( $note_id, $identity, $this->get_persistence_vocabulary() );
+		$this->order_payment_notes->record_identity( $note_id, $identity, $this->vocabulary );
 	}
 
 	/**
@@ -1656,25 +1682,7 @@ class WooPaymentsOrderNoteService {
 			$before_add();
 		}
 
-		return 0 < $this->get_order_payment_notes()->add( $order, $note, $identity, $this->get_persistence_vocabulary() );
-	}
-
-	/**
-	 * Get the payments runtime's order note finder.
-	 *
-	 * @return OrderPaymentNotes
-	 */
-	private function get_order_payment_notes(): OrderPaymentNotes {
-		return wc_get_container()->get( OrderPaymentNotes::class );
-	}
-
-	/**
-	 * Get the WooPayments persistence vocabulary, which names the note identity key.
-	 *
-	 * @return WooPaymentsPersistenceVocabulary
-	 */
-	private function get_persistence_vocabulary(): WooPaymentsPersistenceVocabulary {
-		return wc_get_container()->get( WooPaymentsPersistenceVocabulary::class );
+		return 0 < $this->order_payment_notes->add( $order, $note, $identity, $this->vocabulary );
 	}
 
 	/**

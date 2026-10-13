@@ -148,7 +148,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			$token_service,
 			new WooPaymentsOrderDataService(),
 			$account_service,
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);

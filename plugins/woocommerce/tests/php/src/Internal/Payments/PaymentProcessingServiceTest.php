@@ -10,7 +10,11 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcomeApplyException;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -4506,7 +4510,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$token_service,
 			new WooPaymentsOrderDataService(),
 			$account_service,
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
@@ -4544,9 +4548,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_free_trial' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
-		$ambiguity_service->init( $api_client );
+		$ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
-		$refund_ambiguity_service->init( $api_client );
+		$refund_ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$payment_operations = new WooPaymentsPaymentOperationService();
 		$payment_operations->init(
 			$api_client,
@@ -4554,18 +4558,22 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
 			$account_service,
 			new WooPaymentsOrderDataService(),
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
-			$refund_ambiguity_service
+			$refund_ambiguity_service,
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
 			$payment_operations,
 			$api_client,
 			$account_service,
-			null,
-			$effect_applier
+			new WooPaymentsPaymentMethodRegistry(),
+			$effect_applier,
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;
@@ -4639,8 +4647,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$payment_operations,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( WooPaymentsAccountService::class ),
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;
@@ -4714,9 +4723,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_ambiguous' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
-		$ambiguity_service->init( $api_client );
+		$ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
-		$refund_ambiguity_service->init( $api_client );
+		$refund_ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$payment_operations = new WooPaymentsPaymentOperationService();
 		$payment_operations->init(
 			$api_client,
@@ -4724,18 +4733,22 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
 			$account_service,
 			new WooPaymentsOrderDataService(),
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
-			$refund_ambiguity_service
+			$refund_ambiguity_service,
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
 			$payment_operations,
 			$api_client,
 			$account_service,
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;
@@ -4772,9 +4785,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_timeout' );
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();
-		$ambiguity_service->init( $api_client );
+		$ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$refund_ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRefundAmbiguityService();
-		$refund_ambiguity_service->init( $api_client );
+		$refund_ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$payment_operations = new WooPaymentsPaymentOperationService();
 		$payment_operations->init(
 			$api_client,
@@ -4782,18 +4795,22 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::class ),
 			$account_service,
 			new WooPaymentsOrderDataService(),
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService::class ),
 			$ambiguity_service,
-			$refund_ambiguity_service
+			$refund_ambiguity_service,
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
 		$provider = new WooPaymentsProvider();
 		$provider->init(
 			$payment_operations,
 			$api_client,
 			$account_service,
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;
@@ -4886,8 +4903,9 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$payment_operations,
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient::class ),
 			wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService::class ),
-			null,
-			wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;

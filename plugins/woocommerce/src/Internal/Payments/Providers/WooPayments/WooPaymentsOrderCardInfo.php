@@ -41,14 +41,23 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
+	 * Payment method details service.
+	 *
+	 * @var WooPaymentsPaymentMethodDetailsService
+	 */
+	private WooPaymentsPaymentMethodDetailsService $payment_method_details_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
+	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
+	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodDetailsService $payment_method_details_service ): void {
+		$this->arbiter                        = $arbiter;
+		$this->payment_method_details_service = $payment_method_details_service;
 	}
 
 	/**
@@ -90,7 +99,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 			// class, code and platform status instead of its message. A failure answers with empty card fields, so that
 			// fallback does not fetch a second time.
 			try {
-				$details = wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class )->fetch_payment_method_details( $payment_method_id );
+				$details = $this->payment_method_details_service->fetch_payment_method_details( $payment_method_id );
 			} catch ( Throwable $exception ) {
 				self::log_fetch_failure( $order, $payment_method_id, $exception );
 				$details = array();

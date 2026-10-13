@@ -2239,7 +2239,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$token_service ?? $this->createMock( WooPaymentsTokenService::class ),
 			$customer_service ?? $this->createMock( WooPaymentsCustomerService::class ),
 			$lifecycle_service ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderNoteService()
+			wc_get_container()->get( WooPaymentsOrderNoteService::class )
 		);
 
 		return $controller;
@@ -2300,7 +2300,7 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 			$token_service,
 			new WooPaymentsOrderDataService(),
 			$account_service,
-			new WooPaymentsOrderNoteService(),
+			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);

@@ -9,7 +9,9 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentCodec;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOutcomeMetadataMapper;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
@@ -7931,7 +7933,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$provider->before_refund = $before_refund;
-		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, null, wc_get_container()->get( WooPaymentsOrderEffectApplier::class ) );
+		$provider->init( $this->create_operation_service( $api_client, null, null, $account_service ), $api_client, $account_service, new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsOrderEffectApplier::class ), wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ) );
 
 		return $provider;
 	}
@@ -8792,8 +8794,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$payment_operations,
 			$api_client,
 			$account_service,
-			null,
-			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class )
+			new WooPaymentsPaymentMethodRegistry(),
+			$order_effect_applier ?? wc_get_container()->get( WooPaymentsOrderEffectApplier::class ),
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
 		);
 
 		return $provider;
@@ -9952,9 +9955,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$ambiguity_service = new WooPaymentsChargeAmbiguityService();
-		$ambiguity_service->init( $api_client );
+		$ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$refund_ambiguity_service = new WooPaymentsRefundAmbiguityService();
-		$refund_ambiguity_service->init( $api_client );
+		$refund_ambiguity_service->init( $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		$sut = new WooPaymentsPaymentOperationService();
 		$sut->init(
@@ -9966,7 +9969,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			$settings_service,
 			$ambiguity_service,
-			$refund_ambiguity_service
+			$refund_ambiguity_service,
+			wc_get_container()->get( WooPaymentsDuplicatePaymentPreventionService::class ),
+			wc_get_container()->get( WooPaymentsLogger::class ),
+			wc_get_container()->get( WooPaymentsLevel3Service::class )
 		);
 
 		return $sut;

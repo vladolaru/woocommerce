@@ -257,7 +257,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 */
 	public function test_card_info_provider_registers_nothing_when_the_extension_owns_the_runtime(): void {
 		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticWooPaymentsRuntimeArbiter( false ) );
+		$card_info->init( new StaticWooPaymentsRuntimeArbiter( false ), wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class ) );
 
 		$card_info->register();
 
@@ -319,10 +319,10 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
 		$service = new WooPaymentsPaymentMethodDetailsService();
 		$service->init( $legacy_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
-		// The card info provider and the PaymentInfo fallback both ask the container's service.
+		// The PaymentInfo fallback asks the container's service.
 		wc_get_container()->replace( WooPaymentsPaymentMethodDetailsService::class, $service );
 		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$card_info->init( new StaticWooPaymentsRuntimeArbiter( true ), $service );
 		$card_info->register();
 	}
 

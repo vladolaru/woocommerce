@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventOrderResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -890,6 +891,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 		$recorder   = new WooPaymentsOtherChargeRecorder();
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$handler    = new WooPaymentsRefundEventHandler();
+		$notes->init( wc_get_container()->get( OrderPaymentNotes::class ), wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ) );
 		$recorder->init( $notes );
 		$handler->init( wc_get_container()->get( OrderPaymentLock::class ), $vocabulary, wc_get_container()->get( WooPaymentsEventOrderResolver::class ), $recorder, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$charge                   = $this->get_successful_refund_charge();
