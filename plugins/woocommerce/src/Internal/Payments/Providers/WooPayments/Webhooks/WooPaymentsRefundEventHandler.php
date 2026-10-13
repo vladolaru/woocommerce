@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
@@ -28,6 +29,11 @@ use Throwable;
 /**
  * Applies WooPayments refund events to their orders: the local refund, its note and the refund status; an event on a
  * charge that is not the order's payment is recorded instead.
+ *
+ * An event with a field missing or malformed, a refund amount that is not valid or a refund update status other than
+ * failed, canceled or succeeded is refused (InvalidArgumentException): the webhook answers 400 and the event is not
+ * retried, as client 11.1.0 refuses it (class-wc-payments-webhook-processing-service.php:361, :933-944, :1132). A charge
+ * no order holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111).
  *
  * @since 11.0.0
  * @internal
@@ -134,7 +140,7 @@ class WooPaymentsRefundEventHandler {
 	 * links, write the note and metadata only when its created note is missing.
 	 *
 	 * @param array<string,mixed> $charge Charge object.
-	 * @throws RuntimeException When the refund event cannot be processed safely.
+	 * @throws InvalidArgumentException When the event is malformed or its refund amount is not valid.
 	 */
 	private function process_charge_refunded( array $charge ): void {
 		if ( 'succeeded' !== $this->get_required_string( $charge, 'status' ) ) {
@@ -166,7 +172,7 @@ class WooPaymentsRefundEventHandler {
 		}
 
 		if ( $charge_amount < 0 || $refund_amount < 0 ) {
-			throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 		}
 
 		$lock_token = $this->claim_refund_lock( $order, $refund_id );
@@ -202,7 +208,7 @@ class WooPaymentsRefundEventHandler {
 			}
 
 			if ( $refunded_amount > (float) $order->get_total() ) {
-				throw new RuntimeException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
+				throw new InvalidArgumentException( esc_html( sprintf( 'The refund amount is not valid for charge ID: %s', $charge_id ) ) );
 			}
 
 			$wc_refund = $this->create_local_refund(
@@ -223,7 +229,7 @@ class WooPaymentsRefundEventHandler {
 	 * Process a charge.refund.updated event.
 	 *
 	 * @param array<string,mixed> $refund Refund object.
-	 * @throws RuntimeException When the refund update cannot be processed safely.
+	 * @throws InvalidArgumentException When the event is malformed or its status is not failed, canceled or succeeded.
 	 */
 	private function process_refund_updated( array $refund ): void {
 		$charge_id      = $this->get_required_string( $refund, 'charge' );
@@ -280,7 +286,7 @@ class WooPaymentsRefundEventHandler {
 				return;
 		}
 
-		throw new RuntimeException( esc_html( sprintf( 'Invalid refund update status: %s', $status ) ) );
+		throw new InvalidArgumentException( esc_html( sprintf( 'Invalid refund update status: %s', $status ) ) );
 	}
 
 	/**
@@ -492,7 +498,7 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @return array<string,mixed>
-	 * @throws RuntimeException When the charge payload does not include refund data.
+	 * @throws InvalidArgumentException When the charge payload does not include refund data.
 	 */
 	private function get_latest_refund( array $charge ): array {
 		$refunds = $this->get_required_array( $charge, 'refunds' );
@@ -500,7 +506,7 @@ class WooPaymentsRefundEventHandler {
 		$refund  = $data[0] ?? null;
 
 		if ( ! is_array( $refund ) ) {
-			throw new RuntimeException( 'WooPayments refund event is missing refund data.' );
+			throw new InvalidArgumentException( 'WooPayments refund event is missing refund data.' );
 		}
 
 		return $refund;
@@ -701,17 +707,17 @@ class WooPaymentsRefundEventHandler {
 	 * @param array<string,mixed> $data Data array.
 	 * @param string              $key  Field key.
 	 * @return string
-	 * @throws RuntimeException When the field is missing or empty.
+	 * @throws InvalidArgumentException When the field is missing or empty.
 	 */
 	private function get_required_string( array $data, string $key ): string {
 		$value = $data[ $key ] ?? null;
 		if ( ! is_string( $value ) && ! is_numeric( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
 		}
 
 		$value = (string) $value;
 		if ( '' === $value ) {
-			throw new RuntimeException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
 		}
 
 		return $value;
@@ -736,12 +742,12 @@ class WooPaymentsRefundEventHandler {
 	 * @param array<string,mixed> $data Data array.
 	 * @param string              $key  Field key.
 	 * @return int
-	 * @throws RuntimeException When the field is missing or not numeric.
+	 * @throws InvalidArgumentException When the field is missing or not numeric.
 	 */
 	private function get_required_int( array $data, string $key ): int {
 		$value = $data[ $key ] ?? null;
 		if ( ! is_int( $value ) && ! ( is_string( $value ) && is_numeric( $value ) ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
 		}
 
 		return (int) $value;
@@ -753,12 +759,12 @@ class WooPaymentsRefundEventHandler {
 	 * @param array<string,mixed> $data Data array.
 	 * @param string              $key  Field key.
 	 * @return bool
-	 * @throws RuntimeException When the field is missing or not boolean.
+	 * @throws InvalidArgumentException When the field is missing or not boolean.
 	 */
 	private function get_required_bool( array $data, string $key ): bool {
 		$value = $data[ $key ] ?? null;
 		if ( ! is_bool( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
 		}
 
 		return $value;
@@ -770,12 +776,12 @@ class WooPaymentsRefundEventHandler {
 	 * @param array<string,mixed> $data Data array.
 	 * @param string              $key  Field key.
 	 * @return array<string,mixed>
-	 * @throws RuntimeException When the field is missing or not an array.
+	 * @throws InvalidArgumentException When the field is missing or not an array.
 	 */
 	private function get_required_array( array $data, string $key ): array {
 		$value = $data[ $key ] ?? null;
 		if ( ! is_array( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'WooPayments refund event is missing required field: %s', $key ) ) );
 		}
 
 		return $value;

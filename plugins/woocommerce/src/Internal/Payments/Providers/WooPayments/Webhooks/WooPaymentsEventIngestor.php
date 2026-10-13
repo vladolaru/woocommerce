@@ -499,8 +499,9 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Get a refused event's reason for its log line: " Reason: <message>", or '' when the refusal wraps a platform error.
 	 *
-	 * Every refusal (InvalidArgumentException) is thrown with a constant message, except the Stripe Billing handler's, which
-	 * passes on its module's refusal; that one can carry the platform's text, so it is logged by the platform's codes only.
+	 * Every refusal (InvalidArgumentException) is thrown with a message the store writes, naming at most a field, charge ID or
+	 * status of the event itself, except the Stripe Billing handler's, which passes on its module's refusal; that one can
+	 * carry the platform's text, so it is logged by the platform's codes only.
 	 *
 	 * @internal
 	 *

@@ -240,8 +240,8 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 			$this->event_ingestor->process( $event );
 		} catch ( \InvalidArgumentException $exception ) {
 			$this->delete_failed_event( $event_id );
-			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`. Every refusal's reason is a constant
-			// written here, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
+			// Client 11.1.0 `class-wc-payments-webhook-reliability-service.php:146-148`. Every refusal's reason is written by the
+			// store, except a Stripe Billing refusal that wraps a platform error: that one is logged by its codes instead.
 			wc_get_logger()->error(
 				sprintf( 'Failed processing event %1$s.%2$s', $event_id, WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) ),
 				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )

@@ -296,6 +296,150 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $event_type push gets the $expected_status reply, is kept for a retry only when it fails for a passing reason ($kept) and logs "$expected_log".
+	 *
+	 * Through the webhook route with the real ingestor and handlers. Client 11.1.0 refuses a malformed refund or dispute
+	 * event, a dispute whose charge no order holds, a refund amount that is not valid and an unknown refund update status
+	 * with Invalid_Webhook_Data_Exception (class-wc-payments-webhook-processing-service.php:361, :717, :933-944, :1132),
+	 * which its webhook answers with 400 and the reason logged (class-wc-rest-payments-webhook-controller.php:81-83); a
+	 * refund whose charge no order holds is answered 500 (webhook processing service :317, :1111), which the store retries.
+	 *
+	 * @dataProvider provider_refund_and_dispute_event_failures
+	 *
+	 * @param string              $event_type      Event type.
+	 * @param array<string,mixed> $event_object    Event object; charge ch_route is the order's payment.
+	 * @param int                 $expected_status Reply status.
+	 * @param bool                $kept            Whether the event is kept and one retry scheduled.
+	 * @param string              $expected_log    The one error line the push logs.
+	 */
+	public function test_refund_and_dispute_event_failures_through_the_webhook_route( string $event_type, array $event_object, int $expected_status, bool $kept, string $expected_log ): void {
+		$order = wc_create_order();
+		$order->update_meta_data( '_charge_id', 'ch_route' );
+		$order->save();
+		$logger     = new RecordingWcLogger();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ), $logger );
+		$event      = array(
+			'id'   => 'evt_route',
+			'type' => $event_type,
+			'data' => array( 'object' => $event_object ),
+		);
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( array( 'result' => 400 === $expected_status ? 'bad_request' : 'error' ), $response->get_data() );
+		$this->assertSame( $kept ? $event : null, ( new FailedEventTransients() )->get_event( 'evt_route' ) );
+		$this->assertSame(
+			$kept ? array(
+				array(
+					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => 'evt_route' ),
+				),
+			) : array(),
+			$this->scheduler->scheduled_jobs
+		);
+		$this->assertSame( array( $expected_log ), array_column( $logger->get_errors(), 1 ) );
+	}
+
+	/**
+	 * Refund and dispute events that fail, one per refusal site of the handlers, and a refund whose charge no order holds.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:int,3:bool,4:string}>
+	 */
+	public function provider_refund_and_dispute_event_failures(): array {
+		$dispute       = array(
+			'id'               => 'du_route',
+			'charge'           => 'ch_route',
+			'amount'           => 5000,
+			'reason'           => 'fraudulent',
+			'status'           => 'needs_response',
+			'evidence_details' => array( 'due_by' => 1782864000 ),
+		);
+		$refund_update = array(
+			'id'       => 're_route',
+			'charge'   => 'ch_route',
+			'amount'   => 400,
+			'currency' => 'usd',
+			'status'   => 'failed',
+		);
+		$refunded      = array(
+			'id'       => 'ch_route',
+			'status'   => 'succeeded',
+			'captured' => true,
+			'amount'   => 1000,
+			'currency' => 'usd',
+			'refunds'  => array(
+				'data' => array(
+					array(
+						'id'     => 're_route',
+						'amount' => -400,
+					),
+				),
+			),
+		);
+		$no_amount     = $refund_update;
+		unset( $no_amount['amount'] );
+
+		return array(
+			'dispute amount not a number'         => array(
+				'charge.dispute.created',
+				array_merge( $dispute, array( 'amount' => 'lots' ) ),
+				400,
+				false,
+				'Failed processing event evt_route. Reason: Expected numeric dispute webhook property: amount',
+			),
+			'dispute evidence details not a list' => array(
+				'charge.dispute.created',
+				array_merge( $dispute, array( 'evidence_details' => 'soon' ) ),
+				400,
+				false,
+				'Failed processing event evt_route. Reason: Expected array dispute webhook property: evidence_details',
+			),
+			'dispute on a charge no order holds'  => array(
+				'charge.dispute.closed',
+				array_merge(
+					$dispute,
+					array(
+						'charge' => 'ch_no_order',
+						'status' => 'won',
+					)
+				),
+				400,
+				false,
+				'Failed processing event evt_route. Reason: Could not find WooPayments order via disputed charge ID: ch_no_order',
+			),
+			'refund update without an amount'     => array(
+				'charge.refund.updated',
+				$no_amount,
+				400,
+				false,
+				'Failed processing event evt_route. Reason: WooPayments refund event is missing required field: amount',
+			),
+			'refund with a negative amount'       => array(
+				'charge.refunded',
+				$refunded,
+				400,
+				false,
+				'Failed processing event evt_route. Reason: The refund amount is not valid for charge ID: ch_route',
+			),
+			'refund update with another status'   => array(
+				'charge.refund.updated',
+				array_merge( $refund_update, array( 'status' => 'requires_action' ) ),
+				400,
+				false,
+				'Failed processing event evt_route. Reason: Invalid refund update status: requires_action',
+			),
+			'refund on a charge no order holds'   => array(
+				'charge.refund.updated',
+				array_merge( $refund_update, array( 'charge' => 'ch_no_order' ) ),
+				500,
+				true,
+				'Failed processing a WooPayments webhook event.',
+			),
+		);
+	}
+
+	/**
 	 * @testdox A dispute push refused by the order payment lock keeps its one attempt and leaves a note on its order.
 	 */
 	public function test_lock_refused_dispute_push_is_noted_on_its_order(): void {

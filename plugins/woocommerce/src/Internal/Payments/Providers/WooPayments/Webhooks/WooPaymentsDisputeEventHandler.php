@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHt
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -29,6 +30,10 @@ use WC_Order;
 /**
  * Applies WooPayments dispute events to their orders: the dispute notes, the order status and, for a lost dispute, a
  * local refund; a dispute on a charge that is not the order's payment is recorded instead.
+ *
+ * An event with a field missing or malformed, or for a charge no order holds, is refused (InvalidArgumentException):
+ * the webhook answers 400 and the event is not retried, as client 11.1.0 refuses it with Invalid_Webhook_Data_Exception
+ * (class-wc-payments-webhook-processing-service.php:717, :757, :805, :933-944). Other failures are retried.
  *
  * @since 11.0.0
  * @internal
@@ -154,13 +159,13 @@ class WooPaymentsDisputeEventHandler {
 	 *
 	 * @param string              $event_type   Event type.
 	 * @param array<string,mixed> $event_object Dispute object.
-	 * @throws RuntimeException When the disputed charge resolves to no order.
+	 * @throws InvalidArgumentException When a field is missing or malformed, or the disputed charge resolves to no order.
 	 */
 	public function process( string $event_type, array $event_object ): void {
 		$charge_id = $this->get_required_string( $event_object, 'charge' );
 		$order     = $this->event_order_resolver->find_order_by_charge_id( $charge_id );
 		if ( ! $order instanceof WC_Order ) {
-			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'Could not find WooPayments order via disputed charge ID: %s', $charge_id ) ) );
 		}
 
 		if ( 'charge.dispute.created' === $event_type ) {
@@ -672,12 +677,12 @@ class WooPaymentsDisputeEventHandler {
 	 * @param array<string,mixed> $items Items to read from.
 	 * @param string              $key   Property key.
 	 * @return string
-	 * @throws RuntimeException When the property is missing or invalid.
+	 * @throws InvalidArgumentException When the property is missing or invalid.
 	 */
 	private function get_required_string( array $items, string $key ): string {
 		$value = $this->get_required_value( $items, $key );
 		if ( ! is_scalar( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'Expected scalar dispute webhook property: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'Expected scalar dispute webhook property: %s', $key ) ) );
 		}
 
 		return (string) $value;
@@ -689,12 +694,12 @@ class WooPaymentsDisputeEventHandler {
 	 * @param array<string,mixed> $items Items to read from.
 	 * @param string              $key   Property key.
 	 * @return int
-	 * @throws RuntimeException When the property is missing or invalid.
+	 * @throws InvalidArgumentException When the property is missing or invalid.
 	 */
 	private function get_required_int( array $items, string $key ): int {
 		$value = $this->get_required_value( $items, $key );
 		if ( ! is_numeric( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'Expected numeric dispute webhook property: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'Expected numeric dispute webhook property: %s', $key ) ) );
 		}
 
 		return (int) $value;
@@ -706,12 +711,12 @@ class WooPaymentsDisputeEventHandler {
 	 * @param array<string,mixed> $items Items to read from.
 	 * @param string              $key   Property key.
 	 * @return array<string,mixed>
-	 * @throws RuntimeException When the property is missing or invalid.
+	 * @throws InvalidArgumentException When the property is missing or invalid.
 	 */
 	private function get_required_array( array $items, string $key ): array {
 		$value = $this->get_required_value( $items, $key );
 		if ( ! is_array( $value ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'Expected array dispute webhook property: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'Expected array dispute webhook property: %s', $key ) ) );
 		}
 
 		return $value;
@@ -723,11 +728,11 @@ class WooPaymentsDisputeEventHandler {
 	 * @param array<string,mixed> $items Items to read from.
 	 * @param string              $key   Property key.
 	 * @return mixed
-	 * @throws RuntimeException When the property is missing.
+	 * @throws InvalidArgumentException When the property is missing.
 	 */
 	private function get_required_value( array $items, string $key ) {
 		if ( ! isset( $items[ $key ] ) ) {
-			throw new RuntimeException( esc_html( sprintf( 'Dispute webhook property not found: %s', $key ) ) );
+			throw new InvalidArgumentException( esc_html( sprintf( 'Dispute webhook property not found: %s', $key ) ) );
 		}
 
 		return $items[ $key ];

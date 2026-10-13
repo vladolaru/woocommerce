@@ -945,28 +945,32 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $event_type event refused before any write throws a RuntimeException and leaves the order without a refund or refund status.
+	 * @testdox A $event_type event that fails before any write throws $expected_class and leaves the order without a refund or refund status.
 	 *
-	 * A RuntimeException goes through the reliability service's retry path; an InvalidArgumentException would be dropped. The
-	 * ingestor passes the event object to this handler unchanged and does not catch.
+	 * A refusal (InvalidArgumentException) is answered 400 and dropped, as client 11.1.0 refuses these events with
+	 * Invalid_Webhook_Data_Exception (class-wc-payments-webhook-processing-service.php:361, :933-944, :1132); a charge no order
+	 * holds is a failure (RuntimeException) the store retries, as client 11.1.0 answers it with 500 (same file, :317, :1111).
+	 * The ingestor passes the event object to this handler unchanged and does not catch.
 	 *
 	 * @dataProvider provider_refund_events_refused_before_any_write
 	 *
 	 * @param string   $event_type       Refund event type.
 	 * @param callable $change_event     Changes the event object built for the order.
 	 * @param string   $expected_message Fragment of the exception message.
+	 * @param string   $expected_class   Exception class the handler throws.
 	 */
-	public function test_refund_events_refused_before_any_write( string $event_type, callable $change_event, string $expected_message ): void {
+	public function test_refund_events_refused_before_any_write( string $event_type, callable $change_event, string $expected_message, string $expected_class ): void {
 		$order = $this->create_refundable_order();
 
 		$thrown = null;
 		try {
 			$this->sut->process( $event_type, $change_event( $this->get_refund_event_object( $event_type, $order ), $order ) );
-		} catch ( \RuntimeException $exception ) {
+		} catch ( \Exception $exception ) {
 			$thrown = $exception;
 		}
 
-		$this->assertInstanceOf( \RuntimeException::class, $thrown );
+		$this->assertInstanceOf( \Exception::class, $thrown );
+		$this->assertSame( $expected_class, get_class( $thrown ) );
 		$this->assertStringContainsString( $expected_message, $thrown->getMessage() );
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -975,9 +979,9 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Refund events refused before any write.
+	 * Refund events that fail before any write, and the exception each throws.
 	 *
-	 * @return array<string,array{0:string,1:callable,2:string}>
+	 * @return array<string,array{0:string,1:callable,2:string,3:string}>
 	 */
 	public function provider_refund_events_refused_before_any_write(): array {
 		$refunded = 'charge.refunded';
@@ -991,11 +995,13 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'missing required field: captured',
+				\InvalidArgumentException::class,
 			),
 			'captured malformed'                 => array(
 				$refunded,
 				static fn( array $charge ): array => array_merge( $charge, array( 'captured' => 'yes' ) ),
 				'missing required field: captured',
+				\InvalidArgumentException::class,
 			),
 			'refund above the order total'       => array(
 				$refunded,
@@ -1004,6 +1010,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'refund amount is not valid',
+				\InvalidArgumentException::class,
 			),
 			'negative refund amount'             => array(
 				$refunded,
@@ -1012,6 +1019,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'refund amount is not valid',
+				\InvalidArgumentException::class,
 			),
 			'no refund data'                     => array(
 				$refunded,
@@ -1020,6 +1028,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'missing refund data',
+				\InvalidArgumentException::class,
 			),
 			'refund ID empty'                    => array(
 				$refunded,
@@ -1028,6 +1037,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					return $charge;
 				},
 				'missing required field: id',
+				\InvalidArgumentException::class,
 			),
 			'charge no order holds, no metadata' => array(
 				$refunded,
@@ -1042,6 +1052,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					)
 				),
 				'Could not find WooPayments order via charge ID',
+				\RuntimeException::class,
 			),
 			'held charge, wrong order key'       => array(
 				$refunded,
@@ -1055,6 +1066,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					)
 				),
 				'Could not find WooPayments order via charge ID',
+				\RuntimeException::class,
 			),
 			'unheld charge, another order key'   => array(
 				$refunded,
@@ -1069,16 +1081,31 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 					)
 				),
 				'Could not find WooPayments order via charge ID: ch_second',
+				\RuntimeException::class,
 			),
 			'unknown update status'              => array(
 				$updated,
 				static fn( array $refund ): array => array_merge( $refund, array( 'status' => 'requires_action' ) ),
 				'Invalid refund update status',
+				\InvalidArgumentException::class,
 			),
 			'update status empty'                => array(
 				$updated,
 				static fn( array $refund ): array => array_merge( $refund, array( 'status' => '' ) ),
 				'missing required field: status',
+				\InvalidArgumentException::class,
+			),
+			'charge ID not a string'             => array(
+				$updated,
+				static fn( array $refund ): array => array_merge( $refund, array( 'charge' => array( 'ch_123' ) ) ),
+				'missing required field: charge',
+				\InvalidArgumentException::class,
+			),
+			'refunds not a list'                 => array(
+				$refunded,
+				static fn( array $charge ): array => array_merge( $charge, array( 'refunds' => 'none' ) ),
+				'missing required field: refunds',
+				\InvalidArgumentException::class,
 			),
 		);
 	}

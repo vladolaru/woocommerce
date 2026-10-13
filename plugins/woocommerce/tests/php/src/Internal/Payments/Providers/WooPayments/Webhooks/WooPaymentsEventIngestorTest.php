@@ -2422,11 +2422,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$exception = null;
 		try {
 			$this->sut->process( $event );
-		} catch ( RuntimeException $caught ) {
+		} catch ( InvalidArgumentException $caught ) {
 			$exception = $caught;
 		}
 
-		$this->assertInstanceOf( RuntimeException::class, $exception );
+		$this->assertInstanceOf( InvalidArgumentException::class, $exception );
 		$this->assertStringContainsString( 'Expected scalar dispute webhook property: id', $exception->getMessage() );
 
 		$order = wc_get_order( $order->get_id() );
@@ -2841,11 +2841,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$exception = null;
 		try {
 			$this->sut->process( $event );
-		} catch ( RuntimeException $caught ) {
+		} catch ( InvalidArgumentException $caught ) {
 			$exception = $caught;
 		}
 
-		$this->assertInstanceOf( RuntimeException::class, $exception, 'Expected malformed dispute closed event to fail closed.' );
+		$this->assertInstanceOf( InvalidArgumentException::class, $exception, 'Expected malformed dispute closed event to be refused.' );
 		$this->assertStringContainsString( $missing_field, $exception->getMessage() );
 
 		$order = wc_get_order( $order->get_id() );
@@ -2886,11 +2886,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$exception = null;
 		try {
 			$this->sut->process( $event );
-		} catch ( RuntimeException $caught ) {
+		} catch ( InvalidArgumentException $caught ) {
 			$exception = $caught;
 		}
 
-		$this->assertInstanceOf( RuntimeException::class, $exception, 'Expected malformed dispute created event to fail closed.' );
+		$this->assertInstanceOf( InvalidArgumentException::class, $exception, 'Expected malformed dispute created event to be refused.' );
 		$this->assertStringContainsString( $missing_key, $exception->getMessage() );
 
 		$order = wc_get_order( $order->get_id() );
@@ -2917,10 +2917,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.dispute.closed with no matching order fails closed.
+	 * @testdox charge.dispute.closed with no matching order is refused.
 	 */
 	public function test_dispute_closed_without_matching_charge_fails_closed(): void {
-		$this->expectException( RuntimeException::class );
+		$this->expectException( InvalidArgumentException::class );
 
 		$this->sut->process( $this->create_dispute_event( 'charge.dispute.closed', 'won' ) );
 	}
@@ -3510,7 +3510,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$failure = '';
 		try {
 			$this->sut->process( $this->create_refund_updated_event( array( 'status' => 'cancelled' ) ) );
-		} catch ( RuntimeException $exception ) {
+		} catch ( InvalidArgumentException $exception ) {
 			$failure = $exception->getMessage();
 		}
 
@@ -3648,11 +3648,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$exception = null;
 		try {
 			$this->sut->process( $event );
-		} catch ( RuntimeException $caught ) {
+		} catch ( InvalidArgumentException $caught ) {
 			$exception = $caught;
 		}
 
-		$this->assertInstanceOf( RuntimeException::class, $exception );
+		$this->assertInstanceOf( InvalidArgumentException::class, $exception );
 		$this->assertSame( array( array( 'before', 'charge.dispute.closed' ) ), $hook_calls );
 		foreach ( $this->get_dispute_cache_option_keys() as $key ) {
 			$this->assertSame( array( 'stale' => true ), get_option( $key, false ), "Expected dispute cache option {$key} to remain after the handler threw." );
