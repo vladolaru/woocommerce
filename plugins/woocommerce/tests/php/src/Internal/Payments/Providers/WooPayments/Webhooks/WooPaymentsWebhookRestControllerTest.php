@@ -4,7 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
@@ -32,6 +34,13 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @var RecordingActionSchedulerService
 	 */
 	private RecordingActionSchedulerService $scheduler;
+
+	/**
+	 * Reliability service the controller hands failed pushes to.
+	 *
+	 * @var WooPaymentsWebhookReliabilityService
+	 */
+	private WooPaymentsWebhookReliabilityService $reliability_service;
 
 	/**
 	 * The System Under Test.
@@ -440,7 +449,78 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dispute push refused by the order payment lock keeps its one attempt and leaves a note on its order.
+	 * @testdox A charge.dispute.created push refused while another dispute event holds the order payment lock is kept, and its retry puts the order on hold with the dispute note and the open dispute.
+	 *
+	 * The platform forwards each event of a dispute from its own job, so created and funds_withdrawn can arrive together.
+	 * Client 11.1.0 takes no lock in its dispute handlers and applies both (class-wc-payments-order-service.php:585-700).
+	 */
+	public function test_lock_refused_dispute_created_push_is_retried_and_applied(): void {
+		$order = wc_create_order();
+		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
+		$order->set_status( 'processing' );
+		$order->set_transaction_id( 'pi_lock_retry' );
+		$order->update_meta_data( '_intent_id', 'pi_lock_retry' );
+		$order->update_meta_data( '_charge_id', 'ch_lock_retry' );
+		$order->save();
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		$event      = array(
+			'id'   => 'evt_dispute_lock_retry',
+			'type' => 'charge.dispute.created',
+			'data' => array(
+				'object' => array(
+					'id'               => 'du_lock_retry',
+					'charge'           => 'ch_lock_retry',
+					'amount'           => 5000,
+					'reason'           => 'fraudulent',
+					'status'           => 'needs_response',
+					'evidence_details' => array( 'due_by' => 1782864000 ),
+				),
+			),
+		);
+		$holder     = $lock->claim( $order, $vocabulary, 'dispute_webhook_du_lock_retry', 'dispute webhook' );
+		$this->assertNotNull( $holder );
+
+		try {
+			$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+		} finally {
+			$lock->release( $order, $vocabulary, $holder );
+		}
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( $event, ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_retry' ) );
+		$this->assertSame(
+			array(
+				array(
+					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => 'evt_dispute_lock_retry' ),
+				),
+			),
+			$this->scheduler->scheduled_jobs
+		);
+		$lock_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertSame( array(), $lock_notes, 'Nothing is noted while a retry is due.' );
+
+		$this->reliability_service->process_event( 'evt_dispute_lock_retry' );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( \WC_Order::class, $order );
+		$this->assertSame( 'on-hold', $order->get_status() );
+		$this->assertSame( array( 'du_lock_retry' ), $order->get_meta( '_wcpay_open_dispute_ids', true ) );
+		$notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'Payment has been disputed' )
+		);
+		$this->assertCount( 1, $notes );
+		$this->assertNull( ( new FailedEventTransients() )->get_event( 'evt_dispute_lock_retry' ) );
+	}
+
+	/**
+	 * @testdox A charge.dispute.funds_withdrawn push refused by the order payment lock keeps its one attempt and leaves a note on its order.
 	 */
 	public function test_lock_refused_dispute_push_is_noted_on_its_order(): void {
 		$order      = wc_create_order();
@@ -450,7 +530,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->create_post_request(
 				array(
 					'id'   => 'evt_dispute_lock_controller',
-					'type' => 'charge.dispute.created',
+					'type' => 'charge.dispute.funds_withdrawn',
 				)
 			)
 		);
@@ -464,7 +544,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->create_post_request(
 				array(
 					'id'   => 'evt_dispute_lock_controller',
-					'type' => 'charge.dispute.created',
+					'type' => 'charge.dispute.funds_withdrawn',
 				)
 			)
 		);
@@ -495,7 +575,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				$this->create_post_request(
 					array(
 						'id'   => 'evt_dispute_note_failure',
-						'type' => 'charge.dispute.created',
+						'type' => 'charge.dispute.funds_withdrawn',
 					)
 				)
 			);
@@ -683,8 +763,9 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 			add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		}
 
-		$this->scheduler     = new RecordingActionSchedulerService();
-		$reliability_service = new WooPaymentsWebhookReliabilityService();
+		$this->scheduler           = new RecordingActionSchedulerService();
+		$reliability_service       = new WooPaymentsWebhookReliabilityService();
+		$this->reliability_service = $reliability_service;
 		$reliability_service->init(
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			$this->scheduler,

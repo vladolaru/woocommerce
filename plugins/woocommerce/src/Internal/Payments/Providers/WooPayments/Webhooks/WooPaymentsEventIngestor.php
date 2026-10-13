@@ -54,29 +54,22 @@ class WooPaymentsEventIngestor {
 	);
 
 	/**
-	 * Event types retried after a processing failure, whose handlers are safe to run again and to run late.
+	 * Event types retried after a processing failure or an order payment lock refusal, whose handlers are safe to run
+	 * again and to run late.
 	 *
-	 * The refund and dispute types are retried too ({@see self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES}), and invoice.paid
-	 * while the Stripe Billing module is loaded ({@see self::is_retried_event()}). Other types get one attempt: running the
-	 * fraud warning handlers again can apply an older event over a newer one.
+	 * The platform counts the store's error reply as delivered and never sends the event again, so without a retry an
+	 * update that failed once is lost. A late refund or dispute event does not undo a newer one: a created dispute
+	 * retried after its close changes nothing, a charge.refunded retried after its refund failed or was canceled records
+	 * nothing, a refund row is found by the refund or dispute ID it carries from its first save, and charge.dispute.updated
+	 * only adds a note written once. invoice.paid is retried while the Stripe Billing module is loaded
+	 * ({@see self::is_retried_event()}). Other types get one attempt: running the fraud warning handlers again can apply an
+	 * older event over a newer one.
 	 *
 	 * @var string[]
 	 */
 	private const RETRIED_EVENT_TYPES = array(
 		'payment_intent.succeeded',
 		'payment_intent.payment_failed',
-	);
-
-	/**
-	 * Refund and dispute event types retried after a processing failure, but not after a lock refusal.
-	 *
-	 * The platform counts the store's error reply as delivered and never sends the event again, so without a retry a
-	 * refund or dispute update that failed once is lost. A lock refusal keeps its one attempt and the note on the order
-	 * ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
-	 *
-	 * @var string[]
-	 */
-	private const REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES = array(
 		'charge.refunded',
 		'charge.refund.updated',
 		'charge.dispute.created',
@@ -90,9 +83,7 @@ class WooPaymentsEventIngestor {
 	 * A refusal comes before the handler writes anything, so a retry cannot duplicate a write. What remains is whether
 	 * the event is safe to apply late, after a newer event: charge.expired is terminal, and a fraud warning only
 	 * records its warning and a note, so a late one changes no status and moves no money. A late created warning can
-	 * replace a newer stored warning; that is accepted, since the warning only informs the merchant. Refund and dispute
-	 * events are not, since a late created or pending event would undo a newer close or failure; their refusal keeps
-	 * one attempt and is noted on the order.
+	 * replace a newer stored warning; that is accepted, since the warning only informs the merchant.
 	 *
 	 * @var string[]
 	 */
@@ -326,7 +317,7 @@ class WooPaymentsEventIngestor {
 			return false;
 		}
 
-		if ( in_array( $event_type, self::RETRIED_EVENT_TYPES, true ) || in_array( $event_type, self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES, true ) ) {
+		if ( in_array( $event_type, self::RETRIED_EVENT_TYPES, true ) ) {
 			return true;
 		}
 
@@ -336,8 +327,8 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Tell whether an event the order payment lock refused is processed again later.
 	 *
-	 * Events retried after any passing failure are, except refund and dispute events, and so are the types that are safe
-	 * to apply late ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
+	 * Events retried after any passing failure are, and so are the types that are safe to apply late
+	 * ({@see self::LOCK_REFUSAL_RETRIED_EVENT_TYPES}).
 	 *
 	 * @since 11.2.0
 	 *
@@ -345,10 +336,6 @@ class WooPaymentsEventIngestor {
 	 * @return bool
 	 */
 	public function is_retried_lock_refusal( array $event ): bool {
-		if ( isset( $event['type'] ) && in_array( $event['type'], self::REFUND_AND_DISPUTE_RETRIED_EVENT_TYPES, true ) ) {
-			return false;
-		}
-
 		if ( $this->is_retried_event( $event ) ) {
 			return true;
 		}

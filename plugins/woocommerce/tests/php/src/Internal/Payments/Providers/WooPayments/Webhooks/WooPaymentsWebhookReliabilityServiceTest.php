@@ -580,12 +580,12 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $event_type delivery refused by the order payment lock keeps its one attempt, since a late one could undo a newer event, and is noted on its order.
-	 * @dataProvider event_types_not_safe_to_apply_late
+	 * @testdox A $event_type delivery refused by the order payment lock through the failed-event job keeps its one attempt and is noted on its order once.
+	 * @dataProvider dispute_funds_event_types
 	 *
-	 * @param string $event_type Refund or dispute event type.
+	 * @param string $event_type Dispute funds event type, which only adds a note and is not retried.
 	 */
-	public function test_lock_refusal_of_a_refund_or_dispute_event_is_noted_and_not_retried( string $event_type ): void {
+	public function test_lock_refusal_of_a_dispute_funds_event_is_noted_and_not_retried( string $event_type ): void {
 		$order     = wc_create_order();
 		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
@@ -593,7 +593,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 			'id'   => 'evt_process',
 			'type' => $event_type,
 		);
-		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'refund webhook' );
+		$refusal   = new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' );
 		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $refusal ) );
 		$store->set_event( 'evt_process', $event );
 
@@ -616,13 +616,10 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/** @return array<string,array{string}> */
-	public static function event_types_not_safe_to_apply_late(): array {
+	public static function dispute_funds_event_types(): array {
 		return array(
-			'refund'          => array( 'charge.refunded' ),
-			'refund updated'  => array( 'charge.refund.updated' ),
-			'dispute created' => array( 'charge.dispute.created' ),
-			'dispute updated' => array( 'charge.dispute.updated' ),
-			'dispute closed'  => array( 'charge.dispute.closed' ),
+			'funds withdrawn'  => array( 'charge.dispute.funds_withdrawn' ),
+			'funds reinstated' => array( 'charge.dispute.funds_reinstated' ),
 		);
 	}
 
@@ -821,37 +818,50 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A failed $event_type delivery is kept and its retry scheduled, since the platform never sends an event the store answered with an error again.
-	 * @dataProvider refund_and_dispute_event_types
+	 * @testdox A $event_type delivery that failed ($failure) is kept and its retry scheduled, since the platform never sends an event the store answered with an error again.
+	 *
+	 * A late refund or dispute event cannot undo a newer one, so a lock refusal is retried like any passing failure, and
+	 * the order gets a note only when the retries run out.
+	 *
+	 * @dataProvider refund_and_dispute_failures
 	 *
 	 * @param string $event_type Refund or dispute event type.
+	 * @param string $failure    How the delivery failed: 'passing failure' or 'lock refusal'.
 	 */
-	public function test_failed_refund_or_dispute_delivery_is_kept_and_retried( string $event_type ): void {
+	public function test_failed_refund_or_dispute_delivery_is_kept_and_retried( string $event_type, string $failure ): void {
+		$order     = wc_create_order();
 		$store     = new FailedEventTransients();
 		$scheduler = new RecordingActionSchedulerService();
 		$event     = array(
 			'id'   => 'evt_money',
 			'type' => $event_type,
 		);
-		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( new \RuntimeException( 'transient boom' ) ) );
+		$exception = 'lock refusal' === $failure ? new OrderPaymentLockRefusedException( $order->get_id(), 'dispute webhook' ) : new \RuntimeException( 'transient boom' );
+		$service   = $this->create_service( $scheduler, new StaticFailedEventsApiClient(), new ThrowingEventIngestor( $exception ) );
 
-		$service->retry_failed_event( $event, new \RuntimeException( 'transient boom' ) );
+		$service->retry_failed_event( $event, $exception );
 
 		$this->assertSame( $event, $store->get_event( 'evt_money' ) );
 		$this->assertCount( 1, $scheduler->scheduled_jobs );
 		$this->assertSame( WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION, $scheduler->scheduled_jobs[0]['hook'] );
 		$this->assertSame( array( 'event_id' => 'evt_money' ), $scheduler->scheduled_jobs[0]['args'] );
+		$lock_notes = array_filter(
+			wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+			static fn( $note ): bool => false !== strpos( $note->content, 'kept the order locked' )
+		);
+		$this->assertSame( array(), $lock_notes, 'Nothing is noted while a retry is due.' );
 	}
 
-	/** @return array<string,array{string}> */
-	public static function refund_and_dispute_event_types(): array {
-		return array(
-			'refund'          => array( 'charge.refunded' ),
-			'refund updated'  => array( 'charge.refund.updated' ),
-			'dispute created' => array( 'charge.dispute.created' ),
-			'dispute updated' => array( 'charge.dispute.updated' ),
-			'dispute closed'  => array( 'charge.dispute.closed' ),
-		);
+	/** @return array<string,array{string,string}> */
+	public static function refund_and_dispute_failures(): array {
+		$rows = array();
+		foreach ( array( 'charge.refunded', 'charge.refund.updated', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed' ) as $event_type ) {
+			foreach ( array( 'passing failure', 'lock refusal' ) as $failure ) {
+				$rows[ "$event_type, $failure" ] = array( $event_type, $failure );
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
