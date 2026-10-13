@@ -1710,6 +1710,32 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A currency plugin can return the store currency in lowercase: core returns the woocommerce_currency filter's value as
+	 * it is (get_woocommerce_currency(), includes/wc-core-functions.php:494-495).
+	 *
+	 * @testdox Should offer Amazon Pay express for a store currency a filter returns in lowercase.
+	 */
+	public function test_amazon_pay_takes_a_lowercase_store_currency(): void {
+		$sut           = $this->create_service(
+			array(
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
+			),
+			true,
+			array( 'ece_confirmation_tokens_disabled' => false )
+		);
+		$lowercase_usd = static fn(): string => 'usd';
+		add_filter( 'woocommerce_currency', $lowercase_usd );
+
+		try {
+			$this->assertTrue( $sut->is_amazon_pay_usable( 'checkout' ) );
+			$this->assertContains( 'amazon_pay', $sut->get_enabled_methods_for_context( 'checkout' ) );
+		} finally {
+			remove_filter( 'woocommerce_currency', $lowercase_usd );
+		}
+	}
+
+	/**
 	 * @testdox Should tell Amazon Pay usable whichever locations list it, like the client's can_use_amazon_pay().
 	 */
 	public function test_is_amazon_pay_usable_ignores_location_settings(): void {

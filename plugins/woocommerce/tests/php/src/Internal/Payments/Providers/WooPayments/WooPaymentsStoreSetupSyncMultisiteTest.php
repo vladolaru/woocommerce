@@ -26,7 +26,9 @@ class WooPaymentsStoreSetupSyncMultisiteTest extends WC_Unit_Test_Case {
 		update_option( 'active_plugins', array() );
 		// The file exists in the test install, so WordPress keeps it as a valid network-active plugin.
 		update_site_option( 'active_sitewide_plugins', array( 'hello.php' => time() ) );
-		// get_plugins() answers from this cache, so the headers are the test's own.
+		// get_plugins() answers from this cache, so the headers are the test's own: WordPress keeps it as the 'plugins' entry
+		// of the 'plugins' cache group, keyed by plugin folder, '' for the plugins root (wp-admin/includes/plugin.php
+		// get_plugins()).
 		wp_cache_set(
 			'plugins',
 			array(

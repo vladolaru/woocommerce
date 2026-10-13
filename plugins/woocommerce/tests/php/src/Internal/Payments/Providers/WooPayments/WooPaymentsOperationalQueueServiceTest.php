@@ -641,7 +641,8 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			'express_checkout_checkout_methods' => array( 'woopay' ),
 		);
 		$woopay_on         = array_merge( $listed_everywhere, array( 'platform_checkout' => 'yes' ) );
-		$eligible          = array( 'platform_checkout_eligible' => true );
+		// The account cache field the WooPay eligibility check reads (client 11.1.0 includes/class-wc-payments-features.php:206-209).
+		$eligible = array( 'platform_checkout_eligible' => true );
 
 		return array(
 			'listed at every location, setting off' => array( $listed_everywhere, $eligible, null, false ),
@@ -658,7 +659,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_store_setup_sync_reports_woocommerce_awareness_of_active_plugins(): void {
 		// Both files exist in the test install, so WordPress keeps them as active and valid.
 		update_option( 'active_plugins', array( 'hello.php', 'sample-woo-plugin.php' ) );
-		// get_plugins() answers from this cache, so the headers are the test's own.
+		// get_plugins() answers from this cache, so the headers are the test's own: WordPress keeps it as the 'plugins' entry
+		// of the 'plugins' cache group, keyed by plugin folder, '' for the plugins root (wp-admin/includes/plugin.php
+		// get_plugins()). Core's PluginUtil::is_woocommerce_aware_plugin() reads the 'WC tested up to' header.
 		wp_cache_set(
 			'plugins',
 			array(

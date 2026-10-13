@@ -1528,6 +1528,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$cards = array();
 		foreach ( array( 'pm_card_1', 'pm_card_2', 'pm_card_3' ) as $index => $payment_method_id ) {
 			$this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method_id );
+			// A card payment method as the provider lists it, reduced to the fields a token is built from (client 11.1.0
+			// includes/class-wc-payments-token-service.php:113-116).
 			$cards[] = array(
 				'id'   => $payment_method_id,
 				'type' => 'card',
