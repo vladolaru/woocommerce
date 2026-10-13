@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -355,6 +356,42 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 			'data not a list'   => array( array( 'data' => 'unexpected' ), 'Timeline data missing or malformed for intent_id pi_123.' ),
 			'no captured event' => array( array( 'data' => array( array( 'type' => 'authorized' ) ) ), 'No captured event found in timeline for intent_id pi_123.' ),
 		);
+	}
+
+	/**
+	 * @testdox A SetupIntent's timeline read the platform refuses writes one info line with WooPayments logging $logging, as the WooPayments extension logs it.
+	 *
+	 * The job is queued for a completed SetupIntent too (client 11.1.0 class-wc-payments-order-service.php:1582, :2993-3000),
+	 * and the platform refuses a SetupIntent's timeline with its REST error envelope: 400, code wcpay_bad_request, message
+	 * "Invalid intent ID", as a test store's subscription payment-method change logged it. Client 11.1.0 logs that through
+	 * its gated Logger::log() at info level (class-wc-payments-order-service.php:879-880).
+	 *
+	 * @testWith ["on", true]
+	 *           ["off", false]
+	 *
+	 * @param string $logging Whether WooPayments logging is on.
+	 * @param bool   $logged  Whether a line is written.
+	 */
+	public function test_setup_intent_timeline_refusal_follows_the_woopayments_extension_level( string $logging, bool $logged ): void {
+		unset( $logging );
+		if ( $logged ) {
+			self::enable_woopayments_debug_logging();
+		}
+		$order = wc_create_order();
+		$order->save();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )->disableOriginalConstructor()->onlyMethods( array( 'get_timeline' ) )->getMock();
+		$api_client->method( 'get_timeline' )->willThrowException( new WooPaymentsApiException( 'Invalid intent ID', 'wcpay_bad_request', 400 ) );
+		$logger = RecordingWcLogger::install();
+
+		$this->create_controller( $api_client )->handle_wcpay_add_fee_breakdown_to_order_notes( $order->get_id(), 'seti_123', false );
+
+		$lines = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'woopayments' === $line[2] ) );
+		$this->assertSame( $logged ? array( array( 'info', 'Failed to read WooPayments intent timeline.', 'woopayments' ) ) : array(), $lines );
+		if ( $logged ) {
+			$context = $this->get_logged_context_at_level( $logger, 'info' );
+			$this->assertSame( array( $order->get_id(), 'seti_123', 400, 'wcpay_bad_request' ), array( $context['order_id'], $context['intent_id'], $context['http_status'], $context['error_code'] ) );
+			$this->assert_log_holds_no_provider_text( $logger );
+		}
 	}
 
 	/**

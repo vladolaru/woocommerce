@@ -2672,7 +2672,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * Tell whether the stored order already shows the authorization of the outcome's intent.
 	 *
 	 * A held card, a `processing` debit and a Multibanco voucher all put the order on hold (client 11.1.0
-	 * `class-wc-payments-order-service.php:410-417`); a webhook may since have moved it to a paid status. A voucher counts
+	 * `class-wc-payments-order-service.php:410-424`); a webhook may since have moved it to a paid status. A voucher counts
 	 * too: order-received then shows its one voucher, while a refusal lets a retry make a second order and voucher.
 	 *
 	 * @param WC_Order       $order   Order being paid.

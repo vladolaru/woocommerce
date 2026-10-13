@@ -166,14 +166,22 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 				try {
 					$events = $this->api_client->get_timeline( $intent_id );
 				} catch ( Throwable $exception ) {
+					$context = array(
+						'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
+						'order_id'  => $order->get_id(),
+						'intent_id' => $intent_id,
+					);
+					if ( 0 === strpos( $intent_id, 'seti_' ) ) {
+						// The platform has no timeline for a SetupIntent; client 11.1.0 logs the refusal at info level, only with
+						// logging on (class-wc-payments-order-service.php:879-880).
+						$this->logger->log_throwable( 'Failed to read WooPayments intent timeline.', $exception, $context, 'info' );
+						return;
+					}
+
 					wc_get_logger()->error(
 						'Failed to read WooPayments intent timeline.',
 						array_merge(
-							array(
-								'action'    => self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
-								'order_id'  => $order->get_id(),
-								'intent_id' => $intent_id,
-							),
+							$context,
 							WooPaymentsLogger::get_failure_context( $exception ),
 							array( 'source' => WooPaymentsLogger::SOURCE )
 						)
