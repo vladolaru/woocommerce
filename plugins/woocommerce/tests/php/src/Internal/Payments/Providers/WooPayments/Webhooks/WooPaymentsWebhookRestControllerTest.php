@@ -307,11 +307,14 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox A $event_type push gets the $expected_status reply, is kept for a retry only when it fails for a passing reason ($kept) and logs "$expected_log".
 	 *
-	 * Through the webhook route with the real ingestor and handlers. Client 11.1.0 refuses a malformed refund or dispute
-	 * event, a dispute whose charge no order holds, a refund amount that is not valid and an unknown refund update status
-	 * with Invalid_Webhook_Data_Exception (class-wc-payments-webhook-processing-service.php:361, :717, :933-944, :1132),
-	 * which its webhook answers with 400 and the reason logged (class-wc-rest-payments-webhook-controller.php:81-83); a
-	 * refund whose charge no order holds is answered 500 (webhook processing service :317, :1111), which the store retries.
+	 * Through the webhook route with the real ingestor and handlers. Client 11.1.0 refuses a refund or dispute event with a
+	 * field that is not set, a dispute whose charge no order holds, a negative charge amount or a refund above the order
+	 * total, and an unknown refund update status with Invalid_Webhook_Data_Exception
+	 * (class-wc-payments-webhook-processing-service.php:361, :717, :933, :1131), which its webhook answers with 400 and the
+	 * reason logged (class-wc-rest-payments-webhook-controller.php:81-83); a refund whose charge no order holds is answered
+	 * 500 (webhook processing service :317, :1111), which the store retries. Its field reader checks only that a field is
+	 * set (:933), and it takes a negative refund amount: the dispute amount that is not a number and the negative refund
+	 * amount are refused here only, stricter than client 11.1.0.
 	 *
 	 * @dataProvider provider_refund_and_dispute_event_failures
 	 *
@@ -523,7 +526,8 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox A charge.dispute.funds_withdrawn push refused while the dispute's created event holds the order payment lock is kept, and its retry writes the funds note once.
 	 *
 	 * Stripe sends charge.dispute.created with charge.dispute.funds_withdrawn, and the platform forwards each from its own
-	 * job. Client 11.1.0 takes no lock in its dispute handlers and writes both notes (class-wc-payments-order-service.php:585-700).
+	 * job. Client 11.1.0 takes no lock in its dispute handlers and writes both notes: the dispute note
+	 * (class-wc-payments-order-service.php:585-700) and the funds note (class-wc-payments-webhook-processing-service.php:815-848).
 	 */
 	public function test_lock_refused_funds_withdrawn_push_is_retried_and_writes_its_note(): void {
 		$order = wc_create_order();

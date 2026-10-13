@@ -32,8 +32,10 @@ use Throwable;
  *
  * An event with a field missing or malformed, a refund amount that is not valid or a refund update status other than
  * failed, canceled or succeeded is refused (InvalidArgumentException): the webhook answers 400 and the event is not
- * retried, as client 11.1.0 refuses it (class-wc-payments-webhook-processing-service.php:361, :933-944, :1132). A charge
- * no order holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111).
+ * retried. Client 11.1.0 refuses a field that is not set, a negative charge amount, a refund above the order total and an
+ * unknown status that way (class-wc-payments-webhook-processing-service.php:361, :933, :1131). An empty field, a field of
+ * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
+ * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111).
  *
  * @since 11.0.0
  * @internal

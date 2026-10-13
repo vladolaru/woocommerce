@@ -6931,39 +6931,52 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An Interac in-person refund recorded from the mobile app (details on the order: $details_on_order, a newer reader refund of the amount: $newer_match) links the oldest succeeded reader refund, with no refund request and no failure.
+	 * @testdox An Interac in-person refund recorded from the mobile app (details on the order: $details_on_order, a newer reader refund of the amount: $newer_match, the older one already recorded: $older_recorded) links the oldest succeeded reader refund the order does not record, with no refund request and no failure.
 	 *
 	 * The WooCommerce mobile app refunds an Interac payment on the card reader, then records it through the order refunds
 	 * REST route, which runs the gateway refund. Client 11.1.0 lists the charge's refunds and links the oldest succeeded one
 	 * of the same amount (class-wc-payment-gateway-wcpay.php:2944-2968), reading the payment method type from the payment
-	 * method (:3031-3049). Stripe refuses an online Interac refund: in-person refunds are mandatory for Interac in Canada,
+	 * method (:3031-3049). A reader refund the order already records is passed over, so the next one of the amount is
+	 * linked. Stripe refuses an online Interac refund: in-person refunds are mandatory for Interac in Canada,
 	 * and such a payment cannot be refunded through the API or the Dashboard (https://docs.stripe.com/terminal/features/refunds,
 	 * https://docs.stripe.com/terminal/payments/regional?integration-country=CA). The list is the recorded one
 	 * (`Fixtures/platform-refund-list.json`); the Interac details are HAND-BUILT from Stripe's charge object
 	 * (https://docs.stripe.com/api/charges/object#charge_object-payment_method_details-interac_present), and the fetched
-	 * payment method reuses them, since only its type is read.
+	 * payment method is HAND-BUILT with the two fields of Stripe's PaymentMethod object the refund reads, its ID and type
+	 * (https://docs.stripe.com/api/payment_methods/object).
 	 *
 	 * @dataProvider interac_payment_method_sources
 	 *
 	 * @param bool $details_on_order Whether the order holds its payment method details; else only its payment method ID.
 	 * @param bool $newer_match      Whether a newer reader refund of the same amount is listed too (HAND-BUILT amount).
+	 * @param bool $older_recorded   Whether the order already records the older reader refund of the amount.
 	 */
-	public function test_interac_in_person_refund_links_the_refund_made_on_the_card_reader( bool $details_on_order, bool $newer_match ): void {
+	public function test_interac_in_person_refund_links_the_refund_made_on_the_card_reader( bool $details_on_order, bool $newer_match, bool $older_recorded ): void {
 		$order       = $this->create_refund_hold_order();
 		$http_client = new FakeWooPaymentsHttpClient();
 		if ( $details_on_order ) {
 			$order->update_meta_data( '_wcpay_payment_method_details', (string) wp_json_encode( self::interac_present_details() ) );
 		} else {
 			$order->update_meta_data( '_payment_method_id', 'pm_interac_reader' );
-			$http_client->responses[] = self::http_json( 200, array( 'id' => 'pm_interac_reader' ) + self::interac_present_details() );
+			$http_client->responses[] = self::http_json(
+				200,
+				array(
+					'id'   => 'pm_interac_reader',
+					'type' => 'interac_present',
+				)
+			);
 		}
 		$order->save();
+		if ( $older_recorded ) {
+			$this->link_local_refund_row( $order, 7.77, 're_3UOv4vBzWlxcwgpP0AwrnrcH' );
+		}
 		$list = $this->recorded_refund_list();
 		if ( $newer_match ) {
 			$list['data'][0]['amount'] = 777;
 		}
 		$http_client->responses[] = self::http_json( 200, $list );
 		$provider                 = $this->create_refund_hold_provider( $http_client );
+		$expected_refund_id       = $older_recorded ? 're_3UOv4vBzWlxcwgpP0Mxsx0Nk' : 're_3UOv4vBzWlxcwgpP0AwrnrcH';
 
 		list( $result, $row ) = $this->run_gateway_refund( $provider, $order, 7.77 );
 
@@ -6974,21 +6987,29 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		if ( ! $details_on_order ) {
 			$this->assertStringStartsWith( 'GET payment_methods/pm_interac_reader', $trail[0] );
 		}
-		$this->assertSame( 're_3UOv4vBzWlxcwgpP0AwrnrcH', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( $expected_refund_id, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		if ( $older_recorded ) {
+			$linked_ids = array_map(
+				static fn( $refund ): string => (string) $refund->get_meta( '_wcpay_refund_id', true ),
+				wc_get_order( $order->get_id() )->get_refunds()
+			);
+			$this->assertEqualsCanonicalizing( array( 're_3UOv4vBzWlxcwgpP0AwrnrcH', $expected_refund_id ), $linked_ids, 'The older reader refund keeps its row.' );
+		}
 		$this->assertSame( 'successful', wc_get_order( $order->get_id() )->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertSame( array(), self::note_texts_containing( $order, 'failed to complete' ) );
 	}
 
 	/**
-	 * Where the refund reads the Interac payment method type from.
+	 * Where the refund reads the Interac payment method type from, and which reader refunds of the amount the order records.
 	 *
-	 * @return array<string,array{bool,bool}>
+	 * @return array<string,array{bool,bool,bool}>
 	 */
 	public function interac_payment_method_sources(): array {
 		return array(
-			'payment method details on the order' => array( true, false ),
-			'payment method fetched by its ID'    => array( false, false ),
-			'two reader refunds of the amount'    => array( true, true ),
+			'payment method details on the order'      => array( true, false, false ),
+			'payment method fetched by its ID'         => array( false, false, false ),
+			'two reader refunds of the amount'         => array( true, true, false ),
+			'older reader refund already on the order' => array( true, true, true ),
 		);
 	}
 

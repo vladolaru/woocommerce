@@ -1716,6 +1716,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should offer Amazon Pay express for a store currency a filter returns in lowercase.
 	 */
 	public function test_amazon_pay_takes_a_lowercase_store_currency(): void {
+		// Amazon Pay needs confirmation tokens, which client 11.1.0 reads from ece_confirmation_tokens_disabled (includes/class-wc-payments-features.php:438-441).
 		$sut           = $this->create_service(
 			array(
 				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),

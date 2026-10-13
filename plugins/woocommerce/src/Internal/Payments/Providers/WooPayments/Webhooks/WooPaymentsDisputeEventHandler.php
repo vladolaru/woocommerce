@@ -32,8 +32,9 @@ use WC_Order;
  * local refund; a dispute on a charge that is not the order's payment is recorded instead.
  *
  * An event with a field missing or malformed, or for a charge no order holds, is refused (InvalidArgumentException):
- * the webhook answers 400 and the event is not retried, as client 11.1.0 refuses it with Invalid_Webhook_Data_Exception
- * (class-wc-payments-webhook-processing-service.php:717, :757, :805, :933-944). Other failures of the created, updated
+ * the webhook answers 400 and the event is not retried. Client 11.1.0 refuses a field that is not set and a charge no
+ * order holds with Invalid_Webhook_Data_Exception (class-wc-payments-webhook-processing-service.php:717, :757, :805, :933);
+ * a field of the wrong type is refused here only, stricter than client 11.1.0. Other failures of the created, updated
  * and closed events are retried.
  *
  * @since 11.0.0
