@@ -92,7 +92,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $state store the built-in WooPayments owns has the renewal handlers and the failed-renewal email after init, and refuses a renewal across test and live mode.
+	 * @testdox A $state store the built-in WooPayments owns has the renewal handlers and the failed-renewal email after init, and refuses a WooPayments renewal across test and live mode, but not another gateway's.
 	 * @dataProvider builtin_owned_states
 	 *
 	 * @param string $state Stored native tier.
@@ -113,6 +113,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
 
 		$this->use_order_mode( 'prod' );
+		$this->assertSame( array( 'line_item_a' ), apply_filters( 'wcs_renewal_order_items', array( 'line_item_a' ), new WC_Order(), $this->create_subscription_paid_in_mode( 'test', 'ppcp-gateway' ) ), 'A subscription that moved to another gateway gets its renewal order.' );
+
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.' );
 		apply_filters( 'wcs_renewal_order_items', array( 'line_item_a' ), new WC_Order(), $this->create_subscription_paid_in_mode( 'test' ) );
@@ -331,17 +333,19 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A renewal of a subscription paid in $subscription_mode mode, created in $current_mode mode, is refused only when the modes differ.
+	 * @testdox A renewal of a subscription paying with $payment_method, paid in $subscription_mode mode, created in $current_mode mode, is refused only when it pays with WooPayments and the modes differ.
 	 * @dataProvider renewal_modes
 	 *
-	 * Client 11.1.0 `tests/unit/subscriptions/test-class-wc-payments-subscription-service.php:858-884`. The staging case below
-	 * shows the guard is attached to `wcs_renewal_order_items`.
+	 * The WooPayments rows are client 11.1.0 `tests/unit/subscriptions/test-class-wc-payments-subscription-service.php:858-884`.
+	 * Client 11.1.0 refuses the other gateway's rows too (`includes/subscriptions/class-wc-payments-subscription-service.php:941-956`).
+	 * The staging case below shows the guard is attached to `wcs_renewal_order_items`.
 	 *
 	 * @param string      $subscription_mode `_wcpay_mode` on the subscription's parent order.
 	 * @param string      $current_mode      Current order mode of the store.
 	 * @param string|null $expected_error    Expected refusal message, or null when the renewal goes ahead.
+	 * @param string      $payment_method    The subscription's payment method.
 	 */
-	public function test_renewal_is_refused_when_the_mode_changed( string $subscription_mode, string $current_mode, ?string $expected_error ): void {
+	public function test_renewal_is_refused_when_the_mode_changed( string $subscription_mode, string $current_mode, ?string $expected_error, string $payment_method ): void {
 		$this->use_order_mode( $current_mode );
 		$items = array( 'line_item_a', 'line_item_b' );
 
@@ -351,7 +355,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				$this->expectExceptionMessage( $expected_error );
 			}
 
-			$result = WooPaymentsSubscriptionsController::check_renewal_mode( $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode ) );
+			$result = WooPaymentsSubscriptionsController::check_renewal_mode( $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode, $payment_method ) );
 
 			$this->assertSame( $items, $result );
 		} finally {
@@ -1434,13 +1438,20 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( $note_count, wc_get_order_notes( array( 'order_id' => $renewal->get_id() ) ) );
 	}
 
-	/** @return array<string,array{string,string,?string}> */
+	/** @return array<string,array{string,string,?string,string}> */
 	public static function renewal_modes(): array {
+		$test_to_live = 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.';
+		$live_to_test = 'Subscription was made when WooPayments was in the live mode and cannot be renewed in the test mode.';
+
+		// The parent order was paid with WooPayments in every row; `ppcp-gateway` is PayPal Payments' gateway ID.
 		return array(
-			'test subscription, live store' => array( 'test', 'prod', 'Subscription was made when WooPayments was in the test mode and cannot be renewed in the live mode.' ),
-			'live subscription, test store' => array( 'prod', 'test', 'Subscription was made when WooPayments was in the live mode and cannot be renewed in the test mode.' ),
-			'same mode'                     => array( 'test', 'test', null ),
-			'no recorded mode'              => array( '', 'prod', null ),
+			'test subscription, live store' => array( 'test', 'prod', $test_to_live, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'live subscription, test store' => array( 'prod', 'test', $live_to_test, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'same mode'                     => array( 'test', 'test', null, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'no recorded mode'              => array( '', 'prod', null, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
+			'split gateway, test to live'   => array( 'test', 'prod', $test_to_live, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' ),
+			'other gateway, test to live'   => array( 'test', 'prod', null, 'ppcp-gateway' ),
+			'other gateway, live to test'   => array( 'prod', 'test', null, 'ppcp-gateway' ),
 		);
 	}
 
@@ -1459,12 +1470,13 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a subscription stand-in whose parent order was paid in the given mode.
+	 * Create a subscription stand-in whose parent order was paid with WooPayments in the given mode.
 	 *
-	 * @param string $mode `_wcpay_mode` on the parent order; empty for none.
+	 * @param string $mode           `_wcpay_mode` on the parent order; empty for none.
+	 * @param string $payment_method The subscription's payment method.
 	 * @return WC_Order
 	 */
-	private function create_subscription_paid_in_mode( string $mode ): WC_Order {
+	private function create_subscription_paid_in_mode( string $mode, string $payment_method = WooPaymentsPersistenceVocabulary::GATEWAY_ID ): WC_Order {
 		$parent_order = new WC_Order();
 		$parent_order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		if ( '' !== $mode ) {
@@ -1486,6 +1498,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$subscription->parent_order = $parent_order;
+		$subscription->set_payment_method( $payment_method );
 
 		return $subscription;
 	}

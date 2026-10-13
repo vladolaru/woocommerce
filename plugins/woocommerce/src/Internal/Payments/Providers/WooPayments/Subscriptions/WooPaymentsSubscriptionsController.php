@@ -191,11 +191,12 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Refuse to create a renewal order when the subscription was paid in a different WooPayments mode than the current one.
+	 * Refuse to create a renewal order when a subscription paying with WooPayments was paid in a different mode.
 	 *
 	 * A test-mode payment method cannot be charged in live mode, and the reverse, so the renewal would only fail.
-	 * Client 11.1.0 `WC_Payments_Subscription_Service::check_wcpay_mode_for_subscription()`; WooCommerce Subscriptions
-	 * rolls the renewal order back when this throws.
+	 * WooCommerce Subscriptions rolls the renewal order back when this throws. A subscription that moved to another
+	 * gateway renews through that gateway, which the WooPayments mode does not concern; client 11.1.0 refuses it too
+	 * (`includes/subscriptions/class-wc-payments-subscription-service.php:941-956`).
 	 *
 	 * @internal
 	 *
@@ -208,6 +209,10 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	public static function check_renewal_mode( $items, $renewal_order, $subscription ) {
 		unset( $renewal_order );
 		if ( ! $subscription instanceof \WC_Order || ! is_callable( array( $subscription, 'get_parent' ) ) ) {
+			return $items;
+		}
+
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $subscription->get_payment_method() ) ) {
 			return $items;
 		}
 
