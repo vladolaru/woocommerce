@@ -1513,7 +1513,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		// subscription whose payment method is being changed stays as it is, as for a client payment-method error below.
 		if (
 			'' === $this->get_request_payment_method_id()
-			&& ! $this->get_token_service()->get_valid_token_from_token_id( $this->sanitize_post_string( 'wc-' . $this->id . '-payment-token' ), WooPaymentsCustomerService::get_payer_user_id( $order ) ) instanceof WC_Payment_Token
+			&& ! $this->get_token_service()->get_valid_token_from_token_id( $this->sanitize_post_string( 'wc-' . $this->id . '-payment-token' ), WooPaymentsCustomerService::get_request_token_user_id( $order ) ) instanceof WC_Payment_Token
 			&& ! $this->is_network_saved_cards_enabled()
 		) {
 			return $this->refuse_checkout(

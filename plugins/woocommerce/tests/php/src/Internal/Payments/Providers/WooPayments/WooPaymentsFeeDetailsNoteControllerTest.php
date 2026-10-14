@@ -362,9 +362,10 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A SetupIntent's timeline read the platform refuses writes one info line with WooPayments logging $logging, as the WooPayments extension logs it.
 	 *
 	 * The job is queued for a completed SetupIntent too (client 11.1.0 class-wc-payments-order-service.php:1582, :2993-3000),
-	 * and the platform refuses a SetupIntent's timeline with its REST error envelope: 400, code wcpay_bad_request, message
-	 * "Invalid intent ID", as a test store's subscription payment-method change logged it. Client 11.1.0 logs that through
-	 * its gated Logger::log() at info level (class-wc-payments-order-service.php:879-880).
+	 * and the platform refuses a SetupIntent's timeline: its timeline route takes only a pi_ ID and otherwise throws
+	 * Bad_Request_Exception( 'Invalid intent ID' ) (wpcom `wcpay/class-timeline-controller.php:220-221`, the check at
+	 * :1309-1311), which answers 400 with code wcpay_bad_request (`wcpay/core/exceptions/class-bad-request-exception.php:25`).
+	 * Client 11.1.0 logs that through its gated Logger::log() at info level (class-wc-payments-order-service.php:879-880).
 	 *
 	 * @testWith ["on", true]
 	 *           ["off", false]

@@ -236,8 +236,9 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	/**
 	 * Get the WordPress user paying an order on a shopper path: the order's user, else the logged-in user, else 0.
 	 *
-	 * As client 11.1.0 (includes/class-wc-payment-gateway-wcpay.php:1542-1544). Only the order's user may pay a user's
-	 * order (pay_for_order capability), so the logged-in user stands in only on a guest order.
+	 * As client 11.1.0 (includes/class-wc-payment-gateway-wcpay.php:1542-1544). Core shows the order-pay form only to the
+	 * order's user, or to anyone for a guest order (pay_for_order capability), but the form's POST checks only the order key
+	 * and nonce (WC_Form_Handler::pay_action()), so a saved card the request names is checked with get_request_token_user_id().
 	 *
 	 * @since 11.2.0
 	 *
@@ -248,6 +249,23 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 		$user_id = $order->get_user_id();
 
 		return 0 < $user_id ? $user_id : get_current_user_id();
+	}
+
+	/**
+	 * Get the user whose saved card a shopper's request may use: the logged-in user when they are the payer, else 0.
+	 *
+	 * As client 11.1.0 (includes/class-payment-information.php:331-349), and also refused before any platform call when the
+	 * logged-in user is not the order's user, whose customer the card would be charged on.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WC_Order $order Order being paid.
+	 * @return int
+	 */
+	public static function get_request_token_user_id( WC_Order $order ): int {
+		$user_id = get_current_user_id();
+
+		return self::get_payer_user_id( $order ) === $user_id ? $user_id : 0;
 	}
 
 	/**

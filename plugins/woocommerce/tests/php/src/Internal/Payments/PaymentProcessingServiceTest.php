@@ -1688,35 +1688,47 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-pay refuses a saved card the payer does not own and sends nothing to the platform: $_dataName.
+	 * @testdox Order-pay refuses a saved card that is not the logged-in payer's and sends nothing to the platform: $_dataName.
 	 *
-	 * The card must belong to the payer: the order's user, else the logged-in user. Client 11.1.0 checks it against the
-	 * logged-in user (includes/class-payment-information.php:345); only a user's own order is payable by them (core's
-	 * pay_for_order capability), so on every reachable order-pay the two are the same user.
+	 * Client 11.1.0 accepts only the logged-in user's card (includes/class-payment-information.php:331-349), since core
+	 * checks only the order key and nonce when the order-pay form is posted (WC_Form_Handler::pay_action()). The logged-in
+	 * user must also be the payer: another user's card on a user's order is refused before any platform call.
 	 *
-	 * @dataProvider provider_saved_cards_the_payer_does_not_own
+	 * @dataProvider provider_saved_cards_not_the_logged_in_payers
 	 *
-	 * @param bool $order_has_user  Whether the order belongs to another user.
-	 * @param bool $shoppers_own    Whether the card posted is the logged-in shopper's own (else a third user's).
+	 * @param bool   $order_has_user      Whether the order belongs to a user other than the shopper.
+	 * @param string $card_owner          Whose saved card is posted: the shopper, the order's user, or a third user.
+	 * @param bool   $logged_in           Whether the shopper is logged in.
+	 * @param bool   $with_payment_method Whether a new payment method is posted with the saved card.
 	 */
-	public function test_order_pay_refuses_a_saved_card_the_payer_does_not_own( bool $order_has_user, bool $shoppers_own ): void {
+	public function test_order_pay_refuses_a_saved_card_that_is_not_the_logged_in_payers( bool $order_has_user, string $card_owner, bool $logged_in, bool $with_payment_method ): void {
 		$shopper_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$owner_id   = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$other_id   = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_option( $shopper_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_shopper' );
+		update_user_option( $owner_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_owner' );
 		update_user_option( $other_id, WooPaymentsCustomerService::TEST_CUSTOMER_ID_OPTION, 'cus_other' );
-		$token = $this->create_saved_card( $shoppers_own ? $shopper_id : $other_id, 'pm_not_the_payers' );
-		$order = $this->create_woopayments_order( '10.00' );
-		$order->set_customer_id( $order_has_user ? self::factory()->user->create( array( 'role' => 'customer' ) ) : 0 );
+		$card_owners = array(
+			'shopper'    => $shopper_id,
+			'order user' => $owner_id,
+			'third user' => $other_id,
+		);
+		$token       = $this->create_saved_card( $card_owners[ $card_owner ], 'pm_not_the_payers' );
+		$order       = $this->create_woopayments_order( '10.00' );
+		$order->set_customer_id( $order_has_user ? $owner_id : 0 );
 		$order->save();
 		$http_client = new FakeWooPaymentsHttpClient();
 		// Shape: the platform's own failure as a WordPress REST error (code, message, data.status; WP_REST_Server::error_to_response()). No request is expected.
 		$http_client->response = $this->json_transport_response( 500, array( 'code' => 'wcpay_server_error' ) );
 		$gateway               = new WooPaymentsGateway();
 		$gateway->init( $this->sut, $this->timeout_transport_provider( $http_client, true ) );
-		wp_set_current_user( $shopper_id );
+		wp_set_current_user( $logged_in ? $shopper_id : 0 );
 		$_POST['woocommerce_pay']                       = '1';
 		$_POST['payment_method']                        = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
 		$_POST['wc-woocommerce_payments-payment-token'] = (string) $token->get_id();
+		if ( $with_payment_method ) {
+			$_POST['wcpay-payment-method'] = 'pm_card_visa';
+		}
 
 		try {
 			$result = $gateway->process_payment( $order->get_id() );
@@ -1724,6 +1736,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			$this->assertNotSame( 'success', $result['result'] ?? '' );
 			$this->assertSame( array(), $http_client->requests );
 			$this->assertFalse( wc_get_order( $order->get_id() )->is_paid() );
+			if ( ! $with_payment_method ) {
+				$this->assertSame(
+					array( 'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.' ),
+					array_column( wc_get_notices( 'error' ), 'notice' ),
+					'The checkout refuses the card before any payment work.'
+				);
+			}
 		} finally {
 			wp_set_current_user( 0 );
 			$_POST = array();
@@ -1732,14 +1751,18 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The logged-in shopper's own card on another user's order, and a third user's card on a guest order.
+	 * Saved cards a request may not use: the shopper's own on another user's order, a third user's on a guest order, and
+	 * the order's user's card posted by another logged-in user or a logged-out visitor, alone or with a new payment method.
 	 *
-	 * @return array<string,array{bool,bool}>
+	 * @return array<string,array{bool,string,bool,bool}>
 	 */
-	public function provider_saved_cards_the_payer_does_not_own(): array {
+	public function provider_saved_cards_not_the_logged_in_payers(): array {
 		return array(
-			"the shopper's own card on another user's order" => array( true, true ),
-			"another user's card on a guest order" => array( false, false ),
+			"the shopper's own card on another user's order" => array( true, 'shopper', true, false ),
+			"another user's card on a guest order" => array( false, 'third user', true, false ),
+			"the order user's card posted by another logged-in user" => array( true, 'order user', true, false ),
+			"the order user's card posted by a logged-out visitor" => array( true, 'order user', false, false ),
+			"the order user's card and a new payment method posted by another logged-in user" => array( true, 'order user', true, true ),
 		);
 	}
 
@@ -5177,10 +5200,13 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		};
 		add_action( 'woocommerce_order_status_completed', $status_observer, 1 );
 		add_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 
 		try {
 			$this->sut->process_checkout_outcome( $context, $provider );
 		} finally {
+			wp_set_current_user( 0 );
 			remove_action( 'woocommerce_order_status_completed', $status_observer, 1 );
 			remove_action( 'woocommerce_payment_complete', $payment_complete_observer, 1 );
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );

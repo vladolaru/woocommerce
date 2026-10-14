@@ -128,6 +128,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
+		wp_set_current_user( 0 );
 		parent::tearDown();
 	}
 
@@ -3462,6 +3463,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_native' );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		$sut     = $this->create_operation_service( $api_client, $customer_service, $token_service, $account_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
@@ -3854,6 +3857,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			->method( 'get_or_create_customer_id_for_order' )
 			->willReturn( 'cus_plugin_subscription' );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		// Oracle: WooPayments 11.1.0 OrderService::get_payment_metadata() labels a customer-present renewal as recurring/renewal, and the read-only :8082 provider family records it without off_session.
 		$sut     = $this->create_operation_service(
 			$api_client,
@@ -4648,21 +4653,27 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A card declined at checkout ($_dataName) leaves its payment method and customer on the failed order, and Sift order tracking queues the order.
+	 * @testdox A card declined at checkout ($_dataName) leaves its payment method, never a confirmation token, and its customer on the failed order, and Sift order tracking queues an order with a payment method.
 	 *
-	 * Client 11.1.0 writes both before the charge (class-wc-payment-gateway-wcpay.php:1663-1667), so its declined order keeps
-	 * them, and its order-tracking hook queues any card-gateway order that has a payment method (:577, :4485-4524). The
-	 * decline is REC-1's recorded generic_decline envelope (Fixtures/platform-intention-declines.json); the account's
-	 * fraud_services carries Sift in the shape client 11.1.0 reads (class-wc-payments-fraud-service.php:99-100).
+	 * Client 11.1.0 writes both before the charge, the payment method only when it is not a confirmation token
+	 * (class-wc-payment-gateway-wcpay.php:1672-1677), so its declined order keeps them, and its order-tracking hook queues
+	 * any card-gateway order that has a payment method (:577, :4485-4524). The decline is REC-1's recorded generic_decline
+	 * envelope (Fixtures/platform-intention-declines.json), whose shape does not depend on the credential: Stripe's decline
+	 * carries the PaymentIntent, with the PaymentMethod a confirmation token created in last_payment_error
+	 * (https://docs.stripe.com/api/confirmation_tokens). The account's fraud_services carries Sift in the shape client 11.1.0
+	 * reads (class-wc-payments-fraud-service.php:99-100).
 	 *
-	 * @testWith ["the first request", false, "cus_rec1_checkout"]
-	 *           ["the request retried for a missing customer", true, "cus_rec1_replaced"]
+	 * @testWith ["the first request", false, "cus_rec1_checkout", false]
+	 *           ["the request retried for a missing customer", true, "cus_rec1_replaced", false]
+	 *           ["a confirmation token, the first request", false, "cus_rec1_checkout", true]
+	 *           ["a confirmation token, the request retried for a missing customer", true, "cus_rec1_replaced", true]
 	 *
-	 * @param string $label                  Which request is declined.
-	 * @param bool   $after_missing_customer Whether the platform first answers that the customer is missing.
-	 * @param string $customer_id            Customer the declined request was sent with.
+	 * @param string $label                   Which request is declined.
+	 * @param bool   $after_missing_customer  Whether the platform first answers that the customer is missing.
+	 * @param string $customer_id             Customer the declined request was sent with.
+	 * @param bool   $with_confirmation_token Whether the checkout sent a confirmation token instead of a payment method.
 	 */
-	public function test_declined_checkout_keeps_payment_method_and_customer_for_sift_tracking( string $label, bool $after_missing_customer, string $customer_id ): void {
+	public function test_declined_checkout_keeps_payment_method_and_customer_for_sift_tracking( string $label, bool $after_missing_customer, string $customer_id, bool $with_confirmation_token ): void {
 		unset( $label );
 		$order           = $this->create_woopayments_order( '10.00' );
 		$account_service = $this->create_account_service( false, array(), array( 'fraud_services' => array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) ) );
@@ -4677,18 +4688,22 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
 
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
-			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $payment_method ),
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $with_confirmation_token ? 'ctoken_rec1_express' : $payment_method ),
 			$provider
 		);
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
-		$this->assertSame( array( $payment_method, $customer_id ), array( $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_stripe_customer_id', true ) ) );
-		$this->assertContains(
-			array( 'wcpay_track_new_order', array( 'order_id' => $order->get_id() ) ),
-			array_map( static fn( array $job ): array => array( $job['hook'], $job['args'] ), $scheduler->scheduled_jobs ),
-			'The declined order is queued for Sift.'
+		$this->assertSame( array( $with_confirmation_token ? '' : $payment_method, $customer_id ), array( $order->get_meta( '_payment_method_id', true ), $order->get_meta( '_stripe_customer_id', true ) ) );
+		$this->assertSame(
+			! $with_confirmation_token,
+			in_array(
+				array( 'wcpay_track_new_order', array( 'order_id' => $order->get_id() ) ),
+				array_map( static fn( array $job ): array => array( $job['hook'], $job['args'] ), $scheduler->scheduled_jobs ),
+				true
+			),
+			'Only a declined order with a payment method is queued for Sift.'
 		);
 	}
 
@@ -5485,6 +5500,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			->with( $this->isInstanceOf( WC_Order::class ) )
 			->willReturn( 'cus_native' );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		$sut     = $this->create_operation_service( $api_client, $customer_service, $token_service );
 		$outcome = $sut->charge(
 			PaymentOperationContext::for_checkout(
@@ -9079,6 +9096,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_UsIeTbmGHPc9jY' );
 		$provider = $this->create_provider_over_fake_transport( $http_client, $this->create_account_service( false ), $customer_service );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		$outcome = wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
 			PaymentOperationContext::for_checkout(
 				$order,

@@ -1114,7 +1114,7 @@ class WooPaymentsPaymentOperationService {
 	 * the earlier request under the key.
 	 *
 	 * A declined request's payment method and customer stay on the outcome, so the failed order keeps them, as client 11.1.0
-	 * writes them before the charge (class-wc-payment-gateway-wcpay.php:1663-1667); Sift order tracking reads the payment method.
+	 * writes them before the charge (class-wc-payment-gateway-wcpay.php:1672-1677); Sift order tracking reads the payment method.
 	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.

@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -1711,6 +1712,102 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 		$this->assertSame( 1, $this->count_order_notes_matching( $order, $plugin_note ) );
 		$this->assertOrderLacksNoteContaining( $order, array( 'Core-Terminalzahlung' ) );
+	}
+
+	/**
+	 * @testdox A terminal decline on an order already failed is recorded once and notified once: $_dataName.
+	 *
+	 * Client 11.1.0 records every terminal decline (class-wc-payments-order-service.php:779-800): a note linked to its charge,
+	 * since a reader retries on the same intent (:2139-2141), the intent status, and, on an order already failed, the two
+	 * failed-order notifications WooCommerce does not fire for an unchanged status (:795-799). Each event object is the
+	 * PaymentIntent Stripe sends with payment_intent.payment_failed (https://docs.stripe.com/api/payment_intents/object,
+	 * last_payment_error), with the charges list the handler reads; each replay is a new delivery of the same intent.
+	 *
+	 * @dataProvider provider_terminal_declines_on_a_failed_order
+	 *
+	 * @param string $first_intent  Intent of a first decline that fails the pending order, or '' for an order already failed.
+	 * @param string $second_intent Intent of the decline on the failed order.
+	 */
+	public function test_terminal_decline_on_a_failed_order_is_recorded_and_notified_once( string $first_intent, string $second_intent ): void {
+		$order    = $this->create_woopayments_order();
+		$declines = array();
+		if ( '' === $first_intent ) {
+			$order->set_status( OrderStatus::FAILED );
+			$order->save();
+		} else {
+			$declines['ch_terminal_1'] = array( $first_intent, 'card_declined' );
+		}
+		$declines['ch_terminal_2'] = array( $second_intent, 'insufficient_funds' );
+
+		foreach ( array( 'delivery', 'replay' ) as $delivery ) {
+			foreach ( $declines as $charge_id => list( $intent_id, $code ) ) {
+				$event = $this->create_payment_intent_event(
+					'payment_intent.payment_failed',
+					$order,
+					array(
+						'id'                 => $intent_id,
+						'status'             => 'requires_payment_method',
+						'charges'            => array( 'data' => array( array( 'id' => $charge_id ) ) ),
+						'last_payment_error' => array(
+							'code'           => $code,
+							'payment_method' => array(
+								'id'   => 'pm_' . $charge_id,
+								'type' => 'card_present',
+							),
+						),
+					),
+					array( 'id' => "evt_{$charge_id}_{$delivery}" )
+				);
+
+				$this->assertSame(
+					'delivery' === $delivery ? array( 1, 1 ) : array( 0, 0 ),
+					$this->count_failed_order_notifications( fn() => $this->sut->process( $event ) ),
+					"The $delivery of the $charge_id decline fires each failed-order notification this often."
+				);
+			}
+		}
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( OrderStatus::FAILED, $order->get_status() );
+		$this->assertSame( array( $second_intent, 'requires_payment_method' ), array( $order->get_meta( '_intent_id', true ), $order->get_meta( '_intention_status', true ) ) );
+		foreach ( array_keys( $declines ) as $charge_id ) {
+			$notes = array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => str_contains( $note->content, 'A terminal payment of' ) && str_contains( $note->content, $charge_id )
+			);
+			$this->assertCount( 1, $notes, "The $charge_id decline has one note." );
+		}
+	}
+
+	/**
+	 * An order already failed, a second decline on a new intent, and a second decline on the same intent, as a reader retries.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provider_terminal_declines_on_a_failed_order(): array {
+		return array(
+			'an order already failed'             => array( '', 'pi_terminal_2' ),
+			'a second decline on a new intent'    => array( 'pi_terminal_1', 'pi_terminal_2' ),
+			'a second decline on the same intent' => array( 'pi_terminal_1', 'pi_terminal_1' ),
+		);
+	}
+
+	/**
+	 * Count the failed-order notifications fired while a callback runs.
+	 *
+	 * @param callable $callback Callback to run.
+	 * @return array{int,int} The admin (pending to failed) and the customer (failed) notification counts.
+	 */
+	private function count_failed_order_notifications( callable $callback ): array {
+		$admin    = did_action( 'woocommerce_order_status_pending_to_failed_notification' );
+		$customer = did_action( 'woocommerce_order_status_failed_notification' );
+		$callback();
+
+		return array(
+			did_action( 'woocommerce_order_status_pending_to_failed_notification' ) - $admin,
+			did_action( 'woocommerce_order_status_failed_notification' ) - $customer,
+		);
 	}
 
 	/**

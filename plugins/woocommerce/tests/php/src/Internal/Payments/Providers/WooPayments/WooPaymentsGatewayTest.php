@@ -2415,6 +2415,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway                   = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 
 		$result = $gateway->process_payment( $order->get_id() );
 
@@ -2447,6 +2449,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 		$_POST[ 'wc-' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '-payment-token' ] = (string) $token->get_id();
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 
 		$gateway->process_payment( $renewal->get_id() );
 
@@ -4838,6 +4842,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();
@@ -4883,6 +4889,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$paid_statuses = static fn( $statuses ) => array_merge( (array) $statuses, array( 'on-hold' ) );
 		add_filter( 'woocommerce_order_is_paid_statuses', $paid_statuses );
 
+		// The shopper who picks their saved card is logged in.
+		wp_set_current_user( $user_id );
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 		$_POST['_wcsnonce']                     = wp_create_nonce( 'wcs_change_payment_method' );
 		$_POST['woocommerce_change_payment']    = (string) $order->get_id();

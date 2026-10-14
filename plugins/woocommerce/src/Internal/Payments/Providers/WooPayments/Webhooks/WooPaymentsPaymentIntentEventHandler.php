@@ -278,7 +278,8 @@ class WooPaymentsPaymentIntentEventHandler {
 			throw new OrderPaymentLockRefusedException( $order->get_id(), 'payment status update' );
 		}
 
-		$is_own_payment = false;
+		$is_own_payment                   = false;
+		$notify_repeated_terminal_failure = false;
 		try {
 			$this->lifecycle_service->reread_order_from_data_store( $order );
 			$is_charge_event = 'charge.expired' === $event_type;
@@ -296,11 +297,25 @@ class WooPaymentsPaymentIntentEventHandler {
 			} else {
 				$lifecycle_event = $this->build_lifecycle_event( $event_type, $event_object, $order );
 				if ( null !== $lifecycle_event ) {
-					$this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+					// Only a terminal decline reaches the lifecycle on a failed order; see build_lifecycle_event().
+					$was_failed                       = 'payment_intent.payment_failed' === $event_type && $order->has_status( OrderStatus::FAILED );
+					$result                           = $this->lifecycle_service->apply_under_lock( $order, $lifecycle_event, $this->persistence_vocabulary );
+					$notify_repeated_terminal_failure = $was_failed && OrderPaymentLifecycleService::RESULT_NOTE_ADDED === $result;
 				}
 			}
 		} finally {
 			$this->order_payment_lock->release( $order, $this->persistence_vocabulary, $lock_token );
+		}
+
+		// The status did not change, so WooCommerce sends no failed-order e-mail; client 11.1.0 fires both so the merchant hears
+		// of every terminal decline (class-wc-payments-order-service.php:795-799).
+		if ( $notify_repeated_terminal_failure ) {
+			// phpcs:disable WooCommerce.Commenting.CommentHooks.MissingSinceComment
+			/** This action is documented in includes/class-wc-emails.php */
+			do_action( 'woocommerce_order_status_pending_to_failed_notification', $order->get_id(), $order );
+			/** This action is documented in includes/class-wc-emails.php */
+			do_action( 'woocommerce_order_status_failed_notification', $order->get_id(), $order );
+			// phpcs:enable WooCommerce.Commenting.CommentHooks.MissingSinceComment
 		}
 
 		if ( $is_own_payment && 'payment_intent.succeeded' === $event_type ) {
@@ -492,9 +507,10 @@ class WooPaymentsPaymentIntentEventHandler {
 					return null;
 				}
 
-				// An order already failed, such as by the checkout that saw the decline, gets nothing more: client 11.1.0 adds no
-				// note and leaves the order as it is (class-wc-payments-order-service.php:469-473).
-				if ( $order->has_status( OrderStatus::FAILED ) ) {
+				// A card payment's failure on an order already failed, such as by the checkout that saw the decline, gets nothing
+				// more, as client 11.1.0's mark_payment_failed() (class-wc-payments-order-service.php:469-473). A terminal decline is
+				// still recorded, as its mark_terminal_payment_failed() records each one (:779-800).
+				if ( 'card_present' !== $payment_method_type && $order->has_status( OrderStatus::FAILED ) ) {
 					return null;
 				}
 
@@ -506,7 +522,9 @@ class WooPaymentsPaymentIntentEventHandler {
 
 				return new PaymentLifecycleEvent(
 					PaymentLifecycleEvent::STATUS_FAILED,
-					$intent_id,
+					// A reader retries a declined card on the same intent, so a terminal decline's note is keyed on its charge, as
+					// client 11.1.0 links that note to the charge for uniqueness (class-wc-payments-order-service.php:2139-2141).
+					'card_present' === $payment_method_type && '' !== $charge_id ? $charge_id : $intent_id,
 					$this->without_empty_values(
 						array(
 							'_intent_id'        => $intent_id,
