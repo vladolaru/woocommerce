@@ -529,7 +529,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 *
 	 * The plan also records whether the order already had the payment's success or capture note, which the
 	 * post-lifecycle effects read. A failed charge on a subscription payment-method change first keeps the subscription's
-	 * status, also when the charge threw.
+	 * status, also when the charge threw, and a charge that threw gets the payment-failed note.
 	 *
 	 * @param PaymentOperationContext $context   Payment context.
 	 * @param PaymentOutcome          $outcome   Provider outcome.
@@ -538,7 +538,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 */
 	public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
 		if ( PaymentProcessingService::OPERATION_CHARGE === $operation ) {
-			$outcome = $this->payment_operations->keep_status_of_failed_subscription_change( $context, $outcome );
+			$outcome = $this->payment_operations->keep_status_of_failed_subscription_change( $context, $this->with_thrown_charge_note( $context, $outcome ) );
 		}
 
 		$plan = $outcome->get_effect_plan();
@@ -555,6 +555,43 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 
 		// The runtime applies the payment lifecycle next; the post-lifecycle effects schedule the Fee details job when it added the note.
 		return $outcome->with_effect_plan( $plan->with_success_or_capture_note_existed( $note_existed ) );
+	}
+
+	/**
+	 * Add the payment-failed note to a charge that threw instead of returning an outcome, such as from an extension's callback.
+	 *
+	 * Client 11.1.0 notes any exception raised once its payment information exists, with the exception's message
+	 * (class-wc-payment-gateway-wcpay.php:1354-1400), on a payment-method change too.
+	 *
+	 * @param PaymentOperationContext $context Payment context.
+	 * @param PaymentOutcome          $outcome Charge outcome.
+	 * @return PaymentOutcome
+	 */
+	private function with_thrown_charge_note( PaymentOperationContext $context, PaymentOutcome $outcome ): PaymentOutcome {
+		$data = $outcome->get_data();
+		if ( true !== ( $data[ PaymentOutcome::DATA_PROVIDER_THREW ] ?? false ) ) {
+			return $outcome;
+		}
+
+		$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates(
+			$context->get_order(),
+			(string) ( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? '' ),
+			'',
+			'',
+			''
+		);
+
+		$data[ PaymentOutcome::DATA_NOTE ]             = $note_candidates[0];
+		$data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] = $note_candidates;
+
+		return new PaymentOutcome(
+			$outcome->get_status(),
+			$outcome->get_provider_payment_id(),
+			$outcome->get_redirect_url(),
+			$outcome->get_payment_method_id(),
+			$outcome->get_customer_id(),
+			$data
+		);
 	}
 
 	/**

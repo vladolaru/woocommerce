@@ -1200,11 +1200,12 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A callback that throws while a subscription's payment-method change is sent keeps the subscription's status; a checkout order fails: $_dataName.
+	 * @testdox A callback that throws while a subscription's payment-method change is sent keeps the subscription's status; a checkout order fails; both get the payment-failed note: $_dataName.
 	 *
 	 * An extension's wcpay_metadata_from_order callback runs while the SetupIntent request is built, so its exception
-	 * escapes the charge before anything is sent. Client 11.1.0 catches any exception there and skips update_status() on a
-	 * payment-method change (includes/class-wc-payment-gateway-wcpay.php:1272, :1326-1328).
+	 * escapes the charge before anything is sent. Client 11.1.0 catches any exception there, skips update_status() on a
+	 * payment-method change (includes/class-wc-payment-gateway-wcpay.php:1272, :1326-1328) and notes the failure with the
+	 * exception's message either way (:1354-1400).
 	 *
 	 * @testWith ["payment-method change", true, "on-hold"]
 	 *           ["checkout", false, "failed"]
@@ -1248,6 +1249,14 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( array(), $http_client->requests, 'The callback throws before the request is sent.' );
 		$this->assertSame( $expected_status, $order->get_status() );
+		$this->assertCount(
+			1,
+			array_filter(
+				wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+				static fn( $note ): bool => false !== strpos( wp_strip_all_tags( $note->content ), 'failed to complete with the following message: An extension failed.' )
+			),
+			'The failure is noted with the exception\'s message.'
+		);
 	}
 
 	/**

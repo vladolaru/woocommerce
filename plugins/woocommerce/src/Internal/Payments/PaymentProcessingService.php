@@ -806,7 +806,8 @@ class PaymentProcessingService {
 	/**
 	 * Build the failed outcome for a provider operation that threw.
 	 *
-	 * The error code comes from the exception's get_error_code() when it has one.
+	 * The error code comes from the exception's get_error_code() when it has one. The outcome is flagged as thrown, so the
+	 * provider's effects can tell it from a failure the provider reported itself.
 	 *
 	 * @param Throwable $exception Throwable from the provider.
 	 * @return PaymentOutcome
@@ -819,8 +820,9 @@ class PaymentProcessingService {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE    => is_callable( array( $exception, 'get_error_code' ) ) ? (string) $exception->get_error_code() : '',
-				PaymentOutcome::DATA_ERROR_MESSAGE => $exception->getMessage(),
+				PaymentOutcome::DATA_ERROR_CODE     => is_callable( array( $exception, 'get_error_code' ) ) ? (string) $exception->get_error_code() : '',
+				PaymentOutcome::DATA_ERROR_MESSAGE  => $exception->getMessage(),
+				PaymentOutcome::DATA_PROVIDER_THREW => true,
 			)
 		);
 	}

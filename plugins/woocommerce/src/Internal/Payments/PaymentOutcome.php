@@ -175,6 +175,17 @@ class PaymentOutcome {
 	public const DATA_PRESERVE_ORDER_STATUS = 'preserve_order_status';
 
 	/**
+	 * Failed outcomes: flags that the provider operation threw instead of returning an outcome.
+	 *
+	 * The payment processing service builds such an outcome from the throwable, with its message as the error message, so a
+	 * provider's effects can tell it from a failure the provider reported itself.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_PROVIDER_THREW = 'provider_threw';
+
+	/**
 	 * Checkout outcomes: flags that another request paid the order while this one waited for the payment lock.
 	 *
 	 * Nothing was charged; the checkout sends the shopper to the order-received page. The status stays completed because
