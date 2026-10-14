@@ -1707,6 +1707,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'details, missing file'         => array( 'GET', '/wc/v3/payments/file/file_missing/details', 'get_file', 'resource_missing', 404, 404 ),
 			'details, unreadable answer'    => array( 'GET', '/wc/v3/payments/file/file_test_logo/details', 'get_file', 'wcpay_unparseable_or_null_body', 200, 500 ),
+			'content, missing file'         => array( 'GET', '/wc/v3/payments/file/file_missing/content', 'get_file_contents', 'resource_missing', 404, 404 ),
 			'content, unreadable answer'    => array( 'GET', '/wc/v3/payments/file/file_test_logo/content', 'get_file_contents', 'wcpay_unparseable_or_null_body', 200, 500 ),
 			'upload, unreadable answer'     => array( 'POST', '/wc/v3/payments/file', 'upload_file', 'wcpay_evidence_file_upload_error', 200, 500 ),
 			'upload, unencodable body'      => array( 'POST', '/wc/v3/payments/file', 'upload_file', 'wcpay_evidence_file_upload_error', 0, 500 ),
