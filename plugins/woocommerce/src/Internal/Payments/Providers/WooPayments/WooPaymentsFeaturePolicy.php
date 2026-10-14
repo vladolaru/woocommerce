@@ -53,15 +53,10 @@ final class WooPaymentsFeaturePolicy {
 	 * @param WooPaymentsAccountService        $account_service WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry $registry        Payment method registry.
 	 * @param string                           $currency        Checkout currency.
-	 * @param WooPaymentsLegacyRuntime|null    $legacy_runtime  Legacy runtime for the settings fallback; resolved from the container when omitted and needed.
 	 * @return bool
 	 */
-	public static function is_link_folded_into_card( WooPaymentsAccountService $account_service, WooPaymentsPaymentMethodRegistry $registry, string $currency, ?WooPaymentsLegacyRuntime $legacy_runtime = null ): bool {
-		$method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', null );
-		if ( ! is_array( $method_ids ) ) {
-			$legacy_runtime = $legacy_runtime ?? wc_get_container()->get( WooPaymentsLegacyRuntime::class );
-			$method_ids     = $legacy_runtime->get_gateway_upe_enabled_payment_method_ids();
-		}
+	public static function is_link_folded_into_card( WooPaymentsAccountService $account_service, WooPaymentsPaymentMethodRegistry $registry, string $currency ): bool {
+		$method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
 
 		$enabled_method_ids = array();
 		foreach ( (array) $method_ids as $method_id ) {

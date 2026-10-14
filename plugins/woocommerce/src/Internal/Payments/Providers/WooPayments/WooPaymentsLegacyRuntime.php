@@ -139,22 +139,6 @@ class WooPaymentsLegacyRuntime {
 	}
 
 	/**
-	 * Get WooPayments UPE-enabled payment method IDs from the active gateway.
-	 *
-	 * @return string[]
-	 */
-	public function get_gateway_upe_enabled_payment_method_ids(): array {
-		$gateway = $this->get_gateway();
-		if ( ! is_object( $gateway ) ) {
-			return array();
-		}
-
-		$payment_method_ids = $this->call_object_array_method( $gateway, 'get_upe_enabled_payment_method_ids' );
-
-		return $this->normalize_string_array( $payment_method_ids ?? array() );
-	}
-
-	/**
 	 * Tell whether WooPayments is in test mode.
 	 *
 	 * @return bool|null
@@ -370,29 +354,6 @@ class WooPaymentsLegacyRuntime {
 	}
 
 	/**
-	 * Call an object method expected to return an array.
-	 *
-	 * @param object $target      Object instance.
-	 * @param string $method_name Method name.
-	 * @param mixed  ...$args     Method arguments.
-	 * @return array|null
-	 */
-	private function call_object_array_method( object $target, string $method_name, ...$args ): ?array {
-		try {
-			if ( ! $this->legacy_proxy->call_function( 'method_exists', $target, $method_name ) ||
-				! $this->legacy_proxy->call_function( 'is_callable', array( $target, $method_name ) ) ) {
-				return null;
-			}
-
-			$value = $target->{$method_name}( ...$args );
-		} catch ( \Throwable $e ) {
-			return null;
-		}
-
-		return is_array( $value ) ? $value : null;
-	}
-
-	/**
 	 * Get a WooPayments account URL through the legacy account static helper.
 	 *
 	 * @param string $method_name WC_Payments_Account static URL accessor.
@@ -453,27 +414,5 @@ class WooPaymentsLegacyRuntime {
 		}
 
 		return $account_data['data'];
-	}
-
-	/**
-	 * Normalize a mixed array to string values.
-	 *
-	 * @param array<mixed> $values Raw values.
-	 * @return string[]
-	 */
-	private function normalize_string_array( array $values ): array {
-		$normalized = array();
-		foreach ( $values as $value ) {
-			if ( ! is_scalar( $value ) ) {
-				continue;
-			}
-
-			$value = (string) $value;
-			if ( '' !== $value ) {
-				$normalized[] = $value;
-			}
-		}
-
-		return array_values( array_unique( $normalized ) );
 	}
 }
