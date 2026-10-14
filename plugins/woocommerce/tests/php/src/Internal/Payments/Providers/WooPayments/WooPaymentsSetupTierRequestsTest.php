@@ -292,11 +292,20 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->arrange_request( $request );
 
 		// Before Jetpack can tell the connection owner, an account or connection read answers wrongly, and a register()
-		// that decides on it adds the wrong hooks; each of these fails the test on any call but the account service's
-		// own register().
+		// that decides on it adds the wrong hooks; each of these fails the test on any call. The account service's own
+		// register() runs for real, so a read inside it fails too.
 		$container       = wc_get_container();
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->getMock();
-		$account_service->expects( $this->never() )->method( $this->logicalNot( $this->equalTo( 'register' ) ) );
+		$account_readers = array_values(
+			array_map(
+				static fn( \ReflectionMethod $method ): string => $method->getName(),
+				array_filter(
+					( new \ReflectionClass( WooPaymentsAccountService::class ) )->getMethods( \ReflectionMethod::IS_PUBLIC ),
+					static fn( \ReflectionMethod $method ): bool => ! $method->isFinal() && ! $method->isStatic() && ! $method->isConstructor() && 'register' !== $method->getName()
+				)
+			)
+		);
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->onlyMethods( $account_readers )->getMock();
+		$account_service->expects( $this->never() )->method( $this->anything() );
 		$http_client = $this->getMockBuilder( WooPaymentsHttpClient::class )->disableOriginalConstructor()->getMock();
 		$http_client->expects( $this->never() )->method( $this->anything() );
 		$jetpack_manager = $this->getMockBuilder( JetpackConnectionManager::class )->disableOriginalConstructor()->getMock();
