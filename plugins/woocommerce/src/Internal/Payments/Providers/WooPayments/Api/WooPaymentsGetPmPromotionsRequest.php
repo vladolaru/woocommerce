@@ -21,8 +21,6 @@ class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	 */
 	protected $hook = 'wcpay_get_pm_promotions_request';
 
-	protected const DEFAULT_PARAMS = array();
-
 	private const API = 'payment_method_promotions';
 
 	/**

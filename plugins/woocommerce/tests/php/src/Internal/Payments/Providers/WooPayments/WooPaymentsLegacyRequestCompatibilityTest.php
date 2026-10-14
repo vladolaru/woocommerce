@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractWooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsActivatePmPromotionRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiRequest;
@@ -16,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcomeTransactionsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsResponse;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
@@ -248,11 +248,11 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	 * @testdox assign_hook keeps the oracle untyped override contract.
 	 */
 	public function test_assign_hook_has_no_return_type_and_allows_oracle_shaped_override(): void {
-		$method = new \ReflectionMethod( WooPaymentsPaginatedListRequest::class, 'assign_hook' );
+		$method = new \ReflectionMethod( AbstractWooPaymentsApiRequest::class, 'assign_hook' );
 
 		$this->assertFalse( $method->hasReturnType(), 'assign_hook() should not add a return type absent from the oracle.' );
 
-		$request = new class() extends WooPaymentsPaginatedListRequest {
+		$request = new class() extends AbstractWooPaymentsApiRequest {
 			// phpcs:disable Generic.CodeAnalysis.UselessOverridingMethod.Found -- The untyped override is the compatibility behavior under test.
 			/**
 			 * Assign an operation-specific WordPress request filter.
@@ -499,13 +499,13 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a fully initialized request for an alias/filter row.
 	 *
-	 * @param class-string $native_class Native request class.
+	 * @param class-string $request_class Request class.
 	 * @param string       $api Dynamic API path.
 	 * @param string       $method Dynamic HTTP method.
-	 * @return WooPaymentsPaginatedListRequest
+	 * @return AbstractWooPaymentsApiRequest
 	 */
-	private function create_request( string $native_class, string $api = '', string $method = 'GET' ): WooPaymentsPaginatedListRequest {
-		switch ( $native_class ) {
+	private function create_request( string $request_class, string $api = '', string $method = 'GET' ): AbstractWooPaymentsApiRequest {
+		switch ( $request_class ) {
 			case WooPaymentsApiRequest::class:
 				return WooPaymentsApiRequest::create( array(), '' !== $api ? $api : 'capital/loans', $method );
 			case WooPaymentsGetPmPromotionsRequest::class:
@@ -530,7 +530,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 
 				return $request;
 			default:
-				return new $native_class();
+				return new $request_class();
 		}
 	}
 

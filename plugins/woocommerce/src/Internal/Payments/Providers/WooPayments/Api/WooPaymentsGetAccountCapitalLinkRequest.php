@@ -21,8 +21,6 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	 */
 	protected $hook = 'wcpay_get_account_capital_link';
 
-	protected const DEFAULT_PARAMS = array();
-
 	private const API = 'accounts/capital_links';
 
 	private const TYPE = 'capital_financing_offer';

@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use WP_Error;
 use WP_REST_Request;
@@ -2627,11 +2626,11 @@ class WooPaymentsApiClient {
 	 *
 	 * @since 11.0.0
 	 *
-	 * @param WooPaymentsPaginatedListRequest $request Request object the extension's request filters receive.
+	 * @param AbstractWooPaymentsApiRequest $request Request object the extension's request filters receive.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
 	 */
-	public function send_list_request( WooPaymentsPaginatedListRequest $request ): array {
+	public function send_list_request( AbstractWooPaymentsApiRequest $request ): array {
 		$hook = $request->get_hook();
 
 		if ( '' === $hook ) {
@@ -2663,14 +2662,14 @@ class WooPaymentsApiClient {
 	/**
 	 * Send a concrete request after applying a WooPayments compat request-object filter.
 	 *
-	 * @param WooPaymentsPaginatedListRequest $request Request object the extension's request filters receive.
-	 * @param string                          $hook    The WooPayments extension's request filter name.
-	 * @param bool                            $include_test_mode_in_query Whether to add test mode to the API path query.
-	 * @param bool                            $honor_raw_response Whether to honor the request object's raw-response flag.
+	 * @param AbstractWooPaymentsApiRequest $request Request object the extension's request filters receive.
+	 * @param string                        $hook    The WooPayments extension's request filter name.
+	 * @param bool                          $include_test_mode_in_query Whether to add test mode to the API path query.
+	 * @param bool                          $honor_raw_response Whether to honor the request object's raw-response flag.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request fails.
 	 */
-	private function request_with_compat_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
+	private function request_with_compat_request_filter( AbstractWooPaymentsApiRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
 		$filtered_request = $request->get_filtered_request();

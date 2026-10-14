@@ -23,8 +23,6 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	 */
 	protected $hook = 'wpcay_get_account_login_data';
 
-	protected const DEFAULT_PARAMS = array();
-
 	private const API = 'accounts/login_links';
 
 	/**

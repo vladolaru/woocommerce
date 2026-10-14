@@ -7,17 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaginatedListRequest;
-
 /**
  * Mutable WooPayments request object exposed to legacy compatibility filters.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsApiRequest extends WooPaymentsPaginatedListRequest {
-
-	protected const DEFAULT_PARAMS = array();
+class WooPaymentsApiRequest extends AbstractWooPaymentsApiRequest {
 
 	/**
 	 * WooPayments API path.

@@ -7,17 +7,16 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractWooPaymentsApiRequest;
 use WP_REST_Request;
 
 /**
- * Compatibility request object base for preserved WooPayments paginated list filters.
+ * A paginated platform list request: page, page size, sort and the date and match filters the list routes share.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-abstract class WooPaymentsPaginatedListRequest {
+abstract class WooPaymentsPaginatedListRequest extends AbstractWooPaymentsApiRequest {
 
 	protected const DEFAULT_PARAMS = array(
 		'page'      => 0,
@@ -26,29 +25,6 @@ abstract class WooPaymentsPaginatedListRequest {
 		'direction' => 'desc',
 		'limit'     => 100,
 	);
-
-	/**
-	 * Request params.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $params = array();
-
-	/**
-	 * WordPress filter applied when the request is sent.
-	 *
-	 * Concrete requests with a fixed legacy filter override this property. Requests with
-	 * operation-specific filters use assign_hook() before send().
-	 *
-	 * @var string
-	 */
-	protected $hook = '';
-
-	/**
-	 * Constructor.
-	 */
-	final public function __construct() {
-	}
 
 	/**
 	 * Create a request from REST request data.
@@ -167,208 +143,5 @@ abstract class WooPaymentsPaginatedListRequest {
 		if ( ! empty( $date_between ) ) {
 			$this->set_param( 'date_between', $date_between );
 		}
-	}
-
-	/**
-	 * Returns the request's API.
-	 *
-	 * @return string
-	 */
-	abstract public function get_api(): string;
-
-	/**
-	 * Returns the request's HTTP method.
-	 *
-	 * @return string
-	 */
-	public function get_method(): string {
-		return 'GET';
-	}
-
-	/**
-	 * Whether this request is site-specific.
-	 *
-	 * @return bool
-	 */
-	public function is_site_specific(): bool {
-		return true;
-	}
-
-	/**
-	 * Whether this request should use the user token.
-	 *
-	 * @return bool
-	 */
-	public function should_use_user_token(): bool {
-		return false;
-	}
-
-	/**
-	 * Whether this request should return the raw response.
-	 *
-	 * @return bool
-	 */
-	public function should_return_raw_response(): bool {
-		return false;
-	}
-
-	/**
-	 * Get a request param by key.
-	 *
-	 * @param string $key Param key.
-	 * @return mixed
-	 */
-	public function get_param( string $key ) {
-		$params = $this->get_params();
-
-		if ( array_key_exists( $key, $params ) ) {
-			return $params[ $key ];
-		}
-
-		return null;
-	}
-
-	/**
-	 * Get request params.
-	 *
-	 * @return array<string,mixed>
-	 */
-	public function get_params(): array {
-		$params = array_merge( static::DEFAULT_PARAMS, $this->params );
-
-		foreach ( $params as $key => $value ) {
-			if ( true === $value ) {
-				$params[ $key ] = 'true';
-			}
-		}
-
-		return $params;
-	}
-
-	/**
-	 * Set an arbitrary request parameter.
-	 *
-	 * Preserves the fluent generic setter exposed by legacy WooPayments request objects.
-	 *
-	 * @param mixed $key   Param key.
-	 * @param mixed $value Param value.
-	 * @return static
-	 */
-	public function set( $key, $value ) {
-		$this->set_param( (string) $key, $value );
-
-		return $this;
-	}
-
-	/**
-	 * Set a request param.
-	 *
-	 * @param string $key   Param key.
-	 * @param mixed  $value Param value.
-	 */
-	public function set_param( string $key, $value ): void {
-		$this->params[ $key ] = $value;
-	}
-
-	/**
-	 * Catch filter setters the request does not declare, as extensions call them on the legacy request objects, and set
-	 * the parameter under the name after `set_`, without normalizing it. Declared setters still win.
-	 *
-	 * @param string           $name      Method name.
-	 * @param array<int,mixed> $arguments Method arguments.
-	 */
-	public function __call( string $name, array $arguments ): void {
-		if ( 0 === strpos( $name, 'set_' ) && array_key_exists( 0, $arguments ) ) {
-			$this->set_param( substr( $name, 4 ), $arguments[0] );
-		}
-	}
-
-	/**
-	 * Get the WordPress filter applied when the request is sent.
-	 *
-	 * @return string
-	 */
-	final public function get_hook(): string {
-		return $this->hook;
-	}
-
-	/**
-	 * Assign an operation-specific WordPress request filter.
-	 *
-	 * @param string $hook WordPress filter name.
-	 * @return void
-	 */
-	public function assign_hook( string $hook ) {
-		$this->hook = $hook;
-	}
-
-	/**
-	 * Fire this request's filter and return the request the callbacks hand back.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return WooPaymentsPaginatedListRequest
-	 * @throws WooPaymentsApiException When a callback returns something that is not a request.
-	 */
-	final public function get_filtered_request(): WooPaymentsPaginatedListRequest {
-		/**
-		 * Filters a WooPayments API request before it is sent to the platform.
-		 *
-		 * Fires under the WooPayments extension's request hook names, so existing callbacks keep running. Callbacks receive the
-		 * provider's own request object, not the extension's request classes; its class and setters are not a supported API.
-		 * Any return value that is not a `WooPaymentsPaginatedListRequest` stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsPaginatedListRequest $request Request about to be sent.
-		 */
-		$filtered_request = apply_filters( $this->hook, $this );
-
-		if ( ! $filtered_request instanceof self ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), $this->hook );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
-
-		return $filtered_request;
-	}
-
-	/**
-	 * Format the low-level transport response.
-	 *
-	 * @param array<mixed> $response Transport response.
-	 * @return mixed
-	 */
-	public function format_response( $response ) {
-		return $this->format_default_response( $response );
-	}
-
-	/**
-	 * Wrap a transport response in a response object.
-	 *
-	 * @param array<mixed> $response Transport response.
-	 * @return WooPaymentsResponse
-	 */
-	protected function format_default_response( $response ): WooPaymentsResponse {
-		return new WooPaymentsResponse( $response );
-	}
-
-	/**
-	 * Execute the request against the platform and return its compatibility transport result.
-	 *
-	 * Backward-compatibility shim: the standalone WooPayments plugin's request objects expose
-	 * send(), and extensions hooking the preserved wcpay_list_transactions_request /
-	 * wcpay_get_reporting_balance_summary_request (and sibling list) filters may call
-	 * $request->send() on the filtered object. The native object preserves that contract by
-	 * delegating to the API client. Do not remove without a _deprecated_function() cycle.
-	 *
-	 * @since 11.0.0
-	 * @return mixed
-	 */
-	public function send() {
-		$api_client = wc_get_container()->get( WooPaymentsApiClient::class );
-
-		return $this->format_response( $api_client->send_list_request( $this ) );
 	}
 }

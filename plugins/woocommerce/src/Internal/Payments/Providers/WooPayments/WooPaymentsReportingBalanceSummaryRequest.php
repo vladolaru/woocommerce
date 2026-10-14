@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractWooPaymentsApiRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 
 /**
@@ -15,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsReportingBalanceSummaryRequest extends WooPaymentsPaginatedListRequest {
+class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRequest {
 	/**
 	 * WordPress filter applied when the request is sent.
 	 *
@@ -24,8 +25,6 @@ class WooPaymentsReportingBalanceSummaryRequest extends WooPaymentsPaginatedList
 	protected $hook = 'wcpay_get_reporting_balance_summary_request';
 
 	private const CURRENCY_CODE_PATTERN = '/^[a-z]{3}$/i';
-
-	protected const DEFAULT_PARAMS = array();
 
 	/**
 	 * Create a request from normalized params.
