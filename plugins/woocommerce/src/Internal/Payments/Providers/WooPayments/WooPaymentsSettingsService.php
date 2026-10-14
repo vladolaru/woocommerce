@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Throwable;
 use WP_Error;
 
@@ -329,7 +330,7 @@ class WooPaymentsSettingsService {
 			'is_multi_currency_enabled'                  => '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' ),
 			'is_wcpay_subscriptions_enabled'             => $this->stripe_billing_module->is_bundled_subscriptions_flag_on(),
 			'is_wcpay_subscriptions_eligible'            => $this->stripe_billing_module->is_bundled_subscriptions_eligible(),
-			'is_subscriptions_plugin_active'             => class_exists( 'WC_Subscriptions' ),
+			'is_subscriptions_plugin_active'             => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'feature_flags'                              => $this->get_feature_flags(),
 			'account_country'                            => $account_fields['account_country'],
 			'account_statement_descriptor'               => $account_fields['account_statement_descriptor'],

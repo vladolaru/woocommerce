@@ -13,6 +13,7 @@ use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
@@ -2319,7 +2320,7 @@ class WooPaymentsWooPaySessionService {
 			'account_id'                     => $this->get_account_service()->get_account_id(),
 			'test_mode'                      => $this->get_account_service()->is_test_mode_enabled(),
 			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
-			'is_subscriptions_plugin_active' => class_exists( 'WC_Subscriptions' ),
+			'is_subscriptions_plugin_active' => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
 			'ship_to_billing_address_only'   => function_exists( 'wc_ship_to_billing_address_only' ) && wc_ship_to_billing_address_only(),
 			'return_url'                     => $order instanceof \WC_Order ? $checkout_url : ( function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url( '/' ) ),
