@@ -125,8 +125,6 @@ class WooPaymentsSettingsService {
 
 	private const PAYMENT_REQUEST_DUPLICATE_METHOD_ID = 'apple_pay_google_pay';
 
-	private const FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS = 'woocommerce_woopayments_gateway_duplicate_payment_method_ids';
-
 	private const PAYMENT_REQUEST_DUPLICATE_GATEWAY_KEYWORDS = array(
 		'apple_pay',
 		'applepay',
@@ -994,10 +992,6 @@ class WooPaymentsSettingsService {
 					continue;
 				}
 
-				foreach ( $this->get_declared_duplicate_payment_method_ids_for_gateway( $gateway, $gateway_id ) as $payment_method_id ) {
-					$duplicate_candidates[ $payment_method_id ][] = $gateway_id;
-				}
-
 				if ( $this->is_payment_request_duplicate_gateway( $gateway, $gateway_id ) ) {
 					$duplicate_candidates[ self::PAYMENT_REQUEST_DUPLICATE_METHOD_ID ][] = $gateway_id;
 				}
@@ -1043,41 +1037,6 @@ class WooPaymentsSettingsService {
 		}
 
 		return $duplicates;
-	}
-
-	/**
-	 * Get payment method duplicate declarations for a gateway.
-	 *
-	 * @param object $gateway    Payment gateway.
-	 * @param string $gateway_id Gateway ID.
-	 * @return string[]
-	 */
-	private function get_declared_duplicate_payment_method_ids_for_gateway( object $gateway, string $gateway_id ): array {
-		/**
-		 * Filters native WooPayments payment method IDs duplicated by a payment gateway.
-		 *
-		 * This gives gateway integrations a precise declaration path without relying on gateway ID
-		 * keywords or private option names. Return native method IDs such as "card" or the
-		 * synthetic express-wallet ID "apple_pay_google_pay".
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param string[] $payment_method_ids Native WooPayments payment method IDs duplicated by the gateway.
-		 * @param string   $gateway_id         Payment gateway ID.
-		 * @param object   $gateway            Payment gateway instance.
-		 */
-		$payment_method_ids = apply_filters(
-			self::FILTER_GATEWAY_DUPLICATE_PAYMENT_METHOD_IDS,
-			array(),
-			$gateway_id,
-			$gateway
-		);
-
-		if ( ! is_array( $payment_method_ids ) ) {
-			return array();
-		}
-
-		return $this->sanitize_duplicate_payment_method_ids( $payment_method_ids );
 	}
 
 	/**
@@ -1225,31 +1184,6 @@ class WooPaymentsSettingsService {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Sanitize duplicate-detection payment method IDs.
-	 *
-	 * @param mixed[] $payment_method_ids Payment method IDs.
-	 * @return string[]
-	 */
-	private function sanitize_duplicate_payment_method_ids( array $payment_method_ids ): array {
-		$allowed_payment_method_ids = array_merge(
-			self::SUPPORTED_PAYMENT_METHOD_IDS,
-			array( self::PAYMENT_REQUEST_DUPLICATE_METHOD_ID )
-		);
-
-		return array_values(
-			array_unique(
-				array_filter(
-					array_map(
-						static fn( $payment_method_id ): string => is_scalar( $payment_method_id ) ? (string) $payment_method_id : '',
-						$payment_method_ids
-					),
-					static fn( string $payment_method_id ): bool => in_array( $payment_method_id, $allowed_payment_method_ids, true )
-				)
-			)
-		);
 	}
 
 	/**

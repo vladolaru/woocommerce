@@ -2239,14 +2239,7 @@ class WooPaymentsWooPaySessionService {
 			$blog_id = (string) \Jetpack_Options::get_option( 'id' );
 		}
 
-		/**
-		 * Filters the native WooPay blog ID used for session signatures.
-		 *
-		 * @param string $blog_id Connected store blog ID.
-		 *
-		 * @since 11.0.0
-		 */
-		return (string) apply_filters( 'woocommerce_woopayments_woopay_blog_id', $blog_id );
+		return $blog_id;
 	}
 
 	/**
@@ -2263,14 +2256,6 @@ class WooPaymentsWooPaySessionService {
 			$blog_token = DEV_BLOG_TOKEN_SECRET;
 		}
 
-		/**
-		 * Filters the native WooPay blog token used for session signatures.
-		 *
-		 * @param string $blog_token Connected store blog token.
-		 *
-		 * @since 11.0.0
-		 */
-		$blog_token = (string) apply_filters( 'woocommerce_woopayments_woopay_blog_token', $blog_token );
 		if ( '' === $blog_token ) {
 			// Client 11.1.0 class-woopay-utilities.php:297.
 			$this->get_logger()->log( 'WooPay blog_token is currently misconfigured.' );
