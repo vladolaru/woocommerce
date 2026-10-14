@@ -253,9 +253,9 @@ class WooPaymentsCheckoutAssets {
 	/**
 	 * WooPayments payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry|null
+	 * @var WooPaymentsPaymentMethodRegistry
 	 */
-	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
 	 * Express checkout service.
@@ -292,8 +292,8 @@ class WooPaymentsCheckoutAssets {
 	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry      Payment method registry.
 	 * @param WooPaymentsFraudPreventionService|null $fraud_prevention_service  Optional fraud-prevention service.
-	 * @param WooPaymentsPaymentMethodRegistry|null  $payment_method_registry   Optional payment method registry.
 	 * @param WooPaymentsCustomerService|null        $customer_service          Optional WooPayments customer service.
 	 */
 	final public function init(
@@ -301,14 +301,15 @@ class WooPaymentsCheckoutAssets {
 		WooPaymentsWooPaySessionService $woopay_session_service,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
+		WooPaymentsPaymentMethodRegistry $payment_method_registry,
 		?WooPaymentsFraudPreventionService $fraud_prevention_service = null,
-		?WooPaymentsPaymentMethodRegistry $payment_method_registry = null,
 		?WooPaymentsCustomerService $customer_service = null
 	): void {
 		$this->account_service              = $account_service;
 		$this->woopay_session_service       = $woopay_session_service;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
+		$this->payment_method_registry      = $payment_method_registry;
 
 		if ( null !== $fraud_prevention_service ) {
 			$this->fraud_prevention_service = $fraud_prevention_service;
@@ -316,8 +317,6 @@ class WooPaymentsCheckoutAssets {
 		if ( null !== $customer_service ) {
 			$this->customer_service = $customer_service;
 		}
-
-		$this->payment_method_registry = $payment_method_registry;
 	}
 
 	/**
@@ -968,7 +967,7 @@ class WooPaymentsCheckoutAssets {
 		);
 
 		if ( $this->should_fold_link_into_card( $currency ) ) {
-			$link_definition = $this->get_payment_method_registry()->get( 'link' );
+			$link_definition = $this->payment_method_registry->get( 'link' );
 			if ( null !== $link_definition ) {
 				$config['link'] = $this->get_payment_method_config( $link_definition, $saved_cards_enabled );
 			}
@@ -995,7 +994,7 @@ class WooPaymentsCheckoutAssets {
 
 		$config = array();
 		foreach ( array( 'apple_pay', 'google_pay' ) as $payment_method_id ) {
-			$definition = $this->get_payment_method_registry()->get( $payment_method_id );
+			$definition = $this->payment_method_registry->get( $payment_method_id );
 			if (
 				null === $definition
 				|| ! $this->get_account_service()->is_payment_request_method_enabled( $payment_method_id )
@@ -1093,7 +1092,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	private function should_fold_link_into_card( string $currency ): bool {
-		return $this->get_payment_method_registry()->is_link_folded_into_card( $this->get_account_service(), $currency );
+		return $this->payment_method_registry->is_link_folded_into_card( $this->get_account_service(), $currency );
 	}
 
 	/**
@@ -1205,19 +1204,6 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		return array( $payment_method_definition->get_stripe_payment_method_type() );
-	}
-
-	/**
-	 * Get the payment method definition registry.
-	 *
-	 * @return WooPaymentsPaymentMethodRegistry
-	 */
-	private function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
-		if ( null === $this->payment_method_registry ) {
-			$this->payment_method_registry = new WooPaymentsPaymentMethodRegistry();
-		}
-
-		return $this->payment_method_registry;
 	}
 
 	/**

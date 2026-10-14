@@ -17,6 +17,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLocaleUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -78,7 +80,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->woopay_session_service = new RecordingWooPaySessionService();
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $this->create_account_service(), $this->api_client, $this->pm_promotions_service, $this->woopay_session_service );
+		$this->sut->init( $this->create_account_service(), $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->woopay_session_service );
 	}
 
 	/**
@@ -719,9 +721,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$account_service,
 			$this->api_client,
 			$this->pm_promotions_service,
-			$this->woopay_session_service,
-			null,
-			new WooPaymentsPaymentMethodRegistry()
+			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
+			new WooPaymentsPaymentMethodRegistry(),
+			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
+			$this->woopay_session_service
 		);
 
 		$settings = $service->get_settings();

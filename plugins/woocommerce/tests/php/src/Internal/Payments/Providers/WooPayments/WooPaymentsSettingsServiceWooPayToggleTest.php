@@ -8,6 +8,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -77,6 +80,9 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 			$account_service,
 			new RecordingSettingsApiClient(),
 			new RecordingPmPromotionsService(),
+			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
+			wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ),
+			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			new RecordingWooPaySessionService()
 		);
 	}

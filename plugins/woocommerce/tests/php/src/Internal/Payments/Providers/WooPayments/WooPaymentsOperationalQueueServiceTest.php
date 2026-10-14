@@ -22,6 +22,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
 use WC_Order;
@@ -634,7 +636,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$account_service  = $this->create_account_service( $account_data );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ) );
+		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ) );
 
 		try {
 			$snapshot = $this->send_store_setup_snapshot( $settings, $account_service, $settings_service );

@@ -214,16 +214,23 @@ class WooPaymentsSettingsService {
 	/**
 	 * Canonical-to-split gateway settings synchronizer.
 	 *
-	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 * @var WooPaymentsGatewaySettingsSynchronizer
 	 */
-	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+	private WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer;
 
 	/**
 	 * Payment method definition registry.
 	 *
-	 * @var WooPaymentsPaymentMethodRegistry|null
+	 * @var WooPaymentsPaymentMethodRegistry
 	 */
-	private ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null;
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
+	 * Stripe Billing module.
+	 *
+	 * @var WooPaymentsStripeBillingModule
+	 */
+	private WooPaymentsStripeBillingModule $stripe_billing_module;
 
 	/**
 	 * Payment method promotions service.
@@ -244,20 +251,22 @@ class WooPaymentsSettingsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService                   $account_service        Native WooPayments account service.
-	 * @param WooPaymentsApiClient                        $api_client             Native WooPayments API client.
-	 * @param WooPaymentsPmPromotionsService              $pm_promotions_service  PM promotions service.
-	 * @param WooPaymentsWooPaySessionService|null        $woopay_session_service       Optional WooPay session service.
-	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
-	 * @param WooPaymentsPaymentMethodRegistry|null       $payment_method_registry       Optional payment method registry.
+	 * @param WooPaymentsAccountService              $account_service               WooPayments account service.
+	 * @param WooPaymentsApiClient                   $api_client                    WooPayments API client.
+	 * @param WooPaymentsPmPromotionsService         $pm_promotions_service         PM promotions service.
+	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings synchronizer.
+	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry       Payment method registry.
+	 * @param WooPaymentsStripeBillingModule         $stripe_billing_module         Stripe Billing module.
+	 * @param WooPaymentsWooPaySessionService|null   $woopay_session_service        Optional WooPay session service.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null, ?WooPaymentsPaymentMethodRegistry $payment_method_registry = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, ?WooPaymentsWooPaySessionService $woopay_session_service = null ): void {
 		$this->account_service               = $account_service;
 		$this->api_client                    = $api_client;
 		$this->pm_promotions_service         = $pm_promotions_service;
-		$this->woopay_session_service        = $woopay_session_service;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 		$this->payment_method_registry       = $payment_method_registry;
+		$this->stripe_billing_module         = $stripe_billing_module;
+		$this->woopay_session_service        = $woopay_session_service;
 	}
 
 	/**
@@ -379,7 +388,7 @@ class WooPaymentsSettingsService {
 			'express_checkout_preview'                   => $this->get_express_checkout_preview_settings(),
 		);
 
-		return array_merge( $contract, wc_get_container()->get( WooPaymentsStripeBillingModule::class )->get_settings_fields() );
+		return array_merge( $contract, $this->stripe_billing_module->get_settings_fields() );
 	}
 
 	/**
@@ -420,7 +429,7 @@ class WooPaymentsSettingsService {
 			'woopay'                                   => $is_woopay_eligible,
 			'woopayExpressCheckout'                    => $this->is_feature_flag_enabled( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, true ),
 			'isDynamicCheckoutPlaceOrderButtonEnabled' => self::is_dynamic_checkout_place_order_button_enabled(),
-			'amazonPay'                                => $this->get_payment_method_registry()->is_amazon_pay_enabled( $this->account_service ),
+			'amazonPay'                                => $this->payment_method_registry->is_amazon_pay_enabled( $this->account_service ),
 			'isEceUsingConfirmationTokens'             => $this->account_service->is_ece_confirmation_tokens_enabled(),
 		);
 	}
@@ -637,7 +646,7 @@ class WooPaymentsSettingsService {
 		}
 
 		if ( array_key_exists( 'is_stripe_billing_enabled', $params ) ) {
-			wc_get_container()->get( WooPaymentsStripeBillingModule::class )->set_stripe_billing_enabled( (bool) $params['is_stripe_billing_enabled'] );
+			$this->stripe_billing_module->set_stripe_billing_enabled( (bool) $params['is_stripe_billing_enabled'] );
 		}
 
 		foreach ( array_keys( self::ACCOUNT_SETTING_MAP ) as $request_key ) {
@@ -650,13 +659,13 @@ class WooPaymentsSettingsService {
 		}
 
 		// Persist every setting in one canonical write, then project enabled state to split gateways.
-		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings, $payment_request_enabled );
-		if ( ! $projection['persisted'] ) {
+		$result = $this->gateway_settings_synchronizer->persist( $settings, $payment_request_enabled );
+		if ( ! $result['persisted'] ) {
 			// Account and fraud settings in this request already reached the platform; say which local option did not save.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 				'Native WooPayments settings could not be saved locally.',
 				'error',
-				array( 'failed_options' => $projection['failed_option_names'] )
+				array( 'failed_options' => $result['failed_option_names'] )
 			);
 
 			return new WP_Error(
@@ -665,7 +674,7 @@ class WooPaymentsSettingsService {
 				array( 'status' => 500 )
 			);
 		}
-		$settings = $projection['settings'];
+		$settings = $result['settings'];
 		$this->record_woopay_settings_events( $params, $previous_settings, $settings );
 		/**
 		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
@@ -743,32 +752,6 @@ class WooPaymentsSettingsService {
 		update_option( $option_name, $value );
 
 		return true;
-	}
-
-	/**
-	 * Get the canonical-to-split gateway settings synchronizer.
-	 *
-	 * @return WooPaymentsGatewaySettingsSynchronizer
-	 */
-	private function get_gateway_settings_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
-		if ( null === $this->gateway_settings_synchronizer ) {
-			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
-		}
-
-		return $this->gateway_settings_synchronizer;
-	}
-
-	/**
-	 * Get the payment method definition registry.
-	 *
-	 * @return WooPaymentsPaymentMethodRegistry
-	 */
-	private function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
-		if ( null === $this->payment_method_registry ) {
-			$this->payment_method_registry = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
-		}
-
-		return $this->payment_method_registry;
 	}
 
 	/**
@@ -854,7 +837,7 @@ class WooPaymentsSettingsService {
 	 */
 	private function get_available_payment_method_ids(): array {
 		// Availability comes from the account's live fee structures only, like the plugin: no locally stored list and no card fallback. Empty fees (no account, or a genuinely feeless cache) means nothing is available — the plugin's settings enum is empty in the same state.
-		$available_ids = $this->get_payment_method_registry()->get_available_payment_method_ids_for_account( $this->account_service );
+		$available_ids = $this->payment_method_registry->get_available_payment_method_ids_for_account( $this->account_service );
 
 		return array_values(
 			array_filter(
@@ -872,7 +855,7 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	private function is_listable_payment_method( string $payment_method_id ): bool {
-		$definition = $this->get_payment_method_registry()->get( $payment_method_id );
+		$definition = $this->payment_method_registry->get( $payment_method_id );
 
 		return null === $definition
 			|| $definition->is_offered_to_new_accounts()

@@ -768,7 +768,7 @@ class WooPaymentsPmPromotionsService {
 			return array();
 		}
 
-		return wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get_available_payment_method_ids_for_account( $account_service );
+		return $this->payment_method_registry->get_available_payment_method_ids_for_account( $account_service );
 	}
 
 	/**
