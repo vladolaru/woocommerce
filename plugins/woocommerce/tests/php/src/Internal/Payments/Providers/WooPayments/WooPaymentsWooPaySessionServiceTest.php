@@ -122,13 +122,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	private $original_direct_checkout_option;
 
 	/**
-	 * Original WooPay blog identity filters.
-	 *
-	 * @var array<string,object|null>
-	 */
-	private array $original_blog_identity_filters = array();
-
-	/**
 	 * Original WooCommerce session object.
 	 *
 	 * @var object|null
@@ -142,9 +135,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->original_session                = WC()->session;
 		$this->original_direct_checkout_option = get_option( '_wcpay_feature_woopay_direct_checkout', null );
-		foreach ( array( 'woocommerce_woopayments_woopay_blog_id', 'woocommerce_woopayments_woopay_blog_token' ) as $filter_name ) {
-			$this->original_blog_identity_filters[ $filter_name ] = isset( $GLOBALS['wp_filter'][ $filter_name ] ) ? clone $GLOBALS['wp_filter'][ $filter_name ] : null;
-		}
 		$this->reset_frontend_surface_state();
 		add_filter(
 			'woocommerce_available_payment_gateways',
@@ -205,13 +195,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 					'time_diff',
 				)
 			);
-		}
-		foreach ( $this->original_blog_identity_filters as $filter_name => $hook ) {
-			if ( null === $hook ) {
-				unset( $GLOBALS['wp_filter'][ $filter_name ] );
-			} else {
-				$GLOBALS['wp_filter'][ $filter_name ] = $hook; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the exact pre-test hook snapshot.
-			}
 		}
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'woocommerce_logger_log_message' );
@@ -910,8 +893,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should generate the reference WooPay request signature.
 	 */
 	public function test_generates_reference_request_signature(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
 
 		$sut = $this->create_service();
 		// The signature covers the current 30-second window; the call can cross into the next one.
@@ -1135,8 +1118,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should encrypt minimum session data with the WooPay reference shape.
 	 */
 	public function test_encrypts_minimum_session_data_with_reference_shape(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
 
 		$sut    = $this->create_service();
 		$result = $sut->get_encrypted_minimum_session_data();
@@ -2463,7 +2446,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should build the preserved WooPay checkout frontend config.
 	 */
 	public function test_builds_woopay_checkout_frontend_config(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		\Jetpack_Options::update_option( 'id', 12345 );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 
 		$sut = $this->create_service();
@@ -2765,8 +2748,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should forward init session requests through filterable transport.
 	 */
 	public function test_forwards_init_session_request_through_filterable_transport(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::update_option( 'id', 12345 );
 			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );
@@ -3071,8 +3052,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_logs_unsignable_session_data_while_logging_is_on( string $blog_id, string $blog_token, string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => $blog_id );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+		\Jetpack_Options::update_option( 'id', $blog_id );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
 		$lines = $this->record_woopayments_log_lines();
 
 		$this->assertSame( array(), $this->create_service()->encrypt_and_sign_data( array( 'email' => 'shopper@example.com' ) ) );
@@ -3083,8 +3064,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * Connect the store blog so the Jetpack-signed WooPay init request can be built.
 	 */
 	private function connect_woopay_blog(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::update_option( 'id', 12345 );
 			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );
@@ -3916,8 +3895,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			throw new \RuntimeException( 'Could not encrypt the WooPay identity fixture.' );
 		}
 
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
 
 		return array(
 			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes the WooPay identity fixture contract.
