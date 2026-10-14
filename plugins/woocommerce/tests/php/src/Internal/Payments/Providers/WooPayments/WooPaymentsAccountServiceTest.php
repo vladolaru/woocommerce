@@ -1591,6 +1591,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	public function test_reads_account_cache_wrappers_written_by_earlier_versions( string $description, ?int $age, bool $errored, ?int $consecutive_errors, string $expected_account, int $expected_calls ): void {
 		unset( $description );
 		set_current_screen( 'dashboard' );
+		// Shapes as client 11.1.0 includes/class-database-cache.php:364-382 writes them, before and after its error count.
 		$wrapper = array(
 			'data'    => $this->get_valid_live_account_payload( array( 'account_id' => 'acct_stored' ) ),
 			'fetched' => null === $age ? 0 : time() - $age,
@@ -1617,6 +1618,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'no error count, fresh'                     => array( 'a wrapper without an error count, fresh', 60, false, null, 'acct_stored', 0 ),
 			'no error count, errored a minute ago'      => array( 'an errored wrapper without an error count, one minute old', 60, true, null, 'acct_stored', 0 ),
 			'no error count, errored three minutes ago' => array( 'an errored wrapper without an error count, three minutes old', 180, true, null, 'acct_fetched', 1 ),
+			// Built-in behaviour: cache_account_data_until_refreshed() stores the onboarding record with fetched 0.
 			'never fetched (partial onboarding record)' => array( 'a partial onboarding record never fetched', null, false, 0, 'acct_fetched', 1 ),
 		);
 	}

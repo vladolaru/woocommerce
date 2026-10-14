@@ -104,7 +104,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( get_option( 'wcpay_dispute_status_counts_cache' )['errored'] );
 
 		$this->assertSame( 0, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 1, $api_client->dispute_status_count_calls, 'Errored cache wrappers should suppress repeated admin-load refreshes until TTL expiry.' );
+		$this->assertSame( 1, $api_client->dispute_status_count_calls, 'A second read in the same request should not refetch after a failed refresh.' );
 	}
 
 	/**
@@ -310,6 +310,28 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 		$this->create_service( $this->create_api_client( array(), array( 'count' => 3 ) ) )->invalidate_authorization_summary_caches();
 
 		$this->assertFalse( wp_cache_get( 'wcpay_authorization_summary_cache', 'options' ) );
+	}
+
+	/**
+	 * @testdox Should fetch the authorization summary again after invalidation in the same request ($description).
+	 * @testWith ["live mode", false, "wcpay_authorization_summary_cache"]
+	 *           ["test mode", true, "wcpay_test_authorization_summary_cache"]
+	 *
+	 * @param string $description Mode the row covers.
+	 * @param bool   $test_mode   Whether test mode is enabled.
+	 * @param string $option      Cache option of that mode.
+	 */
+	public function test_reads_the_authorization_summary_again_after_invalidation_in_the_same_request( string $description, bool $test_mode, string $option ): void {
+		unset( $description );
+		$api_client = $this->create_api_client( array(), array( 'count' => 4 ) );
+		$sut        = $this->create_service( $api_client, $test_mode, 'yes' );
+		$this->assertSame( 4, $sut->get_uncaptured_transactions_count() );
+
+		$sut->invalidate_authorization_summary_caches();
+
+		$this->assertSame( 4, $sut->get_uncaptured_transactions_count() );
+		$this->assertSame( 2, $api_client->authorization_summary_calls, 'Invalidation should clear the in-request copy too, so the next read fetches again.' );
+		$this->assertSame( array( 'count' => 4 ), get_option( $option )['data'] );
 	}
 
 	/**

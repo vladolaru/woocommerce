@@ -44,6 +44,7 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	public function test_keeps_entries_for_their_ttl( string $key, string $screen, string $description, bool $errored, ?int $consecutive_errors, int $age, bool $expected_refresh ): void {
 		unset( $description );
 		set_current_screen( $screen );
+		// Shapes as client 11.1.0 includes/class-database-cache.php:364-382 writes them, before and after its error count.
 		$contents = array(
 			'data'    => array( 'cached' => true ),
 			'fetched' => time() - $age,
