@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -21,9 +21,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsReportsRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 	private const DEFAULT_FEE_BEARING_TYPES = array(
 		'charge',
@@ -79,25 +77,27 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-reports';
 	}
 
 	/**
 	 * Register WooPayments-compatible Reports routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/reports/balance', $this->get_readable_route( 'get_balance_summary', $this->get_balance_args() ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees', $this->get_readable_route( 'get_fees', $this->get_fees_collection_args() ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary', $this->get_fees_collection_args() ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download', $this->get_creatable_route( 'get_fees_export' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions', $this->get_collection_args( 'date' ) ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/transactions/(?P<id>\w+)', $this->get_readable_route( 'get_report_transaction' ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations', $this->get_readable_route( 'get_report_authorizations', $this->get_collection_args( 'created' ) ) );
-		register_rest_route( self::NAMESPACE, '/payments/reports/authorizations/(?P<id>\w+)', $this->get_readable_route( 'get_report_authorization' ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/balance', $this->get_readable_route( 'get_balance_summary', $this->get_balance_args() ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees', $this->get_readable_route( 'get_fees', $this->get_fees_collection_args() ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees/summary', $this->get_readable_route( 'get_fees_summary', $this->get_fees_collection_args() ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees/download', $this->get_creatable_route( 'get_fees_export' ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/fees/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/transactions', $this->get_readable_route( 'get_report_transactions', $this->get_collection_args( 'date' ) ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/transactions/(?P<id>\w+)', $this->get_readable_route( 'get_report_transaction' ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/authorizations', $this->get_readable_route( 'get_report_authorizations', $this->get_collection_args( 'created' ) ) );
+		register_rest_route( $this->route_namespace, '/payments/reports/authorizations/(?P<id>\w+)', $this->get_readable_route( 'get_report_authorization' ) );
 	}
 
 	/**
@@ -105,7 +105,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' ) && $this->account_service->is_reports_enabled() && $this->account_service->has_account();
 	}
 
@@ -313,7 +313,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 			'methods'             => WP_REST_Server::READABLE,
 			'args'                => $args,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -327,7 +327,7 @@ class WooPaymentsReportsRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_Error;
 use WP_REST_Request;
@@ -20,9 +20,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsAccountSessionRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 
 	/**
 	 * Embedded account session service.
@@ -52,23 +50,25 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-account-session';
 	}
 
 	/**
 	 * Register WooPayments-compatible account-session routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/accounts', $this->get_readable_route( 'get_account_data' ) );
+		register_rest_route( $this->route_namespace, '/payments/accounts', $this->get_readable_route( 'get_account_data' ) );
 
 		// NOTE: Registered as READABLE (GET) deliberately for backward compatibility
 		// with the WooPayments client and mobile app, which call this endpoint as GET.
 		// Do not change to CREATABLE/POST without a coordinated client + mobile migration.
 		// See review finding 3eece18f.
-		register_rest_route( self::NAMESPACE, '/payments/accounts/session', $this->get_readable_route( 'create_embedded_account_session' ) );
+		register_rest_route( $this->route_namespace, '/payments/accounts/session', $this->get_readable_route( 'create_embedded_account_session' ) );
 	}
 
 	/**
@@ -76,7 +76,7 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -153,7 +153,7 @@ class WooPaymentsAccountSessionRestController implements RegisterHooksInterface 
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 }

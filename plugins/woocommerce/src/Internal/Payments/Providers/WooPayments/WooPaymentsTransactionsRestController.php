@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -21,9 +21,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 	private const FRAUD_OUTCOME_MAX_PAGE_SIZE = 100;
 
@@ -55,29 +53,31 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-transactions';
 	}
 
 	/**
 	 * Register WooPayments-compatible transactions routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/transactions', $this->get_readable_route( 'get_transactions' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/download', $this->get_creatable_route( 'get_transactions_export' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/summary', $this->get_readable_route( 'get_transactions_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/search', $this->get_readable_route( 'get_transactions_search_autocomplete' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions', $this->get_readable_route( 'get_transactions' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/download', $this->get_creatable_route( 'get_transactions_export' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/summary', $this->get_readable_route( 'get_transactions_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/search', $this->get_readable_route( 'get_transactions_search_autocomplete' ) );
 
-		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes', $this->get_readable_route( 'get_fraud_outcome_transactions' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/summary', $this->get_readable_route( 'get_fraud_outcome_transactions_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/search', $this->get_readable_route( 'get_fraud_outcome_transactions_search_autocomplete' ) );
-		register_rest_route( self::NAMESPACE, '/payments/transactions/fraud-outcomes/download', $this->get_readable_route( 'get_fraud_outcome_transactions_export' ) );
-		register_rest_route( self::NAMESPACE, '/payments/fraud_outcomes/(?P<id>\w+)/latest', $this->get_readable_route( 'get_latest_fraud_outcome' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/fraud-outcomes', $this->get_readable_route( 'get_fraud_outcome_transactions' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/fraud-outcomes/summary', $this->get_readable_route( 'get_fraud_outcome_transactions_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/fraud-outcomes/search', $this->get_readable_route( 'get_fraud_outcome_transactions_search_autocomplete' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/fraud-outcomes/download', $this->get_readable_route( 'get_fraud_outcome_transactions_export' ) );
+		register_rest_route( $this->route_namespace, '/payments/fraud_outcomes/(?P<id>\w+)/latest', $this->get_readable_route( 'get_latest_fraud_outcome' ) );
 
-		register_rest_route( self::NAMESPACE, '/payments/transactions/(?P<transaction_id>\w+)', $this->get_readable_route( 'get_transaction' ) );
+		register_rest_route( $this->route_namespace, '/payments/transactions/(?P<transaction_id>\w+)', $this->get_readable_route( 'get_transaction' ) );
 	}
 
 	/**
@@ -85,7 +85,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -305,7 +305,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -319,7 +319,7 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

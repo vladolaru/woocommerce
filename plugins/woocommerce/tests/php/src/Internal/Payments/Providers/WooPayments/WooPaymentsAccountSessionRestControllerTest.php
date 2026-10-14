@@ -56,8 +56,9 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		remove_all_filters( 'woocommerce_logging_class' );
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -65,6 +66,8 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @testdox Account session route is registered under wc/v3 when native owns runtime.
 	 */
 	public function test_registers_route_when_native_owns_runtime(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsAccountSessionRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

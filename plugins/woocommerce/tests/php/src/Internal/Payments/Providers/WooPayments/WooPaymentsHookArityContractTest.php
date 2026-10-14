@@ -879,7 +879,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		try {
 			$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 			$request->set_header( 'User-Agent', 'WooPay' );
-			$controller->check_permission( $request );
+			$controller->has_permission( $request );
 		} finally {
 			if ( null !== $restore ) {
 				$restore();

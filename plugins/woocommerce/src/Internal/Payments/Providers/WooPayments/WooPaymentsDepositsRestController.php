@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -24,9 +24,7 @@ use Throwable;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsDepositsRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsDepositsRestController extends RestApiControllerBase {
 
 	private const LOG_SOURCE = 'woopayments-payouts';
 
@@ -62,10 +60,12 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-deposits';
 	}
 
 	/**
@@ -73,69 +73,69 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 */
 	public function register_routes(): void {
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits',
 			array(
 				array(
 					'methods'             => WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_deposits' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'manual_deposit' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits/download',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'get_deposits_export' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits/download/(?P<export_id>.*)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_export_url' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits/summary',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_deposits_summary' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits/overview-all',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_deposits_overview' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/deposits/(?P<deposit_id>[\w]+)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_deposit' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 	}
@@ -145,7 +145,7 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 

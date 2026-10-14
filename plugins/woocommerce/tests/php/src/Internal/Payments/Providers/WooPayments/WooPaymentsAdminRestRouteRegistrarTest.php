@@ -67,6 +67,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 		try {
 			$classes = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['admin'];
 			$register_classes->invoke( $bootstrap, $container, $classes );
+			// WooCommerce's REST server registers the routes of the instance its container holds.
+			wc_get_container()->replace( WooPaymentsPaymentDetailsRestController::class, $controller );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising WordPress's internal REST initialization boundary.
 			do_action( 'rest_api_init', $this->server );
 
@@ -76,7 +78,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 			if ( $runtime->registrar ) {
 				remove_action( 'rest_api_init', array( $runtime->registrar, 'register_rest_controllers' ), 0 );
 			}
-			remove_action( 'rest_api_init', array( $controller, 'register_routes' ) );
+			remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $controller, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
+			wc_get_container()->reset_all_replacements();
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the screen snapshot taken above.
 			$current_screen = $previous_screen;
 		}
@@ -110,7 +113,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( $expected, $runtime->resolved );
 			$this->assertNotContains( WooPaymentsAccountService::class, $runtime->resolved );
 		} finally {
-			remove_action( 'rest_api_init', array( $controller, 'register_routes' ) );
+			remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $controller, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
+			wc_get_container()->reset_all_replacements();
 		}
 	}
 

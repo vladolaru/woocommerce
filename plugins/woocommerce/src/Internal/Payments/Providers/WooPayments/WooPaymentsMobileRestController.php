@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 use RuntimeException;
 use Throwable;
@@ -29,9 +29,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsMobileRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 	private const STORE_READERS_TRANSIENT_KEY = 'wcpay_store_terminal_readers';
 
@@ -100,10 +98,12 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-mobile';
 	}
 
 	/**
@@ -111,22 +111,22 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 */
 	public function register_routes(): void {
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/connection_tokens',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'create_connection_token' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/orders/(?P<order_id>\w+)/capture_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'capture_terminal_payment' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 				'args'                => array(
 					'payment_intent_id' => array(
 						'required' => true,
@@ -136,12 +136,12 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/orders/(?P<order_id>\w+)/prepare_terminal_payment',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'prepare_terminal_payment' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 				'args'                => array(
 					'order_id'          => array(
 						'required' => true,
@@ -156,38 +156,38 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/orders/(?P<order_id>\w+)/create_terminal_intent',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'create_terminal_intent' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/orders/(?P<order_id>\d+)/create_customer',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'create_customer' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/readers',
 			array(
 				array(
 					'methods'             => WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_readers' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'register_reader' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 					'args'                => array(
 						'location'          => array(
 							'type'     => 'string',
@@ -209,58 +209,58 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/readers/charges/(?P<transaction_id>\w+)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_reader_charge_summary' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/readers/receipts/preview',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'preview_print_receipt' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/readers/receipts/(?P<payment_intent_id>\w+)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'generate_print_receipt' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/terminal/locations/store',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_store_location' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/terminal/locations',
 			array(
 				array(
 					'methods'             => WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_terminal_locations' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_terminal_location' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 					'args'                => array(
 						'display_name' => array(
 							'type'     => 'string',
@@ -276,18 +276,18 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		);
 
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/terminal/locations/(?P<location_id>\w+)',
 			array(
 				array(
 					'methods'             => WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_terminal_location' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'update_terminal_location' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 					'args'                => array(
 						'display_name' => array(
 							'type'     => 'string',
@@ -302,7 +302,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_terminal_location' ),
-					'permission_callback' => array( $this, 'check_permission' ),
+					'permission_callback' => array( $this, 'has_permission' ),
 				),
 			)
 		);
@@ -313,7 +313,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -1202,7 +1202,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$order->update_meta_data( '_intent_id', $intent_id );
 		$order->update_meta_data( '_intention_status', $status );
 		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
-		$order->update_meta_data( 'receipt_url', get_rest_url( null, self::NAMESPACE . '/payments/readers/receipts/' . $intent_id ) );
+		$order->update_meta_data( 'receipt_url', get_rest_url( null, $this->route_namespace . '/payments/readers/receipts/' . $intent_id ) );
 		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'terminal_payment' );
 
 		$ipp_channel = $this->get_ipp_channel_from_intent( $intent );

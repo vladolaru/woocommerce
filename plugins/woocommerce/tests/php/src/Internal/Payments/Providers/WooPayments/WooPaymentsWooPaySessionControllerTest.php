@@ -43,7 +43,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		if ( $this->sut instanceof WooPaymentsWooPaySessionController ) {
-			remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+			remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 			foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 				remove_action( $hook, array( $this->sut, $method ) );
 			}
@@ -83,6 +83,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$_GET     = array();
 		$_POST    = array();
 		$_REQUEST = array();
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -93,6 +94,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
 
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsWooPaySessionController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -159,7 +162,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertTrue( $service->is_woopay_enabled() );
-		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) ) );
 	}
 
 	/**
@@ -175,7 +178,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		// The session route stays registered so an ineligible or disabled state answers with the
 		// permission callback's 401 instead of a 404, mirroring the plugin's unconditional route.
-		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
 		}
@@ -1166,7 +1169,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox The signed-request filter is strengthen-only and cannot grant access to an unsigned request.
 	 */
-	public function test_check_permission_filter_cannot_grant_access_to_unsigned_request(): void {
+	public function test_has_permission_filter_cannot_grant_access_to_unsigned_request(): void {
 		$this->sut = $this->create_controller( true );
 
 		// Real blog-token check is false in tests; a filter returning true must not grant access.
@@ -1176,7 +1179,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_header( 'User-Agent', 'WooPay' );
 		$request->set_param( 'email', 'shopper@example.com' );
 
-		$result = $this->sut->check_permission( $request );
+		$result = $this->sut->has_permission( $request );
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
@@ -1185,7 +1188,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox A signed request is allowed when no filter restricts it.
 	 */
-	public function test_check_permission_allows_signed_request_without_filter(): void {
+	public function test_has_permission_allows_signed_request_without_filter(): void {
 		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 
@@ -1193,13 +1196,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_header( 'User-Agent', 'WooPay' );
 		$request->set_param( 'email', 'shopper@example.com' );
 
-		$this->assertTrue( $this->sut->check_permission( $request ) );
+		$this->assertTrue( $this->sut->has_permission( $request ) );
 	}
 
 	/**
 	 * @testdox The signed-request filter can still restrict access to a signed request.
 	 */
-	public function test_check_permission_filter_can_restrict_signed_request(): void {
+	public function test_has_permission_filter_can_restrict_signed_request(): void {
 		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 
@@ -1210,7 +1213,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_header( 'User-Agent', 'WooPay' );
 		$request->set_param( 'email', 'shopper@example.com' );
 
-		$result = $this->sut->check_permission( $request );
+		$result = $this->sut->has_permission( $request );
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
@@ -1219,7 +1222,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the one-argument shape of the signed-request filter.
 	 */
-	public function test_check_permission_preserves_signed_request_filter_arg_shape(): void {
+	public function test_has_permission_preserves_signed_request_filter_arg_shape(): void {
 		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 		$captured_args = null;
@@ -1238,7 +1241,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_header( 'User-Agent', 'WooPay' );
 		$request->set_param( 'email', 'shopper@example.com' );
 
-		$this->assertTrue( $this->sut->check_permission( $request ) );
+		$this->assertTrue( $this->sut->has_permission( $request ) );
 		$this->assertIsArray( $captured_args );
 		$this->assertCount( 1, $captured_args, 'The preserved WooPay signed-token filter should receive only the boolean signed state.' );
 		$this->assertTrue( $captured_args[0] );

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Exception;
 use Throwable;
 use WP_Error;
@@ -21,13 +21,18 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'payments/woopay';
+class WooPaymentsWooPaySessionController extends RestApiControllerBase {
 
 	private const CLASSIC_WOOPAY_SCRIPT_HANDLE = 'wc-woopayments-woopay';
 
 	private const CLASSIC_WOOPAY_STYLE_HANDLE = 'wc-woopayments-woopay';
+
+	/**
+	 * The WooPay session route's namespace.
+	 *
+	 * @var string
+	 */
+	protected string $route_namespace = 'payments/woopay';
 
 	/**
 	 * WooPay session service.
@@ -62,6 +67,15 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
+	 */
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-woopay-session';
+	}
+
+	/**
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
@@ -85,7 +99,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// registers it unconditionally and answers ineligible or unsigned callers through the
 		// permission callback (401), so a disabled/ineligible state must not turn into a 404
 		// that makes WooPay's bootstrap fail opaquely.
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+		parent::register();
 
 		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
 		// owner, so WooPay would read as disabled. Decide on init instead, like client 11.1.0
@@ -227,12 +241,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 */
 	public function register_routes(): void {
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/session',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_session' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 				'args'                => array(
 					'email' => array(
 						'type'     => 'string',
@@ -251,7 +265,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return bool|WP_Error
 	 */
-	public function check_permission( WP_REST_Request $request ) {
+	public function has_permission( WP_REST_Request $request ) {
 		if ( 'WooPay' !== $request->get_header( 'user_agent' ) ) {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}

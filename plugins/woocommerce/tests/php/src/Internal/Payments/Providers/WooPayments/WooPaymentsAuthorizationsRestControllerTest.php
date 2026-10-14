@@ -44,6 +44,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function tearDown(): void {
 		remove_all_filters( 'wcpay_list_authorizations_request' );
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -52,6 +53,8 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 */
 	public function test_authorization_routes_register(): void {
 		$controller = $this->create_authorizations_controller();
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsAuthorizationsRestController::class, $controller );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

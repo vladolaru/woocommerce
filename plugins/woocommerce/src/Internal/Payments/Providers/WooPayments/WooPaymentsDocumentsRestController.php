@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -21,9 +21,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 
 	private const LIST_QUERY_PARAMS = array(
 		'page'         => true,
@@ -83,36 +81,37 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
 	 *
-	 * The Documents check waits for REST initialization, like client 11.1.0 (class-wc-payments.php:2407), because this
-	 * runs while plugins load.
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-documents';
 	}
 
 	/**
 	 * Register the Documents and VAT routes when the account has Documents enabled.
 	 *
-	 * @internal
+	 * WooCommerce calls this when REST initializes, where client 11.1.0 checks Documents too (class-wc-payments.php:2407).
 	 */
-	public function maybe_register_routes(): void {
-		if ( $this->account_service->is_documents_enabled() ) {
-			$this->register_routes();
+	public function register_routes(): void {
+		if ( ! $this->account_service->is_documents_enabled() ) {
+			return;
 		}
+
+		$this->register_documents_routes();
 	}
 
 	/**
 	 * Register WooPayments-compatible Documents and VAT routes.
 	 */
-	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/documents', $this->get_readable_route( 'get_documents' ) );
-		register_rest_route( self::NAMESPACE, '/payments/documents/summary', $this->get_readable_route( 'get_documents_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/documents/(?P<document_id>[\w-]+)', $this->get_readable_route( 'get_document' ) );
-		register_rest_route( self::NAMESPACE, '/payments/vat/(?P<vat_number>[\w\.\%]+)', $this->get_readable_route( 'validate_vat' ) );
+	private function register_documents_routes(): void {
+		register_rest_route( $this->route_namespace, '/payments/documents', $this->get_readable_route( 'get_documents' ) );
+		register_rest_route( $this->route_namespace, '/payments/documents/summary', $this->get_readable_route( 'get_documents_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/documents/(?P<document_id>[\w-]+)', $this->get_readable_route( 'get_document' ) );
+		register_rest_route( $this->route_namespace, '/payments/vat/(?P<vat_number>[\w\.\%]+)', $this->get_readable_route( 'validate_vat' ) );
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/vat',
 			array(
 				'methods'             => WP_REST_Server::EDITABLE,
@@ -135,7 +134,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 					),
 				),
 				'callback'            => array( $this, 'save_vat_details' ),
-				'permission_callback' => array( $this, 'check_permission' ),
+				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
 	}
@@ -145,7 +144,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -314,7 +313,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

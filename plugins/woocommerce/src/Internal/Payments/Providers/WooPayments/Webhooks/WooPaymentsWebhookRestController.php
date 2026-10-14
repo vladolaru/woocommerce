@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use InvalidArgumentException;
 use Throwable;
 use WP_REST_Request;
@@ -21,7 +21,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsWebhookRestController implements RegisterHooksInterface {
+class WooPaymentsWebhookRestController extends RestApiControllerBase {
 
 	/**
 	 * Event ingestor.
@@ -51,10 +51,12 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-webhook';
 	}
 
 	/**
@@ -72,7 +74,7 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 */
 	public function register_routes(): void {
 		register_rest_route(
-			'wc/v3',
+			$this->route_namespace,
 			'/payments/webhook',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,

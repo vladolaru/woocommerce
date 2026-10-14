@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_Error;
 use WP_REST_Request;
@@ -22,9 +22,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsDisputesRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsDisputesRestController extends RestApiControllerBase {
 
 	private const LOG_SOURCE = 'woopayments-disputes';
 
@@ -65,29 +63,31 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-disputes';
 	}
 
 	/**
 	 * Register WooPayments-compatible disputes routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/disputes', $this->get_readable_route( 'get_disputes' ) );
-		register_rest_route( self::NAMESPACE, '/payments/disputes/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
-		register_rest_route( self::NAMESPACE, '/payments/disputes/summary', $this->get_readable_route( 'get_disputes_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/disputes/download', $this->get_creatable_route( 'get_disputes_export' ) );
+		register_rest_route( $this->route_namespace, '/payments/disputes', $this->get_readable_route( 'get_disputes' ) );
+		register_rest_route( $this->route_namespace, '/payments/disputes/download/(?P<export_id>[^/\\\\%]+)', $this->get_readable_route( 'get_export_url' ) );
+		register_rest_route( $this->route_namespace, '/payments/disputes/summary', $this->get_readable_route( 'get_disputes_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/disputes/download', $this->get_creatable_route( 'get_disputes_export' ) );
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/disputes/(?P<dispute_id>\w+)',
 			array(
 				$this->get_readable_route( 'get_dispute' ),
 				$this->get_creatable_route( 'update_dispute' ),
 			)
 		);
-		register_rest_route( self::NAMESPACE, '/payments/disputes/(?P<dispute_id>\w+)/close', $this->get_creatable_route( 'close_dispute' ) );
+		register_rest_route( $this->route_namespace, '/payments/disputes/(?P<dispute_id>\w+)/close', $this->get_creatable_route( 'close_dispute' ) );
 	}
 
 	/**
@@ -95,7 +95,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -282,7 +282,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -296,7 +296,7 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

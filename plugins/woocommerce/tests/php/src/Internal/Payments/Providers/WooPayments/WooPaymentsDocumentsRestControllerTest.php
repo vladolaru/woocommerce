@@ -56,13 +56,14 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'rest_api_init', array( $this->sut, 'maybe_register_routes' ) );
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		remove_filter( 'rest_pre_serve_request', array( $this->sut, 'serve_raw_document_response' ) );
 		remove_all_filters( 'wcpay_list_documents_request' );
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'wp_doing_ajax' );
 		$this->captured_tracks_url = '';
 		wp_set_current_user( 0 );
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -70,6 +71,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Documents and VAT routes are registered only when native owns runtime and Documents are enabled.
 	 */
 	public function test_registers_routes_when_native_owns_runtime_and_documents_are_enabled(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -113,6 +116,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
 			)
 		);
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $this->sut );
 		$this->sut->register();
 		$this->reset_legacy_proxy_mocks();
 		$platform->available = true;
@@ -131,6 +136,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_registers_no_routes_when_documents_are_disabled(): void {
 		$this->sut = $this->create_controller( false, false );
 
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

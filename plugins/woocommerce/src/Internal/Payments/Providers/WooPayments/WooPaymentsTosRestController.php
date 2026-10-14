@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -20,9 +20,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsTosRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsTosRestController extends RestApiControllerBase {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
@@ -62,19 +60,21 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-tos';
 	}
 
 	/**
 	 * Register WooPayments-compatible ToS routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/tos', $this->get_creatable_route( 'handle_tos' ) );
-		register_rest_route( self::NAMESPACE, '/payments/tos/reactivate', $this->get_creatable_route( 'reactivate' ) );
-		register_rest_route( self::NAMESPACE, '/payments/tos/stripe_track_connected', $this->get_creatable_route( 'remove_stripe_connect_track' ) );
+		register_rest_route( $this->route_namespace, '/payments/tos', $this->get_creatable_route( 'handle_tos' ) );
+		register_rest_route( $this->route_namespace, '/payments/tos/reactivate', $this->get_creatable_route( 'reactivate' ) );
+		register_rest_route( $this->route_namespace, '/payments/tos/stripe_track_connected', $this->get_creatable_route( 'remove_stripe_connect_track' ) );
 	}
 
 	/**
@@ -82,7 +82,7 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -188,7 +188,7 @@ class WooPaymentsTosRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

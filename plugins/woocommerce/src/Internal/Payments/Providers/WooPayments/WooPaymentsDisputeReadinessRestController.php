@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -19,9 +19,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsDisputeReadinessRestController extends RestApiControllerBase {
 
 	private const REST_BASE = '/payments/dispute-readiness';
 
@@ -46,19 +44,21 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-dispute-readiness';
 	}
 
 	/**
 	 * Register WooPayments-compatible dispute readiness routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, self::REST_BASE, $this->get_readable_route( 'get_readiness' ) );
-		register_rest_route( self::NAMESPACE, self::REST_BASE . '/dismiss', $this->get_creatable_route( 'dismiss_card' ) );
-		register_rest_route( self::NAMESPACE, self::REST_BASE . '/statement-descriptor/confirm', $this->get_creatable_route( 'confirm_statement_descriptor' ) );
+		register_rest_route( $this->route_namespace, self::REST_BASE, $this->get_readable_route( 'get_readiness' ) );
+		register_rest_route( $this->route_namespace, self::REST_BASE . '/dismiss', $this->get_creatable_route( 'dismiss_card' ) );
+		register_rest_route( $this->route_namespace, self::REST_BASE . '/statement-descriptor/confirm', $this->get_creatable_route( 'confirm_statement_descriptor' ) );
 	}
 
 	/**
@@ -66,7 +66,7 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -131,7 +131,7 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -145,7 +145,7 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

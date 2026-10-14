@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WC_Order;
 use WP_Error;
@@ -26,9 +26,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 
 	/**
 	 * Native WooPayments API client.
@@ -67,21 +65,23 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-authorizations';
 	}
 
 	/**
 	 * Register WooPayments-compatible authorization routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/authorizations', $this->get_readable_route( 'get_authorizations' ) );
-		register_rest_route( self::NAMESPACE, '/payments/authorizations/summary', $this->get_readable_route( 'get_authorizations_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/authorizations/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_authorization' ) );
-		register_rest_route( self::NAMESPACE, '/payments/orders/(?P<order_id>\w+)/capture_authorization', $this->get_capture_route() );
-		register_rest_route( self::NAMESPACE, '/payments/orders/(?P<order_id>\w+)/cancel_authorization', $this->get_cancel_route() );
+		register_rest_route( $this->route_namespace, '/payments/authorizations', $this->get_readable_route( 'get_authorizations' ) );
+		register_rest_route( $this->route_namespace, '/payments/authorizations/summary', $this->get_readable_route( 'get_authorizations_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/authorizations/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_authorization' ) );
+		register_rest_route( $this->route_namespace, '/payments/orders/(?P<order_id>\w+)/capture_authorization', $this->get_capture_route() );
+		register_rest_route( $this->route_namespace, '/payments/orders/(?P<order_id>\w+)/cancel_authorization', $this->get_cancel_route() );
 	}
 
 	/**
@@ -89,7 +89,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -259,7 +259,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -273,7 +273,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

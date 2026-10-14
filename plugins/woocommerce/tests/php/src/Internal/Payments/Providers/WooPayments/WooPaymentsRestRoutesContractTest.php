@@ -8,6 +8,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -15,8 +18,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
+use Closure;
+use ReflectionFunction;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
+use WP_REST_Server;
 
 /**
  * Pins the plugin 11.1.0 REST route and AJAX action surface (`woopayments-endpoints.json`)
@@ -125,10 +131,9 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 *
 	 * The registrar roots are the production admin REST wiring
 	 * (`WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots()`), called through
-	 * their public `register_routes()` directly rather than through `register()`: several (for
-	 * example `WooPaymentsDocumentsRestController`) gate their routes behind live account
-	 * capability flags (`is_documents_enabled()`) that a disconnected test account cannot satisfy,
-	 * even though the routes themselves are real and unconditional once reached. The WooPay
+	 * their public `register_routes()` directly rather than through `register()`.
+	 * `WooPaymentsDocumentsRestController` checks a live account flag (`is_documents_enabled()`) that
+	 * a disconnected test account cannot satisfy, so its instance here reads Documents as enabled. The WooPay
 	 * session, Multi-Currency and NOX onboarding controllers are not part of that production
 	 * wiring; they are registered here only so their routes exist to check, and their own
 	 * production registration is proven by their own tests.
@@ -142,6 +147,16 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+
+		// A disconnected test account cannot enable Documents, whose controller registers its routes only when it is.
+		$documents_account = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_documents_enabled' ) )
+			->getMock();
+		$documents_account->method( 'is_documents_enabled' )->willReturn( true );
+		$documents = new WooPaymentsDocumentsRestController();
+		$documents->init( new WooPaymentsApiClient(), $documents_account );
+		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $documents );
 
 		foreach ( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots() as $root ) {
 			wc_get_container()->get( $root )->register_routes();
@@ -164,6 +179,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+			wc_get_container()->reset_all_replacements();
 		} finally {
 			parent::tearDown();
 		}
@@ -265,6 +281,99 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $missing, "Native must name every plugin 11.1.0 AJAX action:\n" . implode( "\n", $missing ) );
+	}
+
+	/**
+	 * @testdox Each WooPayments route path is answered by the same route and controller when WooCommerce registers all of its REST routes as when the provider's routes stand alone.
+	 *
+	 * The controllers register through their own register(), as on a REST request, alongside every other WooCommerce
+	 * route; the first route that matches a path and method is the one WordPress dispatches to.
+	 */
+	public function test_each_provider_route_keeps_its_handler_when_registered_with_all_woocommerce_routes(): void {
+		global $wp_rest_server;
+
+		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( WooPaymentsWooPaySessionController::class ) );
+		$controllers = array_map( static fn( string $root ) => wc_get_container()->get( $root ), $roots );
+		$previous    = $wp_rest_server;
+
+		try {
+			// The provider's routes alone, in registration order.
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh REST server for this comparison; restored below.
+			$wp_rest_server = new WP_REST_Server();
+			foreach ( $controllers as $controller ) {
+				$controller->register_routes();
+			}
+			$alone = $wp_rest_server->get_routes();
+
+			// Every WooCommerce route, through the controllers' own registration.
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh REST server for this comparison; restored below.
+			$wp_rest_server = new WP_REST_Server();
+			foreach ( $controllers as $controller ) {
+				$controller->register();
+			}
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+			do_action( 'rest_api_init', $wp_rest_server );
+			$all = $wp_rest_server->get_routes();
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the test's REST server.
+			$wp_rest_server = $previous;
+		}
+
+		$checked    = 0;
+		$mismatches = array();
+		foreach ( self::$fixture['rest_routes'] as $route ) {
+			foreach ( $route['methods'] as $method ) {
+				$expected = $this->first_match( $alone, $route['sample_path'], $method );
+				if ( null === $expected ) {
+					continue;
+				}
+
+				++$checked;
+				$actual = $this->first_match( $all, $route['sample_path'], $method );
+				if ( $expected !== $actual ) {
+					$mismatches[] = $method . ' ' . $route['sample_path'] . ': ' . implode( ' ', $expected ) . ' became ' . ( null === $actual ? 'unmatched' : implode( ' ', $actual ) );
+				}
+			}
+		}
+
+		$this->assertGreaterThan( 80, $checked, 'The fixture paths the provider serves must be checked.' );
+		$this->assertSame( array(), $mismatches, "Each provider route path must keep its route and controller:\n" . implode( "\n", $mismatches ) );
+	}
+
+	/**
+	 * Get the first route that matches a path and method, with the class of the controller that handles it.
+	 *
+	 * @param array<string,mixed> $routes Route table from `WP_REST_Server::get_routes()`.
+	 * @param string              $path   Request path.
+	 * @param string              $method HTTP method.
+	 * @return array{0:string,1:string}|null Route and controller class, or null when nothing matches.
+	 */
+	private function first_match( array $routes, string $path, string $method ): ?array {
+		foreach ( $routes as $route => $handlers ) {
+			if ( 1 !== preg_match( '@^' . $route . '$@i', $path ) ) {
+				continue;
+			}
+
+			foreach ( $handlers as $handler ) {
+				if ( empty( $handler['methods'][ $method ] ) ) {
+					continue;
+				}
+
+				$callback = $handler['callback'];
+				if ( is_array( $callback ) ) {
+					$owner = is_object( $callback[0] ) ? get_class( $callback[0] ) : (string) $callback[0];
+				} elseif ( $callback instanceof Closure ) {
+					$bound = ( new ReflectionFunction( $callback ) )->getClosureThis();
+					$owner = null === $bound ? 'closure' : get_class( $bound );
+				} else {
+					$owner = is_string( $callback ) ? $callback : 'callable';
+				}
+
+				return array( $route, $owner );
+			}
+		}
+
+		return null;
 	}
 
 	/**

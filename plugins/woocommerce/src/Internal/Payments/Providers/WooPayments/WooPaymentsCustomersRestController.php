@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -19,9 +19,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsCustomersRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsCustomersRestController extends RestApiControllerBase {
 
 	/**
 	 * WooPayments customer service.
@@ -51,17 +49,19 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-customers';
 	}
 
 	/**
 	 * Register WooPayments-compatible customer routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/customers/(?P<customer_id>\w+)/payment_methods', $this->get_readable_route( 'get_customer_payment_methods' ) );
+		register_rest_route( $this->route_namespace, '/payments/customers/(?P<customer_id>\w+)/payment_methods', $this->get_readable_route( 'get_customer_payment_methods' ) );
 	}
 
 	/**
@@ -69,7 +69,7 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -176,7 +176,7 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 }

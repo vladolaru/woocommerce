@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WC_Order;
 use WP_Error;
 use WP_REST_Request;
@@ -23,9 +23,8 @@ use Throwable;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface {
+class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 
-	private const NAMESPACE                  = 'wc/v3';
 	private const EVENT_FRAUD_OUTCOME_REVIEW = 'fraud_outcome_review';
 	private const EVENT_FRAUD_OUTCOME_BLOCK  = 'fraud_outcome_block';
 	private const EVENTS_ORDER               = array(
@@ -74,26 +73,28 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-payment-details';
 	}
 
 	/**
 	 * Register WooPayments-compatible payment detail routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
-		register_rest_route( self::NAMESPACE, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
+		register_rest_route( $this->route_namespace, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
+		register_rest_route( $this->route_namespace, '/payments/charges/order/(?P<order_id>\w+)', $this->get_readable_route( 'generate_charge_from_order' ) );
 		register_rest_route(
-			self::NAMESPACE,
+			$this->route_namespace,
 			'/payments/payment_intents',
 			array_merge( $this->get_creatable_route( 'create_payment_intent' ), array( 'schema' => array( $this, 'get_payment_intent_schema' ) ) )
 		);
-		register_rest_route( self::NAMESPACE, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
-		register_rest_route( self::NAMESPACE, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
-		register_rest_route( self::NAMESPACE, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
+		register_rest_route( $this->route_namespace, '/payments/payment_intents/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_payment_intent' ) );
+		register_rest_route( $this->route_namespace, '/payments/timeline/(?P<intention_id>\w+)', $this->get_readable_route( 'get_timeline' ) );
+		register_rest_route( $this->route_namespace, '/payments/refund', $this->get_creatable_route( 'process_refund' ) );
 	}
 
 	/**
@@ -101,7 +102,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -477,7 +478,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 
@@ -491,7 +492,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 		return array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

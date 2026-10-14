@@ -75,7 +75,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
@@ -83,6 +83,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		if ( WC()->session ) {
 			WC()->session->set( 'wcpay_customer_id', null );
 		}
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -90,6 +91,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox The mobile and IPP routes are registered under wc/v3 when native owns runtime.
 	 */
 	public function test_registers_mobile_ipp_routes_when_native_owns_runtime(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsMobileRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

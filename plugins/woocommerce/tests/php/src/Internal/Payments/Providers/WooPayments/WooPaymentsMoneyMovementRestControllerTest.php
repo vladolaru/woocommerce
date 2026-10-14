@@ -63,6 +63,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			WC()->payment_gateways()->payment_gateways = array();
 			WC()->payment_gateways()->init();
 		}
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -71,6 +72,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_transactions_routes_register(): void {
 		$controller = $this->create_transactions_controller();
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsTransactionsRestController::class, $controller );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -88,6 +91,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_routes_register(): void {
 		$controller = $this->create_payment_details_controller();
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsPaymentDetailsRestController::class, $controller );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

@@ -49,13 +49,14 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		remove_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'allowed_redirect_hosts' );
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'woocommerce_logging_class' );
 		unset( $_GET['wcpay-loan-offer'] );
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -63,6 +64,8 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Capital routes are registered under wc/v3 when native owns runtime.
 	 */
 	public function test_registers_capital_routes_when_native_owns_runtime(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsCapitalRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

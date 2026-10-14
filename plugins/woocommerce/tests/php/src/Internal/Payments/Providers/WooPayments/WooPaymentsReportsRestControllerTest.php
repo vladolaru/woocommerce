@@ -53,6 +53,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		remove_all_filters( 'wcpay_list_transactions_request' );
 		update_option( 'timezone_string', $this->original_timezone_string );
 		wp_set_current_user( 0 );
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -61,6 +62,8 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_registers_routes_when_native_owns_runtime(): void {
 		$controller = $this->create_controller( true );
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsReportsRestController::class, $controller );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -73,6 +76,8 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_registers_routes_when_reports_area_is_unavailable(): void {
 		$controller = $this->create_controller( false );
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsReportsRestController::class, $controller );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );

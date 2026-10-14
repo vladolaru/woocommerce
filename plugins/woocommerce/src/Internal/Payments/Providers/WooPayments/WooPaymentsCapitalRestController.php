@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -23,9 +23,7 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsCapitalRestController implements RegisterHooksInterface {
-
-	private const NAMESPACE = 'wc/v3';
+class WooPaymentsCapitalRestController extends RestApiControllerBase {
 
 	/**
 	 * Runtime owner arbiter.
@@ -55,19 +53,21 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register REST hooks.
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
 	 */
-	public function register() {
-		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-capital';
 	}
 
 	/**
 	 * Register WooPayments-compatible Capital routes.
 	 */
 	public function register_routes(): void {
-		register_rest_route( self::NAMESPACE, '/payments/capital/active_loan_summary', $this->get_readable_route( 'get_active_loan_summary' ) );
-		register_rest_route( self::NAMESPACE, '/payments/capital/loans', $this->get_readable_route( 'get_loans' ) );
-		register_rest_route( self::NAMESPACE, '/payments/capital/loan_offer', $this->get_readable_route( 'get_loan_offer' ) );
+		register_rest_route( $this->route_namespace, '/payments/capital/active_loan_summary', $this->get_readable_route( 'get_active_loan_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/capital/loans', $this->get_readable_route( 'get_loans' ) );
+		register_rest_route( $this->route_namespace, '/payments/capital/loan_offer', $this->get_readable_route( 'get_loan_offer' ) );
 	}
 
 	/**
@@ -75,7 +75,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function check_permission(): bool {
+	public function has_permission(): bool {
 		return current_user_can( 'manage_woocommerce' );
 	}
 
@@ -164,7 +164,7 @@ class WooPaymentsCapitalRestController implements RegisterHooksInterface {
 		return array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
-			'permission_callback' => array( $this, 'check_permission' ),
+			'permission_callback' => array( $this, 'has_permission' ),
 		);
 	}
 

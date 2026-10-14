@@ -46,9 +46,10 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	 */
 	public function tearDown(): void {
 		delete_option( '_wcpay_feature_dispute_readiness_overview' );
-		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		wp_set_current_user( 0 );
 
+		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -56,6 +57,8 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @testdox Dispute readiness routes are registered under wc/v3 when native owns runtime.
 	 */
 	public function test_registers_routes_when_native_owns_runtime(): void {
+		// WooCommerce's REST server registers the routes of the instance the container holds.
+		wc_get_container()->replace( WooPaymentsDisputeReadinessRestController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
