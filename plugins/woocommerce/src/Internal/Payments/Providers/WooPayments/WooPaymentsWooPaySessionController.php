@@ -102,8 +102,8 @@ class WooPaymentsWooPaySessionController extends RestApiControllerBase {
 		parent::register();
 
 		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
-		// owner, so WooPay would read as disabled. Decide on init instead, like client 11.1.0
-		// (class-wc-payments.php:685 on plugins_loaded and :694 on init).
+		// owner, so WooPay would read as disabled. Decide on init instead. Client 11.1.0 decides in a setup_theme
+		// callback (class-wc-payments.php:680-689); every hook added here fires after init.
 		if ( did_action( 'init' ) ) {
 			$this->register_woopay_hooks();
 		} elseif ( false === has_action( 'init', array( $this, 'register_woopay_hooks' ) ) ) {
