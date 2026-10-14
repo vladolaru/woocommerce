@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -2547,7 +2548,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 
 		$sut = $this->create_controller_with_account_service( $account_service, true );
 

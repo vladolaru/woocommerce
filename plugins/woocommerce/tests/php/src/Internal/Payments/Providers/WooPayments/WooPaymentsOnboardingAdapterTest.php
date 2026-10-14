@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -102,7 +103,9 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 			->addMethods( array( 'is_stripe_account_valid', 'get_account_status_data' ) )
 			->getMock();
 		$this->native_account_service   = new WooPaymentsAccountService();
-		$this->native_account_service->init( $this->legacy_proxy );
+		$database_cache                 = new WooPaymentsDatabaseCache();
+		$database_cache->init( $this->legacy_proxy );
+		$this->native_account_service->init( $this->legacy_proxy, $database_cache );
 
 		$this->legacy_proxy->register_static_mocks(
 			array(

@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -28,7 +29,9 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 		parent::setUp();
 
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 
 		$this->sut = new WooPaymentsOverviewService();
 		$this->sut->init( $account_service );

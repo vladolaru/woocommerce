@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -597,7 +598,9 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 		$api_client = new WooPaymentsApiClient();
 		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
 		$session_service  = new WooPaymentsSessionService();
@@ -620,7 +623,9 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function seed_account_fraud_services( array $fraud_services ): void {
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 		$account_service->cache_account_data(
 			array(
 				'account_id'     => 'acct_fraud_service_test',
@@ -671,7 +676,9 @@ class WooPaymentsFraudServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 
 		$api_client = new WooPaymentsApiClient();
 

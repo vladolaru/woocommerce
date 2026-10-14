@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -702,7 +703,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 		add_filter(
 			'wcpay_upe_available_payment_methods',
 			static function ( array $payment_method_ids ) use ( &$events ): array {
@@ -3064,7 +3067,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 
 		return $account_service;
 	}

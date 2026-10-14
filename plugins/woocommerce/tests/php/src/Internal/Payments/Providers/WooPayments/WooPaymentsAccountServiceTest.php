@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use RuntimeException;
 use WC_Unit_Test_Case;
@@ -22,6 +23,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @var int[]
 	 */
 	private array $multisite_blog_ids = array();
+
+	/**
+	 * Database cache of the service the last helper created.
+	 *
+	 * @var WooPaymentsDatabaseCache
+	 */
+	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
 	 * Tear down test fixtures.
@@ -488,7 +496,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$sut = $this->create_service();
-		$sut->disable_refresh();
+		$this->database_cache->disable_refresh();
 
 		$this->assertSame( $expected, $sut->has_account_or_is_connection_indeterminate() );
 	}
@@ -713,7 +721,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$sut = $this->create_service();
-		$sut->disable_refresh();
+		$this->database_cache->disable_refresh();
 
 		$sut->get_cached_account_data();
 
@@ -1548,6 +1556,50 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read an admin account cache stored as $description.
+	 * @dataProvider provide_account_cache_wrappers_from_earlier_versions
+	 *
+	 * @param string   $description        Stored shape.
+	 * @param int|null $age                Seconds since the fetch, or null for a record never fetched.
+	 * @param bool     $errored            Whether the stored entry is errored.
+	 * @param int|null $consecutive_errors Stored error count, or null when the wrapper has none.
+	 * @param string   $expected_account   Account ID the read returns.
+	 * @param int      $expected_calls     Account fetches the read makes.
+	 */
+	public function test_reads_account_cache_wrappers_written_by_earlier_versions( string $description, ?int $age, bool $errored, ?int $consecutive_errors, string $expected_account, int $expected_calls ): void {
+		unset( $description );
+		set_current_screen( 'dashboard' );
+		$wrapper = array(
+			'data'    => $this->get_valid_live_account_payload( array( 'account_id' => 'acct_stored' ) ),
+			'fetched' => null === $age ? 0 : time() - $age,
+			'errored' => $errored,
+		);
+		if ( null !== $consecutive_errors ) {
+			$wrapper['consecutive_errors'] = $consecutive_errors;
+		}
+		update_option( 'wcpay_account_data', $wrapper );
+		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+
+		$this->assertSame( $expected_account, $this->create_service_with_api_client( $api_client )->get_account_id() );
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
+	 * Provide account cache wrappers as the current and earlier versions store them.
+	 *
+	 * @return array<string,array{0:string,1:int|null,2:bool,3:int|null,4:string,5:int}>
+	 */
+	public function provide_account_cache_wrappers_from_earlier_versions(): array {
+		return array(
+			'current shape, fresh'                      => array( 'the current shape, fresh', 60, false, 0, 'acct_stored', 0 ),
+			'no error count, fresh'                     => array( 'a wrapper without an error count, fresh', 60, false, null, 'acct_stored', 0 ),
+			'no error count, errored a minute ago'      => array( 'an errored wrapper without an error count, one minute old', 60, true, null, 'acct_stored', 0 ),
+			'no error count, errored three minutes ago' => array( 'an errored wrapper without an error count, three minutes old', 180, true, null, 'acct_fetched', 1 ),
+			'never fetched (partial onboarding record)' => array( 'a partial onboarding record never fetched', null, false, 0, 'acct_fetched', 1 ),
+		);
+	}
+
+	/**
 	 * @testdox Should return no account without fetching or touching the cache when the platform is not connected.
 	 * @dataProvider provide_disconnected_account_caches
 	 *
@@ -1750,7 +1802,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertSame( $stale_account, $sut->get_cached_account_data() );
 		} finally {
-			remove_action( 'action_scheduler_before_execute', array( $sut, 'disable_refresh' ) );
+			remove_action( 'action_scheduler_before_execute', array( $this->database_cache, 'disable_refresh' ) );
 		}
 
 		$this->assertSame( 0, $api_client->calls );
@@ -1954,6 +2006,35 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should retry errored onboarding fields stored without an error count after two minutes, not before.
+	 * @testWith [60, 0]
+	 *           [180, 1]
+	 *
+	 * @param int $age            Seconds since the errored fetch.
+	 * @param int $expected_calls Fields fetches the read makes.
+	 */
+	public function test_onboarding_fields_data_errored_wrapper_without_an_error_count_backs_off_two_minutes( int $age, int $expected_calls ): void {
+		$cached = array(
+			'business_types' => array( array( 'key' => 'cached' ) ),
+			'__locale'       => 'en_US',
+		);
+		update_option(
+			'wcpay_onboarding_fields_data',
+			array(
+				'data'    => $cached,
+				'fetched' => time() - $age,
+				'errored' => true,
+			),
+			false
+		);
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
 	 * @testdox Should serve cached onboarding fields without fetching during ajax requests and Action Scheduler jobs.
 	 * @testWith ["ajax"]
 	 *           ["action_scheduler"]
@@ -1967,7 +2048,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		if ( 'ajax' === $context ) {
 			add_filter( 'wp_doing_ajax', '__return_true' );
 		} else {
-			$sut->disable_refresh();
+			$this->database_cache->disable_refresh();
 		}
 
 		$this->assertSame( $cached, $sut->get_onboarding_fields_data( 'en_US' ) );
@@ -2116,7 +2197,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_service_with_api_client( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
-		$sut = new class( $api_client ) extends WooPaymentsAccountService {
+		$sut                  = new class( $api_client ) extends WooPaymentsAccountService {
 			/**
 			 * Fake native API client.
 			 *
@@ -2142,7 +2223,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				return $this->api_client;
 			}
 		};
-		$sut->init( new LegacyProxy() );
+		$legacy_proxy         = new LegacyProxy();
+		$this->database_cache = new WooPaymentsDatabaseCache();
+		$this->database_cache->init( $legacy_proxy );
+		$sut->init( $legacy_proxy, $this->database_cache );
 
 		return $sut;
 	}
@@ -2226,8 +2310,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
 			)
 		);
-		$sut = $this->create_service_with_api_client( $api_client );
-		$sut->init( wc_get_container()->get( LegacyProxy::class ) );
+		$sut                  = $this->create_service_with_api_client( $api_client );
+		$legacy_proxy         = wc_get_container()->get( LegacyProxy::class );
+		$this->database_cache = new WooPaymentsDatabaseCache();
+		$this->database_cache->init( $legacy_proxy );
+		$sut->init( $legacy_proxy, $this->database_cache );
 
 		return $sut;
 	}

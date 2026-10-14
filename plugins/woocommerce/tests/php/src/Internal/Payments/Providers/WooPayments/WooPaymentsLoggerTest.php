@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use RuntimeException;
@@ -30,7 +31,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ) );
 		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 
@@ -69,7 +72,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	public function test_log_writes_info_by_default(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 
@@ -103,7 +108,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 		$throwable = ( static function ( string $secret ) use ( $throwable_class ) {
@@ -182,7 +189,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 	public function test_log_throwable_adds_the_platform_status_and_code(): void {
 		self::enable_woopayments_debug_logging();
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 		$logger = RecordingWcLogger::install();
@@ -212,7 +221,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?key=wc_order_abc123';
 		$_SERVER['HTTP_USER_AGENT'] = 'Merchant browser';
 		$account_service            = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache             = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 		$logger = RecordingWcLogger::install();
@@ -246,7 +257,9 @@ class WooPaymentsLoggerTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 		wp_set_current_user( self::factory()->user->create( array( 'user_login' => 'shop_manager_two' ) ) );
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 		$sut = new WooPaymentsLogger();
 		$sut->init( $account_service );
 		$logger = RecordingWcLogger::install();

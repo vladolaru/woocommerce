@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -1700,7 +1701,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	private function create_assets_with_full_woopay_config(): WooPaymentsCheckoutAssets {
 		$real_account_service = new WooPaymentsAccountService();
-		$real_account_service->init( new LegacyProxy() );
+		$database_cache       = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$real_account_service->init( new LegacyProxy(), $database_cache );
 		$real_woopay_service = new WooPaymentsWooPaySessionService();
 		$real_woopay_service->init( $real_account_service, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller() );
 		$woopay_config = array_merge(

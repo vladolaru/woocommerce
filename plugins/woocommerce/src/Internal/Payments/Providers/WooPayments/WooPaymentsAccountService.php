@@ -68,10 +68,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		'PR',
 	);
 
-	private const ACCOUNT_OPTION = 'wcpay_account_data';
-
-	private const ONBOARDING_FIELDS_DATA_OPTION = 'wcpay_onboarding_fields_data';
-
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
 	private const REPORTS_AREA_FLAG_OPTION = '_wcpay_feature_reports_area';
@@ -105,35 +101,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
 
 	private const INCENTIVES_USAGE_VERSION_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
-
-	private const DATABASE_CACHE_OPTIONS = array(
-		self::ACCOUNT_OPTION,
-		'wcpay_address_autocomplete_jwt',
-		self::ONBOARDING_FIELDS_DATA_OPTION,
-		'wcpay_business_types_data',
-		'wcpay_fraud_services_data',
-		'wcpay_recommended_payment_methods',
-		'wcpay_dispute_status_counts_cache',
-		'wcpay_test_dispute_status_counts_cache',
-		'wcpay_active_dispute_cache',
-		'wcpay_authorization_summary_cache',
-		'wcpay_test_authorization_summary_cache',
-		'wcpay_connect_incentive',
-		'wcpay_tracking_info_cache',
-	);
-
-	private const ACCOUNT_CACHE_ADMIN_TTL = 2 * HOUR_IN_SECONDS;
-
-	private const ACCOUNT_CACHE_FRONTEND_TTL = DAY_IN_SECONDS;
-
-	private const ONBOARDING_FIELDS_DATA_TTL = WEEK_IN_SECONDS;
-
-	private const DATABASE_CACHE_ERRORED_TTL_LADDER = array(
-		2 * MINUTE_IN_SECONDS,
-		5 * MINUTE_IN_SECONDS,
-		10 * MINUTE_IN_SECONDS,
-		15 * MINUTE_IN_SECONDS,
-	);
 
 	private const DEV_MODE_ENVIRONMENTS = array(
 		'development',
@@ -169,25 +136,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
 
 	/**
-	 * In-request account cache contents keyed by blog ID.
+	 * Database cache the account and the onboarding fields are read through.
 	 *
-	 * @var array<int,array<string,mixed>|false>
+	 * @var WooPaymentsDatabaseCache
 	 */
-	private array $account_cache = array();
-
-	/**
-	 * In-request onboarding fields cache contents keyed by blog ID.
-	 *
-	 * @var array<int,array<string,mixed>|false>
-	 */
-	private array $onboarding_fields_cache = array();
-
-	/**
-	 * Whether database cache refreshes are disabled for this request.
-	 *
-	 * @var bool
-	 */
-	private bool $refresh_disabled = false;
+	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
 	 * Initialize the class instance.
@@ -195,17 +148,20 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
+	 * @param WooPaymentsDatabaseCache                    $database_cache                Database cache.
 	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
 	 * @param WooPaymentsSetupTier|null                   $setup_tier         Optional durable native payments state store.
 	 * @param WooPaymentsRuntimeArbiter|null              $runtime_arbiter               Optional native payments runtime arbiter.
 	 */
 	final public function init(
 		LegacyProxy $legacy_proxy,
+		WooPaymentsDatabaseCache $database_cache,
 		?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null,
 		?WooPaymentsSetupTier $setup_tier = null,
 		?WooPaymentsRuntimeArbiter $runtime_arbiter = null
 	): void {
 		$this->legacy_proxy                  = $legacy_proxy;
+		$this->database_cache                = $database_cache;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 		$this->setup_tier                    = $setup_tier;
 		$this->runtime_arbiter               = $runtime_arbiter;
@@ -213,9 +169,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	/**
 	 * Register account cache hooks.
+	 *
+	 * The database cache stops refreshing while an Action Scheduler job runs.
 	 */
 	public function register() {
-		add_action( 'action_scheduler_before_execute', array( $this, 'disable_refresh' ) );
+		add_action( 'action_scheduler_before_execute', array( $this->database_cache, 'disable_refresh' ) );
 
 		add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
 
@@ -241,17 +199,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		return $hosts;
-	}
-
-	/**
-	 * Disable account and onboarding fields cache refreshes for this request.
-	 *
-	 * @internal
-	 *
-	 * @return void
-	 */
-	public function disable_refresh(): void {
-		$this->refresh_disabled = true;
 	}
 
 	/**
@@ -341,35 +288,18 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return array<string,mixed>|null The fields data, or null when it could not be retrieved and nothing valid is cached.
 	 */
 	public function get_onboarding_fields_data( string $locale ): ?array {
-		$cache_contents = $this->get_onboarding_fields_cache();
-
 		if ( ! $this->is_platform_connected() ) {
-			$data = is_array( $cache_contents ) && array_key_exists( 'data', $cache_contents ) ? $cache_contents['data'] : null;
+			$cache_contents = $this->database_cache->get_contents( WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY );
+			$data           = is_array( $cache_contents ) && array_key_exists( 'data', $cache_contents ) ? $cache_contents['data'] : null;
 
 			return is_array( $data ) ? $data : null;
 		}
 
-		$is_valid_data = static fn( $data ): bool => is_array( $data ) && isset( $data['__locale'] ) && $data['__locale'] === $locale;
-		$data          = null;
-
-		if ( is_array( $cache_contents ) && array_key_exists( 'data', $cache_contents ) && $is_valid_data( $cache_contents['data'] ) ) {
-			$data = $cache_contents['data'];
-		}
-
-		if ( $this->should_refresh_database_cache( self::ONBOARDING_FIELDS_DATA_OPTION, $cache_contents, $is_valid_data, false ) ) {
-			$fresh_data = $this->fetch_onboarding_fields_data( $locale );
-			$errored    = null === $fresh_data;
-			if ( ! $errored ) {
-				$data = $fresh_data;
-			}
-
-			$new_contents = $this->build_database_cache_contents( $data, $errored, $cache_contents );
-
-			$this->onboarding_fields_cache[ get_current_blog_id() ] = $new_contents;
-			$this->store_database_cache( self::ONBOARDING_FIELDS_DATA_OPTION, $new_contents );
-		}
-
-		return $data;
+		return $this->database_cache->get_or_add(
+			WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY,
+			fn() => $this->fetch_onboarding_fields_data( $locale ),
+			static fn( $data ): bool => is_array( $data ) && isset( $data['__locale'] ) && $data['__locale'] === $locale
+		);
 	}
 
 	/**
@@ -380,25 +310,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function clear_onboarding_fields_cache(): void {
-		unset( $this->onboarding_fields_cache[ get_current_blog_id() ] );
-		$this->legacy_proxy->call_function( 'delete_option', self::ONBOARDING_FIELDS_DATA_OPTION );
-		$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_FIELDS_DATA_OPTION, 'options' );
-	}
-
-	/**
-	 * Get the raw persisted onboarding fields cache wrapper.
-	 *
-	 * @return array<string,mixed>|false
-	 */
-	private function get_onboarding_fields_cache() {
-		$blog_id = get_current_blog_id();
-		if ( ! array_key_exists( $blog_id, $this->onboarding_fields_cache ) ) {
-			$cache = $this->legacy_proxy->call_function( 'get_option', self::ONBOARDING_FIELDS_DATA_OPTION );
-
-			$this->onboarding_fields_cache[ $blog_id ] = is_array( $cache ) ? $cache : false;
-		}
-
-		return $this->onboarding_fields_cache[ $blog_id ];
+		$this->database_cache->delete( WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY );
 	}
 
 	/**
@@ -486,9 +398,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function clear_cache(): void {
 		try {
-			unset( $this->account_cache[ get_current_blog_id() ] );
-			$this->legacy_proxy->call_function( 'delete_option', self::ACCOUNT_OPTION );
-			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
+			$this->database_cache->delete( WooPaymentsDatabaseCache::ACCOUNT_KEY );
 		} catch ( \Throwable $e ) {
 			return;
 		}
@@ -595,7 +505,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'delete_option', self::NOX_PROFILE_OPTION );
 		$this->legacy_proxy->call_function( 'delete_option', self::NOX_ONBOARDING_LOCKED_OPTION );
 
-		$this->clear_preserved_database_cache();
+		$this->database_cache->delete_all();
 
 		try {
 			$this->legacy_proxy->call_function( 'delete_option', self::INCENTIVES_USAGE_OPTION );
@@ -605,40 +515,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear preserved WooPayments database cache keys that hinge on the connected account.
-	 *
-	 * @return void
-	 */
-	private function clear_preserved_database_cache(): void {
-		unset( $this->account_cache[ get_current_blog_id() ], $this->onboarding_fields_cache[ get_current_blog_id() ] );
-
-		foreach ( self::DATABASE_CACHE_OPTIONS as $option_name ) {
-			$this->legacy_proxy->call_function( 'delete_option', $option_name );
-			$this->legacy_proxy->call_function( 'wp_cache_delete', $option_name, 'options' );
-		}
-	}
-
-	/**
 	 * Get the raw persisted account cache wrapper.
 	 *
 	 * @return array<string,mixed>|false
 	 */
 	private function get_account_cache() {
-		$blog_id = get_current_blog_id();
-		if ( array_key_exists( $blog_id, $this->account_cache ) ) {
-			return $this->account_cache[ $blog_id ];
-		}
-
-		try {
-			$cache = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
-		} catch ( \Throwable $e ) {
-			$this->log_read_failure( 'the account cache', $e );
-			$cache = false;
-		}
-
-		$this->account_cache[ $blog_id ] = is_array( $cache ) ? $cache : false;
-
-		return $this->account_cache[ $blog_id ];
+		return $this->database_cache->get_contents(
+			WooPaymentsDatabaseCache::ACCOUNT_KEY,
+			function ( \Throwable $e ): void {
+				$this->log_read_failure( 'the account cache', $e );
+			}
+		);
 	}
 
 	/**
@@ -664,34 +551,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function build_account_cache_contents( $account_data, bool $errored ): array {
-		return $this->build_database_cache_contents( $account_data, $errored, $errored ? $this->get_account_cache() : false );
-	}
-
-	/**
-	 * Build database cache contents in the client's `Database_Cache` shape.
-	 *
-	 * Each errored write increments `consecutive_errors` from the previous contents; a successful write resets it.
-	 *
-	 * @param mixed $data     Data to cache.
-	 * @param bool  $errored  Whether the refresh that produced this write errored.
-	 * @param mixed $previous Previous cache contents, read only when errored.
-	 * @return array<string,mixed>
-	 */
-	private function build_database_cache_contents( $data, bool $errored, $previous ): array {
-		$consecutive_errors = 0;
-		if ( $errored ) {
-			$previous_count     = is_array( $previous ) && isset( $previous['consecutive_errors'] )
-				? (int) $previous['consecutive_errors']
-				: 0;
-			$consecutive_errors = $previous_count + 1;
-		}
-
-		return array(
-			'data'               => $data,
-			'fetched'            => $this->legacy_proxy->call_function( 'time' ),
-			'errored'            => $errored,
-			'consecutive_errors' => $consecutive_errors,
-		);
+		return $this->database_cache->build_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY, $account_data, $errored );
 	}
 
 	/**
@@ -701,8 +561,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function persist_account_cache( array $cache_contents ): void {
-		$this->account_cache[ get_current_blog_id() ] = $cache_contents;
-		$this->store_database_cache( self::ACCOUNT_OPTION, $cache_contents );
+		$this->database_cache->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents );
 
 		if (
 			$this->is_persisted_account_cache( $cache_contents ) &&
@@ -711,20 +570,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			is_array( $cache_contents['data'] ?? null )
 		) {
 			$this->sync_setup_tier( $cache_contents['data'], $this->runtime_arbiter->is_extension_owner() );
-		}
-	}
-
-	/**
-	 * Write database cache contents to their option, not autoloaded, like the client's `Database_Cache::write_to_cache()`.
-	 *
-	 * @param string              $key            Cache option key.
-	 * @param array<string,mixed> $cache_contents Cache wrapper.
-	 * @return void
-	 */
-	private function store_database_cache( string $key, array $cache_contents ): void {
-		$result = $this->legacy_proxy->call_function( 'update_option', $key, $cache_contents, 'no' );
-		if ( false !== $result ) {
-			$this->legacy_proxy->call_function( 'wp_cache_delete', $key, 'options' );
 		}
 	}
 
@@ -743,7 +588,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		try {
-			$cache_contents = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
+			$cache_contents = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY );
 		} catch ( \Throwable $e ) {
 			$this->log_read_failure( 'the account cache', $e );
 			return;
@@ -822,8 +667,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	private function is_persisted_account_cache( array $cache_contents ): bool {
 		try {
-			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_OPTION, 'options' );
-			$persisted = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_OPTION );
+			$this->legacy_proxy->call_function( 'wp_cache_delete', WooPaymentsDatabaseCache::ACCOUNT_KEY, 'options' );
+			$persisted = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY );
 		} catch ( \Throwable $e ) {
 			$this->log_read_failure( 'the account cache', $e );
 			return false;
@@ -840,112 +685,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_refresh_account_cache( $cache_contents, bool $force_refresh ): bool {
-		return $this->should_refresh_database_cache( self::ACCOUNT_OPTION, $cache_contents, fn( $data ): bool => $this->is_valid_cached_account( $data ), $force_refresh );
-	}
-
-	/**
-	 * Tell whether a database cache entry should be refreshed, like the client's `Database_Cache::should_refresh_cache()`.
-	 *
-	 * @param string   $key            Cache option key.
-	 * @param mixed    $cache_contents Raw cache wrapper.
-	 * @param callable $is_valid_data  Validates the cached data.
-	 * @param bool     $force_refresh  Whether to force refresh.
-	 * @return bool
-	 */
-	private function should_refresh_database_cache( string $key, $cache_contents, callable $is_valid_data, bool $force_refresh ): bool {
-		if ( $force_refresh ) {
-			return true;
-		}
-
-		if (
-			defined( 'DOING_CRON' )
-			|| ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() )
-			|| $this->refresh_disabled
-		) {
-			return false;
-		}
-
-		if ( false === $cache_contents ) {
-			return true;
-		}
-
-		if (
-			! is_array( $cache_contents )
-			|| empty( $cache_contents )
-			|| ! array_key_exists( 'data', $cache_contents )
-			|| ! isset( $cache_contents['fetched'] )
-			|| ! array_key_exists( 'errored', $cache_contents )
-		) {
-			return true;
-		}
-
-		if ( ! $cache_contents['errored'] && ! $is_valid_data( $cache_contents['data'] ) ) {
-			return true;
-		}
-
-		return $this->is_database_cache_expired( $key, $cache_contents );
-	}
-
-	/**
-	 * Tell whether database cache contents are expired.
-	 *
-	 * @param string              $key            Cache option key.
-	 * @param array<string,mixed> $cache_contents Cache wrapper.
-	 * @return bool
-	 */
-	private function is_database_cache_expired( string $key, array $cache_contents ): bool {
-		$fetched = is_numeric( $cache_contents['fetched'] ?? null ) ? (int) $cache_contents['fetched'] : 0;
-		$ttl     = $this->get_database_cache_ttl( $key, $cache_contents );
-
-		$now = (int) $this->legacy_proxy->call_function( 'time' );
-
-		return $fetched + $ttl < $now;
-	}
-
-	/**
-	 * Get a database cache TTL for the current request context, like the client's `Database_Cache::get_ttl()`.
-	 *
-	 * @param string              $key            Cache option key.
-	 * @param array<string,mixed> $cache_contents Cache wrapper.
-	 * @return int
-	 */
-	private function get_database_cache_ttl( string $key, array $cache_contents ): int {
-		$errored = ! empty( $cache_contents['errored'] );
-
-		if ( self::ONBOARDING_FIELDS_DATA_OPTION === $key ) {
-			$ttl = $errored
-				? $this->get_errored_cache_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
-				: self::ONBOARDING_FIELDS_DATA_TTL;
-		} elseif ( is_admin() ) {
-			$ttl = $errored
-				? $this->get_errored_cache_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
-				: self::ACCOUNT_CACHE_ADMIN_TTL;
-		} else {
-			$ttl = self::ACCOUNT_CACHE_FRONTEND_TTL;
-		}
-
-		/**
-		 * Filters the WooPayments database cache TTL.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param int                 $ttl            Cache TTL in seconds.
-		 * @param string              $key            Cache option key.
-		 * @param array<string,mixed> $cache_contents Cache wrapper.
-		 */
-		return (int) apply_filters( 'wcpay_database_cache_ttl', $ttl, $key, $cache_contents );
-	}
-
-	/**
-	 * Get the progressive backoff TTL for errored database cache refreshes.
-	 *
-	 * @param int $consecutive_errors Consecutive error count.
-	 * @return int
-	 */
-	private function get_errored_cache_ttl( int $consecutive_errors ): int {
-		$index = max( 0, min( count( self::DATABASE_CACHE_ERRORED_TTL_LADDER ) - 1, $consecutive_errors - 1 ) );
-
-		return self::DATABASE_CACHE_ERRORED_TTL_LADDER[ $index ];
+		return $this->database_cache->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents, fn( $data ): bool => $this->is_valid_cached_account( $data ), $force_refresh );
 	}
 
 	/**

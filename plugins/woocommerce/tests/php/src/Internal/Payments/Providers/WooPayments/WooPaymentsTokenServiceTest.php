@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -2156,7 +2157,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$connected_api_client->method( 'is_available' )->willReturn( true );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
 		$customer_service = new WooPaymentsCustomerService();
 		$customer_service->init( $api_client, $account_service, new WooPaymentsSessionService() );
 		$this->create_service( array(), $api_client, $customer_service, $account_service );

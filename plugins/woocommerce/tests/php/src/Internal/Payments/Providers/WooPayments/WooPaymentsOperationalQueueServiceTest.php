@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheI
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -1623,7 +1624,9 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'has_test_account' )->willReturn( $test_account );
 		$account_service->method( 'is_payment_request_enabled' )->willReturn( true );
 		// Gateway settings are read through the real get_gateway_setting(), which needs the proxy.
-		$account_service->init( wc_get_container()->get( LegacyProxy::class ) );
+		$database_cache = new WooPaymentsDatabaseCache();
+		$database_cache->init( wc_get_container()->get( LegacyProxy::class ) );
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), $database_cache );
 
 		return $account_service;
 	}

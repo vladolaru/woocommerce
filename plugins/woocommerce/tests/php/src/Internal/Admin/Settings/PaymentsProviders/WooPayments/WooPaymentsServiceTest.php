@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -2922,7 +2923,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$adapter         = new WooPaymentsOnboardingAdapter();
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( $this->mockable_proxy );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( $this->mockable_proxy );
+		$account_service->init( $this->mockable_proxy, $database_cache );
 		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new WooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
@@ -3109,7 +3112,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				return $this->api_client;
 			}
 		};
-		$account_service->init( $this->mockable_proxy );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( $this->mockable_proxy );
+		$account_service->init( $this->mockable_proxy, $database_cache );
 
 		return $account_service;
 	}
@@ -3121,7 +3126,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_native_account_service(): WooPaymentsAccountService {
 		$account_service = new WooPaymentsAccountService();
-		$account_service->init( $this->mockable_proxy );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( $this->mockable_proxy );
+		$account_service->init( $this->mockable_proxy, $database_cache );
 
 		return $account_service;
 	}
@@ -14775,7 +14782,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				return $this->api_client;
 			}
 		};
-		$account_service->init( $this->mockable_proxy );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( $this->mockable_proxy );
+		$account_service->init( $this->mockable_proxy, $database_cache );
 
 		$adapter = $this->create_native_finalize_adapter();
 

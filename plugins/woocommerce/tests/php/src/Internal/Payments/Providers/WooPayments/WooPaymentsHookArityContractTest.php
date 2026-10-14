@@ -38,6 +38,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAuthorizationsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
@@ -741,13 +742,13 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * Group `database_cache` (1 hook): the database cache TTL reader, probed with the account key.
 	 */
 	private function probe_database_cache(): void {
-		$service        = wc_get_container()->get( WooPaymentsAccountService::class );
+		$database_cache = wc_get_container()->get( WooPaymentsDatabaseCache::class );
 		$cache_contents = array(
 			'data'               => array(),
 			'errored'            => false,
 			'consecutive_errors' => 0,
 		);
-		$this->builtin_invoke( $service, 'get_database_cache_ttl', array( 'wcpay_account_data', $cache_contents ) );
+		$this->builtin_invoke( $database_cache, 'get_ttl', array( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents ) );
 	}
 
 	/**
