@@ -87,6 +87,16 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The WooPayments settings accept and report one fixed list of payment method IDs.
+	 */
+	public function test_settings_payment_method_ids(): void {
+		$this->assertSame(
+			array( 'alipay', 'amazon_pay', 'apple_pay', 'au_becs_debit', 'bancontact', 'card', 'eps', 'google_pay', 'grabpay', 'ideal', 'jcb', 'klarna', 'link', 'multibanco', 'p24', 'sepa_debit', 'wechat_pay', 'affirm', 'afterpay_clearpay' ),
+			WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
+		);
+	}
+
+	/**
 	 * @testdox Availability filter receives one ordered ID-list argument exactly once and controls the available methods.
 	 */
 	public function test_availability_filter_receives_oracle_shape_once_and_controls_catalog(): void {

@@ -29,28 +29,6 @@ class WooPaymentsSettingsService {
 
 	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
 
-	private const SUPPORTED_PAYMENT_METHOD_IDS = array(
-		'alipay',
-		'amazon_pay',
-		'apple_pay',
-		'au_becs_debit',
-		'bancontact',
-		'card',
-		'eps',
-		'google_pay',
-		'grabpay',
-		'ideal',
-		'jcb',
-		'klarna',
-		'link',
-		'multibanco',
-		'p24',
-		'sepa_debit',
-		'wechat_pay',
-		'affirm',
-		'afterpay_clearpay',
-	);
-
 	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
 		'amazon_pay',
 		'apple_pay',
@@ -266,15 +244,6 @@ class WooPaymentsSettingsService {
 		$this->payment_method_registry       = $payment_method_registry;
 		$this->stripe_billing_module         = $stripe_billing_module;
 		$this->woopay_session_service        = $woopay_session_service;
-	}
-
-	/**
-	 * Get payment method IDs accepted by the settings REST contract.
-	 *
-	 * @return string[]
-	 */
-	public static function get_supported_payment_method_ids(): array {
-		return self::SUPPORTED_PAYMENT_METHOD_IDS;
 	}
 
 	/**
@@ -769,7 +738,7 @@ class WooPaymentsSettingsService {
 
 		$requested_payment_method_ids = $this->sanitize_payment_method_ids(
 			is_array( $params['enabled_payment_method_ids'] ) ? $params['enabled_payment_method_ids'] : array(),
-			self::SUPPORTED_PAYMENT_METHOD_IDS
+			WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS
 		);
 		if ( $this->is_manual_capture_enabled_after_update( $params, $settings ) ) {
 			$requested_payment_method_ids = $this->filter_manual_capture_payment_method_ids( $requested_payment_method_ids );
@@ -840,7 +809,7 @@ class WooPaymentsSettingsService {
 
 		return array_values(
 			array_filter(
-				$this->sanitize_payment_method_ids( $available_ids, self::SUPPORTED_PAYMENT_METHOD_IDS ),
+				$this->sanitize_payment_method_ids( $available_ids, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS ),
 				fn( string $payment_method_id ): bool => $this->is_listable_payment_method( $payment_method_id )
 			)
 		);
@@ -872,7 +841,7 @@ class WooPaymentsSettingsService {
 		$account_fees = array();
 
 		foreach ( $fees as $payment_method_id => $fee_structure ) {
-			if ( ! is_string( $payment_method_id ) || ! in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) || ! is_array( $fee_structure ) ) {
+			if ( ! is_string( $payment_method_id ) || ! in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) || ! is_array( $fee_structure ) ) {
 				continue;
 			}
 
@@ -1030,7 +999,7 @@ class WooPaymentsSettingsService {
 		if ( 0 === strpos( $gateway_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) ) {
 			$payment_method_id = substr( $gateway_id, strlen( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) );
 
-			return in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
+			return in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ? $payment_method_id : '';
 		}
 
 		if ( in_array( $gateway_id, self::DUPLICATE_CARD_GATEWAY_IDS, true ) ) {
@@ -1124,7 +1093,7 @@ class WooPaymentsSettingsService {
 				continue;
 			}
 
-			if ( $supported_methods_only && ! in_array( $payment_method_id, self::SUPPORTED_PAYMENT_METHOD_IDS, true ) ) {
+			if ( $supported_methods_only && ! in_array( $payment_method_id, WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS, true ) ) {
 				continue;
 			}
 

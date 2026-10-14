@@ -44,6 +44,31 @@ class WooPaymentsPaymentMethodRegistry {
 	public const DISCONTINUED_PAYMENT_METHOD_IDS = array( 'giropay', 'sofort' );
 
 	/**
+	 * Payment method IDs the WooPayments settings accept and report.
+	 */
+	public const SETTINGS_PAYMENT_METHOD_IDS = array(
+		'alipay',
+		'amazon_pay',
+		'apple_pay',
+		'au_becs_debit',
+		'bancontact',
+		'card',
+		'eps',
+		'google_pay',
+		'grabpay',
+		'ideal',
+		'jcb',
+		'klarna',
+		'link',
+		'multibanco',
+		'p24',
+		'sepa_debit',
+		'wechat_pay',
+		'affirm',
+		'afterpay_clearpay',
+	);
+
+	/**
 	 * Payment method definitions keyed by payment method ID.
 	 *
 	 * @var array<string,WooPaymentsPaymentMethodDefinition>

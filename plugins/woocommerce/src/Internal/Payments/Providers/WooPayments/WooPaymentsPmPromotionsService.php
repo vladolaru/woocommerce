@@ -788,7 +788,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return string[]
 	 */
 	private function sanitize_payment_method_ids( array $payment_method_ids ): array {
-		$supported = WooPaymentsSettingsService::get_supported_payment_method_ids();
+		$supported = WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
 		$sanitized = array();
 
 		foreach ( $payment_method_ids as $payment_method_id ) {

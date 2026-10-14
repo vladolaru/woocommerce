@@ -329,6 +329,26 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should list only the payment methods the settings accept when activation adds the promoted method.
+	 */
+	public function test_activate_promotion_keeps_only_settings_payment_methods_in_the_list(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+
+		$this->assertTrue( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
+
+		$this->assertSame( array( 'card', 'klarna' ), get_option( 'woocommerce_woocommerce_payments_settings' )['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
 	 * Client 11.1.0 checks the gateway reads enabled after `enable()` and logs a warning when it does not
 	 * (includes/class-wc-payments-pm-promotions-service.php:398-402,426-433).
 	 *

@@ -860,16 +860,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should accept and report one fixed list of payment method IDs.
-	 */
-	public function test_settings_payment_method_ids(): void {
-		$this->assertSame(
-			array( 'alipay', 'amazon_pay', 'apple_pay', 'au_becs_debit', 'bancontact', 'card', 'eps', 'google_pay', 'grabpay', 'ideal', 'jcb', 'klarna', 'link', 'multibanco', 'p24', 'sepa_debit', 'wechat_pay', 'affirm', 'afterpay_clearpay' ),
-			WooPaymentsSettingsService::get_supported_payment_method_ids()
-		);
-	}
-
-	/**
 	 * @testdox Should derive WooPayments Subscriptions eligibility from Stripe Billing product metadata.
 	 */
 	public function test_get_settings_detects_stripe_billing_subscription_product(): void {
