@@ -65,6 +65,7 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 		$account = WooPaymentsDatabaseCache::ACCOUNT_KEY;
 		$fields  = WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY;
 		$counts  = WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY;
+		$track   = WooPaymentsDatabaseCache::TRACKING_INFO_KEY;
 
 		return array(
 			'account admin, before 2 hours'        => array( $account, 'dashboard', 'before 2 hours', false, 0, 2 * HOUR_IN_SECONDS - 60, false ),
@@ -84,6 +85,10 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			'fields, before a week'                => array( $fields, 'front', 'before a week', false, 0, WEEK_IN_SECONDS - 60, false ),
 			'fields, after a week'                 => array( $fields, 'front', 'after a week', false, 0, WEEK_IN_SECONDS + 60, true ),
 			'fields, 1 error, 3 minutes'           => array( $fields, 'front', '1 error, 3 minutes', true, 1, 180, true ),
+			'tracking, before a month'             => array( $track, 'front', 'before a month', false, 0, MONTH_IN_SECONDS - 60, false ),
+			'tracking, after a month'              => array( $track, 'front', 'after a month', false, 0, MONTH_IN_SECONDS + 60, true ),
+			'tracking, 2 errors, 4 minutes'        => array( $track, 'front', '2 errors, 4 minutes', true, 2, 240, false ),
+			'tracking, 2 errors, 6 minutes'        => array( $track, 'front', '2 errors, 6 minutes', true, 2, 360, true ),
 			'other keys, errored before a day'     => array( $counts, 'dashboard', 'errored, no backoff', true, 1, DAY_IN_SECONDS - 60, false ),
 			'other keys, after a day'              => array( $counts, 'dashboard', 'after a day', false, 0, DAY_IN_SECONDS + 60, true ),
 		);
@@ -110,8 +115,8 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			3
 		);
 
-		$this->assertTrue( $this->sut->should_refresh( WooPaymentsDatabaseCache::TRACKING_INFO_KEY, $contents, 'is_array', false ) );
-		$this->assertSame( array( DAY_IN_SECONDS, WooPaymentsDatabaseCache::TRACKING_INFO_KEY, $contents ), $seen );
+		$this->assertTrue( $this->sut->should_refresh( WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY, $contents, 'is_array', false ) );
+		$this->assertSame( array( DAY_IN_SECONDS, WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY, $contents ), $seen );
 	}
 
 	/**

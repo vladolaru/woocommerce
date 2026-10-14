@@ -5,7 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -31,6 +33,13 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * Database cache the service reads through.
+	 *
+	 * @var WooPaymentsDatabaseCache
+	 */
+	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
 	 * Set up test fixtures.
@@ -77,8 +86,10 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 
+		$this->database_cache = new WooPaymentsDatabaseCache();
+		$this->database_cache->init( new LegacyProxy() );
 		$this->sut = new WooPaymentsTrackingInfoService();
-		$this->sut->init( $this->api_client );
+		$this->sut->init( $this->api_client, $this->database_cache );
 		delete_option( self::OPTION );
 	}
 
@@ -172,6 +183,61 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 		$this->sut->get_tracking_info();
 
 		$this->assertSame( $expected_calls, $this->api_client->calls );
+	}
+
+	/**
+	 * @testdox An errored cache stored without an error count, as before the backoff ladder, is retried after two minutes.
+	 *
+	 * @testWith [60, 0]
+	 *           [180, 1]
+	 *
+	 * @param int $age            Seconds since the errored write.
+	 * @param int $expected_calls Expected platform requests.
+	 */
+	public function test_errored_cache_without_an_error_count_is_retried_after_two_minutes( int $age, int $expected_calls ): void {
+		update_option(
+			self::OPTION,
+			array(
+				'data'    => null,
+				'fetched' => time() - $age,
+				'errored' => true,
+			),
+			false
+		);
+
+		$this->sut->get_tracking_info();
+
+		$this->assertSame( $expected_calls, $this->api_client->calls );
+	}
+
+	/**
+	 * @testdox An expired cache is not refreshed while an Action Scheduler job runs, as client 11.1.0 `class-database-cache.php:295-301`.
+	 */
+	public function test_action_scheduler_jobs_do_not_refresh(): void {
+		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - 2 * MONTH_IN_SECONDS, false );
+		$this->database_cache->disable_refresh();
+
+		$this->assertSame( array( 'hosting_provider' => 'cached-host' ), $this->sut->get_tracking_info() );
+		$this->assertSame( 0, $this->api_client->calls );
+	}
+
+	/**
+	 * @testdox The tracking info is fetched once per request even when storing it fails, as client 11.1.0 `class-database-cache.php:101-109,340-353`.
+	 */
+	public function test_fetches_once_per_request_when_the_write_fails(): void {
+		add_filter(
+			'pre_update_option_' . self::OPTION,
+			static function ( $value, $old_value ) {
+				unset( $value );
+				return $old_value;
+			},
+			10,
+			2
+		);
+
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
+		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
+		$this->assertSame( 1, $this->api_client->calls );
 	}
 
 	/**

@@ -363,6 +363,11 @@ class WooPaymentsDatabaseCache {
 					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
 					: self::ONBOARDING_FIELDS_DATA_TTL;
 				break;
+			case self::TRACKING_INFO_KEY:
+				$ttl = $errored
+					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
+					: MONTH_IN_SECONDS;
+				break;
 			default:
 				$ttl = DAY_IN_SECONDS;
 				break;
