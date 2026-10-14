@@ -463,19 +463,6 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions preserve the legacy deposits REST error envelope.
-	 */
-	public function test_api_exceptions_preserve_legacy_error_envelope(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Missing payout.', 'resource_missing', 404 );
-
-		$response = $this->sut->get_deposit( $this->create_detail_request( 'po_missing' ) );
-
-		$this->assertSame( 'resource_missing', $response->get_error_code() );
-		$this->assertSame( 'Missing payout.', $response->get_error_message() );
-		$this->assertNull( $response->get_error_data() );
-	}
-
-	/**
 	 * @testdox Manual payout logs a safe audit trail on success.
 	 */
 	public function test_manual_deposit_logs_success_audit_trail(): void {
@@ -534,7 +521,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$response = $this->server->dispatch( $request );
 
-		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 504, $response->get_status(), 'A 5xx platform status reaches the answer.' );
 		$this->assertCount( 2, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[1]['level'] );
 		$this->assertStringContainsString( 'failed', $logger->entries[1]['message'] );
@@ -544,6 +531,29 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );
 		$this->assertSame( 504, $logger->entries[1]['context']['http_status'] );
 		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
+	 * A 4xx or 5xx platform status reaches the answer; any other status answers 500. The faked failures are the shape the
+	 * API client builds from a platform error body and its HTTP status; an unreadable body keeps the answer's status, 200
+	 * included (wcpay_unparseable_or_null_body).
+	 *
+	 * @testdox A "$code" platform failure with status $platform_status on a payout answers $expected_status.
+	 * @testWith ["resource_missing", 404, 404]
+	 *           ["wcpay_unparseable_or_null_body", 200, 500]
+	 *
+	 * @param string $code            Platform error code.
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param int    $expected_status Expected answer status.
+	 */
+	public function test_api_exceptions_answer_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
+		$this->sut->register_routes();
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/po_missing' ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
 	}
 
 	/**

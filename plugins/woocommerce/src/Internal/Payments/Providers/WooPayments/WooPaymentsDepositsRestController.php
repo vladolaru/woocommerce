@@ -417,9 +417,13 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 * @return WP_Error
 	 */
 	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
+		$http_code = $exception->get_http_code();
+		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
+
 		return new WP_Error(
 			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage()
+			$exception->getMessage(),
+			array( 'status' => $status )
 		);
 	}
 }

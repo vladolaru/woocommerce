@@ -391,6 +391,36 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * The extension logs any failure creating the intent and answers its generic error with the message
+	 * (class-wc-rest-payments-payment-intents-controller.php:149-152). The faked failure is the API client's exception
+	 * from a platform card error body and its HTTP status.
+	 *
+	 * @testdox Payment detail create intent route answers a platform failure with the logged 500 wcpay_server_error.
+	 */
+	public function test_payment_detail_create_intent_route_answers_a_platform_failure_with_the_generic_error(): void {
+		$order                       = $this->create_order_for_generated_charge();
+		$this->api_client->exception = new WooPaymentsApiException( 'Your card was declined.', 'card_declined', 402 );
+		$logger                      = RecordingWcLogger::install();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->create_payment_details_controller( true )->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( 'Your card was declined.', $response->get_data()['message'] );
+		$this->assertSame( array( array( 'error', 'Failed to create an intention via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
 	 * The create-intent route answers with the projection client 11.1.0 `prepare_item_for_response()` builds; for the
 	 * recorded REC-3 intent, the client's own output is in `Fixtures/payment-intent-rest-response.json`.
 	 */
@@ -529,20 +559,23 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * error body and its HTTP status: an unreadable body keeps the answer's status, 200 included
 	 * (wcpay_unparseable_or_null_body), and an encode failure carries none (wcpay_client_unable_to_encode_json, status 0).
 	 *
-	 * @testdox Admin route "$path" answers a "$code" platform failure with status $platform_status as $expected_status.
-	 * @testWith ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_unparseable_or_null_body", 200, 500]
-	 *           ["payment details", "/wc/v3/payments/payment_intents/pi_1", "wcpay_client_unable_to_encode_json", 0, 500]
-	 *           ["payment details", "/wc/v3/payments/timeline/pi_1", "wcpay_client_unable_to_encode_json", 0, 500]
-	 *           ["payment details", "/wc/v3/payments/charges/ch_missing", "wcpay_missing_charge", 404, 404]
-	 *           ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_bad_request", 400, 400]
+	 * The charge route answers the client's own code with no status (class-wc-rest-payments-charges-controller.php:62-63).
+	 *
+	 * @testdox Admin route "$path" answers a "$code" platform failure with status $platform_status as $expected_status $expected_code.
+	 * @testWith ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_unparseable_or_null_body", 200, 500, "wcpay_unparseable_or_null_body"]
+	 *           ["payment details", "/wc/v3/payments/payment_intents/pi_1", "wcpay_client_unable_to_encode_json", 0, 500, "wcpay_client_unable_to_encode_json"]
+	 *           ["payment details", "/wc/v3/payments/timeline/pi_1", "wcpay_client_unable_to_encode_json", 0, 500, "wcpay_client_unable_to_encode_json"]
+	 *           ["payment details", "/wc/v3/payments/charges/ch_missing", "wcpay_missing_charge", 404, 500, "wcpay_get_charge"]
+	 *           ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_bad_request", 400, 400, "wcpay_bad_request"]
 	 *
 	 * @param string $controller      Controller under test.
 	 * @param string $path            Route path.
 	 * @param string $code            Platform error code.
 	 * @param int    $platform_status Platform HTTP status.
 	 * @param int    $expected_status Expected answer status.
+	 * @param string $expected_code   Expected answer code.
 	 */
-	public function test_admin_routes_answer_platform_failures_with_a_4xx_or_5xx( string $controller, string $path, string $code, int $platform_status, int $expected_status ): void {
+	public function test_admin_routes_answer_platform_failures_with_a_4xx_or_5xx( string $controller, string $path, string $code, int $platform_status, int $expected_status, string $expected_code ): void {
 		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
 		if ( 'transactions' === $controller ) {
 			$this->create_transactions_controller( true )->register_routes();
@@ -553,7 +586,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $path ) );
 
 		$this->assertSame( $expected_status, $response->get_status() );
-		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertSame( $expected_code, $response->get_data()['code'] );
 	}
 
 	/**
@@ -683,7 +716,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$response = $this->server->dispatch( $request );
 		$data     = $response->get_data();
 
-		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 500, $response->get_status(), 'A gateway failure is a server fault: wc_create_refund() rewraps it without a status.' );
 		$this->assertSame( 'wcpay_refund_payment_failed', $data['code'] );
 		$this->assertStringContainsString( 'Gateway failed.', $data['message'] );
 		$this->assertCount( 0, $order->get_refunds() );

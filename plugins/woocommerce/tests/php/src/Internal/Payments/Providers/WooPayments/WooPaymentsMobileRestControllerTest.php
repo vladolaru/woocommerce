@@ -2747,6 +2747,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				break;
 			case 'terminal capture, capture fails with status 0':
 				$order->update_status( 'on-hold' );
+				// The Stripe PaymentIntent the platform proxies from GET intentions/{id} (wpcom class-intentions-controller.php
+				// get_intent_data() :755-778), trimmed to the fields the capture reads: id, status, currency, metadata.order_id.
 				$this->api_client->payment_intention_response_queue = array(
 					array(
 						'id'       => 'pi_terminal',
@@ -2760,6 +2762,23 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 					),
 				);
 				$this->api_client->captured_intention_exception     = $encode_failure;
+				$request->set_param( 'payment_intent_id', 'pi_terminal' );
+				$response = $this->sut->capture_terminal_payment( $request );
+				break;
+			case 'terminal capture, capture returns a processing intent':
+				$order->update_status( 'on-hold' );
+				// The intent read and the capture answer are the platform's PaymentIntent (wpcom class-intentions-controller.php
+				// get_intent_data() :755-778 and capture_intention()), trimmed to id, status, currency and metadata.order_id.
+				$this->api_client->payment_intention_response  = array(
+					'id'       => 'pi_terminal',
+					'status'   => 'requires_capture',
+					'currency' => 'usd',
+					'metadata' => array( 'order_id' => (string) $order->get_id() ),
+				);
+				$this->api_client->captured_intention_response = array(
+					'id'     => 'pi_terminal',
+					'status' => 'processing',
+				);
 				$request->set_param( 'payment_intent_id', 'pi_terminal' );
 				$response = $this->sut->capture_terminal_payment( $request );
 				break;
@@ -2823,6 +2842,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			array( 'terminal intent, platform 400', 500, 'wcpay_server_error' ),
 			array( 'terminal capture, empty intent id', 500, 'wcpay_server_error' ),
 			array( 'terminal capture, capture fails with status 0', 0, 'wcpay_capture_error' ),
+			// The route keeps 502 where the extension answers 200 for a capture that did not succeed: the Android app reads any 200 as captured.
+			array( 'terminal capture, capture returns a processing intent', 502, 'wcpay_capture_error' ),
 			array( 'readers, platform 404', 500, 'resource_missing' ),
 			array( 'reader registration, status 0', 0, 'wcpay_client_unable_to_encode_json' ),
 			array( 'reader charge summary, platform 404', 500, 'wcpay_get_summary' ),

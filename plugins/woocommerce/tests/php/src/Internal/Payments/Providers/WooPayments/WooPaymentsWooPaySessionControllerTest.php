@@ -1271,12 +1271,20 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should log the exception's class, code and trace, never its message, and return an error when WooPay session assembly throws.
+	 * A failure assembling the session answers the extension's 400 wcpay_server_error with the exception's message and
+	 * logs it at info when debug logging is on (class-wc-rest-woopay-session-controller.php:67-71).
+	 *
+	 * @testdox Should return the exception's message and log it only with logging $logging_enabled when WooPay session assembly throws.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $logging_enabled Whether WooPayments debug logging is on.
 	 */
-	public function test_get_session_logs_and_returns_error_when_assembly_throws(): void {
+	public function test_get_session_logs_and_returns_error_when_assembly_throws( bool $logging_enabled ): void {
 		$service                 = new ThrowingWooPaySessionService();
 		$service->woopay_enabled = true;
 		$this->sut               = $this->create_controller( true, true, $service );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging_enabled ? 'yes' : 'no' ) );
 
 		$logged = array();
 		add_filter(
@@ -1303,27 +1311,14 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
+		$this->assertSame( 'Unable to read the cart.', $result->get_error_message() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
 
-		$matching = array_values(
-			array_filter(
-				$logged,
-				static function ( $entry ) {
-					return 'error' === $entry['level']
-						&& isset( $entry['context']['source'] )
-						&& 'woopayments-woopay-session' === $entry['context']['source'];
-				}
-			)
-		);
-
-		$this->assertNotEmpty( $matching, 'Expected a logged error for the swallowed WooPay session exception.' );
-		$this->assertSame( 'Unable to assemble WooPay session data.', $matching[0]['message'] );
-		$this->assertSame( \RuntimeException::class, $matching[0]['context']['exception'] );
-		$this->assertSame( 7, $matching[0]['context']['code'] );
-		$this->assertArrayHasKey( 'trace', $matching[0]['context'] );
-		foreach ( $logged as $entry ) {
-			$written = $entry['message'] . wp_json_encode( $entry['context'] );
-			$this->assertStringNotContainsString( 'shopper@example.com', $written );
-			$this->assertStringNotContainsString( 'tok_secret_123', $written );
+		$messages = wp_list_pluck( $logged, 'message' );
+		if ( $logging_enabled ) {
+			$this->assertContains( 'Error validating cart token from WooPay request: Unable to read the cart.', $messages );
+		} else {
+			$this->assertSame( array(), preg_grep( '/WooPay request/', $messages ) );
 		}
 	}
 

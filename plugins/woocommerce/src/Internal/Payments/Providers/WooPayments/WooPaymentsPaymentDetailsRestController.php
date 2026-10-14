@@ -15,6 +15,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
+use Throwable;
 
 /**
  * Native WooPayments payment detail REST controller.
@@ -134,7 +135,8 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The client's own code, with no status (class-wc-rest-payments-charges-controller.php:62-63); the mobile apps read this route.
+			return new WP_Error( 'wcpay_get_charge', $exception->getMessage() );
 		}
 	}
 
@@ -206,8 +208,11 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			);
 
 			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
-		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+		} catch ( Throwable $exception ) {
+			// The client logs any failure and answers its generic error with the message (class-wc-rest-payments-payment-intents-controller.php:149-152).
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create an intention via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
+
+			return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 500 ) );
 		}
 	}
 
@@ -272,11 +277,13 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			)
 		);
 
+		// The caller's errors are refused above. wc_create_refund() rewraps a gateway or platform failure as an error with no
+		// status, so it is a server fault: 500.
 		if ( is_wp_error( $refund ) ) {
 			return new WP_Error(
 				'wcpay_refund_payment_failed',
 				$refund->get_error_message(),
-				array( 'status' => 400 )
+				array( 'status' => 500 )
 			);
 		}
 
@@ -284,7 +291,7 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 			return new WP_Error(
 				'wcpay_refund_payment_failed',
 				__( 'Failed to create refund.', 'woocommerce' ),
-				array( 'status' => 400 )
+				array( 'status' => 500 )
 			);
 		}
 
