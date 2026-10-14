@@ -119,6 +119,8 @@ class WooPaymentsDatabaseCache {
 	 *
 	 * A generator that returns null or false, or throws, counts as an error: the last valid data is kept and returned.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param string   $key           Cache key.
 	 * @param callable $generator     Fetches fresh data.
 	 * @param callable $validate_data Tells whether cached data can be served.
@@ -157,6 +159,8 @@ class WooPaymentsDatabaseCache {
 	 *
 	 * With an error handler, a read that throws is handed to it and treated as no contents. Without one, it propagates.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param string        $key           Cache key.
 	 * @param callable|null $on_read_error Receives the throwable of a failed read.
 	 * @return array<string,mixed>|false The stored contents, or false when there are none.
@@ -188,6 +192,8 @@ class WooPaymentsDatabaseCache {
 	 *
 	 * Cron, AJAX and Action Scheduler requests never refresh unless forced, like client 11.1.0
 	 * `class-database-cache.php:289-330`.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @param string   $key            Cache key.
 	 * @param mixed    $cache_contents Stored contents.
@@ -234,6 +240,8 @@ class WooPaymentsDatabaseCache {
 	 *
 	 * Each errored write adds one to the stored error count; a successful write resets it.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param string $key     Cache key.
 	 * @param mixed  $data    Data to store.
 	 * @param bool   $errored Whether the refresh that produced the data failed.
@@ -260,6 +268,8 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Store cache contents in their option, not autoloaded, and keep them for the rest of the request.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param string              $key            Cache key.
 	 * @param array<string,mixed> $cache_contents Contents to store.
 	 * @return void
@@ -280,6 +290,8 @@ class WooPaymentsDatabaseCache {
 	 * is already gone, which left a persistent object cache serving stale dispute counts (client 11.1.0
 	 * `class-database-cache.php:230-243`, its #9639 fix).
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param string $key Cache key.
 	 * @return void
 	 */
@@ -292,6 +304,8 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Delete every cache entry.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @return void
 	 */
 	public function delete_all(): void {
@@ -302,6 +316,8 @@ class WooPaymentsDatabaseCache {
 
 	/**
 	 * Delete the live and test dispute counts and the active disputes, so the next read fetches them.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @return void
 	 */

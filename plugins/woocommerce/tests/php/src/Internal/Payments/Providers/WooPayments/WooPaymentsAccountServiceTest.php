@@ -1572,7 +1572,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'acct_fetched', $this->create_service_with_api_client( $api_client )->get_account_id() );
 		$errors = $logger->get_errors();
 		$this->assertCount( 1, $errors );
-		$this->assertSame( 'WooPayments could not write the account cache; the account was returned without being stored.', $errors[0][1] );
+		$this->assertSame( 'WooPayments could not write the account cache or sync the setup tier; the fetched account was returned.', $errors[0][1] );
 		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 		$this->assertFalse( get_option( 'wcpay_account_data' ), 'The fetched account is not stored while the filter throws.' );
 	}

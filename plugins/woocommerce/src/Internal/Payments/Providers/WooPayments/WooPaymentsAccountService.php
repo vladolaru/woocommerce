@@ -1474,16 +1474,17 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log an account cache write that threw, whatever the logging setting.
+	 * Log an account cache write or setup-tier sync that threw, whatever the logging setting.
 	 *
-	 * The account read returns the account it has without storing it, so the next request refreshes again.
+	 * The throw comes from the cache write, so the account is returned without being stored and the next request refreshes
+	 * again, or from the setup-tier sync after the row is stored. Either way the account read returns the account it has.
 	 *
 	 * @param \Throwable $throwable Caught throwable.
 	 */
 	private function log_write_failure( \Throwable $throwable ): void {
 		try {
 			wc_get_logger()->error(
-				'WooPayments could not write the account cache; the account was returned without being stored.',
+				'WooPayments could not write the account cache or sync the setup tier; the fetched account was returned.',
 				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		} catch ( \Throwable $logging_error ) {
