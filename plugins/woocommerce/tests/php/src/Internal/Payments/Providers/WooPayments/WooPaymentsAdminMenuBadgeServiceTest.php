@@ -323,6 +323,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reads_the_authorization_summary_again_after_invalidation_in_the_same_request( string $description, bool $test_mode, string $option ): void {
 		unset( $description );
+		// A reduced authorization summary: the client reads only its `count` (includes/admin/class-wc-payments-admin.php:1473-1493).
 		$api_client = $this->create_api_client( array(), array( 'count' => 4 ) );
 		$sut        = $this->create_service( $api_client, $test_mode, 'yes' );
 		$this->assertSame( 4, $sut->get_uncaptured_transactions_count() );

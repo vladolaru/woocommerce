@@ -707,6 +707,8 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:string,1:string[],2:string,3:array<string,string>,4:array<string,array>,5:bool}>
 	 */
 	public function link_fold_provider(): array {
+		// Keys as recorded in Fixtures/platform-test-drive-account.json: `account.capabilities.link_payments` (:52, recorded
+		// as unrequested; active is a test override) and `account.fees.link` (:239, reduced to the key).
 		$active = array( 'link_payments' => 'active' );
 		$fee    = array( 'link' => array() );
 

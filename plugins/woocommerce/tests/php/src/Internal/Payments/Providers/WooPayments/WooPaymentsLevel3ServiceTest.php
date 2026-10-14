@@ -40,12 +40,21 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 
 		$product = WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10.00' ) );
 		$order   = wc_create_order();
-		$order->add_product( $product, 2 );
+		$item_id = $order->add_product( $product, 2 );
 		$order->set_shipping_postcode( '10001' );
 		$order->calculate_totals();
 		// Set after calculate_totals(): recalculation derives shipping from
-		// shipping items, and this order deliberately has none.
+		// shipping items, and this order deliberately has none; it would also
+		// recalculate the line tax with no tax rates and drop it.
 		$order->set_shipping_total( '5.00' );
+		$item = $order->get_item( $item_id, false );
+		$item->set_taxes(
+			array(
+				'total'    => array( 1 => '1.23' ),
+				'subtotal' => array( 1 => '1.23' ),
+			)
+		);
+		$item->save();
 		$order->save();
 
 		$level3 = $this->make_sut( 'US' )->get_data_from_order( $order );
@@ -61,7 +70,7 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 2, $line_item->quantity );
 		$this->assertSame( 1000, $line_item->unit_cost );
 		$this->assertSame( 0, $line_item->discount_amount );
-		$this->assertSame( 0, $line_item->tax_amount );
+		$this->assertSame( 123, $line_item->tax_amount, 'A 1.23 USD line tax should be sent in cents.' );
 	}
 
 	/**

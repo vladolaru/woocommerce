@@ -9469,14 +9469,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Capture should return fee details as a plan without writing order notes.
 	 */
 	public function test_capture_returns_fee_effect_plan_without_writing_notes(): void {
-		$order              = $this->create_woopayments_order( '50.00' );
-		$api_client         = $this->getMockBuilder( WooPaymentsApiClient::class )
+		$order      = $this->create_woopayments_order( '50.00' );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available', 'capture_intention' ) )
-			->getMock();
-		$order_data_service = $this->getMockBuilder( WooPaymentsOrderDataService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_settlement_exchange_rate_order_meta' ) )
 			->getMock();
 
 		$order->set_transaction_id( 'pi_capture_notes' );
@@ -9532,10 +9528,8 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 					),
 				)
 			);
-		$order_data_service->expects( $this->never() )
-			->method( 'get_settlement_exchange_rate_order_meta' );
 
-		$sut     = $this->create_operation_service( $api_client, null, null, null, $order_data_service );
+		$sut     = $this->create_operation_service( $api_client );
 		$outcome = $sut->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'key_capture' );
 
 		$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
