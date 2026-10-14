@@ -2902,10 +2902,12 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Answer the receipt route's intent and charge reads with a succeeded card-present payment for the order.
 	 *
-	 * The intent's status and first charge, then the charge's order number, as client 11.1.0 reads them in
-	 * includes/admin/class-wc-rest-payments-reader-controller.php:283-295; the charge's amount and card-present receipt
-	 * fields, as client includes/in-person-payments/class-wc-payments-in-person-payments-receipts-service.php:53,138-160
-	 * reads them. The values are synthetic.
+	 * The intent's status and associated charge, then the charge's order number, as client 11.1.0 reads them in
+	 * includes/admin/class-wc-rest-payments-reader-controller.php:283-295 (the associated charge is the last entry of
+	 * charges.data, client includes/wc-payment-api/class-wc-payments-api-client.php:2403); the charge's amount and
+	 * card-present receipt fields, as client
+	 * includes/in-person-payments/class-wc-payments-in-person-payments-receipts-service.php:53,138-160 reads them. The
+	 * values are synthetic.
 	 *
 	 * @param \WC_Order $order Order the payment is for.
 	 */

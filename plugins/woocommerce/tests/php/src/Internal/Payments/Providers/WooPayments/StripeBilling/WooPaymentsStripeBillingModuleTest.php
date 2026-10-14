@@ -48,20 +48,25 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 counts a published subscription product with a Stripe Billing product hash
-	 * (includes/class-wc-payments-features.php:139-163).
+	 * Client 11.1.0 counts a subscription still billed by Stripe Billing, or a published subscription product with a
+	 * Stripe Billing product hash (includes/class-wc-payments-features.php:111-163).
 	 *
 	 * @testdox The bundled subscriptions are eligible: $expected, for a store with $label.
-	 * @testWith ["no subscription product", false, false]
-	 *           ["a subscription product without a Stripe Billing hash", true, false]
-	 *           ["a subscription product with a Stripe Billing hash", true, true]
+	 * @testWith ["no subscription product", false, false, false]
+	 *           ["a subscription product without a Stripe Billing hash", true, false, false]
+	 *           ["a subscription product with a Stripe Billing hash", true, false, true]
+	 *           ["a Stripe-billed subscription and no subscription product", false, true, true]
 	 *
-	 * @param string $label        Case.
-	 * @param bool   $with_product Whether a published subscription product exists.
-	 * @param bool   $expected     Whether the bundled subscriptions are eligible.
+	 * @param string $label             Case.
+	 * @param bool   $with_product      Whether a published subscription product exists.
+	 * @param bool   $with_subscription Whether a subscription billed by Stripe Billing exists.
+	 * @param bool   $expected          Whether the bundled subscriptions are eligible.
 	 */
-	public function test_bundled_subscriptions_eligibility( string $label, bool $with_product, bool $expected ): void {
+	public function test_bundled_subscriptions_eligibility( string $label, bool $with_product, bool $with_subscription, bool $expected ): void {
 		unset( $label );
+		if ( $with_subscription ) {
+			$this->create_stripe_billed_subscription_and_renewal();
+		}
 		if ( $with_product ) {
 			$product_id = self::factory()->post->create(
 				array(

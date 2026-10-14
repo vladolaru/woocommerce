@@ -333,6 +333,8 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_activate_promotion_keeps_only_settings_payment_methods_in_the_list(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ) );
+		// Reduced from Fixtures/platform-test-drive-account.json account.fees (:196; card :203, klarna :311): only the fee
+		// keys are read, so the fee objects are empty.
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
 				'card'   => array(),
