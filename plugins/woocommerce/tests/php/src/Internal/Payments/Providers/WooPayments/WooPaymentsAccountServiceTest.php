@@ -1556,6 +1556,28 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should log an account cache write that a third-party option filter makes throw, and return the fetched account.
+	 */
+	public function test_throwing_account_cache_write_is_logged_and_the_fetched_account_returned(): void {
+		set_current_screen( 'dashboard' );
+		add_filter(
+			'pre_update_option_wcpay_account_data',
+			static function () {
+				throw new RuntimeException( 'Filter failed on write for acct_secret.' );
+			}
+		);
+		$logger     = RecordingWcLogger::install();
+		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+
+		$this->assertSame( 'acct_fetched', $this->create_service_with_api_client( $api_client )->get_account_id() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'WooPayments could not write the account cache; the account was returned without being stored.', $errors[0][1] );
+		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+		$this->assertFalse( get_option( 'wcpay_account_data' ), 'The fetched account is not stored while the filter throws.' );
+	}
+
+	/**
 	 * @testdox Should read an admin account cache stored as $description.
 	 * @dataProvider provide_account_cache_wrappers_from_earlier_versions
 	 *

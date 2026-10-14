@@ -531,6 +531,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Write account data with cache metadata.
 	 *
+	 * Writing reads the stored option again, so a third-party option filter that makes the account cache read throw makes
+	 * this write throw too. The failure is logged and the read goes on with the account it has, as a throwing read does.
+	 *
 	 * @param mixed $account_data Account data.
 	 * @param bool  $errored      Whether the refresh that produced this write errored.
 	 * @return void
@@ -539,7 +542,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			$this->persist_account_cache( $this->build_account_cache_contents( $account_data, $errored ) );
 		} catch ( \Throwable $e ) {
-			return;
+			$this->log_write_failure( $e );
 		}
 	}
 
@@ -1463,6 +1466,24 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		try {
 			wc_get_logger()->error(
 				'Native WooPayments could not read ' . $what . '; treating it as missing.',
+				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+			);
+		} catch ( \Throwable $logging_error ) {
+			unset( $logging_error );
+		}
+	}
+
+	/**
+	 * Log an account cache write that threw, whatever the logging setting.
+	 *
+	 * The account read returns the account it has without storing it, so the next request refreshes again.
+	 *
+	 * @param \Throwable $throwable Caught throwable.
+	 */
+	private function log_write_failure( \Throwable $throwable ): void {
+		try {
+			wc_get_logger()->error(
+				'WooPayments could not write the account cache; the account was returned without being stored.',
 				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		} catch ( \Throwable $logging_error ) {
