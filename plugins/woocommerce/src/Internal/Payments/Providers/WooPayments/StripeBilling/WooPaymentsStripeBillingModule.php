@@ -175,6 +175,67 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Turn the bundled WooPayments subscriptions off. Nothing turns them on again.
+	 */
+	public function turn_off_bundled_subscriptions(): void {
+		update_option( self::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' );
+	}
+
+	/**
+	 * Tell whether the store may still use the bundled WooPayments subscriptions: a subscription is still billed by Stripe
+	 * Billing, or a published subscription product carries a Stripe Billing product hash (client 11.1.0
+	 * `includes/class-wc-payments-features.php:105-163`).
+	 *
+	 * @return bool
+	 */
+	public function is_bundled_subscriptions_eligible(): bool {
+		if ( function_exists( 'wcs_get_subscriptions' ) ) {
+			$subscriptions = wcs_get_subscriptions(
+				array(
+					'subscriptions_per_page' => 1,
+					'subscription_status'    => 'any',
+					'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+						array(
+							'key'     => '_wcpay_subscription_id',
+							'compare' => 'EXISTS',
+						),
+					),
+				)
+			);
+			if ( is_countable( $subscriptions ) && 0 < count( $subscriptions ) ) {
+				return true;
+			}
+		}
+
+		$stripe_billing_query = static function ( $query, $query_vars ) {
+			if ( ! empty( $query_vars['stripe_billing_product'] ) ) {
+				$query['meta_query'][] = array(
+					'key'     => '_wcpay_product_hash',
+					'compare' => 'EXISTS',
+				);
+			}
+
+			return $query;
+		};
+		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10, 2 );
+		try {
+			$products = wc_get_products(
+				array(
+					'limit'                  => 1,
+					'type'                   => array( 'subscription', 'variable-subscription' ),
+					'status'                 => 'publish',
+					'return'                 => 'ids',
+					'stripe_billing_product' => 'true',
+				)
+			);
+		} finally {
+			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10 );
+		}
+
+		return is_countable( $products ) && 0 < count( $products );
+	}
+
+	/**
 	 * Tell whether any subscription related to an order is billed by Stripe Billing; always false when the module is not loaded.
 	 *
 	 * @param WC_Order $order Order.

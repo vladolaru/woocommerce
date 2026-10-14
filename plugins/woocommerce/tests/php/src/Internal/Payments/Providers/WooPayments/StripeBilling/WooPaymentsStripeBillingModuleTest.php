@@ -36,6 +36,50 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Turning the bundled subscriptions off stores the flag off.
+	 */
+	public function test_turning_bundled_subscriptions_off_stores_the_flag_off(): void {
+		update_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '1' );
+
+		( new WooPaymentsStripeBillingModule() )->turn_off_bundled_subscriptions();
+
+		$this->assertSame( '0', get_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION ) );
+		$this->assertFalse( ( new WooPaymentsStripeBillingModule() )->is_bundled_subscriptions_flag_on() );
+	}
+
+	/**
+	 * Client 11.1.0 counts a published subscription product with a Stripe Billing product hash
+	 * (includes/class-wc-payments-features.php:139-163).
+	 *
+	 * @testdox The bundled subscriptions are eligible: $expected, for a store with $label.
+	 * @testWith ["no subscription product", false, false]
+	 *           ["a subscription product without a Stripe Billing hash", true, false]
+	 *           ["a subscription product with a Stripe Billing hash", true, true]
+	 *
+	 * @param string $label        Case.
+	 * @param bool   $with_product Whether a published subscription product exists.
+	 * @param bool   $expected     Whether the bundled subscriptions are eligible.
+	 */
+	public function test_bundled_subscriptions_eligibility( string $label, bool $with_product, bool $expected ): void {
+		unset( $label );
+		if ( $with_product ) {
+			$product_id = self::factory()->post->create(
+				array(
+					'post_type'   => 'product',
+					'post_status' => 'publish',
+				)
+			);
+			wp_set_object_terms( $product_id, 'subscription', 'product_type' );
+			if ( $expected ) {
+				update_post_meta( $product_id, '_wcpay_product_hash', 'product_hash' );
+			}
+		}
+
+		$this->assertSame( $expected, ( new WooPaymentsStripeBillingModule() )->is_bundled_subscriptions_eligible() );
+		$this->assertFalse( has_filter( 'woocommerce_product_data_store_cpt_get_products_query' ), 'The product query filter is removed after the check.' );
+	}
+
+	/**
 	 * @testdox With $label, the module loads: $loaded, and Stripe Billing is enabled: $enabled; turning the toggle off in the same request disables it.
 	 * @dataProvider provider_module_load_states
 	 *

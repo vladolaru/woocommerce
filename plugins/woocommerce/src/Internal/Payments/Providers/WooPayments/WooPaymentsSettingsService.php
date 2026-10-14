@@ -24,8 +24,6 @@ class WooPaymentsSettingsService {
 
 	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
 
-	private const WCPAY_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
-
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
 	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
@@ -329,8 +327,8 @@ class WooPaymentsSettingsService {
 			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
 			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
 			'is_multi_currency_enabled'                  => '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' ),
-			'is_wcpay_subscriptions_enabled'             => '1' === (string) get_option( self::WCPAY_SUBSCRIPTIONS_FLAG_OPTION, '0' ),
-			'is_wcpay_subscriptions_eligible'            => $this->is_subscriptions_eligible(),
+			'is_wcpay_subscriptions_enabled'             => $this->stripe_billing_module->is_bundled_subscriptions_flag_on(),
+			'is_wcpay_subscriptions_eligible'            => $this->stripe_billing_module->is_bundled_subscriptions_eligible(),
 			'is_subscriptions_plugin_active'             => class_exists( 'WC_Subscriptions' ),
 			'feature_flags'                              => $this->get_feature_flags(),
 			'account_country'                            => $account_fields['account_country'],
@@ -642,7 +640,7 @@ class WooPaymentsSettingsService {
 		}
 
 		if ( array_key_exists( 'is_wcpay_subscriptions_enabled', $params ) && ! $params['is_wcpay_subscriptions_enabled'] ) {
-			update_option( self::WCPAY_SUBSCRIPTIONS_FLAG_OPTION, '0' );
+			$this->stripe_billing_module->turn_off_bundled_subscriptions();
 		}
 
 		if ( array_key_exists( 'is_stripe_billing_enabled', $params ) ) {
@@ -1979,58 +1977,6 @@ class WooPaymentsSettingsService {
 		}
 
 		return 'string' === $expected_type && is_string( $value );
-	}
-
-	/**
-	 * Tell whether Subscriptions should be treated as eligible.
-	 *
-	 * @return bool
-	 */
-	private function is_subscriptions_eligible(): bool {
-		if ( function_exists( 'wcs_get_subscriptions' ) ) {
-			$subscriptions = wcs_get_subscriptions(
-				array(
-					'subscriptions_per_page' => 1,
-					'subscription_status'    => 'any',
-					'meta_query'             => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-						array(
-							'key'     => '_wcpay_subscription_id',
-							'compare' => 'EXISTS',
-						),
-					),
-				)
-			);
-			if ( is_countable( $subscriptions ) && 0 < count( $subscriptions ) ) {
-				return true;
-			}
-		}
-
-		$stripe_billing_query = static function ( $query, $query_vars ) {
-			if ( ! empty( $query_vars['stripe_billing_product'] ) ) {
-				$query['meta_query'][] = array(
-					'key'     => '_wcpay_product_hash',
-					'compare' => 'EXISTS',
-				);
-			}
-
-			return $query;
-		};
-		add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10, 2 );
-		try {
-			$products = wc_get_products(
-				array(
-					'limit'                  => 1,
-					'type'                   => array( 'subscription', 'variable-subscription' ),
-					'status'                 => 'publish',
-					'return'                 => 'ids',
-					'stripe_billing_product' => 'true',
-				)
-			);
-		} finally {
-			remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $stripe_billing_query, 10 );
-		}
-
-		return is_countable( $products ) && 0 < count( $products );
 	}
 
 	/**

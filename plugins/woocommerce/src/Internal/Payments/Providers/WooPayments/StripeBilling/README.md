@@ -1,6 +1,6 @@
 # Stripe Billing module
 
-Stripe Billing lets a store with WooCommerce Subscriptions bill subscription renewals at Stripe instead of charging them from the store. This folder holds WooPayments' opt-in Stripe Billing support, which follows client 11.1.0. The subscriptions bundled in WooPayments, which only run without WooCommerce Subscriptions, are not part of it.
+Stripe Billing lets a store with WooCommerce Subscriptions bill subscription renewals at Stripe instead of charging them from the store. This folder holds WooPayments' opt-in Stripe Billing support, which follows client 11.1.0. The subscriptions bundled in WooPayments, which only run without WooCommerce Subscriptions, are not part of it; the module only owns their flag and the rule for when a store may still turn them on, which reads Stripe Billing data.
 
 ## Loading
 
@@ -27,7 +27,7 @@ Code outside this folder names only `WooPaymentsStripeBillingModule`, and only i
 | S4 | `Webhooks/WooPaymentsEventIngestor.php` | hands `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed` to the module after the mode check; refuses them with client 11.1.0's reasons (400) when the module is not loaded |
 | S5 | `WooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
 | S6 | `WooPaymentsOperationalQueueService.php` | reports whether Stripe Billing is enabled |
-| S7 | `WooPaymentsSettingsService.php`, `WooPaymentsMerchantRestController.php` | the Stripe Billing settings fields and the toggle write |
+| S7 | `WooPaymentsSettingsService.php`, `WooPaymentsMerchantRestController.php` | the Stripe Billing settings fields, the toggle write, and the bundled subscriptions flag, its eligibility and its turn-off |
 | S8 | `Subscriptions/WooPaymentsLegacySubscriptionsGuard.php`, `WooPaymentsCutoverReconciliationJob.php` | cutover rules for stores with Stripe Billing data |
 
 The Stripe Billing fee context on payment intents is not a seam: the module sets `payment_context` through the existing `wcpay_metadata_from_order` filter.
