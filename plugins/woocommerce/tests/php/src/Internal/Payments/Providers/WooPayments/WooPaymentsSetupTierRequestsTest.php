@@ -321,6 +321,14 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 				return $value;
 			}
 		);
+		$jetpack_private_reads = 0;
+		add_filter(
+			'pre_option_jetpack_private_options',
+			static function ( $value ) use ( &$jetpack_private_reads ) {
+				++$jetpack_private_reads;
+				return $value;
+			}
+		);
 
 		global $wp_actions;
 		$manager_property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
@@ -345,6 +353,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 0, $account_option_reads, 'No class may read the stored account while plugins load.' );
+		$this->assertSame( 0, $jetpack_private_reads, 'No class may read the store\'s WordPress.com tokens while plugins load.' );
 		// The lifecycle listener loads on every tier and request type, so the boot registered the request's classes.
 		$this->assertSame( 10, has_action( 'activate_plugin', array( $container->get( WooPaymentsCutoverPluginLifecycleListener::class ), 'guard_woopayments_activation' ) ) );
 	}
