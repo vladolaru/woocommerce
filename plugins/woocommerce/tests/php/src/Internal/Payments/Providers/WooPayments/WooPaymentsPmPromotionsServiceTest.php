@@ -363,6 +363,43 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayNotHasKey( 'wcadmin_wcpay_payment_method_enabled', $events );
 		$this->assertIsArray( $dismissals );
 		$this->assertArrayHasKey( 'klarna-promo__spotlight', $dismissals, 'The promotion is dismissed before its gateway is enabled.' );
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'], 'A refused gateway row leaves the shared list as it was.' );
+	}
+
+	/**
+	 * Client 11.1.0 enables and checks the method's gateway first, then syncs the lists and only logs a list write that
+	 * fails (class-wc-payments-pm-promotions-service.php:384-418, :440-462).
+	 *
+	 * @testdox Activation succeeds with the method's gateway enabled and logs a shared list write that fails.
+	 */
+	public function test_activate_promotion_logs_a_failed_list_sync_and_succeeds(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+		add_filter( 'pre_update_option_woocommerce_woocommerce_payments_settings', static fn( $value, $old_value ) => $old_value, 10, 2 );
+		$logger = RecordingWcLogger::install();
+
+		$result = false;
+		$events = $this->capture_tracks_events(
+			function () use ( &$result ): void {
+				$result = $this->sut->activate_promotion( 'klarna-promo__spotlight' );
+			}
+		);
+
+		$this->assertTrue( $result );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_klarna_settings' )['enabled'] ?? null );
+		$this->assertArrayHasKey( 'wcadmin_wcpay_payment_method_enabled', $events );
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( 'Failed to sync payment method klarna to the gateway settings: woocommerce_woocommerce_payments_settings', $warnings[0][1] );
 	}
 
 	/**
@@ -520,7 +557,9 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a valid promotion fixture.
 	 *
-	 * Shape: platform `GET payment_method_promotions`, flat promotion fields.
+	 * Shape: the flat promotion the platform's `GET payment_method_promotions` returns, built by
+	 * Payment_Method_Promotion_Service::build_flat_promotion() (the platform's class-payment-method-promotion-service.php:499-534):
+	 * the required fields plus the optional footnote.
 	 *
 	 * @param string $id                Promotion ID.
 	 * @param string $promo_id          Promotion group ID.

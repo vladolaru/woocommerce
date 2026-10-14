@@ -678,8 +678,9 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Enable a payment method's own gateway and list it on every gateway, as client 11.1.0
-	 * `enable_payment_method_gateway()` does (class-wc-payments-pm-promotions-service.php:384-462).
+	 * Enable a payment method's own gateway, then list it on every gateway, as client 11.1.0
+	 * `enable_payment_method_gateway()` does (class-wc-payments-pm-promotions-service.php:384-462): the method's row is
+	 * enabled and read back before the shared list names it, so a refused row write leaves the list as it was.
 	 *
 	 * @param string              $payment_method_id Payment method ID.
 	 * @param array<string,mixed> $promotion         Promotion data.
@@ -690,14 +691,14 @@ class WooPaymentsPmPromotionsService {
 			return false;
 		}
 
-		$settings                                   = $this->get_gateway_settings();
-		$settings['upe_enabled_payment_method_ids'] = $this->sanitize_payment_method_ids(
-			array_merge( $this->get_enabled_payment_method_ids(), array( $payment_method_id ) )
-		);
-		$this->gateway_settings_synchronizer->persist( $settings );
+		$row_option_name        = $this->gateway_settings_synchronizer->get_split_option_name( $payment_method_id );
+		$gateway_row            = get_option( $row_option_name, array() );
+		$gateway_row            = is_array( $gateway_row ) ? $gateway_row : array();
+		$gateway_row['enabled'] = 'yes';
+		update_option( $row_option_name, $gateway_row );
 
-		$gateway_settings = get_option( $this->gateway_settings_synchronizer->get_split_option_name( $payment_method_id ), array() );
-		if ( ! is_array( $gateway_settings ) || 'yes' !== ( $gateway_settings['enabled'] ?? null ) ) {
+		$gateway_row = get_option( $row_option_name, array() );
+		if ( ! is_array( $gateway_row ) || 'yes' !== ( $gateway_row['enabled'] ?? null ) ) {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
 				sprintf( 'Failed to enable payment method %s: its gateway did not save the enabled setting.', $payment_method_id ),
 				'warning'
@@ -714,6 +715,20 @@ class WooPaymentsPmPromotionsService {
 				'promo_id'          => $promotion['promo_id'] ?? null,
 			)
 		);
+
+		// The settings save's writer lists the method on every gateway; a failed list write is logged and keeps the gateway enabled.
+		// Client: class-wc-payments-pm-promotions-service.php:440-462.
+		$settings                                   = $this->get_gateway_settings();
+		$settings['upe_enabled_payment_method_ids'] = $this->sanitize_payment_method_ids(
+			array_merge( $this->get_enabled_payment_method_ids(), array( $payment_method_id ) )
+		);
+		$result                                     = $this->gateway_settings_synchronizer->persist( $settings );
+		if ( ! $result['persisted'] ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+				sprintf( 'Failed to sync payment method %s to the gateway settings: %s.', $payment_method_id, implode( ', ', $result['failed_option_names'] ) ),
+				'warning'
+			);
+		}
 
 		return true;
 	}
