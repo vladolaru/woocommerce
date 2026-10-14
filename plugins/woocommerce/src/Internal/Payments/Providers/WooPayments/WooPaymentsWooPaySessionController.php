@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Exception;
 use Throwable;
 use WP_Error;
 use WP_REST_Request;
@@ -278,10 +279,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 				200
 			);
 		} catch ( Throwable $exception ) {
-			// The client logs the message and answers it (class-wc-rest-woopay-session-controller.php:67-71).
+			// The client logs the message and answers it (class-wc-rest-woopay-session-controller.php:67-71). It catches only
+			// an Exception, so WooPay never sees a PHP Error's text, which can name a server path; here that gets a fixed text.
 			wc_get_container()->get( WooPaymentsLogger::class )->log( 'Error validating cart token from WooPay request: ' . $exception->getMessage() );
+			$message = $exception instanceof Exception ? $exception->getMessage() : __( 'Unexpected server error', 'woocommerce' );
 
-			return new WP_Error( 'wcpay_server_error', $exception->getMessage(), array( 'status' => 400 ) );
+			return new WP_Error( 'wcpay_server_error', $message, array( 'status' => 400 ) );
 		}
 	}
 

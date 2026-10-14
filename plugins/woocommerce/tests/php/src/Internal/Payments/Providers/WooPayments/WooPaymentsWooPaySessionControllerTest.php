@@ -1297,6 +1297,25 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 catches only an Exception there (class-wc-rest-woopay-session-controller.php:67), so a PHP Error never
+	 * hands WooPay its text, which can name a server path.
+	 *
+	 * @testdox Should answer a fixed message, not the error's text, when WooPay session assembly raises a PHP error.
+	 */
+	public function test_get_session_hides_a_php_error_text(): void {
+		$service            = new ThrowingWooPaySessionService();
+		$service->throwable = new \TypeError( 'Argument #1 must be of type array, null given, called in /var/www/html/wp-content/plugins/an-extension/cart.php on line 12' );
+		$this->sut          = $this->create_controller( true, $service );
+
+		$result = $this->sut->get_session( new WP_REST_Request( 'GET', '/payments/woopay/session' ) );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'wcpay_server_error', $result->get_error_code() );
+		$this->assertSame( 'Unexpected server error', $result->get_error_message() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/**
 	 * @testdox Should return session data for signed WooPay requests.
 	 */
 	public function test_rest_session_route_returns_session_data_for_signed_woopay_request(): void {
