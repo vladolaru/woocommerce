@@ -9,6 +9,7 @@ use Automattic\Jetpack\IdentityCrisis\UI as IdentityCrisisUI;
 use Automattic\Jetpack\Status\Cache as StatusCache;
 use Automattic\Jetpack\Sync\Data_Settings;
 use Automattic\Jetpack\Sync\Default_Filter_Settings;
+use Automattic\Jetpack\Sync\Actions as Sync_Actions;
 use Automattic\Jetpack\Sync\Modules;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
@@ -164,14 +165,12 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 	 *
 	 * The answer's `idc_detected` shape is the platform's: the Jetpack auth base controller merges it into the response
 	 * (wpcom wp-content/rest-api-plugins/endpoints/jetpack-auth.php:113-150) with the keys built in
-	 * wp-content/mu-plugins/jetpack/sync/class.jetpack-sync-idc-cleanup.php:268-274.
+	 * wp-content/mu-plugins/jetpack/sync/class.jetpack-sync-idc-cleanup.php:284-290.
 	 */
 	public function test_platform_reported_url_mismatch_enters_safe_mode_with_the_woocommerce_banner(): void {
 		$this->skip_on_multisite();
 		$this->connect_store();
-		$this->sut->register();
-		// Stands in for jetpack-config's plugins_loaded step, which turns the feature on (class-config.php:274-276).
-		Identity_Crisis::init();
+		$this->register_and_run_plugins_loaded();
 		$sent_url = '';
 		$answer   = static function ( $preempt, array $args, string $url ) use ( &$sent_url ) {
 			unset( $preempt, $args );
@@ -224,12 +223,68 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WordPress's plugins_loaded step starts Safe Mode and Sync, and Sync's first send already carries the Safe Mode arguments.
+	 *
+	 * Without them a copy of the store would sync its URLs to WordPress.com unchecked. The answer is synthetic transport-only
+	 * input in WP_Http::request()'s array shape; only the request URL is read.
+	 */
+	public function test_plugins_loaded_starts_safe_mode_before_the_first_sync_send(): void {
+		$this->skip_on_multisite();
+		$this->connect_store();
+
+		$this->register_and_run_plugins_loaded();
+
+		$this->assertSame( 1, did_action( 'jetpack_feature_identity_crisis_enabled' ), 'Safe Mode started.' );
+		$this->assertSame( 1, did_action( 'jetpack_feature_sync_enabled' ), 'Sync started.' );
+		$sent_url = '';
+		$answer   = static function ( $preempt, array $args, string $url ) use ( &$sent_url ) {
+			unset( $preempt, $args );
+			$sent_url = $url;
+
+			return array(
+				'headers'  => array( 'content-type' => 'text/xml' ),
+				'body'     => '',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $answer, 10, 3 );
+
+		Sync_Actions::send_data( array(), 'deflate-json-array', microtime( true ), 'sync', 0.0, 0.0 );
+
+		parse_str( (string) wp_parse_url( $sent_url, PHP_URL_QUERY ), $sent_args );
+		$this->assertSame( '1', $sent_args['sync'] ?? null, 'Sync sent its actions.' );
+		$this->assertSame( '1', $sent_args['idc'] ?? null, 'Sync\'s first send asks the platform to check for a copied site.' );
+		$this->assertArrayHasKey( 'home', $sent_args, 'Sync\'s first send tells the platform the URL it comes from.' );
+	}
+
+	/**
 	 * Jetpack handles Safe Mode only on single sites unless a site opts in (Identity_Crisis::should_handle_idc(),
 	 * class-identity-crisis.php:521-543), as with the WooPayments extension.
 	 */
 	private function skip_on_multisite(): void {
 		if ( is_multisite() ) {
 			$this->markTestSkipped( 'Jetpack does not handle Safe Mode on multisite by default.' );
+		}
+	}
+
+	/**
+	 * Register the SUT and run the plugins_loaded callback it leaves, as WordPress does after WooCommerce loads.
+	 */
+	private function register_and_run_plugins_loaded(): void {
+		global $wp_filter;
+		$before = $wp_filter['plugins_loaded']->callbacks[2] ?? array();
+
+		$this->sut->register();
+
+		$added = array_diff_key( $wp_filter['plugins_loaded']->callbacks[2] ?? array(), $before );
+		$this->assertCount( 1, $added, 'register() leaves one plugins_loaded callback, jetpack-config\'s.' );
+		foreach ( $added as $callback ) {
+			call_user_func( $callback['function'] );
 		}
 	}
 
@@ -279,5 +334,7 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 		// The merged Sync settings are static, and the package adds its required settings once per request.
 		( new Data_Settings() )->empty_data_settings_and_hooks();
 		unset( $GLOBALS['wp_actions']['jetpack_sync_add_required_data_settings'] );
+		// jetpack-config starts each feature once per request (class-config.php:207-226).
+		unset( $GLOBALS['wp_actions']['jetpack_feature_sync_enabled'], $GLOBALS['wp_actions']['jetpack_feature_identity_crisis_enabled'] );
 	}
 }
