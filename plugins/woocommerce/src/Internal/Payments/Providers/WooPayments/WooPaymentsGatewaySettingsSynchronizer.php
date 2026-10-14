@@ -18,9 +18,19 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInterface {
 
-	private const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
+	/**
+	 * The wallet payment methods that share the payment request switch.
+	 */
+	public const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
 
 	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
+
+	/**
+	 * Account service, the read home of the gateway settings.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * Payment method registry.
@@ -44,23 +54,20 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
 
 	/**
-	 * Constructor.
+	 * Initialize the class instance.
 	 *
-	 * @param WooPaymentsPaymentMethodRegistry|null $registry Optional payment method registry.
-	 */
-	public function __construct( ?WooPaymentsPaymentMethodRegistry $registry = null ) {
-		$this->registry = $registry ?? wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
-	}
-
-	/**
-	 * Initialize native payments state synchronization.
+	 * Without the setup tier and the arbiter, writes keep the tier as it is.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsSetupTier      $setup_tier Durable native payments state store.
-	 * @param WooPaymentsRuntimeArbiter $runtime_arbiter       Native payments runtime arbiter.
+	 * @param WooPaymentsAccountService        $account_service Account service.
+	 * @param WooPaymentsPaymentMethodRegistry $registry        Payment method registry.
+	 * @param WooPaymentsSetupTier|null        $setup_tier      Optional setup tier store.
+	 * @param WooPaymentsRuntimeArbiter|null   $runtime_arbiter Optional payments runtime arbiter.
 	 */
-	final public function init( WooPaymentsSetupTier $setup_tier, WooPaymentsRuntimeArbiter $runtime_arbiter ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsPaymentMethodRegistry $registry, ?WooPaymentsSetupTier $setup_tier = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null ): void { // phpcs:ignore Generic.CodeAnalysis.UnnecessaryFinalModifier.Found -- Required by WooCommerce injection method rules.
+		$this->account_service = $account_service;
+		$this->registry        = $registry;
 		$this->setup_tier      = $setup_tier;
 		$this->runtime_arbiter = $runtime_arbiter;
 	}
@@ -85,7 +92,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		} elseif (
 			null === $payment_request_enabled &&
 			array_key_exists( 'payment_request', $settings ) &&
-			null === $this->get_payment_request_split_state()
+			null === $this->account_service->get_payment_request_split_state()
 		) {
 			$payment_request_enabled = 'yes' === (string) $settings['payment_request'];
 		}
@@ -241,63 +248,6 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell whether either split wallet gateway is enabled.
-	 *
-	 * The removed card-gateway switch is consulted only when neither split option exists.
-	 *
-	 * @param array<string,mixed> $legacy_settings Optional pre-10.4 card settings.
-	 * @return bool
-	 */
-	public function is_payment_request_enabled( array $legacy_settings = array() ): bool {
-		$split_state = $this->get_payment_request_split_state();
-		if ( null !== $split_state ) {
-			return $split_state;
-		}
-
-		return 'yes' === (string) ( $legacy_settings['payment_request'] ?? 'no' );
-	}
-
-	/**
-	 * Get the aggregate split-wallet state, or null before split options exist.
-	 *
-	 * @return bool|null
-	 */
-	private function get_payment_request_split_state(): ?bool {
-		$missing_marker   = new \stdClass();
-		$has_split_option = false;
-
-		foreach ( self::PAYMENT_REQUEST_METHOD_IDS as $method_id ) {
-			$settings = get_option( $this->get_split_option_name( $method_id ), $missing_marker );
-			if ( $missing_marker === $settings ) {
-				continue;
-			}
-
-			$has_split_option = true;
-			if ( is_array( $settings ) && 'yes' === (string) ( $settings['enabled'] ?? 'no' ) ) {
-				return true;
-			}
-		}
-
-		return $has_split_option ? false : null;
-	}
-
-	/**
-	 * Tell whether one split payment-request gateway is enabled.
-	 *
-	 * @param string $method_id Apple Pay or Google Pay method ID.
-	 * @return bool
-	 */
-	public function is_payment_request_method_enabled( string $method_id ): bool {
-		if ( ! in_array( $method_id, self::PAYMENT_REQUEST_METHOD_IDS, true ) ) {
-			return false;
-		}
-
-		$settings = get_option( $this->get_split_option_name( $method_id ), array() );
-
-		return is_array( $settings ) && 'yes' === (string) ( $settings['enabled'] ?? 'no' );
-	}
-
-	/**
 	 * Set split wallet enabled state and return its verified persistence outcome.
 	 *
 	 * @param bool $enabled Whether payment-request wallets are enabled.
@@ -308,7 +258,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		$failed_option_names = array();
 
 		foreach ( self::PAYMENT_REQUEST_METHOD_IDS as $method_id ) {
-			$option_name                   = $this->get_split_option_name( $method_id );
+			$option_name                   = self::get_split_option_name( $method_id );
 			$existing                      = get_option( $option_name, array() );
 			$projected_settings            = is_array( $existing ) ? $existing : array();
 			$projected_settings['enabled'] = $enabled ? 'yes' : 'no';
@@ -367,7 +317,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			: array();
 		$method_ids         = WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS;
 
-		foreach ( $this->registry->get_registered( wc_get_container()->get( WooPaymentsAccountService::class ) ) as $definition ) {
+		foreach ( $this->registry->get_registered( $this->account_service ) as $definition ) {
 			if (
 				'card' !== $definition->get_id()
 				&& ! in_array( $definition->get_id(), self::PAYMENT_REQUEST_METHOD_IDS, true )
@@ -382,7 +332,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		$drifted_option_names = array();
 		$missing_marker       = new \stdClass();
 		foreach ( array_values( array_unique( $method_ids ) ) as $method_id ) {
-			$option_name       = $this->get_split_option_name( $method_id );
+			$option_name       = self::get_split_option_name( $method_id );
 			$existing          = get_option( $option_name, $missing_marker );
 			$should_be_enabled = in_array( $method_id, $enabled_method_ids, true ) && ! in_array( $method_id, WooPaymentsPaymentMethodRegistry::DISCONTINUED_PAYMENT_METHOD_IDS, true );
 
@@ -495,7 +445,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * @param string $method_id Payment method ID.
 	 * @return string
 	 */
-	public function get_split_option_name( string $method_id ): string {
+	public static function get_split_option_name( string $method_id ): string {
 		return 'woocommerce_woocommerce_payments_' . $method_id . '_settings';
 	}
 

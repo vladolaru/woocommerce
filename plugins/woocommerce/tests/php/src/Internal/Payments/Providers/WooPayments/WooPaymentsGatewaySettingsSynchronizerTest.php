@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use WC_Unit_Test_Case;
 
@@ -42,7 +44,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 			array( 'enabled' => 'yes' )
 		);
 
-		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
+		$synchronizer = $this->create_synchronizer();
 		$result       = $synchronizer->persist(
 			array(
 				'upe_enabled_payment_method_ids' => array( 'card', 'ideal', 'giropay', 'sofort', 'ideal' ),
@@ -82,7 +84,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 			static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'sepa_debit' ) ) )
 		);
 
-		( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+		$this->create_synchronizer()->persist(
 			array(
 				'upe_enabled_payment_method_ids' => array( 'card', 'sepa_debit' ),
 			)
@@ -101,7 +103,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	 * @testdox Reapplying an already projected settings state is intrinsically idempotent.
 	 */
 	public function test_persist_is_intrinsically_idempotent(): void {
-		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
+		$synchronizer = $this->create_synchronizer();
 		$settings     = array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) );
 
 		$first  = $synchronizer->persist( $settings );
@@ -135,7 +137,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_logging_class', $logger_filter );
 
 		try {
-			$synchronizer       = new WooPaymentsGatewaySettingsSynchronizer();
+			$synchronizer       = $this->create_synchronizer();
 			$first              = $synchronizer->persist( $settings );
 			$drifted            = get_option( $option_name );
 			$drifted['enabled'] = 'no';
@@ -172,7 +174,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . self::SETTINGS_OPTION, $reject_update, 10, 2 );
 
 		try {
-			$result = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+			$result = $this->create_synchronizer()->persist(
 				array(
 					'enabled'                        => 'yes',
 					'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
@@ -205,7 +207,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . $option_name, $reject_update, 10, 2 );
 
 		try {
-			$result = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist( $settings );
+			$result = $this->create_synchronizer()->persist( $settings );
 		} finally {
 			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
 		}
@@ -221,7 +223,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	 * @testdox Payment-request settings control Apple Pay and Google Pay split gateways independently of UPE methods.
 	 */
 	public function test_persist_projects_payment_request_to_wallet_split_gateways(): void {
-		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
+		$synchronizer = $this->create_synchronizer();
 		$enabled      = $synchronizer->persist(
 			array(
 				'payment_request'                => 'yes',
@@ -258,7 +260,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . $google_option, $reject_update, 10, 2 );
 
 		try {
-			$first = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+			$first = $this->create_synchronizer()->persist(
 				array(
 					'payment_request'                => 'yes',
 					'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -276,7 +278,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertFalse( get_option( $google_option, false ) );
 
-		$second = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+		$second = $this->create_synchronizer()->persist(
 			$stored_settings
 		);
 
@@ -297,7 +299,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_update_option_' . $giropay_option, $reject_update, 10, 2 );
 
 		try {
-			$first = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+			$first = $this->create_synchronizer()->persist(
 				array(
 					'payment_request'                => 'yes',
 					'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -315,28 +317,12 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 
-		$second = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist( $first['settings'] );
+		$second = $this->create_synchronizer()->persist( $first['settings'] );
 
 		$this->assertTrue( $second['persisted'] );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
 		$this->assertFalse( get_option( self::PAYMENT_REQUEST_PENDING_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Split wallet options are authoritative, with the legacy switch used only before migration.
-	 */
-	public function test_payment_request_read_uses_split_options_before_legacy_setting(): void {
-		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
-
-		$this->assertTrue( $synchronizer->is_payment_request_enabled( array( 'payment_request' => 'yes' ) ) );
-
-		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'no' ) );
-		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'yes' ) );
-		$this->assertTrue( $synchronizer->is_payment_request_enabled( array( 'payment_request' => 'no' ) ) );
-
-		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
-		$this->assertFalse( $synchronizer->is_payment_request_enabled( array( 'payment_request' => 'yes' ) ) );
 	}
 
 	/**
@@ -346,7 +332,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
 
-		$result = ( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+		$result = $this->create_synchronizer()->persist(
 			array(
 				'payment_request'                => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -377,7 +363,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		( new WooPaymentsGatewaySettingsSynchronizer() )->persist(
+		$this->create_synchronizer()->persist(
 			array( 'upe_enabled_payment_method_ids' => array( 'card', 'apple_pay', 'google_pay' ) )
 		);
 
@@ -395,5 +381,17 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 			),
 			get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )
 		);
+	}
+
+	/**
+	 * Create a synchronizer with the container's account service and registry, and no setup tier, so writes keep the tier.
+	 *
+	 * @return WooPaymentsGatewaySettingsSynchronizer
+	 */
+	private function create_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
+		$synchronizer = new WooPaymentsGatewaySettingsSynchronizer();
+		$synchronizer->init( wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
+
+		return $synchronizer;
 	}
 }

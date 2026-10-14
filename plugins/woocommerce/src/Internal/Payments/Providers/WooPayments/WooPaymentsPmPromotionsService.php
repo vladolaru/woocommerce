@@ -689,7 +689,7 @@ class WooPaymentsPmPromotionsService {
 			return false;
 		}
 
-		$row_option_name        = $this->gateway_settings_synchronizer->get_split_option_name( $payment_method_id );
+		$row_option_name        = WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $payment_method_id );
 		$gateway_row            = get_option( $row_option_name, array() );
 		$gateway_row            = is_array( $gateway_row ) ? $gateway_row : array();
 		$gateway_row['enabled'] = 'yes';

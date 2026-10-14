@@ -113,13 +113,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Split gateway settings repository.
-	 *
-	 * @var WooPaymentsGatewaySettingsSynchronizer|null
-	 */
-	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
-
-	/**
 	 * Durable native payments state store.
 	 *
 	 * @var WooPaymentsSetupTier|null
@@ -145,24 +138,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                                 $legacy_proxy                  Legacy proxy.
-	 * @param WooPaymentsDatabaseCache                    $database_cache                Database cache.
-	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional split settings repository.
-	 * @param WooPaymentsSetupTier|null                   $setup_tier         Optional durable native payments state store.
-	 * @param WooPaymentsRuntimeArbiter|null              $runtime_arbiter               Optional native payments runtime arbiter.
+	 * @param LegacyProxy                    $legacy_proxy    Legacy proxy.
+	 * @param WooPaymentsDatabaseCache       $database_cache  Database cache.
+	 * @param WooPaymentsSetupTier|null      $setup_tier      Optional setup tier store.
+	 * @param WooPaymentsRuntimeArbiter|null $runtime_arbiter Optional payments runtime arbiter.
 	 */
 	final public function init(
 		LegacyProxy $legacy_proxy,
 		WooPaymentsDatabaseCache $database_cache,
-		?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null,
 		?WooPaymentsSetupTier $setup_tier = null,
 		?WooPaymentsRuntimeArbiter $runtime_arbiter = null
 	): void {
-		$this->legacy_proxy                  = $legacy_proxy;
-		$this->database_cache                = $database_cache;
-		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
-		$this->setup_tier                    = $setup_tier;
-		$this->runtime_arbiter               = $runtime_arbiter;
+		$this->legacy_proxy    = $legacy_proxy;
+		$this->database_cache  = $database_cache;
+		$this->setup_tier      = $setup_tier;
+		$this->runtime_arbiter = $runtime_arbiter;
 	}
 
 	/**
@@ -1360,30 +1350,60 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether Apple Pay or Google Pay is enabled in split gateway settings.
+	 * Tell whether Apple Pay or Google Pay is enabled in their own gateway settings.
+	 *
+	 * The card gateway's removed `payment_request` switch answers only while neither of those settings exists.
 	 *
 	 * @return bool
 	 */
 	public function is_payment_request_enabled(): bool {
-		if ( null === $this->gateway_settings_synchronizer ) {
-			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		$stored_settings = $this->get_stored_gateway_settings();
+		$split_state     = $this->get_payment_request_split_state();
+		if ( null !== $split_state ) {
+			return $split_state;
 		}
 
-		return $this->gateway_settings_synchronizer->is_payment_request_enabled( $this->get_stored_gateway_settings() );
+		return 'yes' === (string) ( $stored_settings['payment_request'] ?? 'no' );
 	}
 
 	/**
-	 * Tell whether one split payment-request gateway is enabled.
+	 * Get whether Apple Pay or Google Pay is enabled in their own gateway settings, or null before either setting exists.
+	 *
+	 * @return bool|null
+	 */
+	public function get_payment_request_split_state(): ?bool {
+		$missing_marker   = new \stdClass();
+		$has_split_option = false;
+
+		foreach ( WooPaymentsGatewaySettingsSynchronizer::PAYMENT_REQUEST_METHOD_IDS as $method_id ) {
+			$settings = get_option( WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $method_id ), $missing_marker );
+			if ( $missing_marker === $settings ) {
+				continue;
+			}
+
+			$has_split_option = true;
+			if ( is_array( $settings ) && 'yes' === (string) ( $settings['enabled'] ?? 'no' ) ) {
+				return true;
+			}
+		}
+
+		return $has_split_option ? false : null;
+	}
+
+	/**
+	 * Tell whether one of the Apple Pay and Google Pay gateways is enabled in its own settings.
 	 *
 	 * @param string $method_id Apple Pay or Google Pay method ID.
 	 * @return bool
 	 */
 	public function is_payment_request_method_enabled( string $method_id ): bool {
-		if ( null === $this->gateway_settings_synchronizer ) {
-			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
+		if ( ! in_array( $method_id, WooPaymentsGatewaySettingsSynchronizer::PAYMENT_REQUEST_METHOD_IDS, true ) ) {
+			return false;
 		}
 
-		return $this->gateway_settings_synchronizer->is_payment_request_method_enabled( $method_id );
+		$settings = get_option( WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $method_id ), array() );
+
+		return is_array( $settings ) && 'yes' === (string) ( $settings['enabled'] ?? 'no' );
 	}
 
 	/**
