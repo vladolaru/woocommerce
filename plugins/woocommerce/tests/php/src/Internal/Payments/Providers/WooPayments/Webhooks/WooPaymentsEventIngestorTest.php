@@ -1721,7 +1721,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * since a reader retries on the same intent (:2139-2141), the intent status, and, on an order already failed, the two
 	 * failed-order notifications WooCommerce does not fire for an unchanged status (:795-799). Each event object is the
 	 * PaymentIntent Stripe sends with payment_intent.payment_failed (https://docs.stripe.com/api/payment_intents/object,
-	 * last_payment_error), with the charges list the handler reads; each replay is a new delivery of the same intent.
+	 * last_payment_error), with the charges list client 11.1.0 reads the failed charge from
+	 * (class-wc-payments-webhook-processing-service.php:446); each replay is a new delivery of the same intent.
 	 *
 	 * @dataProvider provider_terminal_declines_on_a_failed_order
 	 *

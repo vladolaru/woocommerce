@@ -4658,9 +4658,9 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 writes both before the charge, the payment method only when it is not a confirmation token
 	 * (class-wc-payment-gateway-wcpay.php:1672-1677), so its declined order keeps them, and its order-tracking hook queues
 	 * any card-gateway order that has a payment method (:577, :4485-4524). The decline is REC-1's recorded generic_decline
-	 * envelope (Fixtures/platform-intention-declines.json), whose shape does not depend on the credential: Stripe's decline
-	 * carries the PaymentIntent, with the PaymentMethod a confirmation token created in last_payment_error
-	 * (https://docs.stripe.com/api/confirmation_tokens). The account's fraud_services carries Sift in the shape client 11.1.0
+	 * envelope (Fixtures/platform-intention-declines.json), reused for the confirmation-token rows as a model, not a recording:
+	 * the decline carries the PaymentIntent, whose last_payment_error.payment_method is the PaymentMethod the charge used
+	 * (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-last_payment_error). The account's fraud_services carries Sift in the shape client 11.1.0
 	 * reads (class-wc-payments-fraud-service.php:99-100).
 	 *
 	 * @testWith ["the first request", false, "cus_rec1_checkout", false]
