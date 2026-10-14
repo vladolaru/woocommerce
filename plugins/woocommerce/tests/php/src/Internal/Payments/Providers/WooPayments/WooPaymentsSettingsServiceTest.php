@@ -16,6 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLocaleUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -79,8 +81,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->api_client             = new RecordingSettingsApiClient();
 		$this->woopay_session_service = new RecordingWooPaySessionService();
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
+		$account_service              = $this->create_account_service();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $this->create_account_service(), $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->woopay_session_service );
+		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->woopay_session_service );
 	}
 
 	/**
@@ -724,6 +727,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
 			new WooPaymentsPaymentMethodRegistry(),
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
+			$this->create_fraud_ruleset_service( $account_service ),
 			$this->woopay_session_service
 		);
 
@@ -2238,39 +2242,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should answer fraud-rule activity from the cached ruleset and refresh a cold cache first.
-	 */
-	public function test_is_fraud_rule_active_reads_cached_ruleset_and_refreshes_cold_cache(): void {
-		$this->set_connected_account_data();
-		set_transient(
-			'wcpay_fraud_protection_settings',
-			array(
-				array( 'key' => 'avs_verification' ),
-			),
-			DAY_IN_SECONDS
-		);
-
-		$this->assertTrue( $this->sut->is_fraud_rule_active( 'avs_verification' ) );
-		$this->assertFalse( $this->sut->is_fraud_rule_active( 'purchase_price_threshold' ) );
-		$this->assertSame( 0, $this->api_client->latest_fraud_ruleset_requests, 'A warm cache must not trigger a platform refresh.' );
-
-		delete_transient( 'wcpay_fraud_protection_settings' );
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => $this->get_standard_fraud_ruleset_fixture(),
-		);
-
-		$standard_has_avs = false;
-		foreach ( $this->get_standard_fraud_ruleset_fixture() as $rule ) {
-			if ( 'avs_verification' === ( $rule['key'] ?? null ) ) {
-				$standard_has_avs = true;
-			}
-		}
-
-		$this->assertSame( $standard_has_avs, $this->sut->is_fraud_rule_active( 'avs_verification' ), 'A cold cache must be refreshed from the platform before answering, so an AVS block is not misread as an ordinary decline.' );
-		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-	}
-
-	/**
 	 * @testdox Should initialize Basic fraud ruleset when the platform has no ruleset.
 	 */
 	public function test_get_settings_initializes_basic_fraud_ruleset_when_platform_ruleset_is_missing(): void {
@@ -3187,6 +3158,19 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$account_service->init( new LegacyProxy(), $database_cache );
 
 		return $account_service;
+	}
+
+	/**
+	 * Create the fraud ruleset service the settings service reads, over the recording API client.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service.
+	 * @return WooPaymentsFraudRulesetService
+	 */
+	private function create_fraud_ruleset_service( WooPaymentsAccountService $account_service ): WooPaymentsFraudRulesetService {
+		$fraud_ruleset_service = new WooPaymentsFraudRulesetService();
+		$fraud_ruleset_service->init( $account_service, $this->api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
+
+		return $fraud_ruleset_service;
 	}
 
 	/**

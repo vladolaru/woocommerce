@@ -724,10 +724,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_native_settings_rejects_invalid_advanced_fraud_ruleset(): void {
 		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'is_valid_fraud_ruleset' )
-			->willReturn( false );
-		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
 
@@ -763,11 +759,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->mock_settings_service
 			->expects( $this->once() )
-			->method( 'is_valid_fraud_ruleset' )
-			->with( $ruleset )
-			->willReturn( true );
-		$this->mock_settings_service
-			->expects( $this->once() )
 			->method( 'update_settings' )
 			->willReturn( array() );
 
@@ -787,9 +778,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not structurally validate the fraud ruleset when the protection level is not advanced.
 	 */
 	public function test_update_native_settings_skips_fraud_ruleset_validation_for_non_advanced_level(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'is_valid_fraud_ruleset' );
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )

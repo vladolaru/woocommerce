@@ -47,6 +47,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -2622,7 +2623,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		} else {
 			$fraud_api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 		}
-		$settings_service = $this->create_fraud_reading_settings_service( $fraud_api_client );
+		list( $settings_service, $fraud_ruleset_service ) = $this->create_fraud_reading_services( $fraud_api_client );
 
 		$charge_api_client = new class() extends WooPaymentsApiClient {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
@@ -2653,7 +2654,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_fraud_test' );
 
-		$sut     = $this->create_operation_service( $charge_api_client, $customer_service, null, $this->create_account_service( true ), null, $settings_service );
+		$sut     = $this->create_operation_service( $charge_api_client, $customer_service, null, $this->create_account_service( true ), null, $fraud_ruleset_service );
 		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $this->create_woopayments_order( '25.00' ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
 		$meta    = $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
 
@@ -10399,15 +10400,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the adapter, with an unavailable API client unless one is given.
 	 *
-	 * @param WooPaymentsApiClient|null        $api_client Native API client.
-	 * @param WooPaymentsCustomerService|null  $customer_service WooPayments customer service.
-	 * @param WooPaymentsTokenService|null     $token_service WooPayments token service.
-	 * @param WooPaymentsAccountService|null   $account_service WooPayments account service.
-	 * @param WooPaymentsOrderDataService|null $order_data_service WooPayments order data service.
-	 * @param WooPaymentsSettingsService|null  $settings_service Settings service.
+	 * @param WooPaymentsApiClient|null           $api_client WooPayments API client.
+	 * @param WooPaymentsCustomerService|null     $customer_service WooPayments customer service.
+	 * @param WooPaymentsTokenService|null        $token_service WooPayments token service.
+	 * @param WooPaymentsAccountService|null      $account_service WooPayments account service.
+	 * @param WooPaymentsOrderDataService|null    $order_data_service WooPayments order data service.
+	 * @param WooPaymentsFraudRulesetService|null $fraud_ruleset_service Fraud ruleset service.
 	 * @return WooPaymentsPaymentOperationService
 	 */
-	private function create_operation_service( ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsSettingsService $settings_service = null ): WooPaymentsPaymentOperationService {
+	private function create_operation_service( ?WooPaymentsApiClient $api_client = null, ?WooPaymentsCustomerService $customer_service = null, ?WooPaymentsTokenService $token_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsOrderDataService $order_data_service = null, ?WooPaymentsFraudRulesetService $fraud_ruleset_service = null ): WooPaymentsPaymentOperationService {
 		$api_client = $api_client ?? $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_available' ) )
@@ -10424,12 +10425,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$request_builder    = new WooPaymentsIntentRequestBuilder();
 		$request_builder->init( $account_service, $order_data_service, $token_service, new WooPaymentsPaymentMethodRegistry() );
 
-		if ( null === $settings_service ) {
-			$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+		if ( null === $fraud_ruleset_service ) {
+			$fraud_ruleset_service = $this->getMockBuilder( WooPaymentsFraudRulesetService::class )
 				->disableOriginalConstructor()
 				->onlyMethods( array( 'is_fraud_rule_active' ) )
 				->getMock();
-			$settings_service->method( 'is_fraud_rule_active' )->willReturnCallback(
+			$fraud_ruleset_service->method( 'is_fraud_rule_active' )->willReturnCallback(
 				static function ( string $rule_key ): bool {
 					$ruleset = get_transient( 'wcpay_fraud_protection_settings' );
 					if ( ! is_array( $ruleset ) ) {
@@ -10459,7 +10460,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$request_builder,
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
-			$settings_service,
+			$fraud_ruleset_service,
 			$ambiguity_service,
 			$refund_ambiguity_service,
 			wc_get_container()->get( WooPaymentsLogger::class ),
@@ -10647,12 +10648,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build the settings service that reads the fraud ruleset, over a connected account and the given platform client.
+	 * Build the settings service and the fraud ruleset service it reads, over a connected account and the given platform client.
 	 *
 	 * @param RecordingSettingsApiClient $api_client Platform client the fraud ruleset is read through.
-	 * @return WooPaymentsSettingsService
+	 * @return array{0:WooPaymentsSettingsService,1:WooPaymentsFraudRulesetService}
 	 */
-	private function create_fraud_reading_settings_service( RecordingSettingsApiClient $api_client ): WooPaymentsSettingsService {
+	private function create_fraud_reading_services( RecordingSettingsApiClient $api_client ): array {
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -10675,10 +10676,12 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$account_service = new WooPaymentsAccountService();
 		$account_service->init( new LegacyProxy(), $database_cache );
 
+		$fraud_ruleset_service = new WooPaymentsFraudRulesetService();
+		$fraud_ruleset_service->init( $account_service, $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), new RecordingWooPaySessionService() );
+		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, new RecordingWooPaySessionService() );
 
-		return $settings_service;
+		return array( $settings_service, $fraud_ruleset_service );
 	}
 
 	/**

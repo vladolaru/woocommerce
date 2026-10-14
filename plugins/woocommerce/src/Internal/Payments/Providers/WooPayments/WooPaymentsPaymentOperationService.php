@@ -112,11 +112,11 @@ class WooPaymentsPaymentOperationService {
 	private WooPaymentsOrderNoteService $note_service;
 
 	/**
-	 * WooPayments settings service.
+	 * Fraud ruleset service.
 	 *
-	 * @var WooPaymentsSettingsService
+	 * @var WooPaymentsFraudRulesetService
 	 */
-	private WooPaymentsSettingsService $settings_service;
+	private WooPaymentsFraudRulesetService $fraud_ruleset_service;
 
 	/**
 	 * Charge ambiguity service.
@@ -159,7 +159,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param WooPaymentsIntentRequestBuilder   $request_builder          Request builder.
 	 * @param WooPaymentsAccountService         $account_service          Account service.
 	 * @param WooPaymentsOrderNoteService       $note_service             Order note service.
-	 * @param WooPaymentsSettingsService        $settings_service         Settings service.
+	 * @param WooPaymentsFraudRulesetService    $fraud_ruleset_service    Fraud ruleset service.
 	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service        Charge ambiguity service.
 	 * @param WooPaymentsRefundAmbiguityService $refund_ambiguity_service Refund ambiguity service.
 	 * @param WooPaymentsLogger                 $logger                   WooPayments logger.
@@ -171,19 +171,19 @@ class WooPaymentsPaymentOperationService {
 		WooPaymentsIntentRequestBuilder $request_builder,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsOrderNoteService $note_service,
-		WooPaymentsSettingsService $settings_service,
+		WooPaymentsFraudRulesetService $fraud_ruleset_service,
 		WooPaymentsChargeAmbiguityService $ambiguity_service,
 		WooPaymentsRefundAmbiguityService $refund_ambiguity_service,
 		WooPaymentsLogger $logger,
 		WooPaymentsLevel3Service $level3_service
 	): void {
-		$this->api_client        = $api_client;
-		$this->customer_service  = $customer_service;
-		$this->request_builder   = $request_builder;
-		$this->account_service   = $account_service;
-		$this->note_service      = $note_service;
-		$this->settings_service  = $settings_service;
-		$this->ambiguity_service = $ambiguity_service;
+		$this->api_client            = $api_client;
+		$this->customer_service      = $customer_service;
+		$this->request_builder       = $request_builder;
+		$this->account_service       = $account_service;
+		$this->note_service          = $note_service;
+		$this->fraud_ruleset_service = $fraud_ruleset_service;
+		$this->ambiguity_service     = $ambiguity_service;
 
 		$this->refund_ambiguity_service = $refund_ambiguity_service;
 		$this->logger                   = $logger;
@@ -1327,14 +1327,14 @@ class WooPaymentsPaymentOperationService {
 	/**
 	 * Tell whether the advanced fraud protection AVS verification rule is active.
 	 *
-	 * Delegates to the settings service, which refreshes the cached ruleset from
-	 * the platform when the local cache is missing — a cold cache must not turn
-	 * an AVS block into an ordinary decline.
+	 * Asks the fraud ruleset service, which fetches the ruleset from the platform
+	 * when none is cached: a cold cache must not turn an AVS block into an
+	 * ordinary decline.
 	 *
 	 * @return bool
 	 */
 	private function is_avs_verification_fraud_rule_enabled(): bool {
-		return $this->settings_service->is_fraud_rule_active( 'avs_verification' );
+		return $this->fraud_ruleset_service->is_fraud_rule_active( 'avs_verification' );
 	}
 
 	/**

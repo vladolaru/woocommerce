@@ -29,7 +29,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
@@ -957,7 +957,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			$this->createMock( WooPaymentsIntentRequestBuilder::class ),
 			$account_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
-			$this->createMock( WooPaymentsSettingsService::class ),
+			$this->createMock( WooPaymentsFraudRulesetService::class ),
 			$this->createMock( WooPaymentsChargeAmbiguityService::class ),
 			$this->createMock( WooPaymentsRefundAmbiguityService::class ),
 			wc_get_container()->get( WooPaymentsLogger::class ),

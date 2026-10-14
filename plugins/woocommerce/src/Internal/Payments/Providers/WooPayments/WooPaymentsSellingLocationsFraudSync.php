@@ -34,11 +34,11 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Settings service, resolved only when a refresh runs so admin, REST and WP-CLI requests that change no selling location never build it.
+	 * Fraud ruleset service, resolved only when a refresh runs so admin, REST and WP-CLI requests that change no selling location never build it.
 	 *
-	 * @var WooPaymentsSettingsService|null
+	 * @var WooPaymentsFraudRulesetService|null
 	 */
-	private ?WooPaymentsSettingsService $settings_service = null;
+	private ?WooPaymentsFraudRulesetService $fraud_ruleset_service = null;
 
 	/**
 	 * Register the selling-location option hooks.
@@ -72,7 +72,7 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function refresh_fraud_rules(): void {
-		$this->get_settings_service()->update_fraud_rules_for_selling_locations();
+		$this->get_fraud_ruleset_service()->update_fraud_rules_for_selling_locations();
 	}
 
 	/**
@@ -85,15 +85,15 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the settings service.
+	 * Get the fraud ruleset service.
 	 *
-	 * @return WooPaymentsSettingsService
+	 * @return WooPaymentsFraudRulesetService
 	 */
-	private function get_settings_service(): WooPaymentsSettingsService {
-		if ( null === $this->settings_service ) {
-			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
+	private function get_fraud_ruleset_service(): WooPaymentsFraudRulesetService {
+		if ( null === $this->fraud_ruleset_service ) {
+			$this->fraud_ruleset_service = wc_get_container()->get( WooPaymentsFraudRulesetService::class );
 		}
 
-		return $this->settings_service;
+		return $this->fraud_ruleset_service;
 	}
 }

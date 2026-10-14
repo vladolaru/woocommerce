@@ -11,10 +11,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSellingLocationsFraudSync;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
@@ -68,7 +66,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 		$account_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$account_api_client->method( 'is_available' )->willReturn( true );
 		$account_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		$this->use_settings_service( $account_api_client );
+		$this->use_fraud_ruleset_service( $account_api_client );
 
 		$this->sut = new WooPaymentsSellingLocationsFraudSync();
 		$this->sut->register();
@@ -202,7 +200,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 		$account_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$account_api_client->method( 'is_available' )->willReturn( false );
 		$account_api_client->expects( $this->never() )->method( 'get_account' );
-		$this->use_settings_service( $account_api_client );
+		$this->use_fraud_ruleset_service( $account_api_client );
 		delete_option( 'wcpay_account_data' );
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		update_option( 'woocommerce_allowed_countries', 'specific' );
@@ -300,21 +298,21 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build the settings service the sync resolves, on an account service that reads through the given API client.
+	 * Build the fraud ruleset service the sync resolves, on an account service that reads through the given API client.
 	 *
 	 * @param WooPaymentsApiClient $account_api_client API client the account service uses.
 	 */
-	private function use_settings_service( WooPaymentsApiClient $account_api_client ): void {
+	private function use_fraud_ruleset_service( WooPaymentsApiClient $account_api_client ): void {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $account_api_client );
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$account_service->init( new LegacyProxy(), $database_cache );
 
-		$this->api_client = new RecordingSettingsApiClient();
-		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $this->api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), new RecordingWooPaySessionService() );
-		wc_get_container()->replace( WooPaymentsSettingsService::class, $settings_service );
+		$this->api_client      = new RecordingSettingsApiClient();
+		$fraud_ruleset_service = new WooPaymentsFraudRulesetService();
+		$fraud_ruleset_service->init( $account_service, $this->api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
+		wc_get_container()->replace( WooPaymentsFraudRulesetService::class, $fraud_ruleset_service );
 	}
 
 	/**

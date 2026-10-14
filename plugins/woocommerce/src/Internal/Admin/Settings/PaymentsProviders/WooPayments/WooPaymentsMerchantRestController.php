@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Exception;
 use WP_Error;
@@ -555,7 +556,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		if (
 			is_array( $value )
 			&& 'advanced' === $request->get_param( 'current_protection_level' )
-			&& ! $this->get_settings_service()->is_valid_fraud_ruleset( $value )
+			&& ! WooPaymentsFraudRulesetService::is_valid_fraud_ruleset( $value )
 		) {
 			return new WP_Error(
 				'rest_invalid_pattern',

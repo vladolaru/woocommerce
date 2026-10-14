@@ -440,14 +440,15 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
 	 */
 	private function get_client_account_status_rows( WooPaymentsGateway $gateway ): array {
-		$account_service  = $this->get_account_service();
-		$settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
-		$needs_setup      = $gateway->needs_setup();
-		$dev_triggers     = $account_service->get_dev_mode_triggers();
-		$woopay_eligible  = $settings_service->is_woopay_eligible();
-		$protection_level = $settings_service->get_current_protection_level();
-		$support_phone    = $account_service->get_cached_account_data()['business_profile']['support_phone'] ?? '';
-		$support_phone    = is_scalar( $support_phone ) ? (string) $support_phone : '';
+		$account_service       = $this->get_account_service();
+		$settings_service      = wc_get_container()->get( WooPaymentsSettingsService::class );
+		$fraud_ruleset_service = wc_get_container()->get( WooPaymentsFraudRulesetService::class );
+		$needs_setup           = $gateway->needs_setup();
+		$dev_triggers          = $account_service->get_dev_mode_triggers();
+		$woopay_eligible       = $settings_service->is_woopay_eligible();
+		$protection_level      = $fraud_ruleset_service->get_current_protection_level();
+		$support_phone         = $account_service->get_cached_account_data()['business_profile']['support_phone'] ?? '';
+		$support_phone         = is_scalar( $support_phone ) ? (string) $support_phone : '';
 
 		$rows = array(
 			$this->status_row(
@@ -513,7 +514,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			$protection_level
 		);
 		if ( 'advanced' === $protection_level ) {
-			$filters = $this->get_enabled_fraud_filter_names( $settings_service->get_advanced_fraud_protection_settings() );
+			$filters = $this->get_enabled_fraud_filter_names( $fraud_ruleset_service->get_advanced_fraud_protection_settings() );
 			$rows[]  = $this->status_row(
 				'Enabled Fraud Filters',
 				__( 'Enabled Fraud Filters', 'woocommerce' ),
