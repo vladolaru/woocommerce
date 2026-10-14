@@ -205,7 +205,7 @@ const mockGetFraudOutcomeSearch = mocked(
 );
 
 // Rows as the native fraud-outcomes route returns them
-// (WooPaymentsMoneyMovementOrderService::build_fraud_outcome_transactions_order_info).
+// (WooPaymentsFraudOutcomeTransactionsListRequest::build_transaction).
 const ADA = {
 	order_id: 1520,
 	payment_intent: { id: 'pi_blocked_ada', status: 'canceled' },

@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
@@ -1196,32 +1195,11 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Fraud outcome routes enrich every platform row, like client 11.1.0 List_Fraud_Outcome_Transactions::format_response().
+	 * @testdox Fraud outcome routes shape every platform row, like client 11.1.0 List_Fraud_Outcome_Transactions::format_response().
 	 */
 	public function test_fraud_outcome_routes_enrich_every_platform_row(): void {
-		$order_service = new class() extends WooPaymentsMoneyMovementOrderService {
-			/**
-			 * Number of rows received by local formatting.
-			 *
-			 * @var int
-			 */
-			public int $row_count = 0;
-
-			/**
-			 * Format raw fraud outcome platform rows with local WooCommerce order context.
-			 *
-			 * @param array<string|int,mixed> $response Platform response.
-			 * @param array<string,mixed>     $params   Request params.
-			 * @return array<int,array<string,mixed>>
-			 */
-			public function format_fraud_outcome_transactions( array $response, array $params ): array {
-				$rows            = isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : $response;
-				$this->row_count = count( $rows );
-
-				return array();
-			}
-		};
-		$this->create_transactions_controller( $order_service )->register_routes();
+		$order = $this->create_fraud_outcome_order( 'Ada', 'block', 'canceled', 1.00, false );
+		$this->create_transactions_controller()->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -1230,30 +1208,253 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			}
 		);
 		$this->api_client->response = array(
-			'data' => array_fill( 0, 1001, array( 'order_id' => 1 ) ),
+			'data' => array_fill( 0, 1001, array( 'order_id' => $order->get_id() ) ),
 		);
 
+		$counts = array();
 		foreach ( array( '', '/summary', '/search', '/download' ) as $suffix ) {
-			$order_service->row_count = 0;
-			$request                  = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' . $suffix );
+			$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' . $suffix );
 			$request->set_query_params( array( 'status' => 'block' ) );
 			$response = $this->server->dispatch( $request );
+			$data     = $response->get_data();
 
 			$this->assertSame( 200, $response->get_status(), 'fraud-outcomes' . $suffix );
-			$this->assertSame( 1001, $order_service->row_count, 'fraud-outcomes' . $suffix . ' must not drop platform rows' );
+			$counts[ $suffix ] = '/summary' === $suffix ? $data['count'] : count( '/search' === $suffix ? $data : $data['data'] );
 		}
+
+		$this->assertSame(
+			array(
+				''          => 25,
+				'/summary'  => 1001,
+				'/search'   => 1001,
+				'/download' => 1001,
+			),
+			$counts,
+			'Every platform row must reach shaping; only the list route pages.'
+		);
 		$this->assertSame( array(), $logger->entries );
+	}
+
+	/**
+	 * @testdox Fraud outcome routes keep only the rows the status and search ask for, sorted and paged, like client 11.1.0.
+	 * @dataProvider fraud_outcome_shaping_provider
+	 *
+	 * Client 11.1.0 List_Fraud_Outcome_Transactions::format_response() filters by status and search and sorts
+	 * (class-list-fraud-outcome-transactions.php:120-275); its API client pages, sums and builds the autocomplete
+	 * (class-wc-payments-api-client.php:323-410).
+	 *
+	 * @param string              $suffix   Route suffix after /payments/transactions/fraud-outcomes.
+	 * @param array<string,mixed> $query    Query params; '#bob' in a search term becomes Bob's order number.
+	 * @param array<int,string>   $expected Orders expected in the answer, in order; for the summary, the expected count.
+	 */
+	public function test_fraud_outcome_routes_shape_rows_like_the_list_request( string $suffix, array $query, array $expected ): void {
+		$orders = array(
+			'ada' => $this->create_fraud_outcome_order( 'Ada', 'review', 'requires_capture', 10.50, false ),
+			'bob' => $this->create_fraud_outcome_order( 'Bob', 'block', 'canceled', 7.25, false ),
+			'cy'  => $this->create_fraud_outcome_order( 'Cy', 'review_blocked', 'canceled', 3.00, false ),
+			'dee' => $this->create_fraud_outcome_order( 'Dee', 'review', 'requires_capture', 1.00, true ),
+		);
+		$refund = wc_create_refund(
+			array(
+				'order_id' => $orders['dee']->get_id(),
+				'amount'   => 0,
+			)
+		);
+		$this->assertInstanceOf( \WC_Order_Refund::class, $refund );
+
+		$this->api_client->response = array(
+			array(
+				'order_id'          => $orders['ada']->get_id(),
+				'payment_intent_id' => 'pi_platform',
+				'created'           => 300,
+			),
+			array(
+				'order_id' => $orders['bob']->get_id(),
+				'created'  => 100,
+			),
+			array(
+				'order_id' => $orders['cy']->get_id(),
+				'created'  => 200,
+			),
+			array(
+				'order_id' => $orders['dee']->get_id(),
+				'created'  => 400,
+			),
+			array(
+				'order_id' => $refund->get_id(),
+				'created'  => 500,
+			),
+			array(
+				'order_id' => PHP_INT_MAX,
+				'created'  => 600,
+			),
+		);
+		$this->create_transactions_controller()->register_routes();
+
+		if ( isset( $query['search'] ) ) {
+			$query['search'] = str_replace( '#bob', '#' . $orders['bob']->get_id(), $query['search'] );
+		}
+		if ( isset( $query['search_term'] ) ) {
+			$query['search_term'] = (string) $orders[ $query['search_term'] ]->get_id();
+		}
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' . $suffix );
+		$request->set_query_params( $query );
+		$response = $this->server->dispatch( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$ids = array_map(
+			static function ( string $name ) use ( $orders ): int {
+				return $orders[ $name ]->get_id();
+			},
+			$expected
+		);
+
+		if ( '/summary' === $suffix ) {
+			$total = 0;
+			foreach ( $expected as $name ) {
+				$total += (int) round( (float) $orders[ $name ]->get_total() * 100 );
+			}
+			$this->assertSame(
+				array(
+					'count'      => count( $expected ),
+					'total'      => $total,
+					'currencies' => array( 'usd' ),
+				),
+				$data
+			);
+			return;
+		}
+
+		if ( '/search' === $suffix ) {
+			$keys = array_map(
+				static function ( int $id ): string {
+					return 'customer-' . $id;
+				},
+				$ids
+			);
+			array_unshift( $keys, 'order-' . $query['search_term'] );
+			$this->assertSame( $keys, array_column( $data, 'key' ) );
+			$this->assertSame( __( 'Order #', 'woocommerce' ) . $query['search_term'], $data[0]['label'] );
+			$this->assertSame( 'Ada Probe', $data[ array_search( 'customer-' . $orders['ada']->get_id(), $keys, true ) ]['label'] );
+			return;
+		}
+
+		$rows = $data['data'];
+		$this->assertSame( $ids, array_column( $rows, 'order_id' ) );
+		foreach ( $rows as $row ) {
+			$this->assertArrayNotHasKey( 'manual_review', $row );
+			$this->assertArrayNotHasKey( 'payment_intent_id', $row );
+		}
+	}
+
+	/**
+	 * Fraud outcome shaping rows.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,array<int,string>}>
+	 */
+	public function fraud_outcome_shaping_provider(): array {
+		return array(
+			'review keeps pending reviews only'     => array( '', array( 'status' => 'review' ), array( 'ada' ) ),
+			'block keeps block and review_blocked'  => array( '', array( 'status' => 'block' ), array( 'cy', 'bob' ) ),
+			'allow keeps every order, newest first' => array( '', array( 'status' => 'allow' ), array( 'dee', 'ada', 'cy', 'bob' ) ),
+			'ascending date'                        => array(
+				'',
+				array(
+					'status'    => 'allow',
+					'direction' => 'asc',
+				),
+				array( 'bob', 'cy', 'ada', 'dee' ),
+			),
+			'sort by amount'                        => array(
+				'',
+				array(
+					'status' => 'allow',
+					'sort'   => 'amount',
+				),
+				array( 'ada', 'bob', 'cy', 'dee' ),
+			),
+			'search by order number'                => array(
+				'',
+				array(
+					'status' => 'allow',
+					'search' => array( '#bob' ),
+				),
+				array( 'bob' ),
+			),
+			'search by name, any case'              => array(
+				'',
+				array(
+					'status' => 'allow',
+					'search' => array( 'ADA' ),
+				),
+				array( 'ada' ),
+			),
+			'second page'                           => array(
+				'',
+				array(
+					'status'   => 'allow',
+					'page'     => 2,
+					'pagesize' => 2,
+				),
+				array( 'cy', 'bob' ),
+			),
+			'download is not paged'                 => array(
+				'/download',
+				array(
+					'status'   => 'allow',
+					'pagesize' => 1,
+				),
+				array( 'dee', 'ada', 'cy', 'bob' ),
+			),
+			'summary of allowed orders'             => array( '/summary', array( 'status' => 'allow' ), array( 'dee', 'ada', 'cy', 'bob' ) ),
+			'summary of blocked orders'             => array( '/summary', array( 'status' => 'block' ), array( 'cy', 'bob' ) ),
+			'autocomplete with an order number'     => array(
+				'/search',
+				array(
+					'status'      => 'allow',
+					'search_term' => 'ada',
+				),
+				array( 'dee', 'ada', 'cy', 'bob' ),
+			),
+		);
+	}
+
+	/**
+	 * Create an order a fraud outcome row points at.
+	 *
+	 * @param string $first_name    Billing first name.
+	 * @param string $box_type      Fraud meta box type.
+	 * @param string $intent_status Payment intent status.
+	 * @param float  $total         Order total.
+	 * @param bool   $reviewed      Whether a merchant already reviewed it.
+	 * @return WC_Order
+	 */
+	private function create_fraud_outcome_order( string $first_name, string $box_type, string $intent_status, float $total, bool $reviewed ): WC_Order {
+		$order = $this->create_order_with_charge( 'ch_' . strtolower( $first_name ), 'pi_' . strtolower( $first_name ) );
+		$order->set_billing_first_name( $first_name );
+		$order->set_billing_last_name( 'Probe' );
+		$order->set_total( $total );
+		$order->update_meta_data( '_intention_status', $intent_status );
+		$order->update_meta_data( '_wcpay_fraud_meta_box_type', $box_type );
+		if ( $reviewed ) {
+			$order->update_meta_data( '_wcpay_fraud_outcome_manual_entry', array( 'type' => 'fraud_outcome_manual_approve' ) );
+		}
+		$order->save();
+
+		return $order;
 	}
 
 	/**
 	 * Create a transactions controller.
 	 *
-	 * @param WooPaymentsMoneyMovementOrderService|null $order_service Optional order service.
 	 * @return WooPaymentsTransactionsRestController
 	 */
-	private function create_transactions_controller( ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsTransactionsRestController {
+	private function create_transactions_controller(): WooPaymentsTransactionsRestController {
 		$controller = new WooPaymentsTransactionsRestController();
-		$controller->init( $this->api_client, $order_service ?? $this->create_order_service() );
+		$controller->init( $this->api_client, $this->create_order_service() );
 
 		return $controller;
 	}

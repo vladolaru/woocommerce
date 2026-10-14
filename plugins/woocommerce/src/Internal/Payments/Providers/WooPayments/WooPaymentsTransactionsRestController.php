@@ -178,7 +178,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response(
 				array(
-					'data' => $this->order_service->paginate_fraud_outcome_transactions( $transactions, $params ),
+					'data' => WooPaymentsFraudOutcomeTransactionsListRequest::paginate_transactions( $transactions, $params ),
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
@@ -199,7 +199,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				$this->get_fraud_outcome_params( $request, 'wcpay_list_fraud_outcome_transactions_summary_request' )
 			);
 
-			return new WP_REST_Response( $this->order_service->summarize_fraud_outcome_transactions( $transactions ) );
+			return new WP_REST_Response( WooPaymentsFraudOutcomeTransactionsListRequest::summarize_transactions( $transactions ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -218,7 +218,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 			$transactions = $this->get_formatted_fraud_outcome_transactions( $params );
 			$search_term  = isset( $params['search_term'] ) && is_scalar( $params['search_term'] ) ? (string) $params['search_term'] : '';
 
-			return new WP_REST_Response( $this->order_service->get_fraud_outcome_transactions_search_autocomplete( $transactions, $search_term ) );
+			return new WP_REST_Response( WooPaymentsFraudOutcomeTransactionsListRequest::get_search_autocomplete( $transactions, $search_term ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -362,7 +362,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_formatted_fraud_outcome_transactions( array $params ): array {
-		return $this->order_service->format_fraud_outcome_transactions(
+		return WooPaymentsFraudOutcomeTransactionsListRequest::format_transactions(
 			$this->api_client->get_fraud_outcomes( $params ),
 			$params
 		);
