@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
 use WC_REST_Unit_Test_Case;
@@ -80,7 +80,7 @@ class WooPaymentsMoneyMovementArrayQueryContractTest extends WC_REST_Unit_Test_C
 	 */
 	public function test_dispute_array_filters_reach_the_platform(): void {
 		$controller = new WooPaymentsDisputesRestController();
-		$controller->init( $this->api_client, $this->create_order_service(), new WooPaymentsDisputeCacheService() );
+		$controller->init( $this->api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$controller->register_routes();
 
 		$this->dispatch_fixture_request( 'disputes' );

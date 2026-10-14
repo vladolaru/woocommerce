@@ -28,11 +28,6 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	private const INVALID_TOKEN = 'INVALID_TOKEN';
 
 	/**
-	 * Preserved extension cache option for address autocomplete JWTs.
-	 */
-	private const LEGACY_ADDRESS_AUTOCOMPLETE_JWT_OPTION = 'wcpay_address_autocomplete_jwt';
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -199,6 +194,6 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	private function clear_cached_jwt(): void {
 		// @phpstan-ignore-next-line argument.type (the parent implementation accepts null to clear cached JWT data).
 		$this->set_jwt( null );
-		delete_option( self::LEGACY_ADDRESS_AUTOCOMPLETE_JWT_OPTION );
+		delete_option( WooPaymentsDatabaseCache::ADDRESS_AUTOCOMPLETE_JWT_KEY );
 	}
 }

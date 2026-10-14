@@ -276,6 +276,10 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Delete a cache entry, including its object-cache entry when the option row is already gone.
 	 *
+	 * The object-cache entry goes whatever delete_option() did: it returns before touching the object cache when the row
+	 * is already gone, which left a persistent object cache serving stale dispute counts (client 11.1.0
+	 * `class-database-cache.php:230-243`, its #9639 fix).
+	 *
 	 * @param string $key Cache key.
 	 * @return void
 	 */
@@ -294,6 +298,17 @@ class WooPaymentsDatabaseCache {
 		foreach ( self::ALL_KEYS as $key ) {
 			$this->delete( $key );
 		}
+	}
+
+	/**
+	 * Delete the live and test dispute counts and the active disputes, so the next read fetches them.
+	 *
+	 * @return void
+	 */
+	public function delete_dispute_caches(): void {
+		$this->delete( self::DISPUTE_STATUS_COUNTS_KEY );
+		$this->delete( self::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE );
+		$this->delete( self::ACTIVE_DISPUTES_KEY );
 	}
 
 	/**

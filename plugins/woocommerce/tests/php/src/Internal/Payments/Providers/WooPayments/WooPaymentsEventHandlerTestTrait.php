@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
@@ -45,7 +45,7 @@ trait WooPaymentsEventHandlerTestTrait {
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
 			$api_client,
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),

@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -360,11 +361,11 @@ class WooPaymentsOverviewService {
 		// Prime caches to reduce future queries.
 		wp_prime_option_caches(
 			array(
-				'wcpay_account_data',
+				WooPaymentsDatabaseCache::ACCOUNT_KEY,
 				'woocommerce_woocommerce_payments_settings',
 				'wcpay_onboarding_test_mode',
-				'wcpay_dispute_status_counts_cache',
-				'wcpay_test_dispute_status_counts_cache',
+				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY,
+				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE,
 				'woocommerce_dismissed_todo_tasks',
 				'woocommerce_deleted_todo_tasks',
 				'woocommerce_remind_me_later_todo_tasks',
@@ -526,8 +527,8 @@ class WooPaymentsOverviewService {
 	 */
 	private function get_cached_disputes_awaiting_response_count(): ?int {
 		$cache_key      = $this->account_service->is_test_mode_enabled()
-			? 'wcpay_test_dispute_status_counts_cache'
-			: 'wcpay_dispute_status_counts_cache';
+			? WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE
+			: WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY;
 		$cache_contents = get_option( $cache_key, false );
 		$counts         = is_array( $cache_contents ) && is_array( $cache_contents['data'] ?? null )
 			? $cache_contents['data']

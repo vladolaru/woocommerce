@@ -20,16 +20,6 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsAdminMenuBadgeService {
 
-	private const DISPUTE_STATUS_COUNTS_KEY = 'wcpay_dispute_status_counts_cache';
-
-	private const DISPUTE_STATUS_COUNTS_KEY_TEST_MODE = 'wcpay_test_dispute_status_counts_cache';
-
-	private const ACTIVE_DISPUTES_KEY = 'wcpay_active_dispute_cache';
-
-	private const AUTHORIZATION_SUMMARY_KEY = 'wcpay_authorization_summary_cache';
-
-	private const AUTHORIZATION_SUMMARY_KEY_TEST_MODE = 'wcpay_test_authorization_summary_cache';
-
 	/**
 	 * WooPayments account service.
 	 *
@@ -63,7 +53,7 @@ class WooPaymentsAdminMenuBadgeService {
 	 * @return int
 	 */
 	public function get_disputes_awaiting_response_count(): int {
-		$cache_key = $this->account_service->is_test_mode_enabled() ? self::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE : self::DISPUTE_STATUS_COUNTS_KEY;
+		$cache_key = $this->account_service->is_test_mode_enabled() ? WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE : WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY;
 		$counts    = $this->get_or_add_cached_array(
 			$cache_key,
 			function (): array {
@@ -89,7 +79,7 @@ class WooPaymentsAdminMenuBadgeService {
 	 */
 	public function get_active_disputes(): array {
 		$disputes = $this->get_or_add_cached_array(
-			self::ACTIVE_DISPUTES_KEY,
+			WooPaymentsDatabaseCache::ACTIVE_DISPUTES_KEY,
 			function (): array {
 				$response = $this->api_client->get_disputes(
 					array(
@@ -123,7 +113,7 @@ class WooPaymentsAdminMenuBadgeService {
 			return 0;
 		}
 
-		$cache_key = $this->account_service->is_test_mode_enabled() ? self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE : self::AUTHORIZATION_SUMMARY_KEY;
+		$cache_key = $this->account_service->is_test_mode_enabled() ? WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE : WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY;
 		$summary   = $this->get_or_add_cached_array(
 			$cache_key,
 			function (): array {
@@ -142,14 +132,14 @@ class WooPaymentsAdminMenuBadgeService {
 	 * from the platform dashboard or mobile app only reach the store this way.
 	 */
 	public function invalidate_authorization_summary_caches(): void {
-		delete_option( self::AUTHORIZATION_SUMMARY_KEY );
-		delete_option( self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
+		delete_option( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY );
+		delete_option( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
 
 		// delete_option() returns before touching caches when the row is already
 		// gone, so an external object cache can keep serving the stale value. The
 		// plugin deletes the cache entry explicitly for the same reason.
-		wp_cache_delete( self::AUTHORIZATION_SUMMARY_KEY, 'options' );
-		wp_cache_delete( self::AUTHORIZATION_SUMMARY_KEY_TEST_MODE, 'options' );
+		wp_cache_delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY, 'options' );
+		wp_cache_delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE, 'options' );
 	}
 
 	/**

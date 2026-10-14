@@ -404,7 +404,7 @@ class WooPaymentsLegacyRuntime {
 	 */
 	private function get_cached_account_data(): array {
 		try {
-			$account_data = $this->legacy_proxy->call_function( 'get_option', 'wcpay_account_data', array() );
+			$account_data = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY, array() );
 		} catch ( \Throwable $e ) {
 			return array();
 		}

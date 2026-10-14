@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
@@ -72,11 +72,11 @@ class WooPaymentsDisputeEventHandler {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Dispute cache service.
+	 * Database cache that holds the dispute counts and the active disputes.
 	 *
-	 * @var WooPaymentsDisputeCacheService
+	 * @var WooPaymentsDatabaseCache
 	 */
-	private WooPaymentsDisputeCacheService $dispute_cache_service;
+	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
 	 * WooPayments order note service.
@@ -119,16 +119,16 @@ class WooPaymentsDisputeEventHandler {
 	 * @internal
 	 *
 	 * @param WooPaymentsApiClient             $api_client             WooPayments API client.
-	 * @param WooPaymentsDisputeCacheService   $dispute_cache_service  Dispute cache service.
+	 * @param WooPaymentsDatabaseCache         $database_cache         Database cache.
 	 * @param WooPaymentsOrderNoteService      $order_note_service     WooPayments order note service.
 	 * @param OrderPaymentLock                 $order_payment_lock     Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary $persistence_vocabulary WooPayments persistence vocabulary.
 	 * @param WooPaymentsEventOrderResolver    $event_order_resolver   Webhook event order resolver.
 	 * @param WooPaymentsOtherChargeRecorder   $other_charge_recorder Recorder of events on another charge.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDisputeCacheService $dispute_cache_service, WooPaymentsOrderNoteService $order_note_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsDatabaseCache $database_cache, WooPaymentsOrderNoteService $order_note_service, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder ): void {
 		$this->api_client             = $api_client;
-		$this->dispute_cache_service  = $dispute_cache_service;
+		$this->database_cache         = $database_cache;
 		$this->order_note_service     = $order_note_service;
 		$this->order_payment_lock     = $order_payment_lock;
 		$this->persistence_vocabulary = $persistence_vocabulary;
@@ -178,7 +178,7 @@ class WooPaymentsDisputeEventHandler {
 			$this->process_dispute_updated( $order, $event_object, $event_type, $charge_id );
 		}
 
-		$this->dispute_cache_service->delete_dispute_caches();
+		$this->database_cache->delete_dispute_caches();
 	}
 
 	/**

@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
@@ -58,7 +58,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$this->sut = new WooPaymentsDisputeEventHandler();
 		$this->sut->init(
 			new class() extends WooPaymentsApiClient {},
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
@@ -525,7 +525,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		$handler = new WooPaymentsDisputeEventHandler();
 		$handler->init(
 			new class() extends WooPaymentsApiClient {},
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
@@ -614,7 +614,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 					return array();
 				}
 			},
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
@@ -1080,7 +1080,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 					return array();
 				}
 			},
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),
@@ -1158,7 +1158,7 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 					return array();
 				}
 			},
-			wc_get_container()->get( WooPaymentsDisputeCacheService::class ),
+			wc_get_container()->get( WooPaymentsDatabaseCache::class ),
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			wc_get_container()->get( OrderPaymentLock::class ),
 			wc_get_container()->get( WooPaymentsPersistenceVocabulary::class ),

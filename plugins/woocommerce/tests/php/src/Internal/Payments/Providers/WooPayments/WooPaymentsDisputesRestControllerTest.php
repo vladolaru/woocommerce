@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
@@ -679,7 +679,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function create_disputes_controller( ?WooPaymentsOrderDetailsService $order_service = null ): WooPaymentsDisputesRestController {
 		$controller = new WooPaymentsDisputesRestController();
-		$controller->init( $this->api_client, $order_service ?? $this->create_order_service(), new WooPaymentsDisputeCacheService() );
+		$controller->init( $this->api_client, $order_service ?? $this->create_order_service(), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 
 		return $controller;
 	}

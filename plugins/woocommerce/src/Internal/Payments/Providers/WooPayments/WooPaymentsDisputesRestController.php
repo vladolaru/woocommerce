@@ -42,11 +42,11 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	private WooPaymentsOrderDetailsService $order_service;
 
 	/**
-	 * Dispute cache service.
+	 * Database cache that holds the dispute counts and the active disputes.
 	 *
-	 * @var WooPaymentsDisputeCacheService
+	 * @var WooPaymentsDatabaseCache
 	 */
-	private WooPaymentsDisputeCacheService $dispute_cache_service;
+	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
 	 * Initialize the class instance.
@@ -55,12 +55,12 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 *
 	 * @param WooPaymentsApiClient           $api_client            WooPayments API client.
 	 * @param WooPaymentsOrderDetailsService $order_service         Order details service.
-	 * @param WooPaymentsDisputeCacheService $dispute_cache_service Dispute cache service.
+	 * @param WooPaymentsDatabaseCache       $database_cache        Database cache.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDisputeCacheService $dispute_cache_service ): void {
-		$this->api_client            = $api_client;
-		$this->order_service         = $order_service;
-		$this->dispute_cache_service = $dispute_cache_service;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDatabaseCache $database_cache ): void {
+		$this->api_client     = $api_client;
+		$this->order_service  = $order_service;
+		$this->database_cache = $database_cache;
 	}
 
 	/**
@@ -178,7 +178,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 				is_array( $metadata ) ? $metadata : array()
 			);
 			// The client invalidates the dispute caches after the update, as after a close (class-wc-payments-api-client.php:722-724).
-			$this->dispute_cache_service->delete_dispute_caches();
+			$this->database_cache->delete_dispute_caches();
 
 			$this->log_dispute_action( 'info', __( 'WooPayments dispute update completed.', 'woocommerce' ), $log_context );
 
@@ -215,7 +215,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 
 		try {
 			$response = $this->api_client->close_dispute( $dispute_id );
-			$this->dispute_cache_service->delete_dispute_caches();
+			$this->database_cache->delete_dispute_caches();
 
 			$this->log_dispute_action( 'info', __( 'WooPayments dispute close completed.', 'woocommerce' ), $log_context );
 
