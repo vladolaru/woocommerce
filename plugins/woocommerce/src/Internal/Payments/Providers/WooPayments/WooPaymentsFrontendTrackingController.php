@@ -204,31 +204,17 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 */
 	public function register() {
 		foreach ( $this->get_ajax_hooks() as $hook => $callback ) {
-			if ( false === has_action( $hook, $callback ) ) {
-				add_action( $hook, $callback );
-			}
+			add_action( $hook, $callback );
 		}
 
-		if ( false === has_action( 'rest_api_init', array( $this, 'register_rest_routes' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
-		}
+		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
 
-		if ( false === has_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) ) ) {
-			add_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) );
-		}
-		if ( false === has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'record_blocks_checkout_page_view' ) ) ) {
-			add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'record_blocks_checkout_page_view' ) );
-		}
-		if ( false === has_action( 'woocommerce_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
-			add_action( 'woocommerce_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
-		}
-		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ) ) ) {
-			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
-		}
+		add_action( 'woocommerce_after_checkout_form', array( $this, 'record_classic_checkout_page_view' ) );
+		add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'record_blocks_checkout_page_view' ) );
+		add_action( 'woocommerce_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_checkout_order_placed' ), 10, 2 );
 		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
-			if ( false === has_action( $hook, array( $this, 'record_shopper_funnel_event' ) ) ) {
-				add_action( $hook, array( $this, 'record_shopper_funnel_event' ), 10, 0 );
-			}
+			add_action( $hook, array( $this, 'record_shopper_funnel_event' ), 10, 0 );
 		}
 	}
 

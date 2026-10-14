@@ -89,13 +89,9 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Register tokenized cart session hooks.
 	 */
 	public function register() {
-		if ( false === has_filter( 'woocommerce_session_handler', array( $this, 'handle_woocommerce_session_handler' ) ) ) {
-			add_filter( 'woocommerce_session_handler', array( $this, 'handle_woocommerce_session_handler' ), 20 );
-		}
+		add_filter( 'woocommerce_session_handler', array( $this, 'handle_woocommerce_session_handler' ), 20 );
 
-		if ( false === has_filter( 'rest_pre_dispatch', array( $this, 'maybe_reject_invalid_tokenized_cart_session' ) ) ) {
-			add_filter( 'rest_pre_dispatch', array( $this, 'maybe_reject_invalid_tokenized_cart_session' ), 10, 3 );
-		}
+		add_filter( 'rest_pre_dispatch', array( $this, 'maybe_reject_invalid_tokenized_cart_session' ), 10, 3 );
 
 		if ( $this->is_custom_session_order_received_request() ) {
 			add_action( 'wp', array( $this, 'save_old_cart_data_for_restore' ), 1 );

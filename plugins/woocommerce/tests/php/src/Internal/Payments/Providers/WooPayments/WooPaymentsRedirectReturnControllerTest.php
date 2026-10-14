@@ -1648,16 +1648,14 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The built-in WooPayments registers the redirect-return callback once on wp.
+	 * @testdox The built-in WooPayments registers the redirect-return callback on wp.
 	 */
-	public function test_registers_wp_hook_once_when_builtin_owns_runtime(): void {
+	public function test_registers_wp_hook(): void {
 		$this->sut = $this->create_controller( true );
 
 		$this->sut->register();
-		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'wp', array( $this->sut, 'handle_wp' ) ) );
-		$this->assertSame( 1, $this->count_registered_wp_callbacks() );
 	}
 
 	/**
@@ -2633,23 +2631,6 @@ class WooPaymentsRedirectReturnControllerTest extends WC_Unit_Test_Case {
 		// phpcs:enable WordPress.DB.SlowDBQuery.slow_db_query_meta_value,WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 
 		return 1 === $updated;
-	}
-
-	/**
-	 * Count registrations of this controller on wp.
-	 *
-	 * @return int
-	 */
-	private function count_registered_wp_callbacks(): int {
-		global $wp_filter;
-		$count = 0;
-		foreach ( $wp_filter['wp']->callbacks[10] ?? array() as $callback ) {
-			if ( array( $this->sut, 'handle_wp' ) === ( $callback['function'] ?? null ) ) {
-				++$count;
-			}
-		}
-
-		return $count;
 	}
 }
 

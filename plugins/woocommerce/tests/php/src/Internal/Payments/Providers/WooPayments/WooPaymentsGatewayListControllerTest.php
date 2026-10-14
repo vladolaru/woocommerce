@@ -71,7 +71,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( true );
 
 		$sut->register();
-		$sut->register();
 
 		$this->assertSame( 5, has_action( 'woocommerce_admin_field_payment_gateways', array( $sut, 'handle_woocommerce_admin_field_payment_gateways' ) ) );
 	}

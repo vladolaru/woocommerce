@@ -86,13 +86,9 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * Register order meta box hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'add_meta_boxes', array( $this, 'handle_add_meta_boxes' ) ) ) {
-			add_action( 'add_meta_boxes', array( $this, 'handle_add_meta_boxes' ) );
-		}
+		add_action( 'add_meta_boxes', array( $this, 'handle_add_meta_boxes' ) );
 
-		if ( false === has_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) ) ) {
-			add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
-		}
+		add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 	}
 
 	/**

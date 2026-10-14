@@ -70,8 +70,8 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Registers request callbacks once and keeps repeated registration idempotent. */
-	public function test_registers_request_callbacks_once(): void {
+	/** @testdox Registers the request callbacks at priority 10 with three arguments. */
+	public function test_registers_request_callbacks(): void {
 		$guard           = new WooPaymentsWooPayPreflightGuard();
 		$before_callback = array( $guard, 'suppress_checkout_side_effects' );
 		$after_callback  = array( $guard, 'restore_checkout_side_effects' );
@@ -80,13 +80,10 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'rest_request_after_callbacks', $after_callback ) );
 
 		$guard->register();
-		$guard->register();
 
 		$this->assertSame( 10, has_filter( 'rest_request_before_callbacks', $before_callback ) );
-		$this->assertCount( 1, $GLOBALS['wp_filter']['rest_request_before_callbacks']->callbacks[10] );
 		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_before_callbacks']->callbacks[10] )[0]['accepted_args'] );
 		$this->assertSame( 10, has_filter( 'rest_request_after_callbacks', $after_callback ) );
-		$this->assertCount( 1, $GLOBALS['wp_filter']['rest_request_after_callbacks']->callbacks[10] );
 		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_after_callbacks']->callbacks[10] )[0]['accepted_args'] );
 	}
 

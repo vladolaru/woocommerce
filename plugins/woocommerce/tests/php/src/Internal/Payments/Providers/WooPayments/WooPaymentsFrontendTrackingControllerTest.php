@@ -722,7 +722,6 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 		try {
 			$sut->register();
-			$sut->register();
 			$this->assertSame( 10, has_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) ) );
 			$this->assertSame( 10, has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) ) );
 			$sut->record_classic_checkout_page_view();
@@ -985,7 +984,6 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$other_order->save();
 
 		try {
-			$sut->register();
 			$sut->register();
 			$this->assertSame( 10, has_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
 			$this->assertSame( 10, has_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );

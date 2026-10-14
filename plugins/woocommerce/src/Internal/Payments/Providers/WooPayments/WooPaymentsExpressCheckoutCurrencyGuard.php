@@ -30,9 +30,7 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 	 * Register hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'assert_currency_matches_element' ) ) ) {
-			add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'assert_currency_matches_element' ), 10, 2 );
-		}
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'assert_currency_matches_element' ), 10, 2 );
 	}
 
 	/**

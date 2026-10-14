@@ -240,33 +240,19 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Register admin navigation hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'admin_menu', array( $this, 'add_menu_items' ) ) ) {
-			add_action( 'admin_menu', array( $this, 'add_menu_items' ), self::MENU_HOOK_PRIORITY );
-		}
+		add_action( 'admin_menu', array( $this, 'add_menu_items' ), self::MENU_HOOK_PRIORITY );
 
-		if ( false === has_action( 'admin_init', array( $this, 'redirect_legacy_payment_paths' ) ) ) {
-			add_action( 'admin_init', array( $this, 'redirect_legacy_payment_paths' ) );
-		}
+		add_action( 'admin_init', array( $this, 'redirect_legacy_payment_paths' ) );
 
-		if ( false === has_action( 'admin_init', array( $this, 'maybe_redirect_to_onboarding' ) ) ) {
-			add_action( 'admin_init', array( $this, 'maybe_redirect_to_onboarding' ), self::ONBOARDING_REDIRECT_HOOK_PRIORITY );
-		}
+		add_action( 'admin_init', array( $this, 'maybe_redirect_to_onboarding' ), self::ONBOARDING_REDIRECT_HOOK_PRIORITY );
 
-		if ( false === has_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) ) ) {
-			add_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) );
-		}
+		add_filter( 'woocommerce_admin_shared_settings', array( $this, 'preload_shared_settings' ) );
 
-		if ( false === has_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) ) ) {
-			add_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) );
-		}
+		add_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) );
 
-		if ( false === has_action( 'adminmenu', array( $this, 'open_payments_menu' ) ) ) {
-			add_action( 'adminmenu', array( $this, 'open_payments_menu' ) );
-		}
+		add_action( 'adminmenu', array( $this, 'open_payments_menu' ) );
 
-		if ( false === has_filter( 'admin_title', array( $this, 'set_admin_title' ) ) ) {
-			add_filter( 'admin_title', array( $this, 'set_admin_title' ) );
-		}
+		add_filter( 'admin_title', array( $this, 'set_admin_title' ) );
 	}
 
 	/**

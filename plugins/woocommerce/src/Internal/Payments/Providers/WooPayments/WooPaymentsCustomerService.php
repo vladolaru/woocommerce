@@ -93,9 +93,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) ) ) {
-			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
-		}
+		add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
 	}
 
 	/**

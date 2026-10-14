@@ -291,7 +291,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
 		$this->service = $this->create_service( false, $tracker );
 		$this->service->register();
-		$this->service->register();
 		$this->assertSame( 10, has_action( 'shutdown', array( $this->service, 'flush_registration_events' ) ) );
 		$this->service->register_domain();
 		$this->service->register_domain();

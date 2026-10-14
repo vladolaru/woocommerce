@@ -26,9 +26,7 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 	 */
 	public function register() {
 		foreach ( $this->get_style_change_hooks() as $hook ) {
-			if ( false === has_action( $hook, array( $this, 'handle_style_change' ) ) ) {
-				add_action( $hook, array( $this, 'handle_style_change' ) );
-			}
+			add_action( $hook, array( $this, 'handle_style_change' ) );
 		}
 	}
 

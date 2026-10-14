@@ -96,12 +96,8 @@ class WooPaymentsFraudService implements RegisterHooksInterface {
 	 * Register the login session-link callback and the admin Sift page tracker.
 	 */
 	public function register() {
-		if ( false === has_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) ) ) {
-			add_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) );
-		}
-		if ( false === has_action( 'admin_print_footer_scripts', array( $this, 'handle_admin_print_footer_scripts' ) ) ) {
-			add_action( 'admin_print_footer_scripts', array( $this, 'handle_admin_print_footer_scripts' ) );
-		}
+		add_action( 'init', array( $this, 'link_session_if_user_just_logged_in' ) );
+		add_action( 'admin_print_footer_scripts', array( $this, 'handle_admin_print_footer_scripts' ) );
 	}
 
 	/**

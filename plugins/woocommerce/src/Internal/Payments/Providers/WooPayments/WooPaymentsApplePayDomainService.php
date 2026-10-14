@@ -127,9 +127,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		add_action( 'update_option_home', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( 'update_option_siteurl', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( self::RETRY_ACTION, array( $this, 'handle_domain_registration_retry' ) );
-		if ( false === has_action( 'shutdown', array( $this, 'flush_registration_events' ) ) ) {
-			add_action( 'shutdown', array( $this, 'flush_registration_events' ) );
-		}
+		add_action( 'shutdown', array( $this, 'flush_registration_events' ) );
 	}
 
 	/**

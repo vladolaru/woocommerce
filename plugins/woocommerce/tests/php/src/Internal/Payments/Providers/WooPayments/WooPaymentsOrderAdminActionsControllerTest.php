@@ -72,12 +72,11 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Register should wire each order workflow hook once when the built-in WooPayments owns the runtime.
+	 * @testdox Register should wire each order workflow hook.
 	 */
-	public function test_registers_order_workflow_hooks_idempotently_for_builtin_runtime(): void {
+	public function test_registers_order_workflow_hooks(): void {
 		$this->sut = $this->create_controller();
 
-		$this->sut->register();
 		$this->sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_order_actions', array( $this->sut, 'handle_woocommerce_order_actions' ) ) );
@@ -96,7 +95,6 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) ) );
 
 		set_current_screen( 'woocommerce_page_wc-orders' );
-		$this->sut->register();
 		$this->sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) ) );

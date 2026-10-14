@@ -113,21 +113,13 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * Register order-edit screen hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) ) ) {
-			add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
-		}
+		add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 
-		if ( false === has_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) ) ) {
-			add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) );
-		}
+		add_action( 'woocommerce_admin_order_data_after_payment_info', array( $this, 'render_payment_details_container' ) );
 
-		if ( false === has_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_woopay_payment_method_name' ) ) ) {
-			add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_woopay_payment_method_name' ) );
-		}
+		add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_woopay_payment_method_name' ) );
 
-		if ( false === has_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_transaction_fee_row' ) ) ) {
-			add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_transaction_fee_row' ) );
-		}
+		add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'render_transaction_fee_row' ) );
 	}
 
 	/**

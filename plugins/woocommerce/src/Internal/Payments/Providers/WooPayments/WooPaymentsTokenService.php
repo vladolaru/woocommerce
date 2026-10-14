@@ -148,29 +148,17 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function register_hooks(): void {
-		if ( false === has_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ) ) ) {
-			add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
-		}
+		add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
 
-		if ( false === has_action( 'woocommerce_payment_token_set_default', array( $this, 'handle_woocommerce_payment_token_set_default' ) ) ) {
-			add_action( 'woocommerce_payment_token_set_default', array( $this, 'handle_woocommerce_payment_token_set_default' ), 10, 2 );
-		}
+		add_action( 'woocommerce_payment_token_set_default', array( $this, 'handle_woocommerce_payment_token_set_default' ), 10, 2 );
 
-		if ( false === has_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ) ) ) {
-			add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
-		}
+		add_filter( 'woocommerce_get_customer_payment_tokens', array( $this, 'handle_woocommerce_get_customer_payment_tokens' ), 10, 3 );
 
-		if ( false === has_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ) ) ) {
-			add_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ), 10, 2 );
-		}
+		add_filter( 'woocommerce_payment_methods_list_item', array( $this, 'handle_woocommerce_payment_methods_list_item' ), 10, 2 );
 
-		if ( false === has_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) ) ) {
-			add_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) );
-		}
+		add_filter( 'woocommerce_get_credit_card_type_label', array( $this, 'normalize_saved_method_label' ) );
 
-		if ( false === has_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ) ) ) {
-			add_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ), 10, 3 );
-		}
+		add_action( self::UPDATE_SAVED_PAYMENT_METHOD_ACTION, array( $this, 'handle_wcpay_update_saved_payment_method' ), 10, 3 );
 	}
 
 	/**

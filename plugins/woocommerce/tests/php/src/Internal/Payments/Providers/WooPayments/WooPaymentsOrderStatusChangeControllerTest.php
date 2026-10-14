@@ -50,12 +50,11 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the admin enqueue hook once when the built-in WooPayments owns payments.
+	 * @testdox Should register the admin enqueue hook and the order notice mount point.
 	 */
-	public function test_registers_the_admin_enqueue_hook_once(): void {
+	public function test_registers_the_admin_enqueue_hook(): void {
 		$this->sut = $this->create_controller();
 
-		$this->sut->register();
 		$this->sut->register();
 
 		$this->assertSame(

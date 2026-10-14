@@ -78,9 +78,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 * Register address provider hooks.
 	 */
 	public function register() {
-		if ( false === has_filter( 'woocommerce_address_providers', array( $this, 'add_address_provider' ) ) ) {
-			add_filter( 'woocommerce_address_providers', array( $this, 'add_address_provider' ) );
-		}
+		add_filter( 'woocommerce_address_providers', array( $this, 'add_address_provider' ) );
 	}
 
 	/**

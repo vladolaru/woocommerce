@@ -103,9 +103,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
-		}
+		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
 
 	/**

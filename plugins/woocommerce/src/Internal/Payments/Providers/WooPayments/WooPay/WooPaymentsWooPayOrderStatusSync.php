@@ -115,38 +115,22 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * Register WooPay order-status webhook compatibility hooks.
 	 */
 	public function register() {
-		if ( false === has_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) ) ) {
-			add_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) );
-		}
+		add_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) );
 
-		if ( false === has_filter( 'woocommerce_valid_webhook_events', array( $this, 'add_event' ) ) ) {
-			add_filter( 'woocommerce_valid_webhook_events', array( $this, 'add_event' ) );
-		}
+		add_filter( 'woocommerce_valid_webhook_events', array( $this, 'add_event' ) );
 
-		if ( false === has_filter( 'woocommerce_webhook_topic_hooks', array( $this, 'add_topics' ) ) ) {
-			add_filter( 'woocommerce_webhook_topic_hooks', array( $this, 'add_topics' ), 20, 2 );
-		}
+		add_filter( 'woocommerce_webhook_topic_hooks', array( $this, 'add_topics' ), 20, 2 );
 
-		if ( false === has_filter( 'woocommerce_webhook_payload', array( $this, 'create_payload' ) ) ) {
-			add_filter( 'woocommerce_webhook_payload', array( $this, 'create_payload' ), 10, 4 );
-		}
+		add_filter( 'woocommerce_webhook_payload', array( $this, 'create_payload' ), 10, 4 );
 
-		if ( false === has_action( 'woocommerce_order_status_changed', array( $this, 'send_webhook' ) ) ) {
-			add_action( 'woocommerce_order_status_changed', array( $this, 'send_webhook' ), 10, 3 );
-		}
+		add_action( 'woocommerce_order_status_changed', array( $this, 'send_webhook' ), 10, 3 );
 
-		if ( false === has_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) ) ) {
-			add_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) );
-		}
+		add_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) );
 
 		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page; native rotates the secret after a refresh instead.
-		if ( false === has_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) ) ) {
-			add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
-		}
+		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
 
-		if ( false === has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ) ) ) {
-			add_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ), 10, 2 );
-		}
+		add_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ), 10, 2 );
 	}
 
 	/**

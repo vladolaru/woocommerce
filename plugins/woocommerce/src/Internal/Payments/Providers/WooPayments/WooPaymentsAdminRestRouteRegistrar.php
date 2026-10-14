@@ -46,9 +46,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	 * @since 11.2.0
 	 */
 	public function register() {
-		if ( false === has_action( 'rest_api_init', array( $this, 'register_rest_controllers' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'register_rest_controllers' ), 0 );
-		}
+		add_action( 'rest_api_init', array( $this, 'register_rest_controllers' ), 0 );
 	}
 
 	/**

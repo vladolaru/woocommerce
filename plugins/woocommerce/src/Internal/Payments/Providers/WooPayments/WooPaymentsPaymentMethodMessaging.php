@@ -100,29 +100,17 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * Register BNPL payment method messaging hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) ) ) {
-			add_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) );
-		}
+		add_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) );
 
-		if ( false === has_action( 'woocommerce_proceed_to_checkout', array( $this, 'render_site_messaging' ) ) ) {
-			add_action( 'woocommerce_proceed_to_checkout', array( $this, 'render_site_messaging' ), 5 );
-		}
+		add_action( 'woocommerce_proceed_to_checkout', array( $this, 'render_site_messaging' ), 5 );
 
-		if ( false === has_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'render_site_messaging' ) ) ) {
-			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'render_site_messaging' ) );
-		}
+		add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'render_site_messaging' ) );
 
-		if ( false === has_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) ) ) {
-			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) );
-		}
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) );
 
-		if ( false === has_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) ) ) {
-			add_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) );
-		}
+		add_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) );
 
-		if ( false === has_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $this, 'handle_check_bnpl_availability' ) ) ) {
-			add_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $this, 'handle_check_bnpl_availability' ) );
-		}
+		add_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $this, 'handle_check_bnpl_availability' ) );
 	}
 
 	/**

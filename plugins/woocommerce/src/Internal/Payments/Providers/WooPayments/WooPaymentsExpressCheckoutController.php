@@ -70,26 +70,16 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 */
 	public function register() {
 		foreach ( $this->get_frontend_hooks() as $hook => list( $callback, $priority ) ) {
-			if ( false === has_action( $hook, $callback ) ) {
-				add_action( $hook, $callback, $priority );
-			}
+			add_action( $hook, $callback, $priority );
 		}
 
-		if ( false === has_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ) ) ) {
-			add_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ), 10, 2 );
-		}
+		add_filter( 'wcpay_tracks_event_properties', array( $this, 'add_tracking_event_properties' ), 10, 2 );
 
-		if ( false === has_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) ) ) {
-			add_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) );
-		}
+		add_action( 'template_redirect', array( $this, 'handle_express_checkout_redirect' ) );
 
-		if ( false === has_filter( 'woocommerce_login_redirect', array( $this, 'consume_login_redirect_url' ) ) ) {
-			add_filter( 'woocommerce_login_redirect', array( $this, 'consume_login_redirect_url' ) );
-		}
+		add_filter( 'woocommerce_login_redirect', array( $this, 'consume_login_redirect_url' ) );
 
-		if ( false === has_filter( 'woocommerce_registration_redirect', array( $this, 'consume_login_redirect_url' ) ) ) {
-			add_filter( 'woocommerce_registration_redirect', array( $this, 'consume_login_redirect_url' ) );
-		}
+		add_filter( 'woocommerce_registration_redirect', array( $this, 'consume_login_redirect_url' ) );
 	}
 
 	/**

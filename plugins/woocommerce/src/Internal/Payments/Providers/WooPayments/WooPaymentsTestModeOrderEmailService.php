@@ -41,12 +41,8 @@ class WooPaymentsTestModeOrderEmailService implements RegisterHooksInterface {
 		foreach ( self::ORDER_EMAIL_IDS as $email_id ) {
 			$subject_hook = "woocommerce_email_subject_{$email_id}";
 			$heading_hook = "woocommerce_email_heading_{$email_id}";
-			if ( false === has_filter( $subject_hook, array( $this, 'handle_email_subject' ) ) ) {
-				add_filter( $subject_hook, array( $this, 'handle_email_subject' ), 10, 2 );
-			}
-			if ( false === has_filter( $heading_hook, array( $this, 'handle_email_heading' ) ) ) {
-				add_filter( $heading_hook, array( $this, 'handle_email_heading' ), 10, 2 );
-			}
+			add_filter( $subject_hook, array( $this, 'handle_email_subject' ), 10, 2 );
+			add_filter( $heading_hook, array( $this, 'handle_email_heading' ), 10, 2 );
 		}
 	}
 

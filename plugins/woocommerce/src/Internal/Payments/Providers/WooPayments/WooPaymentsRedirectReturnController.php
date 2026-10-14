@@ -109,9 +109,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Register the redirect-return callback.
 	 */
 	public function register() {
-		if ( false === has_action( 'wp', array( $this, 'handle_wp' ) ) ) {
-			add_action( 'wp', array( $this, 'handle_wp' ) );
-		}
+		add_action( 'wp', array( $this, 'handle_wp' ) );
 	}
 
 	/**

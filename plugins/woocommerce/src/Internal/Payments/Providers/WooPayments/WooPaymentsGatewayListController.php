@@ -55,21 +55,15 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 	 * Register the gateway list hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_admin_field_payment_gateways', array( $this, 'handle_woocommerce_admin_field_payment_gateways' ) ) ) {
-			add_action(
-				'woocommerce_admin_field_payment_gateways',
-				array( $this, 'handle_woocommerce_admin_field_payment_gateways' ),
-				self::PAYMENT_GATEWAYS_DISPLAY_HOOK_PRIORITY
-			);
-		}
+		add_action(
+			'woocommerce_admin_field_payment_gateways',
+			array( $this, 'handle_woocommerce_admin_field_payment_gateways' ),
+			self::PAYMENT_GATEWAYS_DISPLAY_HOOK_PRIORITY
+		);
 
-		if ( false === has_filter( 'option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ) ) ) {
-			add_filter( 'option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ), self::GATEWAY_ORDER_OPTION_PRIORITY );
-		}
+		add_filter( 'option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ), self::GATEWAY_ORDER_OPTION_PRIORITY );
 
-		if ( false === has_filter( 'default_option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ) ) ) {
-			add_filter( 'default_option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ), self::GATEWAY_ORDER_DEFAULT_OPTION_PRIORITY );
-		}
+		add_filter( 'default_option_woocommerce_gateway_order', array( $this, 'handle_gateway_order_option' ), self::GATEWAY_ORDER_DEFAULT_OPTION_PRIORITY );
 	}
 
 	/**

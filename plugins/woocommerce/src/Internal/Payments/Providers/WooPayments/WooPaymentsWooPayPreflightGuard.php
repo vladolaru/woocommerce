@@ -49,13 +49,9 @@ class WooPaymentsWooPayPreflightGuard implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function register() {
-		if ( false === has_filter( 'rest_request_before_callbacks', array( $this, 'suppress_checkout_side_effects' ) ) ) {
-			add_filter( 'rest_request_before_callbacks', array( $this, 'suppress_checkout_side_effects' ), 10, 3 );
-		}
+		add_filter( 'rest_request_before_callbacks', array( $this, 'suppress_checkout_side_effects' ), 10, 3 );
 
-		if ( false === has_filter( 'rest_request_after_callbacks', array( $this, 'restore_checkout_side_effects' ) ) ) {
-			add_filter( 'rest_request_after_callbacks', array( $this, 'restore_checkout_side_effects' ), 10, 3 );
-		}
+		add_filter( 'rest_request_after_callbacks', array( $this, 'restore_checkout_side_effects' ), 10, 3 );
 	}
 
 	/**

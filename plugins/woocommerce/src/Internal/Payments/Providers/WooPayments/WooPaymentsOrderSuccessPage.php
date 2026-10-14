@@ -126,61 +126,35 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * Register order-success hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) ) ) {
-			add_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) );
-		}
+		add_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) );
 
-		if ( false === has_action( 'woocommerce_thankyou', array( $this, 'record_order_success_page_view' ) ) ) {
-			add_action( 'woocommerce_thankyou', array( $this, 'record_order_success_page_view' ) );
-		}
+		add_action( 'woocommerce_thankyou', array( $this, 'record_order_success_page_view' ) );
 
-		if ( false === has_action( 'woocommerce_before_thankyou', array( $this, 'maybe_render_multibanco_payment_instructions' ) ) ) {
-			add_action( 'woocommerce_before_thankyou', array( $this, 'maybe_render_multibanco_payment_instructions' ) );
-		}
+		add_action( 'woocommerce_before_thankyou', array( $this, 'maybe_render_multibanco_payment_instructions' ) );
 
-		if ( false === has_action( 'woocommerce_order_details_before_order_table', array( $this, 'unregister_payment_method_title_override' ) ) ) {
-			add_action( 'woocommerce_order_details_before_order_table', array( $this, 'unregister_payment_method_title_override' ) );
-		}
+		add_action( 'woocommerce_order_details_before_order_table', array( $this, 'unregister_payment_method_title_override' ) );
 
-		if ( false === has_action( 'woocommerce_order_details_before_order_table', array( $this, 'maybe_render_multibanco_payment_instructions' ) ) ) {
-			add_action( 'woocommerce_order_details_before_order_table', array( $this, 'maybe_render_multibanco_payment_instructions' ) );
-		}
+		add_action( 'woocommerce_order_details_before_order_table', array( $this, 'maybe_render_multibanco_payment_instructions' ) );
 
-		if ( false === has_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) ) ) {
-			add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
-		}
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 
 		// Priority 11, as the client registers it (class-wc-payments-order-success-page.php:30).
-		if ( false === has_filter( 'woocommerce_order_received_verify_known_shoppers', array( $this, 'determine_woopay_order_received_verify_known_shoppers' ) ) ) {
-			add_filter( 'woocommerce_order_received_verify_known_shoppers', array( $this, 'determine_woopay_order_received_verify_known_shoppers' ), 11 );
-		}
+		add_filter( 'woocommerce_order_received_verify_known_shoppers', array( $this, 'determine_woopay_order_received_verify_known_shoppers' ), 11 );
 
-		if ( false === has_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ) ) ) {
-			add_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ), 10, 3 );
-		}
+		add_filter( 'woocommerce_order_email_verification_required', array( $this, 'maybe_skip_email_verification_after_payment' ), 10, 3 );
 
 		// Priority 11 so the notices append after the store's own order-received text
 		// customizations, matching the WooPayments extension. The same filter renders on
 		// the classic thank-you template and the blocks order-confirmation page.
-		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_paid_order' ) ) ) {
-			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_paid_order' ), 11 );
-		}
+		add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_paid_order' ), 11 );
 
-		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ) ) ) {
-			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ), 11 );
-		}
+		add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'add_notice_previous_successful_intent' ), 11 );
 
-		if ( false === has_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'replace_order_received_text_for_failed_orders' ) ) ) {
-			add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'replace_order_received_text_for_failed_orders' ), 11 );
-		}
+		add_filter( 'woocommerce_thankyou_order_received_text', array( $this, 'replace_order_received_text_for_failed_orders' ), 11 );
 
-		if ( false === has_action( 'wp_footer', array( $this, 'output_footer_scripts' ) ) ) {
-			add_action( 'wp_footer', array( $this, 'output_footer_scripts' ) );
-		}
+		add_action( 'wp_footer', array( $this, 'output_footer_scripts' ) );
 
-		if ( false === has_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ) ) ) {
-			add_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ), 10, 4 );
-		}
+		add_action( 'woocommerce_email_order_details', array( $this, 'add_multibanco_payment_instructions_to_order_on_hold_email' ), 10, 4 );
 	}
 
 	/**

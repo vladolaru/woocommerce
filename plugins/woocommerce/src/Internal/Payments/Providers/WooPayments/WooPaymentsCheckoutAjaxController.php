@@ -94,17 +94,11 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Register AJAX hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'wp_ajax_update_order_status', array( $this, 'handle_update_order_status' ) ) ) {
-			add_action( 'wp_ajax_update_order_status', array( $this, 'handle_update_order_status' ) );
-		}
+		add_action( 'wp_ajax_update_order_status', array( $this, 'handle_update_order_status' ) );
 
-		if ( false === has_action( 'wp_ajax_nopriv_update_order_status', array( $this, 'handle_update_order_status' ) ) ) {
-			add_action( 'wp_ajax_nopriv_update_order_status', array( $this, 'handle_update_order_status' ) );
-		}
+		add_action( 'wp_ajax_nopriv_update_order_status', array( $this, 'handle_update_order_status' ) );
 
-		if ( false === has_action( 'wp_ajax_create_setup_intent', array( $this, 'handle_create_setup_intent' ) ) ) {
-			add_action( 'wp_ajax_create_setup_intent', array( $this, 'handle_create_setup_intent' ) );
-		}
+		add_action( 'wp_ajax_create_setup_intent', array( $this, 'handle_create_setup_intent' ) );
 	}
 
 	/**

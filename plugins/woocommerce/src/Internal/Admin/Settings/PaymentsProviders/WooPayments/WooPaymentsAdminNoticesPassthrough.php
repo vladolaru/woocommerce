@@ -47,9 +47,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	 */
 	public function register() {
 		// Core strips the notices on `in_admin_header` at PHP_INT_MAX; take the kept callbacks just before.
-		if ( false === has_action( 'in_admin_header', array( $this, 'keep_woopayments_notices' ) ) ) {
-			add_action( 'in_admin_header', array( $this, 'keep_woopayments_notices' ), PHP_INT_MAX - 1 );
-		}
+		add_action( 'in_admin_header', array( $this, 'keep_woopayments_notices' ), PHP_INT_MAX - 1 );
 	}
 
 	/**

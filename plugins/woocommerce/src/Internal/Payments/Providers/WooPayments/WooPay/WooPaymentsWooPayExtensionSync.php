@@ -101,21 +101,13 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 * Register WooPay extension compatibility sync hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) ) ) {
-			add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) );
-		}
+		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) );
 
-		if ( false === has_action( self::VALIDATE_COMPATIBILITY_ACTION, array( $this, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) ) {
-			add_action( self::VALIDATE_COMPATIBILITY_ACTION, array( $this, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
-		}
+		add_action( self::VALIDATE_COMPATIBILITY_ACTION, array( $this, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
 
-		if ( false === has_action( 'activated_plugin', array( $this, 'show_warning_when_incompatible_extension_is_enabled' ) ) ) {
-			add_action( 'activated_plugin', array( $this, 'show_warning_when_incompatible_extension_is_enabled' ) );
-		}
+		add_action( 'activated_plugin', array( $this, 'show_warning_when_incompatible_extension_is_enabled' ) );
 
-		if ( false === has_action( 'deactivated_plugin', array( $this, 'hide_warning_when_incompatible_extension_is_disabled' ) ) ) {
-			add_action( 'deactivated_plugin', array( $this, 'hide_warning_when_incompatible_extension_is_disabled' ) );
-		}
+		add_action( 'deactivated_plugin', array( $this, 'hide_warning_when_incompatible_extension_is_disabled' ) );
 	}
 
 	/**

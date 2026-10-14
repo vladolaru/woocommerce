@@ -56,9 +56,7 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	 * Register the card info filter.
 	 */
 	public function register() {
-		if ( false === has_filter( 'wc_order_payment_card_info', array( $this, 'handle_order_payment_card_info' ) ) ) {
-			add_filter( 'wc_order_payment_card_info', array( $this, 'handle_order_payment_card_info' ), 10, 2 );
-		}
+		add_filter( 'wc_order_payment_card_info', array( $this, 'handle_order_payment_card_info' ), 10, 2 );
 	}
 
 	/**

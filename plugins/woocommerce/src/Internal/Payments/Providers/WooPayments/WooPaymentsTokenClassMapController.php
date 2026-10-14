@@ -37,9 +37,7 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 	 * Register token-class mapping hooks.
 	 */
 	public function register() {
-		if ( false === has_filter( 'woocommerce_payment_token_class', array( $this, 'handle_woocommerce_payment_token_class' ) ) ) {
-			add_filter( 'woocommerce_payment_token_class', array( $this, 'handle_woocommerce_payment_token_class' ), 10, 2 );
-		}
+		add_filter( 'woocommerce_payment_token_class', array( $this, 'handle_woocommerce_payment_token_class' ), 10, 2 );
 	}
 
 	/**

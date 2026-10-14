@@ -89,9 +89,7 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 * runs while plugins load.
 	 */
 	public function register() {
-		if ( false === has_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) );
-		}
+		add_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) );
 	}
 
 	/**

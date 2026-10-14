@@ -78,7 +78,6 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 
 		$page = $this->create_page( $tracker );
 		$page->register();
-		$page->register();
 		$this->registered_pages[] = $page;
 
 		$main_order = wc_create_order();

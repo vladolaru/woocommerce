@@ -215,19 +215,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Register account cache hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'action_scheduler_before_execute', array( $this, 'disable_refresh' ) ) ) {
-			add_action( 'action_scheduler_before_execute', array( $this, 'disable_refresh' ) );
-		}
+		add_action( 'action_scheduler_before_execute', array( $this, 'disable_refresh' ) );
 
-		if ( false === has_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) ) ) {
-			add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
-		}
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allowed_redirect_hosts' ) );
 
 		// Like client 11.1.0, drop the account cache when the WordPress.com connection is made or removed.
 		foreach ( array( 'jetpack_site_registered', 'jetpack_site_disconnected' ) as $hook_name ) {
-			if ( false === has_action( $hook_name, array( $this, 'clear_cache' ) ) ) {
-				add_action( $hook_name, array( $this, 'clear_cache' ) );
-			}
+			add_action( $hook_name, array( $this, 'clear_cache' ) );
 		}
 	}
 

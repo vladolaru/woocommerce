@@ -55,9 +55,7 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	 */
 	public function register() {
 		// WC admin builds the task lists at init priority 4 (`Features::load_features()`).
-		if ( false === has_action( 'init', array( $this, 'add_tasks' ) ) ) {
-			add_action( 'init', array( $this, 'add_tasks' ) );
-		}
+		add_action( 'init', array( $this, 'add_tasks' ) );
 	}
 
 	/**

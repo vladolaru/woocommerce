@@ -96,7 +96,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( true );
 
 		$sut->register();
-		$sut->register();
 
 		$this->assertSame( 70, has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
 		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );

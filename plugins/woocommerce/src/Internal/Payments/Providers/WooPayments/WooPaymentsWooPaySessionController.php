@@ -67,38 +67,24 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// Inbound WooPay identity hooks stay registered regardless of the enabled/eligibility
 		// snapshot — the plugin registers them unconditionally and every WooPay-specific check
 		// runs per request inside the callbacks themselves.
-		if ( false === has_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ) ) ) {
-			add_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ), 20 );
-		}
+		add_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ), 20 );
 
-		if ( false === has_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) ) ) {
-			add_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) );
-		}
+		add_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) );
 
-		if ( false === has_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ) ) ) {
-			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ), 1, 1 );
-		}
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ), 1, 1 );
 
-		if ( false === has_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) ) ) {
-			add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
-		}
+		add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
 
-		if ( false === has_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ) ) ) {
-			add_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ), 20, 3 );
-		}
+		add_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ), 20, 3 );
 
 		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
-		if ( false === has_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ) ) ) {
-			add_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ), 21 );
-		}
+		add_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ), 21 );
 
 		// The session route stays registered whenever native owns the runtime: the plugin
 		// registers it unconditionally and answers ineligible or unsigned callers through the
 		// permission callback (401), so a disabled/ineligible state must not turn into a 404
 		// that makes WooPay's bootstrap fail opaquely.
-		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
-			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
-		}
+		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
 		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
 		// owner, so WooPay would read as disabled. Decide on init instead, like client 11.1.0

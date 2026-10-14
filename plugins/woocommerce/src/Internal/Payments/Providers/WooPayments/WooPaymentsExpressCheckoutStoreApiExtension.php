@@ -56,17 +56,11 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Register Store API extension hooks.
 	 */
 	public function register() {
-		if ( false === has_action( 'woocommerce_blocks_loaded', array( $this, 'register_store_api_extension' ) ) ) {
-			add_action( 'woocommerce_blocks_loaded', array( $this, 'register_store_api_extension' ) );
-		}
+		add_action( 'woocommerce_blocks_loaded', array( $this, 'register_store_api_extension' ) );
 
-		if ( false === has_filter( 'woocommerce_get_country_locale', array( $this, 'modify_country_locale_for_express_checkout' ) ) ) {
-			add_filter( 'woocommerce_get_country_locale', array( $this, 'modify_country_locale_for_express_checkout' ), 20 );
-		}
+		add_filter( 'woocommerce_get_country_locale', array( $this, 'modify_country_locale_for_express_checkout' ), 20 );
 
-		if ( false === has_action( 'init', array( $this, 'register_refresh_ui_update_callback' ) ) ) {
-			add_action( 'init', array( $this, 'register_refresh_ui_update_callback' ), 15 );
-		}
+		add_action( 'init', array( $this, 'register_refresh_ui_update_callback' ), 15 );
 	}
 
 	/**
