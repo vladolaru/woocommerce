@@ -2108,6 +2108,57 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 saves the ruleset to the platform before any local write
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:1294-1302).
+	 *
+	 * @testdox Should keep the local fraud state when the platform rejects the new ruleset.
+	 */
+	public function test_update_settings_keeps_local_fraud_state_when_the_platform_rejects_the_ruleset(): void {
+		$ruleset = array(
+			array(
+				'key'     => 'avs_verification',
+				'outcome' => 'block',
+				'check'   => array(
+					'key'      => 'avs_mismatch',
+					'operator' => 'equals',
+					'value'    => true,
+				),
+			),
+		);
+		update_option( 'current_protection_level', 'advanced' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'                => 'acct_fraud_test',
+					'is_live'                   => true,
+					'fraud_mitigation_settings' => array(
+						'avs_check_enabled' => true,
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
+		$this->api_client->save_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+
+		$result = $this->sut->update_settings(
+			array(
+				'current_protection_level'           => 'standard',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$cached_account = get_option( 'wcpay_account_data' );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
+		$this->assertSame( $ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertTrue( $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'] );
+	}
+
+	/**
 	 * @testdox Should save canonical fraud presets instead of stale advanced rules.
 	 */
 	public function test_update_settings_saves_canonical_fraud_presets(): void {

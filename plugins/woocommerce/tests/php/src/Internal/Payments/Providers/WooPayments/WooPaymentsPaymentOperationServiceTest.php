@@ -48,6 +48,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
@@ -2583,6 +2587,82 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'allow', $meta['_wcpay_fraud_meta_box_type'] ?? null, 'Without the AVS rule, an incorrect_zip decline is an ordinary card error.' );
 		$this->assertArrayNotHasKey( PaymentOutcome::DATA_PRESERVE_ORDER_STATUS, $data );
+	}
+
+	/**
+	 * Client 11.1.0 reads the AVS rule through the getter that fetches a missing ruleset from the platform
+	 * (includes/class-wc-payment-gateway-wcpay.php:3685-3731) and fetches at most once per request (:3765-3772).
+	 *
+	 * @testdox With no cached fraud ruleset, an incorrect_zip decline fetches it once ($label) and a later settings read fetches nothing.
+	 * @testWith ["the platform ruleset has the AVS rule", true, "block"]
+	 *           ["the platform answers with an error", false, "allow"]
+	 *
+	 * @param string $label            Case.
+	 * @param bool   $platform_answers Whether the platform answers with a ruleset holding the AVS rule, rather than failing.
+	 * @param string $expected_box     Expected fraud meta box type.
+	 */
+	public function test_charge_fetches_a_missing_fraud_ruleset_once_before_classifying_incorrect_zip( string $label, bool $platform_answers, string $expected_box ): void {
+		unset( $label );
+		delete_transient( 'wcpay_fraud_protection_settings' );
+		$fraud_api_client = new RecordingSettingsApiClient();
+		if ( $platform_answers ) {
+			$fraud_api_client->latest_fraud_ruleset_response = array(
+				'ruleset_config' => array(
+					array(
+						'key'     => 'avs_verification',
+						'outcome' => 'block',
+						'check'   => array(
+							'key'      => 'avs_mismatch',
+							'operator' => 'equals',
+							'value'    => true,
+						),
+					),
+				),
+			);
+		} else {
+			$fraud_api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		}
+		$settings_service = $this->create_fraud_reading_settings_service( $fraud_api_client );
+
+		$charge_api_client = new class() extends WooPaymentsApiClient {
+			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- Test double always throws.
+			/**
+			 * Create and confirm a payment intention.
+			 *
+			 * @param array<string,mixed> $request_data Request data.
+			 * @param string              $idempotency_key Idempotency key.
+			 * @return array<string,mixed>
+			 */
+			public function create_and_confirm_payment_intention( array $request_data, string $idempotency_key ): array {
+				throw new WooPaymentsApiException( 'Error: Your postal code failed validation.', 'incorrect_zip', 402, 'card_error', '', array(), 'pi_avs_test' );
+			}
+			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+		};
+		$customer_service  = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_order' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_order' )->willReturn( 'cus_fraud_test' );
+
+		$sut     = $this->create_operation_service( $charge_api_client, $customer_service, null, $this->create_account_service( true ), null, $settings_service );
+		$outcome = $sut->charge( PaymentOperationContext::for_checkout( $this->create_woopayments_order( '25.00' ), WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_request' ), 'key_charge' );
+		$meta    = $outcome->get_data()[ WooPaymentsOutcomeMetadataMapper::OUTCOME_META_KEY ] ?? array();
+
+		$this->assertSame( $expected_box, $meta['_wcpay_fraud_meta_box_type'] ?? null );
+		$this->assertSame( 1, $fraud_api_client->latest_fraud_ruleset_requests, 'The decline fetches the missing ruleset once.' );
+
+		$settings_service->get_settings();
+
+		$this->assertSame( 1, $fraud_api_client->latest_fraud_ruleset_requests, 'The settings read in the same request fetches nothing more.' );
 	}
 
 	/**
@@ -10564,6 +10644,41 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
+	}
+
+	/**
+	 * Build the settings service that reads the fraud ruleset, over a connected account and the given platform client.
+	 *
+	 * @param RecordingSettingsApiClient $api_client Platform client the fraud ruleset is read through.
+	 * @return WooPaymentsSettingsService
+	 */
+	private function create_fraud_reading_settings_service( RecordingSettingsApiClient $api_client ): WooPaymentsSettingsService {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'           => 'acct_fraud_test',
+					'is_live'              => true,
+					'test_publishable_key' => 'pk_test_fraud',
+					'live_publishable_key' => 'pk_live_fraud',
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$database_cache = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service = new WooPaymentsAccountService();
+		$account_service->init( new LegacyProxy(), $database_cache );
+
+		$settings_service = new WooPaymentsSettingsService();
+		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), new RecordingWooPaySessionService() );
+
+		return $settings_service;
 	}
 
 	/**
