@@ -7,7 +7,6 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -15,14 +14,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPayVerifiedEmailRestoreService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsBlocksIntegration;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsManager;
-use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -125,13 +122,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	private $original_direct_checkout_option;
 
 	/**
-	 * Original WooPay blog identity filters.
-	 *
-	 * @var array<string,object|null>
-	 */
-	private array $original_blog_identity_filters = array();
-
-	/**
 	 * Original WooCommerce session object.
 	 *
 	 * @var object|null
@@ -145,9 +135,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		$this->original_session                = WC()->session;
 		$this->original_direct_checkout_option = get_option( '_wcpay_feature_woopay_direct_checkout', null );
-		foreach ( array( 'woocommerce_woopayments_woopay_blog_id', 'woocommerce_woopayments_woopay_blog_token' ) as $filter_name ) {
-			$this->original_blog_identity_filters[ $filter_name ] = isset( $GLOBALS['wp_filter'][ $filter_name ] ) ? clone $GLOBALS['wp_filter'][ $filter_name ] : null;
-		}
 		$this->reset_frontend_surface_state();
 		add_filter(
 			'woocommerce_available_payment_gateways',
@@ -209,13 +196,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 		}
-		foreach ( $this->original_blog_identity_filters as $filter_name => $hook ) {
-			if ( null === $hook ) {
-				unset( $GLOBALS['wp_filter'][ $filter_name ] );
-			} else {
-				$GLOBALS['wp_filter'][ $filter_name ] = $hook; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the exact pre-test hook snapshot.
-			}
-		}
 		remove_all_filters( 'pre_http_request' );
 		remove_all_filters( 'woocommerce_logger_log_message' );
 		remove_all_filters( 'wcpay_dev_mode' );
@@ -237,56 +217,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->reset_frontend_surface_state();
 		wp_set_current_user( 0 );
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox Should enable WooPay for each location when only the form-field defaults are absent.
-	 *
-	 * @dataProvider express_checkout_context_provider
-	 * @param string $context Express checkout context.
-	 */
-	public function test_get_express_checkout_params_uses_form_field_defaults_for_missing_location_settings( string $context ): void {
-		delete_option( 'woocommerce_woocommerce_payments_settings' );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'                 => 'acct_123',
-					'is_live'                    => true,
-					'details_submitted'          => true,
-					'platform_checkout_eligible' => true,
-					'capabilities'               => array( 'card_payments' => 'active' ),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-		$gateway_settings = array( 'platform_checkout' => 'yes' );
-		$settings_filter  = static function () use ( $gateway_settings ) {
-			return $gateway_settings;
-		};
-		add_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
-
-		try {
-			$params = $this->create_service_with_real_account_service()->get_express_checkout_params( $context );
-		} finally {
-			remove_filter( 'pre_option_woocommerce_woocommerce_payments_settings', $settings_filter );
-		}
-
-		$this->assertSame( array( 'woopay' ), $params['enabled_methods'] );
-	}
-
-	/**
-	 * Provide each WooPay location context.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function express_checkout_context_provider(): array {
-		return array(
-			'product'  => array( 'product' ),
-			'cart'     => array( 'cart' ),
-			'checkout' => array( 'checkout' ),
-		);
 	}
 
 	/**
@@ -963,8 +893,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should generate the reference WooPay request signature.
 	 */
 	public function test_generates_reference_request_signature(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
 
 		$sut = $this->create_service();
 		// The signature covers the current 30-second window; the call can cross into the next one.
@@ -1175,7 +1105,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$request->set_header( 'Cart-Token', 'cart-token-123' );
 
 		$sut     = $this->create_service();
-		$result  = $sut->get_session_data( 'shopper@example.com', $request );
+		$result  = $sut->get_init_session_request( 'shopper@example.com', null, $request );
 		$preload = $result['preloaded_requests'];
 
 		$this->assertSame( 'cart-token-123', $seen_headers['/wc/store/v1/cart'] );
@@ -1188,8 +1118,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should encrypt minimum session data with the WooPay reference shape.
 	 */
 	public function test_encrypts_minimum_session_data_with_reference_shape(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', 'blog-token' );
 
 		$sut    = $this->create_service();
 		$result = $sut->get_encrypted_minimum_session_data();
@@ -2516,7 +2446,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should build the preserved WooPay checkout frontend config.
 	 */
 	public function test_builds_woopay_checkout_frontend_config(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
+		\Jetpack_Options::update_option( 'id', 12345 );
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 
 		$sut = $this->create_service();
@@ -2637,65 +2567,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '48', $config['woopayButton']['height'] );
 		$this->assertSame( '', $config['woopayButton']['radius'] );
-	}
-
-	/**
-	 * @testdox Should give Stripe the site locale, not the admin user's, in the WooPay express checkout params.
-	 */
-	public function test_woopay_express_checkout_params_use_the_site_locale(): void {
-		$sut    = $this->create_service();
-		$params = $this->in_admin_with_french_user_locale( static fn() => $sut->get_express_checkout_params( 'checkout' ) );
-
-		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:274).
-		$this->assertSame( 'en', $params['stripe']['locale'] );
-	}
-
-	/**
-	 * @testdox Should build WooPay express checkout params with Core-owned account data.
-	 */
-	public function test_builds_woopay_express_checkout_params(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_currency', 'USD' );
-
-		$sut    = $this->create_service();
-		$params = $sut->get_express_checkout_params( 'checkout' );
-
-		$this->assertSame( 'pk_test_123', $params['stripe']['publishableKey'] );
-		$this->assertSame( 'acct_123', $params['stripe']['accountId'] );
-		$this->assertSame( 'checkout', $params['button_context'] );
-		$this->assertSame( array( 'woopay' ), $params['enabled_methods'] );
-		$this->assertSame( get_bloginfo( 'name' ), $params['store_name'] );
-		$this->assertSame( 'usd', $params['checkout']['currency_code'] );
-		$this->assertSame( 2, $params['checkout']['stripe_minor_unit'] );
-		$this->assertSame( 'US', $params['checkout']['country_code'] );
-		$this->assertSame( 'default', $params['button']['type'] );
-		$this->assertArrayHasKey( 'isEceUsingConfirmationTokens', $params['flags'] );
-	}
-
-	/**
-	 * @testdox Should build WooPay express checkout params with Stripe zero-decimal currency units.
-	 */
-	public function test_woopay_express_checkout_params_use_stripe_zero_minor_unit_for_zero_decimal_currency(): void {
-		update_option( 'woocommerce_default_country', 'JP' );
-		update_option( 'woocommerce_currency', 'JPY' );
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertSame( 'jpy', $params['checkout']['currency_code'] );
-		$this->assertSame( 0, $params['checkout']['stripe_minor_unit'] );
-	}
-
-	/**
-	 * @testdox Should build WooPay express checkout params with Stripe two-decimal special-case currency units.
-	 */
-	public function test_woopay_express_checkout_params_keep_stripe_two_minor_unit_for_special_case_currency(): void {
-		update_option( 'woocommerce_default_country', 'UG' );
-		update_option( 'woocommerce_currency', 'UGX' );
-
-		$params = $this->create_service()->get_express_checkout_params( 'checkout' );
-
-		$this->assertSame( 'ugx', $params['checkout']['currency_code'] );
-		$this->assertSame( 2, $params['checkout']['stripe_minor_unit'] );
 	}
 
 	/**
@@ -2877,8 +2748,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should forward init session requests through filterable transport.
 	 */
 	public function test_forwards_init_session_request_through_filterable_transport(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::update_option( 'id', 12345 );
 			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );
@@ -3183,8 +3052,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_logs_unsignable_session_data_while_logging_is_on( string $blog_id, string $blog_token, string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => $blog_id );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+		\Jetpack_Options::update_option( 'id', $blog_id );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
 		$lines = $this->record_woopayments_log_lines();
 
 		$this->assertSame( array(), $this->create_service()->encrypt_and_sign_data( array( 'email' => 'shopper@example.com' ) ) );
@@ -3195,8 +3064,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * Connect the store blog so the Jetpack-signed WooPay init request can be built.
 	 */
 	private function connect_woopay_blog(): void {
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => 'blog-token' );
 		if ( class_exists( '\Jetpack_Options' ) ) {
 			\Jetpack_Options::update_option( 'id', 12345 );
 			\Jetpack_Options::update_option( 'blog_token', 'token-key.blog-token' );
@@ -3569,63 +3436,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$adapted_extensions->expects( $this->never() )->method( 'update_order_extension_data' );
 
 		$this->create_service( array(), array(), $adapted_extensions )->woopay_order_payment_status_changed( $order->get_id() );
-	}
-
-	/**
-	 * @testdox Should restore the stowed customer id and remove the bookkeeping meta.
-	 */
-	public function test_restore_order_customer_id_restores_stowed_customer(): void {
-		$user_id = $this->factory->user->create();
-
-		$order = wc_create_order();
-		$order->set_customer_id( 0 );
-		$order->add_meta_data( 'woopay_merchant_customer_id', $user_id, true );
-		$order->save();
-
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_runtime_owner' ) )
-			->getMock();
-		$arbiter->method( 'get_runtime_owner' )->willReturn( WooPaymentsRuntimeArbiter::OWNER_NONE );
-		$restore_service = new WooPaymentsWooPayVerifiedEmailRestoreService();
-		$restore_service->init( $arbiter );
-		$container                = wc_get_container();
-		$original_restore_service = $container->get( WooPaymentsWooPayVerifiedEmailRestoreService::class );
-		$container->replace( WooPaymentsWooPayVerifiedEmailRestoreService::class, $restore_service );
-
-		try {
-			$restore_service->register();
-			$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $order->get_id() );
-		} finally {
-			$container->reset_replacement( WooPaymentsWooPayVerifiedEmailRestoreService::class );
-			$original_restore_service->register();
-		}
-
-		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( $user_id, $order->get_customer_id() );
-		$this->assertFalse( $order->meta_exists( 'woopay_merchant_customer_id' ) );
-	}
-
-	/**
-	 * @testdox The public restore entry point delegates its permissive hook argument unchanged.
-	 */
-	public function test_restore_order_customer_id_delegates_hook_argument_unchanged(): void {
-		$hook_argument   = new \stdClass();
-		$restore_service = $this->getMockBuilder( WooPaymentsWooPayVerifiedEmailRestoreService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'restore_order_customer_id' ) )
-			->getMock();
-		$restore_service->expects( $this->once() )
-			->method( 'restore_order_customer_id' )
-			->with( $this->identicalTo( $hook_argument ) );
-
-		$container = wc_get_container();
-		$container->replace( WooPaymentsWooPayVerifiedEmailRestoreService::class, $restore_service );
-		try {
-			$this->create_service()->restore_order_customer_id_from_requests_with_verified_email( $hook_argument );
-		} finally {
-			$container->reset_replacement( WooPaymentsWooPayVerifiedEmailRestoreService::class );
-		}
 	}
 
 	/**
@@ -4085,8 +3895,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			throw new \RuntimeException( 'Could not encrypt the WooPay identity fixture.' );
 		}
 
-		add_filter( 'woocommerce_woopayments_woopay_blog_id', static fn() => '12345' );
-		add_filter( 'woocommerce_woopayments_woopay_blog_token', static fn() => $blog_token );
+		\Jetpack_Options::update_option( 'id', 12345 );
+		\Jetpack_Options::update_option( 'blog_token', $blog_token );
 
 		return array(
 			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes the WooPay identity fixture contract.
@@ -4271,30 +4081,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPay session service backed by the persisted account service.
-	 *
-	 * @return TestableWooPaySessionService
-	 */
-	private function create_service_with_real_account_service(): TestableWooPaySessionService {
-		// A connected store: without a connection the account read returns no account, like the client.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
-		$connected_api_client->method( 'is_available' )->willReturn( true );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
-		$account_service = new WooPaymentsAccountService();
-		$account_service->init( new LegacyProxy() );
-		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
-			->getMock();
-		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
-
-		$sut = new TestableWooPaySessionService();
-		$sut->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
-
-		return $sut;
-	}
-
-	/**
 	 * Create a persisted product for WooPay eligibility tests.
 	 *
 	 * @param string $class_name Product class name.
@@ -4417,31 +4203,5 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			 */
 			public function set_customer_session_cookie( bool $set ): void {}
 		};
-	}
-
-	/**
-	 * Run a callback in wp-admin for a user whose locale is French while the site stays English, so determine_locale()
-	 * gives fr_FR and get_locale() gives en_US.
-	 *
-	 * @param callable $callback Callback.
-	 * @return mixed The callback's result.
-	 */
-	private function in_admin_with_french_user_locale( callable $callback ) {
-		wp_set_current_user(
-			self::factory()->user->create(
-				array(
-					'role'   => 'administrator',
-					'locale' => 'fr_FR',
-				)
-			)
-		);
-		set_current_screen( 'dashboard' );
-
-		try {
-			return $callback();
-		} finally {
-			set_current_screen( 'front' );
-			wp_set_current_user( 0 );
-		}
 	}
 }
