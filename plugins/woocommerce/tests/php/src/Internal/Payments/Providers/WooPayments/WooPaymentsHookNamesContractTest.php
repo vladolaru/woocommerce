@@ -229,7 +229,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * A runtime probe (`WooPaymentsHookArityContractTest`) proves one native call site fires the
 	 * hook with the fixture's arity; it says nothing about a second native site of the same name
 	 * (for example `wcpay_database_cache_ttl` also fires from
-	 * `MultiCurrencyDatabaseCache` and `WooPaymentsAdminMenuBadgeService`, and
+	 * `MultiCurrencyDatabaseCache`, and
 	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` twice).
 	 * This closes that gap statically, without a second runtime probe per secondary site.
 	 */

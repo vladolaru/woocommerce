@@ -35,16 +35,25 @@ class WooPaymentsAdminMenuBadgeService {
 	private WooPaymentsApiClient $api_client;
 
 	/**
+	 * Database cache the counts are read through.
+	 *
+	 * @var WooPaymentsDatabaseCache
+	 */
+	private WooPaymentsDatabaseCache $database_cache;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param WooPaymentsApiClient      $api_client      Native WooPayments API client.
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param WooPaymentsDatabaseCache  $database_cache  Database cache.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsDatabaseCache $database_cache ): void {
 		$this->account_service = $account_service;
 		$this->api_client      = $api_client;
+		$this->database_cache  = $database_cache;
 	}
 
 	/**
@@ -54,7 +63,7 @@ class WooPaymentsAdminMenuBadgeService {
 	 */
 	public function get_disputes_awaiting_response_count(): int {
 		$cache_key = $this->account_service->is_test_mode_enabled() ? WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE : WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY;
-		$counts    = $this->get_or_add_cached_array(
+		$counts    = $this->get_cached_array(
 			$cache_key,
 			function (): array {
 				return $this->api_client->get_dispute_status_counts();
@@ -78,7 +87,7 @@ class WooPaymentsAdminMenuBadgeService {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function get_active_disputes(): array {
-		$disputes = $this->get_or_add_cached_array(
+		$disputes = $this->get_cached_array(
 			WooPaymentsDatabaseCache::ACTIVE_DISPUTES_KEY,
 			function (): array {
 				$response = $this->api_client->get_disputes(
@@ -114,7 +123,7 @@ class WooPaymentsAdminMenuBadgeService {
 		}
 
 		$cache_key = $this->account_service->is_test_mode_enabled() ? WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE : WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY;
-		$summary   = $this->get_or_add_cached_array(
+		$summary   = $this->get_cached_array(
 			$cache_key,
 			function (): array {
 				return $this->api_client->get_authorizations_summary();
@@ -127,19 +136,12 @@ class WooPaymentsAdminMenuBadgeService {
 	/**
 	 * Invalidate both authorization-summary caches so the next read refetches.
 	 *
-	 * The plugin deletes both the live and test-mode keys after every
-	 * capture-affecting webhook; captures, cancellations and expiries performed
-	 * from the platform dashboard or mobile app only reach the store this way.
+	 * Captures, cancellations and expiries made from the platform dashboard or the mobile apps reach the store only through
+	 * the capture-affecting webhooks, which delete both the live and test-mode entries.
 	 */
 	public function invalidate_authorization_summary_caches(): void {
-		delete_option( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY );
-		delete_option( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
-
-		// delete_option() returns before touching caches when the row is already
-		// gone, so an external object cache can keep serving the stale value. The
-		// plugin deletes the cache entry explicitly for the same reason.
-		wp_cache_delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY, 'options' );
-		wp_cache_delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE, 'options' );
+		$this->database_cache->delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY );
+		$this->database_cache->delete( WooPaymentsDatabaseCache::AUTHORIZATION_SUMMARY_KEY_TEST_MODE );
 	}
 
 	/**
@@ -152,96 +154,28 @@ class WooPaymentsAdminMenuBadgeService {
 	}
 
 	/**
-	 * Get a cached array, refreshing it when needed and preserving stale valid data on refresh errors.
+	 * Get an array through the database cache, logging a refresh that throws.
 	 *
-	 * @param string   $key       Option key.
-	 * @param callable $generator Data generator.
+	 * A failed refresh keeps the last valid data. These entries keep their 24-hour TTL whether the last refresh failed or not.
+	 *
+	 * @param string   $key   Cache key.
+	 * @param callable $fetch Fetches the array from the platform.
 	 * @return array<string,mixed>
 	 */
-	private function get_or_add_cached_array( string $key, callable $generator ): array {
-		$cache_contents = get_option( $key, false );
-		$cached_data    = null;
-
-		if ( $this->is_cache_wrapper( $cache_contents ) && is_array( $cache_contents['data'] ) ) {
-			$cached_data = $cache_contents['data'];
-		}
-
-		if ( ! $this->should_refresh_cache( $key, $cache_contents ) ) {
-			return is_array( $cached_data ) ? $cached_data : array();
-		}
-
-		$errored = false;
-		$data    = $cached_data;
-
-		try {
-			$generated = $generator();
-			if ( is_array( $generated ) ) {
-				$data = $generated;
-			} else {
-				$errored = true;
-			}
-		} catch ( Throwable $exception ) {
-			$errored = true;
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to refresh a WooPayments admin cache.', $exception, array( 'cache_key' => $key ) );
-		}
-
-		update_option(
+	private function get_cached_array( string $key, callable $fetch ): array {
+		$data = $this->database_cache->get_or_add(
 			$key,
-			array(
-				'data'    => $data,
-				'fetched' => time(),
-				'errored' => $errored,
-			),
-			false
+			static function () use ( $key, $fetch ) {
+				try {
+					return $fetch();
+				} catch ( Throwable $exception ) {
+					wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to refresh a WooPayments admin cache.', $exception, array( 'cache_key' => $key ) );
+					return null;
+				}
+			},
+			'is_array'
 		);
 
 		return is_array( $data ) ? $data : array();
-	}
-
-	/**
-	 * Tell whether the cache should be refreshed.
-	 *
-	 * @param string $key            Option key.
-	 * @param mixed  $cache_contents Cache wrapper.
-	 * @return bool
-	 */
-	private function should_refresh_cache( string $key, $cache_contents ): bool {
-		if ( defined( 'DOING_CRON' ) || wp_doing_ajax() ) {
-			return false;
-		}
-
-		if ( ! $this->is_cache_wrapper( $cache_contents ) ) {
-			return true;
-		}
-
-		if ( empty( $cache_contents['errored'] ) && ! is_array( $cache_contents['data'] ) ) {
-			return true;
-		}
-
-		/**
-		 * Filters the WooPayments admin menu badge database cache TTL.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param int                 $ttl            Cache TTL in seconds.
-		 * @param string              $key            Cache option key.
-		 * @param array<string,mixed> $cache_contents Badge cache wrapper.
-		 */
-		$ttl = (int) apply_filters( 'wcpay_database_cache_ttl', DAY_IN_SECONDS, $key, $cache_contents );
-
-		return ( (int) $cache_contents['fetched'] + $ttl ) < time();
-	}
-
-	/**
-	 * Tell whether a cache wrapper has the expected shape.
-	 *
-	 * @param mixed $cache_contents Cache wrapper.
-	 * @return bool
-	 */
-	private function is_cache_wrapper( $cache_contents ): bool {
-		return is_array( $cache_contents )
-			&& array_key_exists( 'data', $cache_contents )
-			&& isset( $cache_contents['fetched'] )
-			&& array_key_exists( 'errored', $cache_contents );
 	}
 }

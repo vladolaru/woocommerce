@@ -8,9 +8,11 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGoLiveTask;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHomeTasks;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -376,8 +378,10 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAdminMenuBadgeService
 	 */
 	private function create_dispute_data_service( WooPaymentsAccountService $account_service ): WooPaymentsAdminMenuBadgeService {
-		$service = new WooPaymentsAdminMenuBadgeService();
-		$service->init( $account_service, $this->api_client );
+		$service        = new WooPaymentsAdminMenuBadgeService();
+		$database_cache = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$service->init( $account_service, $this->api_client, $database_cache );
 
 		return $service;
 	}
