@@ -2842,7 +2842,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			array( 'terminal intent, platform 400', 500, 'wcpay_server_error' ),
 			array( 'terminal capture, empty intent id', 500, 'wcpay_server_error' ),
 			array( 'terminal capture, capture fails with status 0', 0, 'wcpay_capture_error' ),
-			// The route keeps 502 where the extension answers 200 for a capture that did not succeed: the Android app reads any 200 as captured.
+			// A capture that did not succeed answers 502, as the extension's failure branch sets it (class-wc-payment-gateway-wcpay.php:4045-4049).
 			array( 'terminal capture, capture returns a processing intent', 502, 'wcpay_capture_error' ),
 			array( 'readers, platform 404', 500, 'resource_missing' ),
 			array( 'reader registration, status 0', 0, 'wcpay_client_unable_to_encode_json' ),
