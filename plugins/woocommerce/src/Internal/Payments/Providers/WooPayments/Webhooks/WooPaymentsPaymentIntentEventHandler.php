@@ -756,20 +756,17 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Get merchant settings used by the IPP receipt email.
+	 * Get the merchant details the IPP receipt email shows, from the connected account's business profile.
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_ipp_receipt_merchant_settings(): array {
-		$account_service = $this->account_service;
-		$support_address = $account_service->get_gateway_setting( 'account_business_support_address', array() );
-
 		return array(
-			'business_name' => (string) $account_service->get_gateway_setting( 'account_business_name', get_bloginfo( 'name' ) ),
+			'business_name' => $this->account_service->get_business_name(),
 			'support_info'  => array(
-				'address' => is_array( $support_address ) ? $support_address : array(),
-				'phone'   => (string) $account_service->get_gateway_setting( 'account_business_support_phone', '' ),
-				'email'   => (string) $account_service->get_gateway_setting( 'account_business_support_email', get_option( 'admin_email', '' ) ),
+				'address' => $this->account_service->get_business_support_address(),
+				'phone'   => $this->account_service->get_business_support_phone(),
+				'email'   => $this->account_service->get_business_support_email(),
 			),
 		);
 	}

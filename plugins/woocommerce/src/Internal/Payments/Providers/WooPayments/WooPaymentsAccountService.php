@@ -1150,6 +1150,71 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Get the connected account's business name, or '' when the account has none.
+	 *
+	 * @since 11.2.0
+	 * @return string
+	 */
+	public function get_business_name(): string {
+		return $this->get_account_string( 'business_profile', 'name' );
+	}
+
+	/**
+	 * Get the connected account's business support address, or an empty array when the account has none.
+	 *
+	 * @since 11.2.0
+	 * @return array<string,mixed>
+	 */
+	public function get_business_support_address(): array {
+		$address = $this->get_cached_account_data()['business_profile']['support_address'] ?? array();
+
+		return is_array( $address ) ? $address : array();
+	}
+
+	/**
+	 * Get the connected account's business support email, or '' when the account has none.
+	 *
+	 * @since 11.2.0
+	 * @return string
+	 */
+	public function get_business_support_email(): string {
+		return $this->get_account_string( 'business_profile', 'support_email' );
+	}
+
+	/**
+	 * Get the connected account's business support phone, or '' when the account has none.
+	 *
+	 * @since 11.2.0
+	 * @return string
+	 */
+	public function get_business_support_phone(): string {
+		return $this->get_account_string( 'business_profile', 'support_phone' );
+	}
+
+	/**
+	 * Get the file ID of the connected account's branding logo, or '' when the account has none.
+	 *
+	 * @since 11.2.0
+	 * @return string
+	 */
+	public function get_branding_logo(): string {
+		return $this->get_account_string( 'branding', 'logo' );
+	}
+
+	/**
+	 * Get a scalar field of a section of the cached account as a string, '' when it is missing, null or not scalar.
+	 *
+	 * @param string $section Account data section, such as business_profile.
+	 * @param string $field   Field in that section.
+	 * @return string
+	 */
+	private function get_account_string( string $section, string $field ): string {
+		$value = $this->get_cached_account_data()[ $section ][ $field ] ?? '';
+
+		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
 	 * Get countries where WooPayments platform accounts are supported.
 	 *
 	 * @return array<string,string> Country labels keyed by ISO country code.

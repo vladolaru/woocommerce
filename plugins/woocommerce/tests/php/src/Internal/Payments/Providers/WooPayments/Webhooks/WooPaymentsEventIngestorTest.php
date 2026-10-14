@@ -874,27 +874,35 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded sends an IPP receipt email for card-present charges.
+	 * @testdox payment_intent.succeeded sends an IPP receipt email for card-present charges with the account's business details ($description).
+	 * @dataProvider ipp_receipt_merchant_details_provider
+	 *
+	 * @param string                   $description Case.
+	 * @param array<string,mixed>|null $account     Cached account data, or null for no cached account.
+	 * @param array<string,mixed>      $expected    Expected receipt merchant settings.
+	 * @param bool                     $saved       Whether business details with other values are saved in the settings.
 	 */
-	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge(): void {
+	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge( string $description, ?array $account, array $expected, bool $saved = true ): void {
+		unset( $description );
 		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before webhook dispatch can send it.' );
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'account_business_name'            => 'Reader Store',
-				'account_business_support_address' => array(
-					'line1'       => '123 Sample Street',
-					'line2'       => 'Suite 100',
-					'city'        => 'San Francisco',
-					'state'       => 'CA',
-					'postal_code' => '94107',
-					'country'     => 'US',
-				),
-				'account_business_support_phone'   => '+1 555 0100',
-				'account_business_support_email'   => 'support@example.test',
-				'test_mode'                        => 'yes',
-			)
+		// Business details saved in the settings, with other values: the receipt must not show them.
+		$saved_details = array(
+			'account_business_name'            => 'Saved Store',
+			'account_business_support_address' => array(
+				'line1'       => '9 Saved Road',
+				'line2'       => '',
+				'city'        => 'Oakland',
+				'state'       => 'CA',
+				'postal_code' => '94601',
+				'country'     => 'US',
+			),
+			'account_business_support_phone'   => '+1 555 0999',
+			'account_business_support_email'   => 'saved@example.test',
 		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) + ( $saved ? $saved_details : array() ) );
+		if ( null !== $account ) {
+			$this->cache_woopayments_account( $account );
+		}
 		$order = $this->create_woopayments_order();
 		$order->set_billing_email( 'ada@example.test' );
 		$order->save();
@@ -920,27 +928,97 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->assertCount( 1, $email->triggered, 'A card-present successful payment should trigger one receipt email.' );
 		$this->assertSame( $order->get_id(), $email->triggered[0]['order']->get_id() );
-		$this->assertSame(
-			array(
-				'business_name' => 'Reader Store',
-				'support_info'  => array(
-					'address' => array(
-						'line1'       => '123 Sample Street',
-						'line2'       => 'Suite 100',
-						'city'        => 'San Francisco',
-						'state'       => 'CA',
-						'postal_code' => '94107',
-						'country'     => 'US',
-					),
-					'phone'   => '+1 555 0100',
-					'email'   => 'support@example.test',
-				),
-			),
-			$email->triggered[0]['merchant_settings'],
-			'Receipt merchant settings should come from preserved WooPayments gateway settings.'
-		);
+		$this->assertSame( $expected, $email->triggered[0]['merchant_settings'] );
 		$this->assertSame( 'ch_card_present', $email->triggered[0]['charge']['id'] );
 		$this->assertSame( 'card_present', $email->triggered[0]['charge']['payment_method_details']['type'] );
+	}
+
+	/**
+	 * Provide receipt merchant detail rows: case, cached account, expected merchant settings.
+	 *
+	 * Expected values follow client includes/class-wc-payments-webhook-processing-service.php:587-593: the account's
+	 * business profile, '' or [] without it (includes/class-wc-payment-gateway-wcpay.php:3318-3404).
+	 * Accounts keep the shape recorded in ../Fixtures/platform-test-drive-account.json `account.business_profile` (:597-603),
+	 * with varied values; `support_address: []` is as recorded.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:array<string,mixed>,3?:bool}>
+	 */
+	public function ipp_receipt_merchant_details_provider(): array {
+		$address = array(
+			'city'        => 'San Francisco',
+			'country'     => 'US',
+			'line1'       => '123 Sample Street',
+			'line2'       => 'Suite 100',
+			'postal_code' => '94107',
+			'state'       => 'CA',
+		);
+		$account = array(
+			'account_id'       => 'acct_123',
+			'is_live'          => true,
+			'business_profile' => array(
+				'name'            => 'Reader Store',
+				'url'             => 'https://reader.example.test',
+				'support_address' => $address,
+				'support_email'   => 'support@example.test',
+				'support_phone'   => '+1 555 0100',
+			),
+		);
+		$empty   = array(
+			'business_name' => '',
+			'support_info'  => array(
+				'address' => array(),
+				'phone'   => '',
+				'email'   => '',
+			),
+		);
+
+		$no_address                                        = $account;
+		$no_address['business_profile']['support_address'] = array();
+
+		return array(
+			'account profile'           => array(
+				'account profile',
+				$account,
+				array(
+					'business_name' => 'Reader Store',
+					'support_info'  => array(
+						'address' => $address,
+						'phone'   => '+1 555 0100',
+						'email'   => 'support@example.test',
+					),
+				),
+			),
+			'empty support address'     => array(
+				'empty support address',
+				$no_address,
+				array(
+					'business_name' => 'Reader Store',
+					'support_info'  => array(
+						'address' => array(),
+						'phone'   => '+1 555 0100',
+						'email'   => 'support@example.test',
+					),
+				),
+			),
+			'account without a profile' => array(
+				'account without a profile',
+				array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+				),
+				$empty,
+			),
+			'no account'                => array( 'no account', null, $empty ),
+			'nothing saved'             => array(
+				'nothing saved',
+				array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+				),
+				$empty,
+				false,
+			),
+		);
 	}
 
 	/**
@@ -4844,6 +4922,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			$data['country'] = $country;
 		}
 
+		$this->cache_woopayments_account( $data );
+	}
+
+	/**
+	 * Cache a fresh account, readable through the account service while the platform is connected.
+	 *
+	 * @param array<string,mixed> $data Account data; `is_live` true makes the account service accept it as it is.
+	 */
+	private function cache_woopayments_account( array $data ): void {
 		// The account service keeps the cache it already read in this request.
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		// The option envelope client 11.1.0 Database_Cache writes (class-database-cache.php:377-382; an entry without

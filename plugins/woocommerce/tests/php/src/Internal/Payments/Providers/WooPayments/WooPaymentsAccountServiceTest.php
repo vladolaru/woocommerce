@@ -769,6 +769,114 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read the business profile and branding logo from the connected account, empty without them ($description).
+	 * @dataProvider business_profile_provider
+	 *
+	 * @param string                   $description Case.
+	 * @param array<string,mixed>|null $account     Cached account data, or null for no cached account.
+	 * @param bool                     $connected   Whether the site has a platform connection.
+	 * @param array<int,mixed>         $expected    Name, support address, support email, support phone, branding logo.
+	 */
+	public function test_business_profile_and_branding_logo_read_the_account( string $description, ?array $account, bool $connected, array $expected ): void {
+		unset( $description );
+		if ( null !== $account ) {
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'    => $account,
+					'fetched' => time(),
+					'errored' => false,
+				)
+			);
+		}
+		// Settings saved with other values must not be read: the account is the only source.
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'account_business_name'            => 'Saved Store',
+				'account_business_support_address' => array( 'line1' => '9 Saved Road' ),
+				'account_business_support_email'   => 'saved@example.test',
+				'account_business_support_phone'   => '+15550999',
+				'account_branding_logo'            => 'file_saved_logo',
+			)
+		);
+		$sut = $this->create_service_with_api_client( $this->create_counting_account_api_client( array(), $connected ) );
+
+		$this->assertSame(
+			$expected,
+			array(
+				$sut->get_business_name(),
+				$sut->get_business_support_address(),
+				$sut->get_business_support_email(),
+				$sut->get_business_support_phone(),
+				$sut->get_branding_logo(),
+			)
+		);
+	}
+
+	/**
+	 * Provide business profile rows: case, cached account, connected, expected values.
+	 *
+	 * Expected values follow client includes/class-wc-payments-account.php:449-512: the account's field, '' or [] when the
+	 * account is not connected or lacks it (includes/class-wc-payment-gateway-wcpay.php:3318-3423).
+	 * Accounts keep the shape recorded in Fixtures/platform-test-drive-account.json `account.business_profile` and
+	 * `account.branding` (:597-609), with varied values; `is_live` true so the cache is accepted as it is.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:bool,3:array<int,mixed>}>
+	 */
+	public function business_profile_provider(): array {
+		$address = array(
+			'city'        => 'San Francisco',
+			'country'     => 'US',
+			'line1'       => '123 Reader Street',
+			'line2'       => 'Suite 100',
+			'postal_code' => '94107',
+			'state'       => 'CA',
+		);
+		$account = array(
+			'account_id'       => 'acct_reader',
+			'is_live'          => true,
+			'business_profile' => array(
+				'name'            => 'Reader Store',
+				'url'             => 'https://reader.example.test',
+				'support_address' => $address,
+				'support_email'   => 'support@reader.example.test',
+				'support_phone'   => '+15550100',
+			),
+			'branding'         => array(
+				'icon'            => 'file_reader_icon',
+				'logo'            => 'file_reader_logo',
+				'primary_color'   => '#873eff',
+				'secondary_color' => '#2c045d',
+			),
+		);
+		$empty   = array( '', array(), '', '', '' );
+		$bare    = array(
+			'account_id' => 'acct_reader',
+			'is_live'    => true,
+		);
+
+		$no_address                                        = $account;
+		$no_address['business_profile']['support_address'] = array();
+		$nulls                                      = $account;
+		$nulls['business_profile']                  = array_fill_keys( array_keys( $account['business_profile'] ), null );
+		$nulls['branding']['logo']                  = null;
+		$odd                                        = $account;
+		$odd['business_profile']['name']            = array( 'Reader Store' );
+		$odd['business_profile']['support_address'] = '123 Reader Street';
+
+		return array(
+			'connected account'        => array( 'connected account', $account, true, array( 'Reader Store', $address, 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'empty support address'    => array( 'empty support address', $no_address, true, array( 'Reader Store', array(), 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'null fields'              => array( 'null fields', $nulls, true, $empty ),
+			'no profile or branding'   => array( 'no profile or branding', $bare, true, $empty ),
+			'values of the wrong type' => array( 'values of the wrong type', $odd, true, array( '', array(), 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'no account'               => array( 'no account', null, true, $empty ),
+			'no platform connection'   => array( 'no platform connection', $account, false, $empty ),
+		);
+	}
+
+	/**
 	 * @testdox Should read a yes/no gateway setting as on only for yes, 1 or true ($description).
 	 * @dataProvider gateway_setting_enabled_provider
 	 *
