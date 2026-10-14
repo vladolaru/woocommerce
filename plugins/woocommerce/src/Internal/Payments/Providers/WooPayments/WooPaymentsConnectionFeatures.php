@@ -9,14 +9,16 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Config as JetpackConfig;
 use Automattic\Jetpack\Identity_Crisis;
+use Automattic\Jetpack\Sync\Data_Settings;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Turns on Jetpack's Safe Mode for the store's WordPress.com connection once WooPayments is set up, with WooCommerce as the
- * consumer whose banner the store shows.
+ * Turns on Jetpack's Safe Mode and Sync for the store's WordPress.com connection once WooPayments is set up.
  *
- * It loads on every request of a connected store, while WooCommerce loads, so jetpack-config enables the feature on
- * `plugins_loaded` and every WordPress.com request carries the connection's Safe Mode arguments.
+ * Safe Mode shows WooCommerce's banner when a copy of the store shares the connection. Sync keeps WordPress.com's copy of
+ * the store name, description, timezone and active plugins current, with the WooPayments extension's minimal settings.
+ * It loads on every request of a connected store, while WooCommerce loads, so jetpack-config enables both on
+ * `plugins_loaded`, Safe Mode before Sync sends anything.
  *
  * @since 11.2.0
  * @internal
@@ -43,6 +45,28 @@ class WooPaymentsConnectionFeatures implements RegisterHooksInterface {
 				'logo'          => plugins_url( 'assets/images/woo-logo.svg', WC_PLUGIN_FILE ),
 				'admin_page'    => $this->get_admin_page(),
 				'priority'      => 5,
+			)
+		);
+		// The extension's settings, as client 11.1.0 woocommerce-payments.php:114-133 passes them.
+		$config->ensure(
+			'sync',
+			array_merge_recursive(
+				Data_Settings::MUST_SYNC_DATA_SETTINGS,
+				array(
+					'jetpack_sync_modules'           => array(
+						'Automattic\\Jetpack\\Sync\\Modules\\Full_Sync_Immediately',
+						'Automattic\\Jetpack\\Sync\\Modules\\Options',
+						'Automattic\\Jetpack\\Sync\\Modules\\Posts',
+						'Automattic\\Jetpack\\Sync\\Modules\\Meta',
+					),
+					'jetpack_sync_options_whitelist' => array(
+						'active_plugins',
+						'blogdescription',
+						'blogname',
+						'timezone_string',
+						'gmt_offset',
+					),
+				)
 			)
 		);
 	}

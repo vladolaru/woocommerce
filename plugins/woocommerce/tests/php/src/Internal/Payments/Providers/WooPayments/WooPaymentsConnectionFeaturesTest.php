@@ -7,6 +7,9 @@ use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\Jetpack\IdentityCrisis\UI as IdentityCrisisUI;
 use Automattic\Jetpack\Status\Cache as StatusCache;
+use Automattic\Jetpack\Sync\Data_Settings;
+use Automattic\Jetpack\Sync\Default_Filter_Settings;
+use Automattic\Jetpack\Sync\Modules;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use WC_Unit_Test_Case;
@@ -62,6 +65,50 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 		} finally {
 			parent::tearDown();
 		}
+	}
+
+	/**
+	 * @testdox Turns on Jetpack Sync with the WooPayments extension's minimal settings and nothing more.
+	 *
+	 * Expected: client 11.1.0 woocommerce-payments.php:114-133 merges the package's required settings
+	 * (Data_Settings::MUST_SYNC_DATA_SETTINGS) with four modules and five options.
+	 */
+	public function test_turns_on_sync_with_the_extension_minimal_settings(): void {
+		$must     = Data_Settings::MUST_SYNC_DATA_SETTINGS;
+		$defaults = new Default_Filter_Settings();
+
+		$this->sut->register();
+
+		$this->assertEqualsCanonicalizing(
+			array_unique(
+				array_merge(
+					$must['jetpack_sync_modules'],
+					array(
+						'Automattic\\Jetpack\\Sync\\Modules\\Full_Sync_Immediately',
+						'Automattic\\Jetpack\\Sync\\Modules\\Options',
+						'Automattic\\Jetpack\\Sync\\Modules\\Posts',
+						'Automattic\\Jetpack\\Sync\\Modules\\Meta',
+					)
+				)
+			),
+			array_unique( apply_filters( 'jetpack_sync_modules', Modules::DEFAULT_SYNC_MODULES ) ),
+			'Sync runs the required modules and the four the extension adds.'
+		);
+		$this->assertEqualsCanonicalizing(
+			array_unique( array_merge( $must['jetpack_sync_options_whitelist'], array( 'active_plugins', 'blogdescription', 'blogname', 'timezone_string', 'gmt_offset' ) ) ),
+			array_unique( apply_filters( 'jetpack_sync_options_whitelist', $defaults->get_default_settings( 'jetpack_sync_options_whitelist' ) ) ),
+			'Sync sends the required options and the five the extension adds.'
+		);
+		$this->assertEqualsCanonicalizing(
+			array_keys( $must['jetpack_sync_callable_whitelist'] ),
+			array_keys( apply_filters( 'jetpack_sync_callable_whitelist', $defaults->get_default_settings( 'jetpack_sync_callable_whitelist' ) ) ),
+			'Sync sends only the required callables.'
+		);
+		$this->assertEqualsCanonicalizing(
+			$must['jetpack_sync_constants_whitelist'],
+			apply_filters( 'jetpack_sync_constants_whitelist', $defaults->get_default_settings( 'jetpack_sync_constants_whitelist' ) ),
+			'Sync sends only the required constants.'
+		);
 	}
 
 	/**
@@ -229,5 +276,8 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 		delete_transient( 'jetpack_idc_local' );
 		( new JetpackConnectionManager() )->reset_connection_status();
 		StatusCache::clear();
+		// The merged Sync settings are static, and the package adds its required settings once per request.
+		( new Data_Settings() )->empty_data_settings_and_hooks();
+		unset( $GLOBALS['wp_actions']['jetpack_sync_add_required_data_settings'] );
 	}
 }
