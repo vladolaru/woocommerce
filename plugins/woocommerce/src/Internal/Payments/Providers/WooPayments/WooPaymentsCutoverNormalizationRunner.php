@@ -308,6 +308,10 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			$changes[] = 'legacy_woopay_compatibility_cron';
 		}
 
+		if ( $this->clear_retired_jetpack_sync_cron() ) {
+			$changes[] = 'retired_jetpack_sync_cron';
+		}
+
 		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, true );
 
 		if ( empty( $changes ) ) {
@@ -338,6 +342,28 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 		wp_clear_scheduled_hook( 'validate_woopay_compatibility' );
 
 		return true;
+	}
+
+	/**
+	 * Clear the WooPayments extension's two Jetpack Sync WP-Cron events.
+	 *
+	 * The extension's jetpack-sync clears them only on a disconnect
+	 * (client 11.1.0 vendor/automattic/jetpack-sync/src/class-main.php:33,39,72-92), never from the extension's deactivation
+	 * hook (woocommerce-payments.php:56-63). This runs before the `init` priority 1 scheduler that Jetpack Sync adds later in
+	 * the request, so a store whose Sync runs gets fresh events right away.
+	 *
+	 * @return bool Whether an event was cleared.
+	 */
+	private function clear_retired_jetpack_sync_cron(): bool {
+		$cleared = false;
+		foreach ( array( 'jetpack_sync_cron', 'jetpack_sync_full_cron' ) as $hook ) {
+			if ( false !== wp_next_scheduled( $hook ) ) {
+				wp_clear_scheduled_hook( $hook );
+				$cleared = true;
+			}
+		}
+
+		return $cleared;
 	}
 
 	/**
