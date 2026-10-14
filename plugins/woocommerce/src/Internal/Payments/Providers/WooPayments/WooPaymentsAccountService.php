@@ -980,23 +980,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the platform rollout cohort for native payments.
-	 *
-	 * @since 11.2.0
-	 * @return string
-	 */
-	public function get_native_cohort(): string {
-		$account_data    = $this->get_native_payments_account_data();
-		$native_payments = $account_data['native_payments'] ?? null;
-		if ( ! is_array( $native_payments ) || ! is_string( $native_payments['cohort'] ?? null ) ) {
-			return '';
-		}
-
-		return $native_payments['cohort'];
-	}
-
-	/**
-	 * Get the account data that native eligibility and cohort read.
+	 * Get the account data that native eligibility reads.
 	 *
 	 * These flags have no client counterpart. Without a platform connection they keep the cached platform decision,
 	 * because the account read then returns no account, which would read as eligible.

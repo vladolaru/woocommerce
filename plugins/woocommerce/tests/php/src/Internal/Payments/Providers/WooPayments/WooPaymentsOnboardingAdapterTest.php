@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -356,26 +355,6 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native overview fallback should use the Settings Payments provider route.
-	 */
-	public function test_native_overview_fallback_uses_settings_payments_provider_route(): void {
-		$legacy_runtime_proxy = new LegacyRuntimeProxy( false );
-		$legacy_runtime       = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $legacy_runtime_proxy );
-		$adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-
-		$this->provider->method( 'can_process_payments' )->willReturn( true );
-
-		$url = rawurldecode( $adapter->get_overview_page_url() );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $url );
-		$this->assertStringContainsString( 'from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT, $url );
-		$this->assertStringNotContainsString( 'page=wc-admin', $url );
-		$this->assertStringNotContainsString( 'path=/payments/overview', $url );
-	}
-
-	/**
 	 * @testdox Legacy runtime seam supplies extension, gateway, account, and URL data.
 	 */
 	public function test_legacy_runtime_seam_supplies_extension_gateway_account_and_url_data(): void {
@@ -387,8 +366,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 				$this->account_service,
 				null,
 				null,
-				'https://example.com/runtime-connect',
-				'https://example.com/runtime-overview'
+				'https://example.com/runtime-connect'
 			)
 		);
 
@@ -415,7 +393,6 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		self::assertTrue( $adapter->has_working_account( $this->payment_gateway_provider ) );
 		self::assertTrue( $adapter->has_live_account( $this->payment_gateway_provider ) );
 		self::assertSame( 'https://example.com/runtime-connect', $adapter->get_onboarding_kyc_fallback_url( $this->payment_gateway_provider ) );
-		self::assertSame( 'https://example.com/runtime-overview?from=' . WooPaymentsService::FROM_NOX_IN_CONTEXT, $adapter->get_overview_page_url() );
 	}
 
 	/**

@@ -71,13 +71,11 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 				null,
 				null,
 				null,
-				'https://example.com/connect',
-				'https://example.com/overview'
+				'https://example.com/connect'
 			)
 		);
 
 		$this->assertSame( 'https://example.com/connect', $sut->get_account_connect_url( 'native-payments' ) );
-		$this->assertSame( 'https://example.com/overview', $sut->get_account_overview_page_url() );
 	}
 
 	/**
@@ -364,7 +362,6 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		$sut->init( new LegacyRuntimeProxy( true ) );
 
 		$this->assertNull( $sut->get_account_connect_url( 'native-payments' ) );
-		$this->assertNull( $sut->get_account_overview_page_url() );
 	}
 
 	/**
@@ -380,7 +377,6 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		$this->assertNull( $sut->get_payments_api_client() );
 		$this->assertNull( $sut->get_logger() );
 		$this->assertNull( $sut->get_account_connect_url( 'native-payments' ) );
-		$this->assertNull( $sut->get_account_overview_page_url() );
 		$this->assertNull( $sut->is_test_mode() );
 		$this->assertNull( $sut->is_dev_mode() );
 		$this->assertNull( $sut->is_test_mode_onboarding() );

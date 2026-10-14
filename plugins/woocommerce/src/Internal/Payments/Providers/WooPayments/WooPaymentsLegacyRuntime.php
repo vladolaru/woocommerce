@@ -139,15 +139,6 @@ class WooPaymentsLegacyRuntime {
 	}
 
 	/**
-	 * Get the WooPayments account overview page URL.
-	 *
-	 * @return string|null
-	 */
-	public function get_account_overview_page_url(): ?string {
-		return $this->get_account_static_url( 'get_overview_page_url' );
-	}
-
-	/**
 	 * Get WooPayments UPE-enabled payment method IDs from the active gateway.
 	 *
 	 * @return string[]

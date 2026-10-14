@@ -515,17 +515,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Restore the customer id a verified-email WooPay order was detached from.
-	 *
-	 * @param int|mixed $order_id Order ID from the woopay_restore_order_customer_id event.
-	 *
-	 * @since 11.0.0
-	 */
-	public function restore_order_customer_id_from_requests_with_verified_email( $order_id ): void {
-		wc_get_container()->get( WooPaymentsWooPayVerifiedEmailRestoreService::class )->restore_order_customer_id( $order_id );
-	}
-
-	/**
 	 * Resolve the WooPay session email through the plugin's fallback chain.
 	 *
 	 * Mirrors WooPay_Session::get_user_email() minus the request-parameter reads because native
@@ -1266,54 +1255,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get express checkout params for WooPay.
-	 *
-	 * @param string $context Express checkout context.
-	 * @return array<string,mixed>
-	 */
-	public function get_express_checkout_params( string $context = 'checkout' ): array {
-		$currency = strtolower( get_woocommerce_currency() );
-		$country  = $this->get_store_base_country();
-
-		return array(
-			'nonce'              => array(
-				'payment_request'  => wp_create_nonce( 'wcpay-payment-request' ),
-				'shipping'         => wp_create_nonce( 'wcpay-shipping' ),
-				'update_shipping'  => wp_create_nonce( 'wcpay-update-shipping' ),
-				'checkout'         => wp_create_nonce( 'wcpay-checkout' ),
-				'platform_tracker' => wp_create_nonce( 'platform_tracks_nonce' ),
-			),
-			'checkout'           => array(
-				'currency_code'              => $currency,
-				'currency_decimals'          => function_exists( 'wc_get_price_decimals' ) ? wc_get_price_decimals() : 2,
-				'stripe_minor_unit'          => WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ),
-				'country_code'               => $country,
-				'needs_shipping'             => function_exists( 'WC' ) && WC() && WC()->cart ? WC()->cart->needs_shipping() : false,
-				'needs_payer_phone'          => 'required' === get_option( 'woocommerce_checkout_phone_field', 'required' ),
-				'allowed_shipping_countries' => function_exists( 'WC' ) && WC() && WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
-				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
-			),
-			'has_subscription'   => class_exists( '\WC_Subscriptions_Cart' ) && is_callable( array( '\WC_Subscriptions_Cart', 'cart_contains_subscription' ) ) && \WC_Subscriptions_Cart::cart_contains_subscription(),
-			'is_manual_capture'  => $this->is_truthy_gateway_setting( 'manual_capture' ),
-			'button'             => $this->get_woopay_button_settings( $context ),
-			'login_confirmation' => false,
-			'button_context'     => $this->normalize_button_context( $context ),
-			'has_block'          => has_block( 'woocommerce/cart' ) || has_block( 'woocommerce/checkout' ),
-			'product'            => array(),
-			'store_name'         => get_bloginfo( 'name' ),
-			'enabled_methods'    => $this->is_woopay_express_checkout_enabled_at( $context ) ? array( 'woopay' ) : array(),
-			'stripe'             => array(
-				'publishableKey' => $this->get_account_service()->get_publishable_key(),
-				'accountId'      => $this->get_account_service()->get_account_id(),
-				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
-			),
-			'flags'              => array(
-				'isEceUsingConfirmationTokens' => false,
-			),
-		);
-	}
-
-	/**
 	 * Get WooPay save-user checkout data.
 	 *
 	 * @return array<string,bool|string>
@@ -1834,16 +1775,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Tell whether WooPay express checkout is enabled for a context.
-	 *
-	 * @param string $context Express checkout context.
-	 * @return bool
-	 */
-	private function is_woopay_express_checkout_enabled_at( string $context ): bool {
-		return $this->is_woopay_enabled() && $this->is_woopay_express_checkout_configured_at( $context );
-	}
-
-	/**
 	 * Tell whether WooPay express checkout is configured for a context.
 	 *
 	 * @param string $context Express checkout context.
@@ -2240,27 +2171,6 @@ class WooPaymentsWooPaySessionService {
 		$value = $this->get_account_service()->get_gateway_setting( $key );
 
 		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
-	}
-
-	/**
-	 * Get the store base country.
-	 *
-	 * @return string
-	 */
-	private function get_store_base_country(): string {
-		$country = (string) get_option( 'woocommerce_default_country', 'US' );
-		if ( function_exists( 'WC' ) && WC() && WC()->countries ) {
-			$country = (string) WC()->countries->get_base_country();
-		}
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		$country = strtoupper( $country );
-
-		return '' !== $country ? $country : 'US';
 	}
 
 	/**

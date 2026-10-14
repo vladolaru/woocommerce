@@ -276,30 +276,6 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the WooPayments Overview page URL.
-	 *
-	 * @return string
-	 */
-	public function get_overview_page_url(): string {
-		$overview_url = $this->get_legacy_runtime()->get_account_overview_page_url();
-		if ( null !== $overview_url ) {
-			return add_query_arg(
-				array(
-					'from' => WooPaymentsService::FROM_NOX_IN_CONTEXT,
-				),
-				$overview_url
-			);
-		}
-
-		return Utils::wc_payments_settings_url(
-			WooPaymentsService::OVERVIEW_PATH,
-			array(
-				'from' => WooPaymentsService::FROM_NOX_IN_CONTEXT,
-			)
-		);
-	}
-
-	/**
 	 * Get the WooPayments account service.
 	 *
 	 * @return object|null

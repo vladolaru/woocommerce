@@ -445,7 +445,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					'has_sandbox_account',
 					'has_live_account',
 					'get_onboarding_kyc_fallback_url',
-					'get_overview_page_url',
 				)
 			)
 			->getMock();
@@ -476,9 +475,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$onboarding_adapter
 			->method( 'get_onboarding_kyc_fallback_url' )
 			->willReturn( 'https://example.com/native-kyc' );
-		$onboarding_adapter
-			->method( 'get_overview_page_url' )
-			->willReturn( 'https://example.com/native-overview' );
 
 		$this->sut = new WooPaymentsService();
 		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $onboarding_adapter, $this->create_legacy_runtime(), $this->create_unavailable_api_client(), $this->create_native_account_service() );
@@ -691,7 +687,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					'has_sandbox_account',
 					'has_live_account',
 					'get_onboarding_kyc_fallback_url',
-					'get_overview_page_url',
 				)
 			)
 			->getMock();
@@ -705,8 +700,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_sandbox_account' )->willReturn( false );
 		$adapter->method( 'has_live_account' )->willReturn( false );
 		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/kyc' );
-		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/overview' );
-
 		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
 		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
 		$this->mock_provider->method( 'is_onboarding_completed' )->willReturn( false );
@@ -849,7 +842,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					'has_sandbox_account',
 					'has_live_account',
 					'get_onboarding_kyc_fallback_url',
-					'get_overview_page_url',
 				)
 			)
 			->getMock();
@@ -864,8 +856,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_sandbox_account' )->willReturn( false );
 		$adapter->method( 'has_live_account' )->willReturn( false );
 		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
-		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
-
 		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
 		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
 		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
@@ -2258,7 +2248,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					'has_sandbox_account',
 					'has_live_account',
 					'get_onboarding_kyc_fallback_url',
-					'get_overview_page_url',
 				)
 			)
 			->getMock();
@@ -2273,8 +2262,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_sandbox_account' )->willReturn( false );
 		$adapter->method( 'has_live_account' )->willReturn( false );
 		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
-		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
-
 		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
 		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
 		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
@@ -3022,7 +3009,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 					'has_sandbox_account',
 					'has_live_account',
 					'get_onboarding_kyc_fallback_url',
-					'get_overview_page_url',
 				)
 			)
 			->getMock();
@@ -3036,8 +3022,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$adapter->method( 'has_sandbox_account' )->willReturn( false );
 		$adapter->method( 'has_live_account' )->willReturn( false );
 		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
-		$adapter->method( 'get_overview_page_url' )->willReturn( 'https://example.com/native-overview' );
-
 		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
 		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
 		$this->mock_provider->method( 'is_onboarding_completed' )->willReturn( false );
