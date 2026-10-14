@@ -547,10 +547,12 @@ const getAvailabilityElementsOptions = ( cart ) => {
 	);
 };
 
-// The reference client's express surfaces share the connected-account Stripe
-// instance, which opts into the Link autofill beta when Link is enabled.
+// Client 11.1.0's Blocks express buttons use the checkout's Stripe instance
+// (client/checkout/blocks/index.js:37-50), which asks for the Link autofill beta
+// when the checkout config lists card and Link (client/checkout/utils/upe.js:32-37).
 const getStripeBetas = () =>
-	params?.stripe?.linkEnabled
+	settings?.paymentMethodsConfig?.link !== undefined &&
+	settings?.paymentMethodsConfig?.card !== undefined
 		? [ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ]
 		: [ 'card_country_event_beta_1' ];
 

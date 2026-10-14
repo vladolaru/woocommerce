@@ -1346,16 +1346,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Pay-for-order express params turn Link on only when the account folds Link into card for the order currency ($description).
-	 * @dataProvider link_enabled_param_provider
+	 * Client 11.1.0 sends the publishable key, the account and the locale
+	 * (includes/express-checkout/class-wc-payments-express-checkout-button-handler.php:271-275); the Blocks express buttons
+	 * take the Link autofill beta from the checkout config.
 	 *
-	 * @param string              $description  Case.
-	 * @param string[]            $enabled_ids  Enabled payment method IDs.
-	 * @param array<string,mixed> $account_data Account data overrides.
-	 * @param bool                $expected     Expected linkEnabled.
+	 * @testdox Express params send only the Stripe key, account and locale, with Link folded into card ($context).
+	 * @testWith ["checkout"]
+	 *           ["pay_for_order"]
+	 *
+	 * @param string $context Express checkout context.
 	 */
-	public function test_link_enabled_param_follows_the_link_fold( string $description, array $enabled_ids, array $account_data, bool $expected ): void {
-		unset( $description );
+	public function test_express_params_send_only_the_stripe_key_account_and_locale( string $context ): void {
 		$order = wc_create_order();
 		$order->set_total( '24.00' );
 		$order->set_currency( 'USD' );
@@ -1364,18 +1365,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$_GET['pay_for_order'] = 'true';
 		$_GET['key']           = $order->get_order_key();
 		$this->set_order_pay_query_var( $order->get_id() );
-
-		$params = $this->create_service( array( 'upe_enabled_payment_method_ids' => $enabled_ids ), true, $account_data )->get_express_checkout_params( 'pay_for_order' );
-
-		$this->assertSame( $expected, $params['stripe']['linkEnabled'] );
-	}
-
-	/**
-	 * Provide linkEnabled rows: case, enabled IDs, account data, expected.
-	 *
-	 * @return array<string,array{0:string,1:string[],2:array<string,mixed>,3:bool}>
-	 */
-	public function link_enabled_param_provider(): array {
 		// Keys as recorded in Fixtures/platform-test-drive-account.json: `account.capabilities.link_payments` (:52, recorded
 		// as unrequested; active is a test override) and `account.fees.link.base.currency` (:239-243, reduced to that key).
 		$link_account = array(
@@ -1383,10 +1372,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			'fees'         => array( 'link' => array( 'base' => array( 'currency' => 'usd' ) ) ),
 		);
 
-		return array(
-			'Link folded'      => array( 'Link folded', array( 'card', 'link' ), $link_account, true ),
-			'Link not enabled' => array( 'Link not enabled', array( 'card' ), $link_account, false ),
-		);
+		$params = $this->create_service( array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ), true, $link_account )->get_express_checkout_params( $context );
+
+		$this->assertSame( array( 'publishableKey', 'accountId', 'locale' ), array_keys( $params['stripe'] ) );
 	}
 
 	/**

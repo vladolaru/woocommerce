@@ -502,7 +502,9 @@ describe( 'woopayments-express-checkout', () => {
 			);
 		} );
 
-		it( 'adds the Link autofill beta when the server flags Link as enabled', () => {
+		// Client 11.1.0's shortcode express buttons build their own Stripe instance with no Link flag
+		// (client/express-checkout/shortcode-buttons-express/index.js:148-159), so it never asks for the Link autofill beta.
+		it( 'never requests the Link autofill beta, whatever the params say', () => {
 			window.Stripe = jest.fn( () => ( {} ) );
 			const { getStripe } = loadModule(
 				baseParams( {
@@ -522,10 +524,7 @@ describe( 'woopayments-express-checkout', () => {
 				{
 					locale: 'en',
 					stripeAccount: 'acct_express',
-					betas: [
-						'card_country_event_beta_1',
-						'link_autofill_modal_beta_1',
-					],
+					betas: [ 'card_country_event_beta_1' ],
 				}
 			);
 		} );

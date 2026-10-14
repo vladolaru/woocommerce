@@ -165,11 +165,6 @@ class WooPaymentsExpressCheckoutService {
 				'publishableKey' => $this->account_service->get_publishable_key(),
 				'accountId'      => $this->account_service->get_account_id(),
 				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
-				// Drives the Link autofill beta on the express Stripe instances.
-				'linkEnabled'    => wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry::class )->is_link_folded_into_card(
-					$this->account_service,
-					$context_currency
-				),
 			),
 			'flags'                       => array(
 				'isEceUsingConfirmationTokens' => $this->account_service->is_ece_confirmation_tokens_enabled(),

@@ -706,14 +706,9 @@
 			return null;
 		}
 
+		// No Link autofill beta: client 11.1.0's shortcode express buttons build their own Stripe instance without
+		// it (client/express-checkout/shortcode-buttons-express/index.js:148-159).
 		var betas = [ 'card_country_event_beta_1' ];
-
-		if ( config.stripe.linkEnabled ) {
-			// The reference client's express surfaces share the connected-account
-			// Stripe instance, which opts into the Link autofill beta when Link
-			// is enabled - mirror that from the server-computed flag.
-			betas.push( 'link_autofill_modal_beta_1' );
-		}
 
 		// The script reuses its Stripe instance, following the client 11.1.0 API-instance cache (checkout/api/index.js
 		// :79-110): every Stripe() call adds a controller frame, so one per checkout update would pile them up. The

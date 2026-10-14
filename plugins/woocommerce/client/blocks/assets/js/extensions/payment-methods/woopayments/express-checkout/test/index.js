@@ -74,6 +74,10 @@ const baseExpressCheckoutParams = {
 	payment_method_types: [ 'card' ],
 };
 
+const basePaymentMethodData = {
+	expressCheckoutParams: baseExpressCheckoutParams,
+};
+
 const billing = {
 	billingAddress: {
 		email: 'shopper@example.test',
@@ -387,9 +391,7 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 
 	beforeAll( () => {
 		originalFetch = window.fetch;
-		mockGetPaymentMethodData.mockReturnValue( {
-			expressCheckoutParams: baseExpressCheckoutParams,
-		} );
+		mockGetPaymentMethodData.mockReturnValue( basePaymentMethodData );
 		const expressCheckoutModule = require( '../index' );
 		registerExpressCheckout = expressCheckoutModule.default;
 		setNavigate = expressCheckoutModule.__test__.setNavigate;
@@ -462,6 +464,8 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 	} );
 
 	afterEach( () => {
+		delete basePaymentMethodData.paymentMethodsConfig;
+		delete baseExpressCheckoutParams.stripe.linkEnabled;
 		delete window.Stripe;
 		delete window.wcpayFraudPreventionToken;
 		delete window.confirm;
@@ -605,6 +609,53 @@ describe( 'wc-payment-method-woopayments-express-checkout', () => {
 			} )
 		);
 	} );
+
+	// Client 11.1.0's Blocks express buttons use the checkout's Stripe instance (client/checkout/blocks/index.js:37-50,
+	// :139-152), which asks for the Link autofill beta when the checkout config lists card and Link
+	// (client/checkout/utils/upe.js:32-37).
+	it.each( [
+		[
+			'card and Link in the checkout config',
+			{ card: {}, link: {} },
+			undefined,
+			[ 'card_country_event_beta_1', 'link_autofill_modal_beta_1' ],
+		],
+		[
+			'card only, with the express params flagging Link',
+			{ card: {} },
+			true,
+			[ 'card_country_event_beta_1' ],
+		],
+		[
+			'Link without card',
+			{ link: {} },
+			undefined,
+			[ 'card_country_event_beta_1' ],
+		],
+	] )(
+		'requests the Link autofill beta from the checkout config (%s)',
+		async ( _label, paymentMethodsConfig, linkEnabled, betas ) => {
+			basePaymentMethodData.paymentMethodsConfig = paymentMethodsConfig;
+			if ( undefined !== linkEnabled ) {
+				baseExpressCheckoutParams.stripe.linkEnabled = linkEnabled;
+			}
+			availablePaymentMethods = { applePay: true };
+			registerExpressCheckout();
+			const applePayRegistration = getRegistration(
+				'woocommerce_payments_express_checkout_applePay'
+			);
+
+			await applePayRegistration.canMakePayment( { cart: blocksCart } );
+			renderExpressPaymentMethod( applePayRegistration );
+			await waitFor( () => {
+				expect( window.Stripe ).toHaveBeenCalledTimes( 2 );
+			} );
+
+			window.Stripe.mock.calls.forEach( ( [ , options ] ) => {
+				expect( options.betas ).toEqual( betas );
+			} );
+		}
+	);
 
 	it( 'mounts Stripe ECE with zero-decimal Stripe amount conversion', async () => {
 		baseExpressCheckoutParams.checkout.currency_code = 'jpy';
