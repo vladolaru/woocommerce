@@ -523,18 +523,37 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Payment detail routes preserve API error status codes.
+	 * The admin routes answer a platform failure with its status when it is a 4xx or 5xx, and 500 for anything else.
+	 *
+	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * error body and its HTTP status: an unreadable body keeps the answer's status, 200 included
+	 * (wcpay_unparseable_or_null_body), and an encode failure carries none (wcpay_client_unable_to_encode_json, status 0).
+	 *
+	 * @testdox Admin route "$path" answers a "$code" platform failure with status $platform_status as $expected_status.
+	 * @testWith ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_unparseable_or_null_body", 200, 500]
+	 *           ["payment details", "/wc/v3/payments/payment_intents/pi_1", "wcpay_client_unable_to_encode_json", 0, 500]
+	 *           ["payment details", "/wc/v3/payments/timeline/pi_1", "wcpay_client_unable_to_encode_json", 0, 500]
+	 *           ["payment details", "/wc/v3/payments/charges/ch_missing", "wcpay_missing_charge", 404, 404]
+	 *           ["transactions", "/wc/v3/payments/transactions/summary", "wcpay_bad_request", 400, 400]
+	 *
+	 * @param string $controller      Controller under test.
+	 * @param string $path            Route path.
+	 * @param string $code            Platform error code.
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param int    $expected_status Expected answer status.
 	 */
-	public function test_payment_detail_routes_preserve_api_error_status_codes(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Charge not found.', 'wcpay_missing_charge', 404 );
-		$this->create_payment_details_controller( true )->register_routes();
+	public function test_admin_routes_answer_platform_failures_with_a_4xx_or_5xx( string $controller, string $path, string $code, int $platform_status, int $expected_status ): void {
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+		if ( 'transactions' === $controller ) {
+			$this->create_transactions_controller( true )->register_routes();
+		} else {
+			$this->create_payment_details_controller( true )->register_routes();
+		}
 
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_missing' );
-		$response = $this->server->dispatch( $request );
-		$data     = $response->get_data();
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $path ) );
 
-		$this->assertSame( 404, $response->get_status() );
-		$this->assertSame( 'wcpay_missing_charge', $data['code'] );
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
 	}
 
 	/**

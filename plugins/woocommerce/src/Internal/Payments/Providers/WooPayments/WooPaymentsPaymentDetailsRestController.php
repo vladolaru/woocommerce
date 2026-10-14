@@ -839,26 +839,19 @@ class WooPaymentsPaymentDetailsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Convert a WooPayments API exception to a REST error.
+	 * Convert an API exception to a REST error.
 	 *
-	 * @param WooPaymentsApiException $exception Exception.
+	 * @param WooPaymentsApiException $exception API exception.
 	 * @return WP_Error
 	 */
 	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$error_code = $exception->get_error_code();
-		if ( '' === $error_code ) {
-			$error_code = 'wcpay_api_error';
-		}
-
 		$http_code = $exception->get_http_code();
-		if ( ! $http_code ) {
-			$http_code = 400;
-		}
+		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
 
 		return new WP_Error(
-			$error_code,
+			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
 			$exception->getMessage(),
-			array( 'status' => $http_code )
+			array( 'status' => $status )
 		);
 	}
 }

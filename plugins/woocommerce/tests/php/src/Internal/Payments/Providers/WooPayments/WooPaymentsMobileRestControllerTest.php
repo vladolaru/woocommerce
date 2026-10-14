@@ -2710,6 +2710,145 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * The mobile routes answer a failure as the extension's controllers do, so the apps read the same status and code.
+	 *
+	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
+	 * error body and its HTTP status; status 0 is the API client's encode failure (wcpay_client_unable_to_encode_json),
+	 * which carries no HTTP status. A status of 0 reaches the app as HTTP 200, because WordPress's status_header( 0 )
+	 * sends no status line; the answer's own status is asserted here.
+	 *
+	 * @testdox Mobile route failure "$scenario" answers status $expected_status with code $expected_code.
+	 * @dataProvider provide_mobile_route_failures
+	 *
+	 * @param string $scenario        Scenario key.
+	 * @param int    $expected_status Expected answer status.
+	 * @param string $expected_code   Expected error code.
+	 */
+	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
+		$encode_failure  = new WooPaymentsApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
+		$missing         = new WooPaymentsApiException( 'No such object.', 'resource_missing', 404 );
+		$refused_request = new WooPaymentsApiException( 'Invalid request.', 'invalid_request_error', 400 );
+		$order           = $this->create_order( 12.34, 'USD' );
+		$request         = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
+		$request->set_param( 'order_id', $order->get_id() );
+
+		switch ( $scenario ) {
+			case 'connection token, platform 400':
+				$this->api_client->method_exceptions['create_terminal_connection_token'] = $refused_request;
+				$response = $this->sut->create_connection_token( $request );
+				break;
+			case 'terminal intent, platform 400':
+				$this->api_client->method_exceptions['create_terminal_payment_intention'] = $refused_request;
+				$response = $this->sut->create_terminal_intent( $request );
+				break;
+			case 'terminal capture, empty intent id':
+				$request->set_param( 'payment_intent_id', '' );
+				$response = $this->sut->capture_terminal_payment( $request );
+				break;
+			case 'terminal capture, capture fails with status 0':
+				$order->update_status( 'on-hold' );
+				$this->api_client->payment_intention_response_queue = array(
+					array(
+						'id'       => 'pi_terminal',
+						'status'   => 'requires_capture',
+						'currency' => 'usd',
+						'metadata' => array( 'order_id' => (string) $order->get_id() ),
+					),
+					array(
+						'id'     => 'pi_terminal',
+						'status' => 'requires_capture',
+					),
+				);
+				$this->api_client->captured_intention_exception     = $encode_failure;
+				$request->set_param( 'payment_intent_id', 'pi_terminal' );
+				$response = $this->sut->capture_terminal_payment( $request );
+				break;
+			case 'readers, platform 404':
+				$this->api_client->method_exceptions['get_terminal_readers'] = $missing;
+				$response = $this->sut->get_readers( $request );
+				break;
+			case 'reader registration, status 0':
+				$this->api_client->register_reader_exception = $encode_failure;
+				$request->set_param( 'location', 'tml_1' );
+				$request->set_param( 'registration_code', 'puppies-plug-could' );
+				$response = $this->sut->register_reader( $request );
+				break;
+			case 'reader charge summary, platform 404':
+				$this->api_client->method_exceptions['get_transaction'] = $missing;
+				$request->set_param( 'transaction_id', 'txn_1' );
+				$response = $this->sut->get_reader_charge_summary( $request );
+				break;
+			case 'receipt, status 0':
+				$this->api_client->payment_intention_exception = $encode_failure;
+				$request->set_param( 'payment_intent_id', 'pi_receipt' );
+				$response = $this->sut->generate_print_receipt( $request );
+				break;
+			case 'store location, incomplete store address':
+				update_option( 'woocommerce_store_address', '' );
+				update_option( 'woocommerce_store_city', '' );
+				update_option( 'woocommerce_store_postcode', '' );
+				$response = $this->sut->get_store_location( $request );
+				break;
+			case 'store location, platform refuses the address':
+				update_option( 'woocommerce_default_country', 'US:CA' );
+				update_option( 'woocommerce_store_address', '123 Main St' );
+				update_option( 'woocommerce_store_city', 'San Francisco' );
+				update_option( 'woocommerce_store_postcode', '94107' );
+				$this->api_client->method_exceptions['create_terminal_location'] = $refused_request;
+				$response = $this->sut->get_store_location( $request );
+				break;
+			case 'terminal locations, platform 404':
+				$this->api_client->method_exceptions['get_terminal_locations'] = $missing;
+				$response = $this->sut->get_terminal_locations( $request );
+				break;
+			default:
+				$this->fail( "Unknown scenario {$scenario}." );
+		}
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( $expected_code, $response->get_error_code() );
+		$this->assertSame( $expected_status, rest_convert_error_to_response( $response )->get_status() );
+	}
+
+	/**
+	 * Mobile route failures and the extension's answers (class-wc-rest-payments-orders-controller.php,
+	 * class-wc-rest-payments-reader-controller.php, class-wc-rest-payments-terminal-locations-controller.php,
+	 * class-wc-rest-payments-connection-tokens-controller.php).
+	 *
+	 * @return array<string,array{0:string,1:int,2:string}>
+	 */
+	public function provide_mobile_route_failures(): array {
+		$cases = array(
+			array( 'connection token, platform 400', 500, 'invalid_request_error' ),
+			array( 'terminal intent, platform 400', 500, 'wcpay_server_error' ),
+			array( 'terminal capture, empty intent id', 500, 'wcpay_server_error' ),
+			array( 'terminal capture, capture fails with status 0', 0, 'wcpay_capture_error' ),
+			array( 'readers, platform 404', 500, 'resource_missing' ),
+			array( 'reader registration, status 0', 0, 'wcpay_client_unable_to_encode_json' ),
+			array( 'reader charge summary, platform 404', 500, 'wcpay_get_summary' ),
+			array( 'receipt, status 0', 0, 'generate_print_receipt_error' ),
+			array( 'store location, incomplete store address', 500, 'store_address_is_incomplete' ),
+			array( 'store location, platform refuses the address', 500, 'store_address_is_incomplete' ),
+			array( 'terminal locations, platform 404', 500, 'resource_missing' ),
+		);
+
+		return array_combine( array_column( $cases, 0 ), $cases );
+	}
+
+	/**
+	 * @testdox Reader registration sends an empty location to the platform, which the extension does not check either.
+	 */
+	public function test_reader_registration_does_not_refuse_an_empty_location(): void {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
+		$request->set_param( 'location', '' );
+		$request->set_param( 'registration_code', 'puppies-plug-could' );
+
+		$this->sut->register_reader( $request );
+
+		$this->assertSame( '', $this->api_client->last_registered_reader['location'] ?? null );
+	}
+
+	/**
 	 * Create a minimal order for terminal-route tests.
 	 *
 	 * @param float  $total    Order total.

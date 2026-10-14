@@ -6279,6 +6279,62 @@ describe( 'WooPayments money movement pages', () => {
 		).not.toBeInTheDocument();
 	} );
 
+	// Client 11.1.0 `data/authorizations/resolvers.ts:90-98` tells a payment without an authorization by the error code,
+	// whatever the status. The rejections are the apiFetch shape of a REST error body: code, message, data.status.
+	it.each( [
+		[ 'authorization_missing', 500, false ],
+		[ 'resource_missing', 404, true ],
+	] )(
+		'reports an authorization read rejected with %s (status %d): %s',
+		async ( code, status, isReported ) => {
+			mockGetPaymentIntent.mockResolvedValue( {
+				id: 'pi_auth',
+				status: 'requires_capture',
+				amount: 5000,
+				currency: 'usd',
+				created: 1781712000,
+				charge: {
+					id: 'ch_auth',
+					balance_transaction: 'txn_auth',
+					type: 'charge',
+					amount: 5000,
+					currency: 'usd',
+					created: 1781712000,
+					payment_intent: 'pi_auth',
+					captured: false,
+					amount_refunded: 0,
+					order: {
+						id: 123,
+						number: '123',
+					},
+				},
+			} );
+			mockGetAuthorization.mockRejectedValue( {
+				code,
+				message: 'No authorization for this payment.',
+				data: { status },
+			} );
+			mockGetTimeline.mockResolvedValue( { data: [] } );
+
+			render(
+				<MemoryRouter
+					initialEntries={ [
+						'/woopayments/transactions/details?id=pi_auth&transaction_id=txn_auth',
+					] }
+				>
+					<WooPaymentsTransactionDetailsPage />
+				</MemoryRouter>
+			);
+
+			await screen.findByRole( 'heading', { name: 'Timeline' } );
+			expect(
+				screen.queryByText( 'Error retrieving authorization.', {
+					selector: '.woocommerce-woopayments-money-movement__status',
+				} ) !== null
+			).toBe( isReported );
+		}
+	);
+
 	it( 'approves a fraud-review transaction from transaction details', async () => {
 		let resolveCapture: ( value: unknown ) => void = () => undefined;
 		const capturePromise = new Promise( ( resolve ) => {

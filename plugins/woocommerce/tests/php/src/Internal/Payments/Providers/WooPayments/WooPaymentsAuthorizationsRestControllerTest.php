@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -408,6 +409,55 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
+	 * The extension reads the intent inside its generic catch, so a platform failure there answers its generic error
+	 * after logging it (class-wc-rest-payments-orders-controller.php:389-391, :434-437, :628-630, :667-670). The faked
+	 * failure is the shape the API client builds from a platform error body and its HTTP status.
+	 *
+	 * @testdox A failed intent read before $action answers the logged generic 500 error.
+	 * @dataProvider provide_authorization_actions
+	 *
+	 * @param string $action  Route action.
+	 * @param string $message Expected log line.
+	 */
+	public function test_failed_intent_read_answers_the_generic_error( string $action, string $message ): void {
+		$logger = RecordingWcLogger::install();
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
+		$this->create_authorizations_controller( true )->register_routes();
+		$order                       = $this->create_authorized_order( 'pi_auth' );
+		$this->api_client->exception = new WooPaymentsApiException( 'No such payment_intent.', 'resource_missing', 404 );
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
+		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
+		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+	}
+
+	/**
+	 * Faked failures are the shape the API client builds from a platform error body and its HTTP status; an encode
+	 * failure carries none (wcpay_client_unable_to_encode_json, status 0).
+	 *
+	 * @testdox A "$code" failure with status $platform_status on the authorization detail route answers $expected_status.
+	 * @testWith ["wcpay_client_unable_to_encode_json", 0, 500]
+	 *           ["authorization_missing", 404, 404]
+	 *
+	 * @param string $code            Platform error code.
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param int    $expected_status Expected answer status.
+	 */
+	public function test_authorization_detail_answers_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
+		$this->create_authorizations_controller( true )->register_routes();
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/authorizations/pi_1' ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
+	}
+
+	/**
 	 * Authorization actions and the line their unexpected errors log.
 	 *
 	 * @return array<string,array{0:string,1:string}>
@@ -571,6 +621,43 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 							'minimum_amount_currency' => 'EUR',
 						),
 						'error_type'    => 'amount_too_small',
+					),
+				),
+			),
+			// The API client's encode failure carries no HTTP status, which the client passes on (class-wc-rest-payments-orders-controller.php:419).
+			'capture fails with status 0'       => array(
+				'capture',
+				array(
+					PaymentOutcome::DATA_ERROR_CODE    => 'wcpay_client_unable_to_encode_json',
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'Unable to encode the WooPayments request body.',
+					'http_code'                        => 0,
+					'extra_details'                    => array(),
+				),
+				array(
+					'status'  => 0,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'Unable to encode the WooPayments request body.',
+					'data'    => array(
+						'status'        => 0,
+						'extra_details' => array(),
+						'error_type'    => 'wcpay_client_unable_to_encode_json',
+					),
+				),
+			),
+			// A refusal with a message and no platform status (the order payment lock) answers 502 ($result['http_code'] ?? 502, class-wc-rest-payments-orders-controller.php:419).
+			'capture refused without a status'  => array(
+				'capture',
+				array(
+					PaymentOutcome::DATA_ERROR_MESSAGE => 'A payment operation is already in progress for this order.',
+				),
+				array(
+					'status'  => 502,
+					'code'    => 'wcpay_capture_error',
+					'message' => $capture_prefix . 'A payment operation is already in progress for this order.',
+					'data'    => array(
+						'status'        => 502,
+						'extra_details' => array(),
+						'error_type'    => null,
 					),
 				),
 			),

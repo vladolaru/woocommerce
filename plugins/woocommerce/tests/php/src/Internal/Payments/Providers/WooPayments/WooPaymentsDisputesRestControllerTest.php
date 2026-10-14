@@ -622,16 +622,26 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions carry their HTTP status into REST responses.
+	 * A 4xx or 5xx platform status reaches the answer; any other status answers 500. The faked failures are the shape the
+	 * API client builds from a platform error body and its HTTP status; an unreadable body keeps the answer's status, 200
+	 * included (wcpay_unparseable_or_null_body).
+	 *
+	 * @testdox A "$code" platform failure with status $platform_status answers $expected_status.
+	 * @testWith ["resource_missing", 404, 404]
+	 *           ["wcpay_unparseable_or_null_body", 200, 500]
+	 *
+	 * @param string $code            Platform error code.
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param int    $expected_status Expected answer status.
 	 */
-	public function test_api_exceptions_preserve_status(): void {
+	public function test_api_exceptions_answer_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
 		$this->create_disputes_controller( true )->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Missing dispute.', 'resource_missing', 404 );
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/dp_missing' ) );
 
-		$this->assertSame( 404, $response->get_status() );
-		$this->assertSame( 'resource_missing', $response->get_data()['code'] );
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
 	}
 
 	/**

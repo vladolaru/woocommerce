@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
@@ -94,7 +93,7 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return WP_REST_Response|WP_Error
+	 * @return WP_REST_Response
 	 */
 	public function get_customer_payment_methods( WP_REST_Request $request ) {
 		$customer_id     = (string) $request->get_param( 'customer_id' );
@@ -108,7 +107,14 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 				);
 			}
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The body and status the client's wp_send_json_error( $message, 403 ) sends, without its exit (class-wc-rest-payments-customer-controller.php:78-83).
+			return new WP_REST_Response(
+				array(
+					'success' => false,
+					'data'    => wp_strip_all_tags( $exception->getMessage() ),
+				),
+				403
+			);
 		}
 
 		return new WP_REST_Response(
@@ -186,30 +192,6 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'check_permission' ),
-		);
-	}
-
-	/**
-	 * Convert a WooPayments API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception Exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$error_code = $exception->get_error_code();
-		if ( '' === $error_code ) {
-			$error_code = 'wcpay_api_error';
-		}
-
-		$http_code = $exception->get_http_code();
-		if ( ! $http_code ) {
-			$http_code = 403;
-		}
-
-		return new WP_Error(
-			$error_code,
-			wp_strip_all_tags( $exception->getMessage() ),
-			array( 'status' => $http_code )
 		);
 	}
 }

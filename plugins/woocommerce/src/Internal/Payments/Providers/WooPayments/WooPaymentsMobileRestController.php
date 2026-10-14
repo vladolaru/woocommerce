@@ -455,10 +455,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			$intent = $this->api_client->create_terminal_payment_intention( $request_data );
 
 			return new WP_REST_Response( array( 'id' => $intent['id'] ?? null ) );
-		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
 		} catch ( Throwable $exception ) {
-			// The client logs before its generic answer (class-wc-rest-payments-orders-controller.php:544-545).
+			// Platform failures included, the client logs and answers its generic error (class-wc-rest-payments-orders-controller.php:544-547).
 			$this->get_logger()->log_throwable( 'Failed to create a terminal payment intent via the REST API.', $exception, array( 'order_id' => $order->get_id() ) );
 
 			return $this->server_error();
@@ -523,7 +521,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		$intent_id = $this->get_request_string( $request, 'payment_intent_id' );
 		if ( '' === $intent_id ) {
-			return new WP_Error( 'wcpay_missing_payment_intent_id', __( 'Payment intent ID is required.', 'woocommerce' ), array( 'status' => 400 ) );
+			// The client's intent read refuses an empty ID inside its generic catch (class-wc-rest-payments-orders-controller.php:197-199, :289-292).
+			return $this->server_error();
 		}
 
 		$order_payment_lock = wc_get_container()->get( OrderPaymentLock::class );
@@ -722,10 +721,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$location          = $this->get_request_string( $request, 'location' );
 		$registration_code = $this->get_request_string( $request, 'registration_code' );
 
-		if ( '' === $location || '' === $registration_code ) {
-			return new WP_Error( 'wcpay_missing_reader_registration_data', __( 'Reader location and registration code are required.', 'woocommerce' ), array( 'status' => 400 ) );
-		}
-
 		$label        = $this->get_request_string( $request, 'label' );
 		$raw_metadata = $request->get_param( 'metadata' );
 		$metadata     = is_array( $raw_metadata ) ? $raw_metadata : null;
@@ -744,7 +739,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 			return new WP_REST_Response( $this->extract_reader( $reader ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The client answers the platform's status, 0 included (class-wc-rest-payments-reader-controller.php:206-213).
+			return new WP_Error( $exception->get_error_code(), $exception->getMessage(), array( 'status' => $exception->get_http_code() ) );
 		}
 	}
 
@@ -773,7 +769,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			// The client's own code, with no status (class-wc-rest-payments-reader-controller.php:165-167).
+			return new WP_Error( 'wcpay_get_summary', $exception->getMessage() );
 		}
 	}
 
@@ -831,10 +828,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 				)
 			);
 		} catch ( Throwable $exception ) {
-			$status = 500;
-			if ( $exception instanceof WooPaymentsApiException && 0 < $exception->get_http_code() ) {
-				$status = $exception->get_http_code();
-			}
+			// The client answers a platform failure's status, 0 included (class-wc-rest-payments-reader-controller.php:316-318).
+			$status = $exception instanceof WooPaymentsApiException ? $exception->get_http_code() : 500;
 
 			return new WP_Error( 'generate_print_receipt_error', $exception->getMessage(), array( 'status' => $status ) );
 		}
@@ -852,7 +847,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 
 		$address = $this->get_store_terminal_address();
 		if ( empty( $address['country'] ) || empty( $address['city'] ) || empty( $address['postal_code'] ) || empty( $address['line1'] ) ) {
-			return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ), array( 'status' => 400 ) );
+			// No status, as the apps read only the code (class-wc-rest-payments-terminal-locations-controller.php:135-149).
+			return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ) );
 		}
 
 		try {
@@ -873,7 +869,7 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 			return new WP_REST_Response( $this->extract_location( $location ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			if ( 'invalid_request_error' === $exception->get_error_code() ) {
-				return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ), array( 'status' => 400 ) );
+				return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ) );
 			}
 
 			return $this->api_exception_to_wp_error( $exception );
@@ -1133,7 +1129,8 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 		$result     = array(
 			'error_code' => $exception->get_error_code(),
 			'message'    => esc_html( $exception->getMessage() ),
-			'http_code'  => 0 < $exception->get_http_code() ? $exception->get_http_code() : 502,
+			// The client keeps the platform's status, 0 included, and answers 502 only without a message (class-wc-payment-gateway-wcpay.php:3994, :4043-4048).
+			'http_code'  => '' !== $exception->getMessage() ? $exception->get_http_code() : 502,
 		);
 		$error_data = $exception->get_error_data();
 		if ( 'amount_too_small' === $exception->get_error_code() && isset( $error_data['minimum_amount'], $error_data['currency'] ) && is_numeric( $error_data['minimum_amount'] ) && is_string( $error_data['currency'] ) ) {
@@ -2049,17 +2046,13 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Convert an API exception to a REST error.
+	 * Convert an API exception to a REST error with no status (500), as the mobile apps get it from the client (class-wc-payments-rest-controller.php:48-57).
 	 *
 	 * @param WooPaymentsApiException $exception API exception.
 	 * @return WP_Error
 	 */
 	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => 0 < $exception->get_http_code() ? $exception->get_http_code() : 500 )
-		);
+		return new WP_Error( $exception->get_error_code(), $exception->getMessage() );
 	}
 
 	/**

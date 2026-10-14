@@ -228,11 +228,32 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public ?WooPaymentsApiException $update_customer_exception = null;
 
 	/**
+	 * Platform failures by API client method name, thrown before the method answers.
+	 *
+	 * @var array<string,WooPaymentsApiException>
+	 */
+	public array $method_exceptions = array();
+
+	/**
+	 * Throw the platform failure set for a method, if any.
+	 *
+	 * @param string $method API client method name.
+	 * @throws WooPaymentsApiException The failure set for the method.
+	 */
+	private function maybe_fail( string $method ): void {
+		if ( isset( $this->method_exceptions[ $method ] ) ) {
+			throw $this->method_exceptions[ $method ];
+		}
+	}
+
+	/**
 	 * Create a terminal connection token.
 	 *
 	 * @return array<string,mixed>
 	 */
 	public function create_terminal_connection_token(): array {
+		$this->maybe_fail( __FUNCTION__ );
+
 		return $this->connection_token_response;
 	}
 
@@ -244,6 +265,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function create_terminal_payment_intention( array $request_data ): array {
 		$this->last_terminal_intent_payload = $request_data;
+		$this->maybe_fail( __FUNCTION__ );
 
 		return array( 'id' => 'pi_terminal' );
 	}
@@ -279,6 +301,8 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_terminal_readers(): array {
+		$this->maybe_fail( __FUNCTION__ );
+
 		return $this->terminal_readers_response;
 	}
 
@@ -330,6 +354,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 */
 	public function get_transaction( string $transaction_id ): array {
 		unset( $transaction_id );
+		$this->maybe_fail( __FUNCTION__ );
 
 		return $this->transaction_response;
 	}
@@ -340,6 +365,8 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_terminal_locations(): array {
+		$this->maybe_fail( __FUNCTION__ );
+
 		return $this->terminal_locations_response;
 	}
 
@@ -369,6 +396,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			'address'      => $address,
 			'metadata'     => $metadata,
 		);
+		$this->maybe_fail( __FUNCTION__ );
 
 		return array(
 			'id'           => 'tml_created',

@@ -310,10 +310,17 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox API exceptions without an upstream HTTP status fall back to a 500 server error status.
+	 * Faked failures are the shape the API client builds from a platform error body and its HTTP status: an encode failure
+	 * carries none (0) and an unreadable body keeps the answer's status, 200 included (wcpay_unparseable_or_null_body).
+	 *
+	 * @testdox API exceptions with platform status $platform_status fall back to a 500 server error status.
+	 * @testWith [0]
+	 *           [200]
+	 *
+	 * @param int $platform_status Platform HTTP status.
 	 */
-	public function test_api_exceptions_without_http_code_default_to_server_error_status(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable' );
+	public function test_api_exceptions_without_http_code_default_to_server_error_status( int $platform_status ): void {
+		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', $platform_status );
 
 		$response = $this->sut->get_loans( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loans' ) );
 

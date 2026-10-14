@@ -246,21 +246,36 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Customer payment methods route returns a sanitized API error.
+	 * A platform error answers 403 with the success/data body, whatever the platform's status, as the extension's
+	 * wp_send_json_error( $message, 403 ) does (class-wc-rest-payments-customer-controller.php:78-83).
+	 *
+	 * The faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a
+	 * platform error body and its HTTP status.
+	 *
+	 * @testdox Customer payment methods route answers a platform $platform_status error with 403 and the stripped message.
+	 * @testWith [404, "resource_missing"]
+	 *           [403, "wcpay_forbidden"]
+	 *
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param string $platform_code   Platform error code.
 	 */
-	public function test_route_returns_api_error(): void {
+	public function test_route_answers_platform_errors_with_403( int $platform_status, string $platform_code ): void {
 		$this->account_service->gateway_settings = array(
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
-		$this->customer_service->exception       = new WooPaymentsApiException( 'Forbidden <b>secret</b>.', 'wcpay_forbidden', 403 );
+		$this->customer_service->exception       = new WooPaymentsApiException( 'Forbidden <b>secret</b>.', $platform_code, $platform_status );
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/customers/cus_test/payment_methods' ) );
 
 		$this->assertSame( 403, $response->get_status() );
-		$this->assertSame( 'wcpay_forbidden', $response->as_error()->get_error_code() );
-		$this->assertStringContainsString( 'Forbidden secret.', $response->as_error()->get_error_message() );
-		$this->assertStringNotContainsString( '<b>', $response->as_error()->get_error_message() );
+		$this->assertSame(
+			array(
+				'success' => false,
+				'data'    => 'Forbidden secret.',
+			),
+			$response->get_data()
+		);
 	}
 
 	/**

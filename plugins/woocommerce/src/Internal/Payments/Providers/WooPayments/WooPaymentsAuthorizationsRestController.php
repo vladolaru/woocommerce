@@ -416,13 +416,10 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 * @param string   $payment_intent_id PaymentIntent ID.
 	 * @param string   $action            Action name.
 	 * @return array<string,mixed>|WP_Error
+	 * @throws WooPaymentsApiException When the intent read fails; the route's generic catch answers it, as the client's does (class-wc-rest-payments-orders-controller.php:389-391, :434-437).
 	 */
 	private function validate_live_authorization_intent( WC_Order $order, string $payment_intent_id, string $action ) {
-		try {
-			$intent = $this->api_client->get_payment_intention( $payment_intent_id );
-		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
-		}
+		$intent = $this->api_client->get_payment_intention( $payment_intent_id );
 
 		$metadata                 = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 		$intent_meta_order_id_raw = $metadata['order_id'] ?? '';
@@ -590,7 +587,7 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		}
 
 		$error_type    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : null;
-		$http_code     = isset( $data['http_code'] ) ? (int) $data['http_code'] : 0;
+		$http_code     = isset( $data['http_code'] ) ? (int) $data['http_code'] : 502;
 		$extra_details = isset( $data['extra_details'] ) && is_array( $data['extra_details'] ) ? $data['extra_details'] : array();
 		$message       = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, $extra_details );
 
@@ -602,7 +599,8 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 				'' !== $message ? esc_html( $message ) : __( 'Unknown error', 'woocommerce' )
 			),
 			array(
-				'status'        => '' !== $message && 0 < $http_code ? $http_code : 502,
+				// The client's $result['http_code'] ?? 502, which keeps a platform status of 0 (class-wc-rest-payments-orders-controller.php:419).
+				'status'        => '' !== $message ? $http_code : 502,
 				'extra_details' => $extra_details,
 				'error_type'    => $error_type,
 			)
@@ -610,26 +608,19 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Convert a WooPayments API exception to a REST error.
+	 * Convert an API exception to a REST error.
 	 *
-	 * @param WooPaymentsApiException $exception Exception.
+	 * @param WooPaymentsApiException $exception API exception.
 	 * @return WP_Error
 	 */
 	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$error_code = $exception->get_error_code();
-		if ( '' === $error_code ) {
-			$error_code = 'wcpay_api_error';
-		}
-
 		$http_code = $exception->get_http_code();
-		if ( ! $http_code ) {
-			$http_code = 400;
-		}
+		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
 
 		return new WP_Error(
-			$error_code,
+			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
 			$exception->getMessage(),
-			array( 'status' => $http_code )
+			array( 'status' => $status )
 		);
 	}
 }

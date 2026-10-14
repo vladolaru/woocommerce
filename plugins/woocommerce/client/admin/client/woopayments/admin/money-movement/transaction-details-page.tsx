@@ -130,26 +130,12 @@ const getIntentCharge = ( intent: WooPaymentsPaymentIntent ) =>
 const getNotices = () =>
 	dispatch( 'core/notices' ) as unknown as NoticeDispatch;
 
-const getErrorStatus = ( error: unknown ) => {
-	if ( ! error || typeof error !== 'object' ) {
-		return undefined;
-	}
-
-	if ( 'status' in error && typeof error.status === 'number' ) {
-		return error.status;
-	}
-
-	if ( 'data' in error && error.data && typeof error.data === 'object' ) {
-		const data = error.data;
-		if ( 'status' in data && typeof data.status === 'number' ) {
-			return data.status;
-		}
-	}
-
-	return undefined;
-};
-
-const isNotFoundError = ( error: unknown ) => getErrorStatus( error ) === 404;
+// Client 11.1.0 `data/authorizations/resolvers.ts:90-93`: a payment with no authorization answers this code, which is not a failure.
+const isMissingAuthorizationError = ( error: unknown ) =>
+	!! error &&
+	typeof error === 'object' &&
+	'code' in error &&
+	error.code === 'authorization_missing';
 
 const getPaymentIntentId = (
 	transaction: WooPaymentsTransaction,
@@ -715,7 +701,9 @@ export const WooPaymentsTransactionDetailsPage = () => {
 					} catch ( authorizationError ) {
 						nextAuthorization = null;
 						// Client 11.1.0 `data/authorizations/resolvers.ts:90-98`: its own copy, not the server's message.
-						if ( ! isNotFoundError( authorizationError ) ) {
+						if (
+							! isMissingAuthorizationError( authorizationError )
+						) {
 							nextAuthorizationErrorMessage = __(
 								'Error retrieving authorization.',
 								'woocommerce'
