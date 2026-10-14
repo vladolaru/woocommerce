@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Task;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use DateTime;
 use DateTimeZone;
 
@@ -273,40 +272,13 @@ class WooPaymentsDisputesTask extends Task {
 	}
 
 	/**
-	 * Client `WC_Payments_Utils::format_currency()` over a Stripe minor-unit amount.
+	 * Client `WC_Payments_Utils::format_currency( interpret_stripe_amount() )` over a Stripe minor-unit amount.
 	 *
 	 * @param int    $amount   Amount in minor units.
 	 * @param string $currency Currency code.
 	 * @return string
 	 */
 	private function format_amount( int $amount, string $currency ): string {
-		$currency = strtoupper( $currency );
-		$args     = array( 'currency' => $currency );
-		$format   = wc_get_container()->get( MultiCurrencyLocalizationService::class )->get_currency_format( $currency );
-		$patterns = array(
-			'right'       => '%2$s%1$s',
-			'left_space'  => '%1$s %2$s',
-			'right_space' => '%2$s %1$s',
-		);
-
-		if ( isset( $format['thousand_sep'] ) ) {
-			$args['thousand_separator'] = $format['thousand_sep'];
-		}
-		if ( isset( $format['decimal_sep'] ) ) {
-			$args['decimal_separator'] = $format['decimal_sep'];
-		}
-		if ( isset( $format['num_decimals'] ) ) {
-			$args['decimals'] = $format['num_decimals'];
-		}
-		if ( isset( $format['currency_pos'] ) ) {
-			$args['price_format'] = $patterns[ $format['currency_pos'] ] ?? '%1$s%2$s';
-		}
-
-		return html_entity_decode(
-			wp_strip_all_tags(
-				wc_price( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $args )
-			),
-			ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401
-		);
+		return WooPaymentsCurrencyUtils::format_currency( WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, $currency ), $currency );
 	}
 }
