@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -637,7 +638,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 
 		$account_service  = $this->create_account_service( $account_data );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), wc_get_container()->get( WooPaymentsFraudRulesetService::class ) );
+		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), wc_get_container()->get( WooPaymentsFraudRulesetService::class ), wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ) );
 
 		try {
 			$snapshot = $this->send_store_setup_snapshot( $settings, $account_service, $settings_service );
@@ -728,12 +729,13 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the store setup sync and return the one snapshot it sends to the platform.
 	 *
-	 * @param array<string,mixed>             $settings         Gateway settings to store first.
-	 * @param WooPaymentsAccountService|null  $account_service  Account service, or the default double.
-	 * @param WooPaymentsSettingsService|null $settings_service Settings service, or none.
+	 * @param array<string,mixed>                            $settings                          Gateway settings to store first.
+	 * @param WooPaymentsAccountService|null                 $account_service                   Account service, or the default double.
+	 * @param WooPaymentsSettingsService|null                $settings_service                  Settings service, or none.
+	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return array<string,mixed>
 	 */
-	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsSettingsService $settings_service = null ): array {
+	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null ): array {
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 
 		$snapshots  = array();
@@ -746,7 +748,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service, $duplicate_gateway_methods_service )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
 
@@ -758,7 +760,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @dataProvider provider_store_setup_sync_multi_currency_flag
 	 *
 	 * @param array<string,string>   $flag_options        Multi-Currency flag option to write; none leaves it never written.
-	 * @param array<string,string[]> $duplicates          Duplicate gateways the settings service finds, by payment method.
+	 * @param array<string,string[]> $duplicates          Duplicate gateways found, by payment method.
 	 * @param bool                   $expected_mc_enabled The Multi-Currency flag the snapshot reports.
 	 */
 	public function test_store_setup_sync_reports_duplicates_and_multi_currency( array $flag_options, array $duplicates, bool $expected_mc_enabled ): void {
@@ -767,13 +769,13 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			update_option( $option, $value );
 		}
 
-		$settings_service = $this->getMockBuilder( WooPaymentsSettingsService::class )
+		$duplicate_gateway_methods_service = $this->getMockBuilder( WooPaymentsDuplicateGatewayMethodsService::class )
 			->onlyMethods( array( 'get_duplicated_payment_method_ids' ) )
 			->getMock();
-		$settings_service->method( 'get_duplicated_payment_method_ids' )
+		$duplicate_gateway_methods_service->method( 'get_duplicated_payment_method_ids' )
 			->willReturn( $duplicates );
 
-		$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), null, $settings_service );
+		$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), null, null, $duplicate_gateway_methods_service );
 
 		$this->assertSame( $duplicates, $snapshot['payment_methods']['duplicates'] );
 		$this->assertSame( $expected_mc_enabled, $snapshot['multi_currency_enabled'] );
@@ -1563,23 +1565,26 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an operational queue service.
 	 *
-	 * @param WooPaymentsActionSchedulerService|null $scheduler          Scheduler service.
-	 * @param WooPaymentsApiClient|null              $api_client         API client.
-	 * @param WooPaymentsAccountService|null         $account_service    Account service.
-	 * @param WooPaymentsSettingsService|null        $settings_service   Settings service.
+	 * @param WooPaymentsActionSchedulerService|null         $scheduler          Scheduler service.
+	 * @param WooPaymentsApiClient|null                      $api_client         API client.
+	 * @param WooPaymentsAccountService|null                 $account_service    Account service.
+	 * @param WooPaymentsSettingsService|null                $settings_service   Settings service.
+	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return WooPaymentsOperationalQueueService
 	 */
 	private function create_service(
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
-		?WooPaymentsSettingsService $settings_service = null
+		?WooPaymentsSettingsService $settings_service = null,
+		?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null
 	): WooPaymentsOperationalQueueService {
 		$service = new WooPaymentsOperationalQueueService();
 		$service->init(
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
+			$duplicate_gateway_methods_service ?? wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ),
 			$settings_service
 		);
 

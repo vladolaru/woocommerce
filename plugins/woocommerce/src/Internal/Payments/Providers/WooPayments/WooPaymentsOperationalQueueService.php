@@ -199,6 +199,13 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Duplicate gateway methods service.
+	 *
+	 * @var WooPaymentsDuplicateGatewayMethodsService
+	 */
+	private WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service;
+
+	/**
 	 * WooPayments settings service.
 	 *
 	 * @var WooPaymentsSettingsService|null
@@ -210,21 +217,24 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsActionSchedulerService $scheduler          Action Scheduler service.
-	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
-	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
-	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
+	 * @param WooPaymentsActionSchedulerService         $scheduler                         Action Scheduler service.
+	 * @param WooPaymentsApiClient                      $api_client                        WooPayments API client.
+	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
+	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
+	 * @param WooPaymentsSettingsService|null           $settings_service                  Optional WooPayments settings service.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
+		WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service,
 		?WooPaymentsSettingsService $settings_service = null
 	): void {
-		$this->scheduler        = $scheduler;
-		$this->api_client       = $api_client;
-		$this->account_service  = $account_service;
-		$this->settings_service = $settings_service;
+		$this->scheduler                         = $scheduler;
+		$this->api_client                        = $api_client;
+		$this->account_service                   = $account_service;
+		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
+		$this->settings_service                  = $settings_service;
 	}
 
 	/**
@@ -954,7 +964,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'available'  => $payment_methods_available,
 				'enabled'    => $payment_methods_enabled,
 				'disabled'   => $payment_methods_disabled,
-				'duplicates' => $this->get_settings_service()->get_duplicated_payment_method_ids(),
+				'duplicates' => $this->duplicate_gateway_methods_service->get_duplicated_payment_method_ids(),
 			),
 			'provider_capabilities'                       => array(
 				'available' => $provider_capabilities_available,

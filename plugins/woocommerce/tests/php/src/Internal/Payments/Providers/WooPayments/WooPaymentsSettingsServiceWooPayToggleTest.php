@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
@@ -80,6 +81,8 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 		$api_client            = new RecordingSettingsApiClient();
 		$fraud_ruleset_service = new WooPaymentsFraudRulesetService();
 		$fraud_ruleset_service->init( $account_service, $api_client, wc_get_container()->get( WooPaymentsLogger::class ) );
+		$duplicate_gateway_methods_service = new WooPaymentsDuplicateGatewayMethodsService();
+		$duplicate_gateway_methods_service->init( $account_service, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$this->sut = new WooPaymentsSettingsService();
 		$this->sut->init(
 			$account_service,
@@ -89,6 +92,7 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ),
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			$fraud_ruleset_service,
+			$duplicate_gateway_methods_service,
 			new RecordingWooPaySessionService()
 		);
 	}

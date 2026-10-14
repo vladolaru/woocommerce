@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use WC_Unit_Test_Case;
 
@@ -55,7 +56,7 @@ class WooPaymentsStoreSetupSyncMultisiteTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsOperationalQueueService();
-		$service->init( new RecordingActionSchedulerService(), $api_client, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$service->init( new RecordingActionSchedulerService(), $api_client, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ) );
 
 		try {
 			$service->handle_wcpay_store_setup_sync();
