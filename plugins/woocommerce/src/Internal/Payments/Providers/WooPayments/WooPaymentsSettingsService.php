@@ -645,7 +645,7 @@ class WooPaymentsSettingsService {
 				continue;
 			}
 
-			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators; the mirror's read paths (JSON settings responses and the escaped IPP receipt templates) all encode at output.
+			// Store exactly what update_provider_backed_settings() sent to the platform: the local mirror is a cache-unavailable fallback for the account data, so a value that diverges from the wire (e.g. a sanitized-to-empty color) would misreport the account. Format guarantees live at the REST boundary validators; the mirror's read path, the JSON settings response, encodes at output.
 			$settings[ $request_key ] = $params[ $request_key ];
 		}
 

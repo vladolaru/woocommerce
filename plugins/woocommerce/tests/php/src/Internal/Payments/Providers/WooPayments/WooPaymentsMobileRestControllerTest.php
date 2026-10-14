@@ -50,6 +50,13 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private array $gateway_settings = array();
 
 	/**
+	 * Cached account data the account service double answers.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $account_data = array();
+
+	/**
 	 * Number of account-data refreshes requested from the account service.
 	 *
 	 * @var int
@@ -64,6 +71,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->api_client            = new RecordingTerminalApiClient();
 		$this->gateway_settings      = array();
+		$this->account_data          = array();
 		$this->account_refresh_calls = 0;
 		$this->sut                   = $this->create_controller();
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
@@ -633,18 +641,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_generate_print_receipt_uses_order_and_charge_receipt_data(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
-		$this->gateway_settings                       = array(
-			'account_business_name'            => 'Generated Receipt Lab',
-			'account_business_support_address' => array(
-				'line1'       => '123 Support St',
-				'city'        => 'San Francisco',
-				'state'       => 'CA',
-				'postal_code' => '94107',
-				'country'     => 'US',
-			),
-			'account_business_support_phone'   => '+1 555 0200',
-			'account_business_support_email'   => 'generated@example.com',
-		);
+		$this->account_data                           = $this->get_receipt_account();
+		$this->gateway_settings                       = $this->get_saved_business_details();
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_receipt',
 			'status'   => 'succeeded',
@@ -690,6 +688,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertStringContainsString( 'Generated Receipt Lab', $html );
 		$this->assertStringContainsString( '123 Support St', $html );
 		$this->assertStringContainsString( '+1 555 0200 generated@example.com', $html );
+		$this->assertStringNotContainsString( 'Saved Store', $html, 'Business details saved in the settings must not be printed.' );
+		$this->assertStringNotContainsString( '9 Saved Road', $html );
 		$this->assertStringContainsString( 'Order ' . $order->get_id(), $html );
 		$this->assertStringContainsString( 'AMOUNT PAID', $html );
 		$this->assertStringContainsString( 'eftpos - 0978', $html );
@@ -705,10 +705,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_generate_print_receipt_embeds_account_branding_logo(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
-		$this->gateway_settings                       = array(
-			'account_business_name' => 'Logo Receipt Lab',
-			'account_branding_logo' => 'file_logo_123',
-		);
+		$this->account_data                           = $this->get_receipt_account();
+		$this->account_data['branding']['logo']       = 'file_logo_123';
+		$this->gateway_settings                       = array( 'account_branding_logo' => 'file_saved_logo' );
 		$this->api_client->file_contents_response     = array(
 			'content_type' => 'image/png',
 			'file_content' => base64_encode( 'logo-bytes' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
@@ -756,6 +755,167 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( array( 'file_logo_123', false ), $this->api_client->last_file_contents_request, 'The logo must be fetched platform-side (as_account false) like the reference client.' );
 		$this->assertStringContainsString( 'class="branding-logo"', $html );
 		$this->assertStringContainsString( 'data:image/png;base64,' . base64_encode( 'logo-bytes' ), $html ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
+	}
+
+	/**
+	 * @testdox Generated receipts fetch no logo when the account has none, whatever the settings hold.
+	 */
+	public function test_generate_print_receipt_fetches_no_logo_without_an_account_logo(): void {
+		$order                  = $this->create_order( 12.34, 'USD' );
+		$this->account_data     = $this->get_receipt_account();
+		$this->gateway_settings = array( 'account_branding_logo' => 'file_saved_logo' );
+		$this->prepare_receipt_payment( $order );
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$html = $this->sut->generate_print_receipt( $request )->get_data()['html_content'];
+
+		$this->assertSame( array(), $this->api_client->last_file_contents_request, 'No logo file is fetched for an account without a logo.' );
+		$this->assertStringNotContainsString( 'class="branding-logo"', $html );
+	}
+
+	/**
+	 * @testdox Generated receipts print only the business details the account has ($description).
+	 * @dataProvider receipt_account_gaps_provider
+	 *
+	 * @param string              $description  Case.
+	 * @param array<string,mixed> $account      Cached account data.
+	 * @param string[]            $contains     Strings the receipt shows.
+	 * @param string[]            $not_contains Strings the receipt must not show.
+	 */
+	public function test_generate_print_receipt_prints_only_what_the_account_has( string $description, array $account, array $contains, array $not_contains ): void {
+		unset( $description );
+		update_option( 'woocommerce_store_address', '500 Store Avenue' );
+		$order                  = $this->create_order( 12.34, 'USD' );
+		$this->account_data     = $account;
+		$this->gateway_settings = $this->get_saved_business_details();
+		$this->prepare_receipt_payment( $order );
+
+		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
+		$request->set_param( 'payment_intent_id', 'pi_receipt' );
+
+		$html = $this->sut->generate_print_receipt( $request )->get_data()['html_content'];
+
+		foreach ( $contains as $expected ) {
+			$this->assertStringContainsString( $expected, $html );
+		}
+		foreach ( $not_contains as $unexpected ) {
+			$this->assertStringNotContainsString( $unexpected, $html );
+		}
+	}
+
+	/**
+	 * Provide accounts lacking business details: case, account, shown strings, absent strings.
+	 *
+	 * Expected values follow client includes/admin/class-wc-rest-payments-reader-controller.php:304-312 and its template
+	 * (includes/in-person-payments/templates/html-in-person-payment-receipt.php:119-130): no address block for an empty
+	 * address, an empty title and contact line without a profile.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string[],3:string[]}>
+	 */
+	public function receipt_account_gaps_provider(): array {
+		$no_address                                        = $this->get_receipt_account();
+		$no_address['business_profile']['support_address'] = array();
+
+		return array(
+			'empty support address' => array(
+				'empty support address',
+				$no_address,
+				array( '<h1 class="title">Generated Receipt Lab</h1>', '+1 555 0200 generated@example.com' ),
+				array( '<div class="store__address">', '500 Store Avenue', '9 Saved Road' ),
+			),
+			'no business profile'   => array(
+				'no business profile',
+				array(
+					'account_id' => 'acct_receipt',
+					'is_live'    => true,
+				),
+				array( '<h1 class="title"></h1>' ),
+				array( '<div class="store__address">', 'Saved Store', get_bloginfo( 'name' ) . '</h1>', get_option( 'admin_email' ) ),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Receipt previews take each business detail the request leaves empty from the account ($description).
+	 * @dataProvider preview_account_fallback_provider
+	 *
+	 * @param string              $description  Case.
+	 * @param array<string,mixed> $params       Request body.
+	 * @param array<string,mixed> $account      Cached account data.
+	 * @param string[]            $contains     Strings the preview shows.
+	 * @param string[]            $not_contains Strings the preview must not show.
+	 */
+	public function test_preview_print_receipt_reads_the_account_where_the_request_gives_nothing( string $description, array $params, array $account, array $contains, array $not_contains ): void {
+		unset( $description );
+		update_option( 'woocommerce_store_address', '500 Store Avenue' );
+		$this->account_data     = $account;
+		$this->gateway_settings = $this->get_saved_business_details();
+		$request                = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
+		$request->set_body_params( $params );
+
+		$html = $this->sut->preview_print_receipt( $request )->get_data()['html_content'];
+
+		foreach ( $contains as $expected ) {
+			$this->assertStringContainsString( $expected, $html );
+		}
+		foreach ( $not_contains as $unexpected ) {
+			$this->assertStringNotContainsString( $unexpected, $html );
+		}
+	}
+
+	/**
+	 * Provide preview rows: case, request body, account, shown strings, absent strings.
+	 *
+	 * Expected values follow client includes/admin/class-wc-rest-payments-reader-controller.php:347-360: each camelCase
+	 * field when not empty, else the account, and always the six address lines.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string[],4:string[]}>
+	 */
+	public function preview_account_fallback_provider(): array {
+		$account    = $this->get_receipt_account();
+		$no_address = $account;
+		$no_address['business_profile']['support_address'] = array();
+		$from_account                                      = array( '<h1 class="title">Generated Receipt Lab</h1>', '123 Support St', '+1 555 0200 generated@example.com' );
+		$not_saved = array( 'Saved Store', '9 Saved Road', 'saved@example.test' );
+
+		return array(
+			'nothing in the request'            => array( 'nothing in the request', array(), $account, $from_account, $not_saved ),
+			'empty address in the request'      => array( 'empty address in the request', array( 'accountBusinessSupportAddress' => array() ), $account, $from_account, $not_saved ),
+			'request fields'                    => array(
+				'request fields',
+				array(
+					'accountBusinessName'           => 'Request Store',
+					'accountBusinessSupportAddress' => array(
+						'line1'       => '1 Request Way',
+						'line2'       => '',
+						'city'        => 'Austin',
+						'state'       => 'TX',
+						'postal_code' => '73301',
+						'country'     => 'US',
+					),
+					'accountBusinessSupportPhone'   => '+1 555 0400',
+					'accountBusinessSupportEmail'   => 'request@example.test',
+				),
+				$account,
+				array( '<h1 class="title">Request Store</h1>', '1 Request Way', '+1 555 0400 request@example.test' ),
+				array( 'Generated Receipt Lab', '123 Support St', '+1 555 0200', 'generated@example.com' ),
+			),
+			'snake_case fields'                 => array(
+				'snake_case fields',
+				array(
+					'business_name'   => 'Alias Store',
+					'support_address' => array( 'line1' => '7 Alias Lane' ),
+					'support_phone'   => '+1 555 0300',
+					'support_email'   => 'alias@example.test',
+				),
+				$account,
+				$from_account,
+				array( 'Alias Store', '7 Alias Lane', '+1 555 0300', 'alias@example.test' ),
+			),
+			'account without a support address' => array( 'account without a support address', array(), $no_address, array( '<div class="store__address">' ), array( '500 Store Avenue', '9 Saved Road' ) ),
+		);
 	}
 
 	/**
@@ -2641,6 +2801,102 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Get an account with a business profile, in the shape recorded in Fixtures/platform-test-drive-account.json
+	 * `account.business_profile` and `account.branding` (:597-609), with varied values: an address in Stripe's
+	 * six-line shape with no second line, and no logo.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_receipt_account(): array {
+		return array(
+			'account_id'       => 'acct_receipt',
+			'is_live'          => true,
+			'business_profile' => array(
+				'name'            => 'Generated Receipt Lab',
+				'url'             => 'https://receipts.example.test',
+				'support_address' => array(
+					'city'        => 'San Francisco',
+					'country'     => 'US',
+					'line1'       => '123 Support St',
+					'line2'       => null,
+					'postal_code' => '94107',
+					'state'       => 'CA',
+				),
+				'support_email'   => 'generated@example.com',
+				'support_phone'   => '+1 555 0200',
+			),
+			'branding'         => array(
+				'icon'            => null,
+				'logo'            => null,
+				'primary_color'   => '#873eff',
+				'secondary_color' => '#2c045d',
+			),
+		);
+	}
+
+	/**
+	 * Get business details saved in the gateway settings with values the account does not have.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_saved_business_details(): array {
+		return array(
+			'account_business_name'            => 'Saved Store',
+			'account_business_support_address' => array(
+				'line1'       => '9 Saved Road',
+				'line2'       => '',
+				'city'        => 'Oakland',
+				'state'       => 'CA',
+				'postal_code' => '94601',
+				'country'     => 'US',
+			),
+			'account_business_support_phone'   => '+1 555 0999',
+			'account_business_support_email'   => 'saved@example.test',
+			'account_branding_logo'            => 'file_saved_logo',
+		);
+	}
+
+	/**
+	 * Answer the receipt route's intent and charge reads with a succeeded card-present payment for the order.
+	 *
+	 * @param \WC_Order $order Order the payment is for.
+	 */
+	private function prepare_receipt_payment( \WC_Order $order ): void {
+		$this->api_client->payment_intention_response = array(
+			'id'       => 'pi_receipt',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+			'metadata' => array(
+				'order_id' => (string) $order->get_id(),
+			),
+			'charges'  => array(
+				'data' => array(
+					array( 'id' => 'ch_receipt' ),
+				),
+			),
+		);
+		$this->api_client->charge_response            = array(
+			'id'                     => 'ch_receipt',
+			'amount_captured'        => 1234,
+			'currency'               => 'usd',
+			'order'                  => array(
+				'number' => $order->get_id(),
+			),
+			'payment_method_details' => array(
+				'card_present' => array(
+					'brand'   => 'visa',
+					'last4'   => '0978',
+					'receipt' => array(
+						'application_preferred_name' => 'visa credit',
+						'dedicated_file_name'        => 'a0000000031010',
+						'account_type'               => 'credit',
+					),
+				),
+			),
+		);
+	}
+
+	/**
 	 * Create a native mobile REST controller.
 	 *
 	 * @param bool                                 $test_mode  Whether the account runs in test mode.
@@ -2650,9 +2906,14 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private function create_controller( bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data' ) )
+			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data', 'get_cached_account_data' ) )
 			->getMock();
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
+		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
+			function (): array {
+				return $this->account_data;
+			}
+		);
 		$account_service->method( 'refresh_account_data' )->willReturnCallback(
 			function (): array {
 				++$this->account_refresh_calls;

@@ -1734,61 +1734,65 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get receipt settings from preview request params.
+	 * Get the preview receipt's merchant details: each from the request when it is given, else from the connected account.
 	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<string,mixed>
 	 */
 	private function get_receipt_settings_from_params( array $params ): array {
-		$business_name           = (string) $this->account_service->get_gateway_setting( 'account_business_name', get_bloginfo( 'name' ) );
-		$gateway_support_address = $this->account_service->get_gateway_setting( 'account_business_support_address', array() );
-		$support_address         = $params['accountBusinessSupportAddress'] ?? $params['support_address'] ?? $gateway_support_address;
-		$support_phone           = (string) $this->account_service->get_gateway_setting( 'account_business_support_phone', '' );
-		$support_email           = (string) $this->account_service->get_gateway_setting( 'account_business_support_email', get_option( 'admin_email', '' ) );
+		$support_address = ! empty( $params['accountBusinessSupportAddress'] ) && is_array( $params['accountBusinessSupportAddress'] )
+			? $params['accountBusinessSupportAddress']
+			: $this->account_service->get_business_support_address();
 
 		return array(
-			'business_name'   => $this->get_receipt_string( $params, array( 'accountBusinessName', 'business_name' ), $business_name ),
-			'support_address' => $this->normalize_receipt_support_address( is_array( $support_address ) ? $support_address : array() ),
-			'support_phone'   => $this->get_receipt_string( $params, array( 'accountBusinessSupportPhone', 'support_phone' ), $support_phone ),
-			'support_email'   => $this->get_receipt_string( $params, array( 'accountBusinessSupportEmail', 'support_email' ), $support_email ),
+			'business_name'   => $this->get_receipt_string( $params, 'accountBusinessName', $this->account_service->get_business_name() ),
+			'support_address' => $this->get_receipt_support_address( $support_address ),
+			'support_phone'   => $this->get_receipt_string( $params, 'accountBusinessSupportPhone', $this->account_service->get_business_support_phone() ),
+			'support_email'   => $this->get_receipt_string( $params, 'accountBusinessSupportEmail', $this->account_service->get_business_support_email() ),
 		);
 	}
 
 	/**
-	 * Get the first non-empty receipt string from request params.
+	 * Get the printed receipt's merchant details from the connected account; an account without a support address prints none.
 	 *
-	 * @param array<string,mixed> $params  Request params.
-	 * @param string[]            $keys    Param keys.
+	 * @return array<string,mixed>
+	 */
+	private function get_receipt_merchant_settings(): array {
+		$support_address = $this->account_service->get_business_support_address();
+
+		return array(
+			'business_name'   => $this->account_service->get_business_name(),
+			'support_address' => array() === $support_address ? array() : $this->get_receipt_support_address( $support_address ),
+			'support_phone'   => $this->account_service->get_business_support_phone(),
+			'support_email'   => $this->account_service->get_business_support_email(),
+		);
+	}
+
+	/**
+	 * Get a non-empty receipt string from the request params, else the fallback.
+	 *
+	 * @param array<string,mixed> $params   Request params.
+	 * @param string              $key      Param key.
 	 * @param string              $fallback Fallback value.
 	 * @return string
 	 */
-	private function get_receipt_string( array $params, array $keys, string $fallback ): string {
-		foreach ( $keys as $key ) {
-			if ( isset( $params[ $key ] ) && is_scalar( $params[ $key ] ) && '' !== (string) $params[ $key ] ) {
-				return (string) $params[ $key ];
-			}
-		}
-
-		return $fallback;
+	private function get_receipt_string( array $params, string $key, string $fallback ): string {
+		return ! empty( $params[ $key ] ) && is_scalar( $params[ $key ] ) ? (string) $params[ $key ] : $fallback;
 	}
 
 	/**
-	 * Normalize receipt support address shape.
+	 * Get the six address lines the receipt template prints, '' for a line the address lacks.
 	 *
-	 * @param array<string,mixed> $address Address.
+	 * @param array<string,mixed> $address Support address.
 	 * @return array<string,string>
 	 */
-	private function normalize_receipt_support_address( array $address ): array {
-		$default = $this->get_store_terminal_address();
+	private function get_receipt_support_address( array $address ): array {
+		$receipt_address = array();
+		foreach ( array( 'line1', 'line2', 'city', 'state', 'postal_code', 'country' ) as $key ) {
+			$receipt_address[ $key ] = isset( $address[ $key ] ) && is_scalar( $address[ $key ] ) ? (string) $address[ $key ] : '';
+		}
 
-		return array(
-			'line1'       => (string) ( $address['line1'] ?? $default['line1'] ?? '' ),
-			'line2'       => (string) ( $address['line2'] ?? $default['line2'] ?? '' ),
-			'city'        => (string) ( $address['city'] ?? $default['city'] ?? '' ),
-			'state'       => (string) ( $address['state'] ?? $default['state'] ?? '' ),
-			'postal_code' => (string) ( $address['postal_code'] ?? $default['postal_code'] ?? '' ),
-			'country'     => (string) ( $address['country'] ?? $default['country'] ?? '' ),
-		);
+		return $receipt_address;
 	}
 
 	/**
@@ -1825,7 +1829,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 		$receipt                = isset( $card_present['receipt'] ) && is_array( $card_present['receipt'] ) ? $card_present['receipt'] : array();
 
 		return array_merge(
-			$this->get_receipt_settings_from_params( array() ),
+			$this->get_receipt_merchant_settings(),
 			array(
 				'order_id'            => $order->get_id(),
 				'currency'            => $order->get_currency(),
@@ -1948,7 +1952,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 			array(
 				'amount_captured'             => (float) ( $data['amount_captured'] ?? 0 ),
 				'branding_logo'               => isset( $data['branding_logo'] ) && is_array( $data['branding_logo'] ) ? $data['branding_logo'] : array(),
-				'business_name'               => (string) ( $data['business_name'] ?? get_bloginfo( 'name' ) ),
+				'business_name'               => (string) ( $data['business_name'] ?? '' ),
 				'coupon_lines'                => $this->get_receipt_list( $data, 'coupon_lines' ),
 				'line_items'                  => $this->get_receipt_list( $data, 'line_items' ),
 				'order'                       => array(
@@ -1983,7 +1987,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 * @return array<string,mixed> File contents payload, or an empty array when no logo is configured.
 	 */
 	private function get_receipt_branding_logo(): array {
-		$branding_logo = (string) $this->account_service->get_gateway_setting( 'account_branding_logo', '' );
+		$branding_logo = $this->account_service->get_branding_logo();
 		if ( '' === $branding_logo ) {
 			return array();
 		}
