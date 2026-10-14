@@ -4567,14 +4567,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load one recorded REC-1 decline entry's HTTP status and `error` object by pair key.
+	 * Load one recorded decline entry's HTTP status and `error` object by pair key, from REC-1 (PaymentIntents) or REC-2 (SetupIntents).
 	 *
-	 * @param string $pair REC-1 fixture pair key.
+	 * @param string $pair    Fixture pair key.
+	 * @param string $fixture Fixture file name.
 	 * @return array{http_status:int,error:array<string,mixed>}
 	 */
-	private function load_recorded_decline_entry( string $pair ): array {
+	private function load_recorded_decline_entry( string $pair, string $fixture = 'platform-intention-declines.json' ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
-		$fixture = file_get_contents( __DIR__ . '/Fixtures/platform-intention-declines.json' );
+		$fixture = file_get_contents( __DIR__ . '/Fixtures/' . $fixture );
 		$this->assertIsString( $fixture );
 		$decoded = json_decode( $fixture, true );
 		$this->assertIsArray( $decoded );
@@ -4653,32 +4654,38 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A card declined at checkout ($_dataName) leaves its payment method, never a confirmation token, and its customer on the failed order, and Sift order tracking queues an order with a payment method.
+	 * @testdox A card declined at checkout or on a $0 checkout that saves it ($_dataName) leaves its payment method, never a confirmation token, and its customer on the failed order, and Sift order tracking queues an order with a payment method.
 	 *
-	 * Client 11.1.0 writes both before the charge, the payment method only when it is not a confirmation token
-	 * (class-wc-payment-gateway-wcpay.php:1672-1677), so its declined order keeps them, and its order-tracking hook queues
-	 * any card-gateway order that has a payment method (:577, :4485-4524). The decline is REC-1's recorded generic_decline
-	 * envelope (Fixtures/platform-intention-declines.json), reused for the confirmation-token rows as a model, not a recording:
-	 * the decline carries the PaymentIntent, whose last_payment_error.payment_method is the PaymentMethod the charge used
+	 * Client 11.1.0 writes both before the charge or the $0 SetupIntent, the payment method only when it is not a
+	 * confirmation token (class-wc-payment-gateway-wcpay.php:1672-1677, before :1924-2000), so its declined order keeps
+	 * them, and its order-tracking hook queues any card-gateway order that has a payment method (:577, :4485-4524). The
+	 * decline is REC-1's recorded generic_decline envelope (Fixtures/platform-intention-declines.json), or REC-2's for the
+	 * $0 rows (Fixtures/platform-setup-intent-declines.json, the platform's 402 for 4000 0000 0000 0002 on setup_intents).
+	 * Both are reused for the confirmation-token rows as a model, not a recording: the decline carries the intent, whose
+	 * last_payment_error or last_setup_error payment_method is the PaymentMethod the request used
 	 * (https://docs.stripe.com/api/payment_intents/object#payment_intent_object-last_payment_error). The account's fraud_services carries Sift in the shape client 11.1.0
 	 * reads (class-wc-payments-fraud-service.php:99-100).
 	 *
-	 * @testWith ["the first request", false, "cus_rec1_checkout", false]
-	 *           ["the request retried for a missing customer", true, "cus_rec1_replaced", false]
-	 *           ["a confirmation token, the first request", false, "cus_rec1_checkout", true]
-	 *           ["a confirmation token, the request retried for a missing customer", true, "cus_rec1_replaced", true]
+	 * @testWith ["the first request", false, "cus_rec1_checkout", false, false]
+	 *           ["the request retried for a missing customer", true, "cus_rec1_replaced", false, false]
+	 *           ["a confirmation token, the first request", false, "cus_rec1_checkout", true, false]
+	 *           ["a confirmation token, the request retried for a missing customer", true, "cus_rec1_replaced", true, false]
+	 *           ["a $0 checkout saving a card, the first request", false, "cus_rec1_checkout", false, true]
+	 *           ["a $0 checkout saving a card, the request retried for a missing customer", true, "cus_rec1_replaced", false, true]
+	 *           ["a $0 checkout saving a card with a confirmation token", false, "cus_rec1_checkout", true, true]
 	 *
 	 * @param string $label                   Which request is declined.
 	 * @param bool   $after_missing_customer  Whether the platform first answers that the customer is missing.
 	 * @param string $customer_id             Customer the declined request was sent with.
 	 * @param bool   $with_confirmation_token Whether the checkout sent a confirmation token instead of a payment method.
+	 * @param bool   $zero_total_saving_card  Whether the order is $0 and saves the card, so a SetupIntent is sent.
 	 */
-	public function test_declined_checkout_keeps_payment_method_and_customer_for_sift_tracking( string $label, bool $after_missing_customer, string $customer_id, bool $with_confirmation_token ): void {
+	public function test_declined_checkout_keeps_payment_method_and_customer_for_sift_tracking( string $label, bool $after_missing_customer, string $customer_id, bool $with_confirmation_token, bool $zero_total_saving_card ): void {
 		unset( $label );
-		$order           = $this->create_woopayments_order( '10.00' );
+		$order           = $this->create_woopayments_order( $zero_total_saving_card ? '0.00' : '10.00' );
 		$account_service = $this->create_account_service( false, array(), array( 'fraud_services' => array( 'sift' => array( 'beacon_key' => 'prod_beacon' ) ) ) );
-		$recorded        = $this->load_recorded_decline_entry( 'generic_decline' );
-		$payment_method  = (string) $recorded['error']['payment_intent']['last_payment_error']['payment_method']['id'];
+		$recorded        = $zero_total_saving_card ? $this->load_recorded_decline_entry( 'generic_decline', 'platform-setup-intent-declines.json' ) : $this->load_recorded_decline_entry( 'generic_decline' );
+		$payment_method  = (string) ( $zero_total_saving_card ? $recorded['error']['setup_intent']['last_setup_error'] : $recorded['error']['payment_intent']['last_payment_error'] )['payment_method']['id'];
 		$provider        = $this->create_provider_declining_checkout( $recorded, $account_service, $after_missing_customer );
 		$scheduler       = new RecordingActionSchedulerService();
 		$fraud_service   = new WooPaymentsFraudService();
@@ -4688,7 +4695,15 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
 
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
-			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $with_confirmation_token ? 'ctoken_rec1_express' : $payment_method ),
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				$with_confirmation_token ? 'ctoken_rec1_express' : $payment_method,
+				$zero_total_saving_card ? array(
+					'payment_token'       => 'new',
+					'save_payment_method' => true,
+				) : array()
+			),
 			$provider
 		);
 

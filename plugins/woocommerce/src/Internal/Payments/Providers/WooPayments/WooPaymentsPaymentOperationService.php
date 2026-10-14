@@ -1116,6 +1116,7 @@ class WooPaymentsPaymentOperationService {
 	 *
 	 * A declined request's payment method and customer stay on the outcome, so the failed order keeps them, as client 11.1.0
 	 * writes them before the charge (class-wc-payment-gateway-wcpay.php:1672-1677); Sift order tracking reads the payment method.
+	 * A SetupIntent request's are passed by failed_setup_intent_outcome().
 	 *
 	 * @param WC_Order                $order                       Order object.
 	 * @param WooPaymentsApiException $exception                   Transport exception.
@@ -1167,6 +1168,30 @@ class WooPaymentsPaymentOperationService {
 			$payment_method_id,
 			$customer_id,
 			$data
+		);
+	}
+
+	/**
+	 * Build the failed outcome of a SetupIntent request, with the request's payment method and customer, as client 11.1.0
+	 * writes both before the request (class-wc-payment-gateway-wcpay.php:1672-1677); Sift order tracking reads the payment method.
+	 *
+	 * A subscription whose payment method is being changed keeps its own: the declined card never becomes its payment method.
+	 *
+	 * @param PaymentOperationContext $context      Payment context.
+	 * @param WooPaymentsApiException $exception    Transport exception.
+	 * @param array<string,mixed>     $request_data SetupIntent request that was sent.
+	 * @return PaymentOutcome
+	 */
+	private function failed_setup_intent_outcome( PaymentOperationContext $context, WooPaymentsApiException $exception, array $request_data ): PaymentOutcome {
+		$is_change = ! empty( $context->get_provider_data()[ WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE ] );
+
+		return $this->failed_charge_outcome(
+			$context->get_order(),
+			$exception,
+			false,
+			$is_change ? '' : (string) ( $request_data['customer'] ?? '' ),
+			false,
+			$is_change ? '' : (string) ( $request_data['payment_method'] ?? '' )
 		);
 	}
 
@@ -1402,7 +1427,7 @@ class WooPaymentsPaymentOperationService {
 	 * @param PaymentOperationContext $context         Payment context.
 	 * @param string                  $idempotency_key Key minted fresh for this payment attempt.
 	 * @return PaymentOutcome
-	 * @throws WooPaymentsApiException When the provider request fails.
+	 * @throws WooPaymentsApiException When creating or replacing the customer, or reading a WooPay intent, fails.
 	 */
 	private function set_up_payment_method_for_zero_total( PaymentOperationContext $context, string $idempotency_key ): PaymentOutcome {
 		$context            = $this->request_builder->with_saved_payment_token_method_type( $context );
@@ -1440,13 +1465,17 @@ class WooPaymentsPaymentOperationService {
 				$result = $this->create_setup_intent( $request_data, $payment_credential, $idempotency_key );
 			} catch ( WooPaymentsApiException $exception ) {
 				if ( ! $this->is_missing_customer_exception( $exception ) ) {
-					throw $exception;
+					return $this->failed_setup_intent_outcome( $context, $exception, $request_data );
 				}
 
 				$customer_id              = $this->customer_service->replace_missing_customer_for_order( $order, (string) ( $request_data['customer'] ?? '' ) );
 				$request_data['customer'] = $customer_id;
 				// SetupIntent keys are not kept on the order, so only the key changes for the different body.
-				$result = $this->create_setup_intent( $request_data, $payment_credential, self::get_customer_recovery_idempotency_key( $idempotency_key ) );
+				try {
+					$result = $this->create_setup_intent( $request_data, $payment_credential, self::get_customer_recovery_idempotency_key( $idempotency_key ) );
+				} catch ( WooPaymentsApiException $retry_exception ) {
+					return $this->failed_setup_intent_outcome( $context, $retry_exception, $request_data );
+				}
 			}
 		}
 
