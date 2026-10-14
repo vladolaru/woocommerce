@@ -83,7 +83,7 @@ type DisputesSummary = Record< string, unknown >;
 
 /**
  * A disputes list row: the platform's cached dispute plus the order context
- * the REST controller adds (`WooPaymentsMoneyMovementOrderService`).
+ * the REST controller adds (`WooPaymentsOrderDetailsService`).
  */
 type WooPaymentsDisputeListRow = WooPaymentsDispute & {
 	source?: string | null;

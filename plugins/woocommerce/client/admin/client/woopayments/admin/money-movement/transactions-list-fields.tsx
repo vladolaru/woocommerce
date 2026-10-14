@@ -34,7 +34,7 @@ import { formatCurrencyName } from '../currency';
 
 /**
  * A transactions list row: the platform's list fields plus the order context
- * the REST controller adds (`WooPaymentsMoneyMovementOrderService`).
+ * the REST controller adds (`WooPaymentsOrderDetailsService`).
  */
 export type WooPaymentsTransactionListRow = WooPaymentsTransaction & {
 	channel?: string | null;

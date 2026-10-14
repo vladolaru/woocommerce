@@ -37,9 +37,9 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments local order context service.
 	 *
-	 * @var WooPaymentsMoneyMovementOrderService
+	 * @var WooPaymentsOrderDetailsService
 	 */
-	private WooPaymentsMoneyMovementOrderService $order_service;
+	private WooPaymentsOrderDetailsService $order_service;
 
 	/**
 	 * Dispute cache service.
@@ -53,11 +53,11 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                 $api_client            Native WooPayments API client.
-	 * @param WooPaymentsMoneyMovementOrderService $order_service         Local order context service.
-	 * @param WooPaymentsDisputeCacheService       $dispute_cache_service Dispute cache service.
+	 * @param WooPaymentsApiClient           $api_client            WooPayments API client.
+	 * @param WooPaymentsOrderDetailsService $order_service         Order details service.
+	 * @param WooPaymentsDisputeCacheService $dispute_cache_service Dispute cache service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsMoneyMovementOrderService $order_service, WooPaymentsDisputeCacheService $dispute_cache_service ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDisputeCacheService $dispute_cache_service ): void {
 		$this->api_client            = $api_client;
 		$this->order_service         = $order_service;
 		$this->dispute_cache_service = $dispute_cache_service;

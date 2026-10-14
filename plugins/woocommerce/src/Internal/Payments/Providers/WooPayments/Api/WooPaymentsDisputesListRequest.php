@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use WP_REST_Request;
 
 /**
@@ -67,7 +67,7 @@ class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
 	 * @return mixed
 	 */
 	public function format_response( $response ) {
-		$order_service = wc_get_container()->get( WooPaymentsMoneyMovementOrderService::class );
+		$order_service = wc_get_container()->get( WooPaymentsOrderDetailsService::class );
 
 		return $this->format_default_response( $order_service->enrich_disputes_list_response( $response ) );
 	}

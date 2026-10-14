@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeCacheService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use RuntimeException;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -523,7 +523,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute update does not hide a completed platform mutation when local enrichment fails.
 	 */
 	public function test_dispute_update_returns_platform_response_when_completed_action_enrichment_fails(): void {
-		$order_service = new class() extends WooPaymentsMoneyMovementOrderService {
+		$order_service = new class() extends WooPaymentsOrderDetailsService {
 			/**
 			 * Add order context and formatted charge address to a dispute response.
 			 *
@@ -674,10 +674,10 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a disputes controller.
 	 *
-	 * @param WooPaymentsMoneyMovementOrderService|null $order_service Optional order service.
+	 * @param WooPaymentsOrderDetailsService|null $order_service Optional order service.
 	 * @return WooPaymentsDisputesRestController
 	 */
-	private function create_disputes_controller( ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsDisputesRestController {
+	private function create_disputes_controller( ?WooPaymentsOrderDetailsService $order_service = null ): WooPaymentsDisputesRestController {
 		$controller = new WooPaymentsDisputesRestController();
 		$controller->init( $this->api_client, $order_service ?? $this->create_order_service(), new WooPaymentsDisputeCacheService() );
 

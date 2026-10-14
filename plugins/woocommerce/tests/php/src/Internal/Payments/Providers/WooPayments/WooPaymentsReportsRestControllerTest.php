@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
@@ -694,10 +694,10 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create an order search mapping service.
 	 *
-	 * @return WooPaymentsMoneyMovementOrderService
+	 * @return WooPaymentsOrderDetailsService
 	 */
-	private function create_order_service(): WooPaymentsMoneyMovementOrderService {
-		$service = new WooPaymentsMoneyMovementOrderService();
+	private function create_order_service(): WooPaymentsOrderDetailsService {
+		$service = new WooPaymentsOrderDetailsService();
 		$service->init( new WooPaymentsOrderDataService() );
 
 		return $service;

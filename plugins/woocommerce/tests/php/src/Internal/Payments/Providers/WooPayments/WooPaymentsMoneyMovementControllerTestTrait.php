@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Order;
 
@@ -18,10 +18,10 @@ trait WooPaymentsMoneyMovementControllerTestTrait {
 	/**
 	 * Create an order enrichment service.
 	 *
-	 * @return WooPaymentsMoneyMovementOrderService
+	 * @return WooPaymentsOrderDetailsService
 	 */
-	private function create_order_service(): WooPaymentsMoneyMovementOrderService {
-		$service = new WooPaymentsMoneyMovementOrderService();
+	private function create_order_service(): WooPaymentsOrderDetailsService {
+		$service = new WooPaymentsOrderDetailsService();
 		$service->init( new WooPaymentsOrderDataService() );
 
 		return $service;

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsMoneyMovementOrderService class file.
+ * WooPaymentsOrderDetailsService class file.
  */
 
 declare( strict_types = 1 );
@@ -14,12 +14,13 @@ use WC_Order_Item_Product;
 use WC_Product;
 
 /**
- * Adds WooCommerce-local order context to native WooPayments money movement data.
+ * Adds WooCommerce order details to the platform's transaction, charge, dispute and payment intent answers, maps
+ * order-number searches to charge IDs, and builds a charge answer or an intent request from an order.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class WooPaymentsMoneyMovementOrderService {
+class WooPaymentsOrderDetailsService {
 
 	private const LOG_SOURCE = 'woopayments-money-movement';
 

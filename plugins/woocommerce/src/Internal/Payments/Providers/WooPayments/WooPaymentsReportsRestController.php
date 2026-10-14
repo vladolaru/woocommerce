@@ -55,23 +55,23 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	/**
 	 * WooPayments local order context service.
 	 *
-	 * @var WooPaymentsMoneyMovementOrderService
+	 * @var WooPaymentsOrderDetailsService
 	 */
-	private WooPaymentsMoneyMovementOrderService $order_service;
+	private WooPaymentsOrderDetailsService $order_service;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                 $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
-	 * @param WooPaymentsMoneyMovementOrderService $order_service  Local order context service.
+	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService      $account_service WooPayments account service.
+	 * @param WooPaymentsOrderDetailsService $order_service  Order details service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsMoneyMovementOrderService $order_service
+		WooPaymentsOrderDetailsService $order_service
 	): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
