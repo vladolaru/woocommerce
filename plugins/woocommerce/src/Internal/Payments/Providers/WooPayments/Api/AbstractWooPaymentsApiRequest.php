@@ -7,8 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsResponse;
-
 /**
  * A filterable request the WooPayments platform API client sends: its params, its request filter, its transport flags,
  * and how it is sent and its answer formatted.

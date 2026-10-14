@@ -5,10 +5,7 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
-
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\AbstractWooPaymentsApiRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
  * Compatibility request object for the preserved WooPayments reporting balance summary filter.
