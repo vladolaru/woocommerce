@@ -77,6 +77,20 @@ class WooPaymentsPmPromotionsService {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
+	 * Gateway settings writer.
+	 *
+	 * @var WooPaymentsGatewaySettingsSynchronizer
+	 */
+	private WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer;
+
+	/**
+	 * Payment method registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry
+	 */
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Memoized raw promotions.
 	 *
 	 * @var array<int,array<string,mixed>>|null
@@ -95,12 +109,16 @@ class WooPaymentsPmPromotionsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAccountService $account_service Native WooPayments account service.
+	 * @param WooPaymentsApiClient                   $api_client                    WooPayments API client.
+	 * @param WooPaymentsAccountService              $account_service               WooPayments account service.
+	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings writer.
+	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry       Payment method registry.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
-		$this->api_client      = $api_client;
-		$this->account_service = $account_service;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+		$this->api_client                    = $api_client;
+		$this->account_service               = $account_service;
+		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
+		$this->payment_method_registry       = $payment_method_registry;
 	}
 
 	/**
@@ -178,7 +196,7 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		$this->mark_promotion_dismissed( $id );
-		if ( ! $this->enable_payment_method( $payment_method_id ) ) {
+		if ( ! $this->enable_payment_method_gateway( $payment_method_id, $promotion ) ) {
 			return false;
 		}
 
@@ -660,30 +678,44 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Enable a payment method in native WooPayments gateway settings.
+	 * Enable a payment method's own gateway and list it on every gateway, as client 11.1.0
+	 * `enable_payment_method_gateway()` does (class-wc-payments-pm-promotions-service.php:384-462).
 	 *
-	 * @param string $payment_method_id Payment method ID.
+	 * @param string              $payment_method_id Payment method ID.
+	 * @param array<string,mixed> $promotion         Promotion data.
 	 * @return bool
 	 */
-	private function enable_payment_method( string $payment_method_id ): bool {
+	private function enable_payment_method_gateway( string $payment_method_id, array $promotion ): bool {
 		if ( ! $this->is_payment_method_available( $payment_method_id ) ) {
 			return false;
 		}
 
-		$settings = $this->get_gateway_settings();
-		$enabled  = isset( $settings['upe_enabled_payment_method_ids'] ) && is_array( $settings['upe_enabled_payment_method_ids'] )
-			? $settings['upe_enabled_payment_method_ids']
-			: array();
-		$enabled  = $this->sanitize_payment_method_ids( $enabled );
+		$settings                                   = $this->get_gateway_settings();
+		$settings['upe_enabled_payment_method_ids'] = $this->sanitize_payment_method_ids(
+			array_merge( $this->get_enabled_payment_method_ids(), array( $payment_method_id ) )
+		);
+		$this->gateway_settings_synchronizer->persist( $settings );
 
-		if ( in_array( $payment_method_id, $enabled, true ) ) {
-			return true;
+		$gateway_settings = get_option( $this->gateway_settings_synchronizer->get_split_option_name( $payment_method_id ), array() );
+		if ( ! is_array( $gateway_settings ) || 'yes' !== ( $gateway_settings['enabled'] ?? null ) ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+				sprintf( 'Failed to enable payment method %s: its gateway did not save the enabled setting.', $payment_method_id ),
+				'warning'
+			);
+			return false;
 		}
 
-		$enabled[]                                  = $payment_method_id;
-		$settings['upe_enabled_payment_method_ids'] = $this->sanitize_payment_method_ids( $enabled );
+		$definition = $this->payment_method_registry->get( $payment_method_id );
+		$this->record_tracks_event(
+			'wcpay_payment_method_enabled',
+			array(
+				'payment_method_id' => $payment_method_id,
+				'capability_id'     => null !== $definition ? $definition->get_account_capability_key() : null,
+				'promo_id'          => $promotion['promo_id'] ?? null,
+			)
+		);
 
-		return update_option( self::SETTINGS_OPTION, $settings );
+		return true;
 	}
 
 	/**

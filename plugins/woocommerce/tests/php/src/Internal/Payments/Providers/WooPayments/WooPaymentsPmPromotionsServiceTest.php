@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use WC_Unit_Test_Case;
 
@@ -43,7 +45,12 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->api_client      = new RecordingPmPromotionsApiClient();
 		$this->account_service = new RecordingPmPromotionsAccountService();
 		$this->sut             = new WooPaymentsPmPromotionsService();
-		$this->sut->init( $this->api_client, $this->account_service );
+		$this->sut->init(
+			$this->api_client,
+			$this->account_service,
+			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
+			wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )
+		);
 
 		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
@@ -260,12 +267,17 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should activate through the platform, dismiss, enable the method, and clear caches.
+	 * Activation enables the method's own gateway, as client 11.1.0 `activate_promotion()` and
+	 * `enable_payment_method_gateway()` do (includes/class-wc-payments-pm-promotions-service.php:272-320,384-462).
+	 *
+	 * @testdox Should activate through the platform, dismiss, enable the method's gateway, and clear caches.
 	 */
 	public function test_activate_promotion_calls_platform_marks_dismissed_enables_method_and_clears_cache(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option(
-			'woocommerce_woocommerce_payments_settings',
+			'woocommerce_woocommerce_payments_affirm_settings',
 			array(
+				'enabled'                        => 'no',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
 			)
 		);
@@ -280,8 +292,15 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
 
-		$result     = $this->sut->activate_promotion( 'klarna-promo__spotlight' );
+		$result     = false;
+		$events     = $this->capture_tracks_events(
+			function () use ( &$result ): void {
+				$result = $this->sut->activate_promotion( 'klarna-promo__spotlight' );
+			}
+		);
 		$settings   = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$klarna     = get_option( 'woocommerce_woocommerce_payments_klarna_settings' );
+		$affirm     = get_option( 'woocommerce_woocommerce_payments_affirm_settings' );
 		$dismissals = get_option( '_wcpay_pm_promotion_dismissals' );
 
 		$this->assertTrue( $result );
@@ -290,8 +309,60 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'klarna-promo__spotlight', $dismissals );
 		$this->assertIsArray( $settings );
 		$this->assertSame( array( 'card', 'klarna' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertIsArray( $klarna );
+		$this->assertSame( 'yes', $klarna['enabled'], 'Checkout offers Klarna only when its own gateway row is enabled.' );
+		$this->assertSame( array( 'card', 'klarna' ), $klarna['upe_enabled_payment_method_ids'] );
+		$this->assertIsArray( $affirm );
+		$this->assertSame( array( 'card', 'klarna' ), $affirm['upe_enabled_payment_method_ids'], 'Every gateway row lists the enabled method.' );
+		$this->assertSame(
+			array(
+				array(
+					'payment_method_id' => 'klarna',
+					'capability_id'     => 'klarna_payments',
+					'promo_id'          => 'klarna-promo',
+				),
+			),
+			$events['wcadmin_wcpay_payment_method_enabled'] ?? array()
+		);
 		$this->assertFalse( get_transient( WooPaymentsPmPromotionsService::PROMOTIONS_CACHE_KEY ) );
 		$this->assertSame( 1, $this->account_service->clear_cache_calls );
+	}
+
+	/**
+	 * Client 11.1.0 checks the gateway reads enabled after `enable()` and logs a warning when it does not
+	 * (includes/class-wc-payments-pm-promotions-service.php:398-402,426-433).
+	 *
+	 * @testdox Should fail activation, warn, and record no enabled event when the method's gateway row does not persist.
+	 */
+	public function test_activate_promotion_fails_when_the_method_gateway_row_does_not_persist(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+		add_filter( 'pre_update_option_woocommerce_woocommerce_payments_klarna_settings', static fn( $value, $old_value ) => $old_value, 10, 2 );
+		$logger = RecordingWcLogger::install();
+
+		$result     = true;
+		$events     = $this->capture_tracks_events(
+			function () use ( &$result ): void {
+				$result = $this->sut->activate_promotion( 'klarna-promo__spotlight' );
+			}
+		);
+		$dismissals = get_option( '_wcpay_pm_promotion_dismissals' );
+
+		$this->assertFalse( $result );
+		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( 'Failed to enable payment method klarna', $warnings[0][1] );
+		$this->assertArrayNotHasKey( 'wcadmin_wcpay_payment_method_enabled', $events );
+		$this->assertIsArray( $dismissals );
+		$this->assertArrayHasKey( 'klarna-promo__spotlight', $dismissals, 'The promotion is dismissed before its gateway is enabled.' );
 	}
 
 	/**
@@ -391,6 +462,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $this->sut->get_visible_promotions() );
 		$this->assertFalse( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
 		$this->assertSame( array(), $this->api_client->activated_promotion_ids );
+		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_klarna_settings' ) );
 	}
 
 	/**
@@ -407,10 +479,48 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a minimal valid promotion fixture.
+	 * Record the Tracks events a callback sends, by event name, with the properties these tests read.
 	 *
-	 * It carries the string fields client 11.1.0 requires of a platform promotion, with a spotlight or badge type
-	 * (`validate_promotion()`, class-wc-payments-pm-promotions-service.php:643-655).
+	 * @param callable $act Code under test.
+	 * @return array<string,array<int,array<string,string|null>>>
+	 */
+	private function capture_tracks_events( callable $act ): array {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		$events  = array();
+		$capture = static function ( $preempt, $parsed_args, $url ) use ( &$events ) {
+			unset( $preempt, $parsed_args );
+			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $pixel );
+			if ( isset( $pixel['_en'] ) ) {
+				$events[ (string) $pixel['_en'] ][] = array(
+					'payment_method_id' => $pixel['payment_method_id'] ?? null,
+					'capability_id'     => $pixel['capability_id'] ?? null,
+					'promo_id'          => $pixel['promo_id'] ?? null,
+				);
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array( 'code' => 200 ),
+				'cookies'  => array(),
+			);
+		};
+		add_filter( 'pre_http_request', $capture, 10, 3 );
+
+		try {
+			$act();
+		} finally {
+			remove_filter( 'pre_http_request', $capture, 10 );
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
+
+		return $events;
+	}
+
+	/**
+	 * Build a valid promotion fixture.
+	 *
+	 * Shape: platform `GET payment_method_promotions`, flat promotion fields.
 	 *
 	 * @param string $id                Promotion ID.
 	 * @param string $promo_id          Promotion group ID.
@@ -420,13 +530,17 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function promotion_fixture( string $id, string $promo_id, string $payment_method_id, string $type ): array {
 		return array(
-			'id'             => $id,
-			'promo_id'       => $promo_id,
-			'payment_method' => $payment_method_id,
-			'type'           => $type,
-			'title'          => 'Activate ' . $payment_method_id,
-			'description'    => 'Offer flexible payments.',
-			'tc_url'         => 'https://example.com/terms',
+			'id'                   => $id,
+			'promo_id'             => $promo_id,
+			'payment_method'       => $payment_method_id,
+			'payment_method_title' => ucfirst( $payment_method_id ),
+			'type'                 => $type,
+			'title'                => 'Activate ' . $payment_method_id,
+			'description'          => 'Offer flexible payments.',
+			'cta_label'            => 'Enable ' . ucfirst( $payment_method_id ),
+			'tc_url'               => 'https://example.com/terms',
+			'tc_label'             => 'See terms',
+			'footnote'             => 'Limited time offer.',
 		);
 	}
 }

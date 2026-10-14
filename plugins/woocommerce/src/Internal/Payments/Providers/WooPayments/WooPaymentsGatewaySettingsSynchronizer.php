@@ -501,7 +501,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * @param string $method_id Payment method ID.
 	 * @return string
 	 */
-	private function get_split_option_name( string $method_id ): string {
+	public function get_split_option_name( string $method_id ): string {
 		return 'woocommerce_woocommerce_payments_' . $method_id . '_settings';
 	}
 
