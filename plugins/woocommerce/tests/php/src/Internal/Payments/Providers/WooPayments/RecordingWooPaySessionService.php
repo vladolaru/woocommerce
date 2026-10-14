@@ -69,6 +69,20 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public ?WP_REST_Request $last_session_request = null;
 
 	/**
+	 * Last request passed to init_woopay_session().
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_init_request = array();
+
+	/**
+	 * Last request passed to get_encrypted_session_data().
+	 *
+	 * @var array<string,mixed>
+	 */
+	public array $last_encrypted_session_request = array();
+
+	/**
 	 * Last phone request.
 	 *
 	 * @var array<string,mixed>
@@ -266,6 +280,8 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 * @return array<string,string>
 	 */
 	public function init_woopay_session( array $request ): array {
+		$this->last_init_request = $request;
+
 		return array( 'result' => 'success' );
 	}
 
@@ -276,6 +292,8 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 * @return array<string,string>
 	 */
 	public function get_encrypted_session_data( array $request ): array {
+		$this->last_encrypted_session_request = $request;
+
 		return array( 'encrypted' => 'session' );
 	}
 

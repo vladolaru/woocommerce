@@ -1358,6 +1358,55 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * WordPress slashes the posted fields; the WooPay scripts post the shopper's email, the WooPay user session and the
+	 * pay-for-order fields (client 11.1.0 checkout/woopay/init-woopay.js:54-63, checkout/woopay/email-input-iframe.js:191-199).
+	 *
+	 * @testdox The $hook handler hands the session service the posted fields, unslashed.
+	 * @testWith ["wc_ajax_wcpay_init_woopay", "wcpay_init_woopay_nonce", "last_init_request"]
+	 *           ["wc_ajax_wcpay_get_woopay_session", "woopay_session_nonce", "last_encrypted_session_request"]
+	 *
+	 * @param string $hook         AJAX hook.
+	 * @param string $nonce_action Nonce the handler checks.
+	 * @param string $recorded     Property of the session service double that records the request.
+	 */
+	public function test_session_handlers_pass_the_unslashed_request( string $hook, string $nonce_action, string $recorded ): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, $service );
+		$this->sut->register();
+		$fields = array(
+			'email'         => "o'brien@example.com",
+			'user_session'  => 'session "token"',
+			'order_id'      => '123',
+			'key'           => 'wc_order_abc',
+			'billing_email' => "o'brien@example.com",
+		);
+
+		$this->dispatch_ajax_hook_with_nonce( $hook, $nonce_action, wp_slash( $fields ) );
+
+		$this->assertSame( $fields, array_intersect_key( $service->$recorded, $fields ) );
+	}
+
+	/**
+	 * Unticking "Save my information" posts empty=1 (client 11.1.0 components/woopay/save-user/checkout-page-save-user.js:115-160).
+	 *
+	 * @testdox A signed-in shopper's empty phone-number request clears the WooPay data stored in the session.
+	 */
+	public function test_empty_phone_number_request_clears_the_stored_woopay_data(): void {
+		$service   = new RecordingWooPaySessionService();
+		$this->sut = $this->create_controller( true, $service );
+		$this->sut->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
+		// The session key the WooPayments extension stores the shopper's WooPay data under (class-woopay-session.php:36).
+		WC()->session->set( 'woopay-user-data', array( 'save_user_in_woopay' => true ) );
+
+		$response = $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woopay_session_nonce', array( 'empty' => '1' ) );
+
+		$this->assertSame( array( 'result' => 'success' ), $response );
+		$this->assertNull( $service->get_woopay_session_data() );
+		$this->assertSame( array(), $service->last_phone_request );
+	}
+
+	/**
 	 * @testdox The admin and shopper appearance writes store the posted appearance.
 	 */
 	public function test_appearance_writes_store_the_posted_appearance(): void {
