@@ -1255,6 +1255,64 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge that throws on an order already carrying the WooPayments extension's payment-failed note, in another wording, adds no second failure note.
+	 *
+	 * The note the provider adds for a thrown charge carries every wording of the same note, so the lifecycle recognises the
+	 * one the extension wrote in its own text domain (client 11.1.0 class-wc-payment-gateway-wcpay.php:1354-1400).
+	 */
+	public function test_thrown_charge_recognises_the_woopayments_extension_failure_note(): void {
+		// The German string is synthetic test input; it only has to differ from WooCommerce's own wording.
+		$translation_filter = static function ( string $translation, string $text, string $domain ): string {
+			if ( 'woocommerce-payments' !== $domain ) {
+				return $translation;
+			}
+
+			return 'A payment of %1$s <strong>failed</strong> to complete with the following message: <code>%2$s</code>.' === $text
+				? 'Eine Zahlung von %1$s ist <strong>fehlgeschlagen</strong> mit der Meldung: <code>%2$s</code>.'
+				: $translation;
+		};
+		add_filter( 'gettext', $translation_filter, 10, 3 );
+
+		try {
+			$order      = $this->create_woopayments_order( '0.00' );
+			$candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_checkout_payment_failed_note_candidates( $order, 'An extension failed.', '', '', '' );
+			$this->assertGreaterThan( 1, count( $candidates ), 'The two text domains must render the note differently.' );
+			$extension_note = end( $candidates );
+			$order->add_order_note( $extension_note );
+			add_filter(
+				'wcpay_metadata_from_order',
+				static function () {
+					throw new \Exception( 'An extension failed.' );
+				}
+			);
+
+			$this->sut->process_checkout_outcome(
+				PaymentOperationContext::for_checkout(
+					$order,
+					WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+					'pm_card_visa',
+					array(
+						'payment_token'       => 'new',
+						'save_payment_method' => true,
+					)
+				),
+				$this->timeout_transport_provider( new FakeWooPaymentsHttpClient() )
+			);
+
+			$failure_notes = array_values(
+				array_filter(
+					wc_get_order_notes( array( 'order_id' => $order->get_id() ) ),
+					static fn( $note ): bool => false !== strpos( wp_strip_all_tags( (string) $note->content ), 'An extension failed' )
+				)
+			);
+			$this->assertCount( 1, $failure_notes, 'The extension\'s note is the only failure note.' );
+			$this->assertSame( $extension_note, $failure_notes[0]->content );
+		} finally {
+			remove_filter( 'gettext', $translation_filter, 10 );
+		}
+	}
+
+	/**
 	 * @testdox A payment sends the payer's own customer, never one left on the order, and refreshes nothing before it: $_dataName.
 	 *
 	 * Client 11.1.0 resolves the customer from the order's user at checkout, order-pay and payment-method change
