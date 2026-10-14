@@ -3,7 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\Jetpack\Config as JetpackConfig;
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
+use Automattic\Jetpack\Connection\Plugin_Storage;
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\Jetpack\IdentityCrisis\UI as IdentityCrisisUI;
 use Automattic\Jetpack\Status\Cache as StatusCache;
@@ -11,6 +13,7 @@ use Automattic\Jetpack\Sync\Data_Settings;
 use Automattic\Jetpack\Sync\Default_Filter_Settings;
 use Automattic\Jetpack\Sync\Actions as Sync_Actions;
 use Automattic\Jetpack\Sync\Modules;
+use Automattic\Jetpack\Sync\Settings as Sync_Settings;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use WC_Unit_Test_Case;
@@ -260,6 +263,77 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 		$this->assertSame( '1', $sent_args['sync'] ?? null, 'Sync sent its actions.' );
 		$this->assertSame( '1', $sent_args['idc'] ?? null, 'Sync\'s first send asks the platform to check for a copied site.' );
 		$this->assertArrayHasKey( 'home', $sent_args, 'Sync\'s first send tells the platform the URL it comes from.' );
+	}
+
+	/**
+	 * @testdox Jetpack Sync reads as off, and stores no setting, while no plugin asked jetpack-config for it.
+	 *
+	 * WooCommerce bundles Sync on every store but turns it on only once WooPayments is set up. Sync stores its default
+	 * setting the first time it is read (jetpack-sync class-settings.php:150-157), which would write an autoloaded option
+	 * on stores where nothing runs Sync.
+	 */
+	public function test_sync_reads_off_and_stores_nothing_while_no_plugin_turned_it_on(): void {
+		global $wpdb;
+		delete_option( 'jetpack_sync_settings_disable' );
+
+		$this->assertFalse( Sync_Settings::is_sync_enabled() );
+		$this->assertNull(
+			$wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'jetpack_sync_settings_disable' ) ),
+			'No Sync setting is stored.'
+		);
+	}
+
+	/**
+	 * @testdox Once a plugin asked jetpack-config for Jetpack Sync, its stored setting decides (stored: $stored).
+	 *
+	 * @testWith [null, true]
+	 *           ["0", true]
+	 *           ["1", false]
+	 *
+	 * @param string|null $stored   The stored `jetpack_sync_settings_disable` value, or null when none is stored.
+	 * @param bool        $expected Whether Sync reads as enabled.
+	 */
+	public function test_sync_keeps_its_setting_once_a_plugin_turned_it_on( ?string $stored, bool $expected ): void {
+		delete_option( 'jetpack_sync_settings_disable' );
+		// The Jetpack plugin's own call (no settings, so Sync's defaults).
+		( new JetpackConfig() )->ensure( 'sync' );
+		if ( null !== $stored ) {
+			update_option( 'jetpack_sync_settings_disable', $stored );
+		}
+
+		$this->assertSame( $expected, Sync_Settings::is_sync_enabled() );
+	}
+
+	/**
+	 * @testdox While no plugin turned Jetpack Sync on, the connection reports the active connected plugins to WordPress.com itself.
+	 *
+	 * The connection skips this report when it believes Sync carries it (connection class-plugin-storage.php:213-227,
+	 * 233-256). The answer is synthetic transport-only input in WP_Http::request()'s array shape; only the URL is read.
+	 */
+	public function test_connection_reports_active_plugins_itself_while_no_plugin_turned_sync_on(): void {
+		$this->connect_store();
+		$sent_urls = array();
+		$answer    = static function ( $preempt, array $args, string $url ) use ( &$sent_urls ) {
+			unset( $preempt, $args );
+			$sent_urls[] = $url;
+
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => '{}',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $answer, 10, 3 );
+
+		Plugin_Storage::update_active_plugins_option();
+
+		$reports = array_filter( $sent_urls, static fn( string $url ): bool => false !== strpos( $url, '/sites/123/jetpack-active-connected-plugins' ) );
+		$this->assertCount( 1, $reports, 'The connection posts its active connected plugins to WordPress.com.' );
 	}
 
 	/**

@@ -72,6 +72,22 @@ class WooPaymentsConnectionFeatures implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Read Jetpack Sync as off until a plugin asks jetpack-config for it.
+	 *
+	 * The connection reports active plugins and package versions to WordPress.com itself only while Sync is off, and Sync
+	 * stores its default setting the first time it is read; this keeps both as they were on stores where nothing runs Sync.
+	 * Every plugin that turns Sync on fills Sync's data settings when it calls Config::ensure( 'sync' ).
+	 *
+	 * @internal
+	 *
+	 * @param mixed $pre The value an earlier pre_option filter returned, or false.
+	 * @return mixed 1 while no plugin asked for Sync in this request, otherwise $pre unchanged.
+	 */
+	public static function report_sync_off_until_ensured( $pre ) {
+		return array() === ( new Data_Settings() )->get_data_settings() ? 1 : $pre;
+	}
+
+	/**
 	 * Get the Safe Mode banner copy, which names the store's WordPress.com connection and never a payment provider.
 	 *
 	 * @internal

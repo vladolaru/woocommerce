@@ -317,6 +317,9 @@ final class WooCommerce {
 				'name' => 'WooCommerce',
 			)
 		);
+		// WooCommerce bundles Jetpack Sync but turns it on only once WooPayments is set up; until a plugin does, the
+		// connection must see Sync as off, so it reports active plugins and package versions to WordPress.com itself.
+		add_filter( 'pre_option_jetpack_sync_settings_disable', array( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures::class, 'report_sync_off_until_ensured' ) );
 	}
 
 	/**

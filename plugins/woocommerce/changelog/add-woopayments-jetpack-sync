@@ -1,4 +1,4 @@
 Significance: minor
 Type: add
 
-Keep WordPress.com's copy of a store's name, description, timezone and active plugins current on stores with a connected WooPayments account, using Jetpack Sync with the same minimal settings the WooPayments extension uses. WordPress.com reads the store name and timezone from that copy for dispute emails and fraud prevention, and only Sync refreshes it after the store connects. What the Woo mobile app reads from it is being confirmed with the mobile team.
+Keep WordPress.com's copy of a store's name, description, timezone and active plugins current on stores with a connected WooPayments account, using Jetpack Sync with the WooPayments extension's settings. As with the extension, Sync also sends WooCommerce data through its own WooCommerce modules: orders, order items, payment tokens, tax rates, webhooks and WooCommerce settings. WordPress.com reads the store name and timezone from its copy for dispute emails and fraud prevention, and only Sync refreshes it after the store connects. What the Woo mobile app reads from it is being confirmed with the mobile team.
