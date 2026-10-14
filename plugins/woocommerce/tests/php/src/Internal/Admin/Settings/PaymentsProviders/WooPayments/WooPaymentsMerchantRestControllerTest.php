@@ -1621,6 +1621,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should upload WooPayments settings files through the API client.
 	 */
 	public function test_upload_settings_file_calls_the_api_client(): void {
+		// The platform answers an upload with a file object (client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147), trimmed here to its id.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'upload_file' )
@@ -1638,6 +1639,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should read WooPayments settings file details and contents through the API client.
 	 */
 	public function test_settings_file_detail_and_content_routes_call_the_api_client(): void {
+		// File object and file contents shapes from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147 and :174, trimmed.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1700,6 +1702,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * Provide file route failures. Like the other admin routes, the routes keep a 400-599 status and answer 500 for any
 	 * other, as an unreadable 200 answer (WooPaymentsApiClient's wcpay_unparseable_or_null_body) or an upload whose body
 	 * could not be encoded (status 0). With the status passed through, the logo upload read those as a success.
+	 * The failures are synthetic: each row builds the exception with an error code the API client or the platform uses.
 	 *
 	 * @return array<string,array{string,string,string,string,int,int}>
 	 */
@@ -1726,6 +1729,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		);
 		add_filter( 'user_has_cap', $filter_callback );
 
+		// File object and file contents shapes from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147 and :174, trimmed.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1762,6 +1766,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should normalize missing public WooPayments files to a not found response.
 	 */
 	public function test_get_native_public_settings_file_normalizes_missing_file_errors(): void {
+		// Synthetic failure: the platform's resource_missing code with a 500, which client 11.1.0 also answers as 404 (includes/admin/class-wc-rest-payments-files-controller.php:199).
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1782,6 +1787,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should normalize public WooPayments file content errors to an internal error response.
 	 */
 	public function test_get_native_public_settings_file_normalizes_content_errors(): void {
+		// File object shape from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147, trimmed; the contents failure is synthetic.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1816,6 +1822,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		);
 		add_filter( 'user_has_cap', $filter_callback );
 
+		// File object shape from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147, trimmed.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1853,7 +1860,8 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		// Ensure the classification cache misses so the handler must re-fetch the fresh purpose.
 		delete_transient( 'wcpay_file_purpose_file_reclassified_0' );
 
-		// The provider has reclassified this file from public to private since it was last served.
+		// The provider has reclassified this file from public to private since it was last served. File object shape
+		// from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147, trimmed.
 		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
@@ -1891,6 +1899,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the public file REST serve filter at most once across repeated dispatches.
 	 */
 	public function test_get_native_public_settings_file_registers_serve_filter_once(): void {
+		// File object and file contents shapes from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147 and :174, trimmed.
 		$this->mock_api_client
 			->method( 'get_file' )
 			->with( 'file_test_logo', false )
