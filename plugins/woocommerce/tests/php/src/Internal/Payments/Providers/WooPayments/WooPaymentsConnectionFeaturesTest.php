@@ -11,6 +11,7 @@ use Automattic\Jetpack\IdentityCrisis\UI as IdentityCrisisUI;
 use Automattic\Jetpack\Status\Cache as StatusCache;
 use Automattic\Jetpack\Sync\Data_Settings;
 use Automattic\Jetpack\Sync\Default_Filter_Settings;
+use Automattic\Jetpack\Sync\JSON_Deflate_Array_Codec;
 use Automattic\Jetpack\Sync\Actions as Sync_Actions;
 use Automattic\Jetpack\Sync\Modules;
 use Automattic\Jetpack\Sync\Settings as Sync_Settings;
@@ -228,8 +229,10 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox WordPress's plugins_loaded step starts Safe Mode and Sync, and Sync's first send already carries the Safe Mode arguments.
 	 *
-	 * Without them a copy of the store would sync its URLs to WordPress.com unchecked. The answer is synthetic transport-only
-	 * input in WP_Http::request()'s array shape; only the request URL is read.
+	 * Without them a copy of the store would sync its URLs to WordPress.com unchecked. The sent item has the sender's shape,
+	 * one queue item id mapped to its codec-encoded action (jetpack-sync class-sender.php:517-567), because the connection
+	 * refuses to sign an empty body. The answer has the shape of WordPress.com's Sync endpoint
+	 * (wp-content/rest-api-plugins/endpoints/jetpack-sync-actions.php:118-122, `processed_items`); only the request URL is read.
 	 */
 	public function test_plugins_loaded_starts_safe_mode_before_the_first_sync_send(): void {
 		$this->skip_on_multisite();
@@ -239,14 +242,16 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 1, did_action( 'jetpack_feature_identity_crisis_enabled' ), 'Safe Mode started.' );
 		$this->assertSame( 1, did_action( 'jetpack_feature_sync_enabled' ), 'Sync started.' );
-		$sent_url = '';
-		$answer   = static function ( $preempt, array $args, string $url ) use ( &$sent_url ) {
+		$sync_urls = array();
+		$answer    = static function ( $preempt, array $args, string $url ) use ( &$sync_urls ) {
 			unset( $preempt, $args );
-			$sent_url = $url;
+			if ( false !== strpos( $url, '/jetpack-sync-actions' ) || false !== strpos( $url, 'xmlrpc.php' ) ) {
+				$sync_urls[] = $url;
+			}
 
 			return array(
-				'headers'  => array( 'content-type' => 'text/xml' ),
-				'body'     => '',
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode( array( 'processed_items' => array() ) ),
 				'response' => array(
 					'code'    => 200,
 					'message' => 'OK',
@@ -256,11 +261,14 @@ class WooPaymentsConnectionFeaturesTest extends WC_Unit_Test_Case {
 			);
 		};
 		add_filter( 'pre_http_request', $answer, 10, 3 );
+		$codec = new JSON_Deflate_Array_Codec();
+		$items = array( 'jpsq_sync-1791946252.000000-000001-1' => $codec->encode( array( 'updated_option', array( 'blogname', 'Old name', 'New name' ), 0, microtime( true ), false ) ) );
 
-		Sync_Actions::send_data( array(), 'deflate-json-array', microtime( true ), 'sync', 0.0, 0.0 );
+		Sync_Actions::send_data( $items, $codec->name(), microtime( true ), 'sync', 0.0, 0.0 );
 
-		parse_str( (string) wp_parse_url( $sent_url, PHP_URL_QUERY ), $sent_args );
-		$this->assertSame( '1', $sent_args['sync'] ?? null, 'Sync sent its actions.' );
+		$this->assertCount( 1, $sync_urls, 'Sync sent its actions to WordPress.com once.' );
+		parse_str( (string) wp_parse_url( $sync_urls[0], PHP_URL_QUERY ), $sent_args );
+		$this->assertSame( '1', $sent_args['sync'] ?? null, 'The request is a Sync send.' );
 		$this->assertSame( '1', $sent_args['idc'] ?? null, 'Sync\'s first send asks the platform to check for a copied site.' );
 		$this->assertArrayHasKey( 'home', $sent_args, 'Sync\'s first send tells the platform the URL it comes from.' );
 	}
