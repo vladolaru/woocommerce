@@ -648,6 +648,26 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A gateway settings update that turns Apple Pay on reaches the domain registration.
+	 */
+	public function test_settings_update_turning_apple_pay_on_registers_the_domain(): void {
+		$this->service = $this->create_service();
+		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
+		update_option( self::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		$this->service->register();
+
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled'                           => 'yes',
+				'express_checkout_checkout_methods' => array( 'payment_request' ),
+			)
+		);
+
+		$this->assertSame( array( $this->expected_domain ), $this->api_client->registered_domains );
+	}
+
+	/**
 	 * @testdox Registers the settings and retry listeners, so a settings write and a scheduled retry reach the domain registration.
 	 */
 	public function test_register_hooks_the_settings_and_retry_listeners(): void {

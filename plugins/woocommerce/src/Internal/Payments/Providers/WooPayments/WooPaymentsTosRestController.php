@@ -22,8 +22,6 @@ use WP_REST_Server;
  */
 class WooPaymentsTosRestController extends RestApiControllerBase {
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const ONBOARDING_STRIPE_CONNECTED_OPTION = '_wcpay_onboarding_stripe_connected';
 
 	private const RESULT_SUCCESS = 'success';
@@ -170,12 +168,12 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 	 * @param bool $enabled Whether the gateway should be enabled.
 	 */
 	private function set_gateway_enabled( bool $enabled ): void {
-		$settings = get_option( self::SETTINGS_OPTION, array() );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings = is_array( $settings ) ? $settings : array();
 
 		$settings['enabled'] = $enabled ? 'yes' : 'no';
 
-		update_option( self::SETTINGS_OPTION, $settings );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 	}
 
 	/**

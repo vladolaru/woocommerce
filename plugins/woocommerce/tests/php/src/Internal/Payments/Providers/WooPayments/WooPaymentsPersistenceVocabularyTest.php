@@ -34,6 +34,7 @@ class WooPaymentsPersistenceVocabularyTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'woocommerce_payments', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$this->assertSame( 'woocommerce_payments_', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX );
+		$this->assertSame( 'woocommerce_woocommerce_payments_settings', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 		$this->assertSame( 'wcpay_processing_intent_' . $order->get_id(), $this->sut->get_order_lock_key( $order ) );
 		$this->assertSame( '-1', $this->sut->get_lock_sentinel() );
 		$this->assertSame( 300, $this->sut->get_lock_ttl_seconds() );

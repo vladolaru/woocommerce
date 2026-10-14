@@ -54,8 +54,6 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	private const NORMALIZED_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
@@ -382,7 +380,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_gateway_settings(): array {
-		$settings = get_option( self::SETTINGS_OPTION, array() );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 
 		return is_array( $settings ) ? $settings : array();
 	}

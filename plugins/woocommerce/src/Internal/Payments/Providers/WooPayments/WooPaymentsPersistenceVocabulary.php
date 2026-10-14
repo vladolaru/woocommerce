@@ -12,7 +12,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use WC_Order;
 
 /**
- * Names the gateway ids, order payment lock and order meta keys that WooPayments payments are stored under.
+ * Names the gateway ids, the gateway settings option, the order payment lock and the order meta keys that WooPayments
+ * payments are stored under.
  *
  * @since 11.0.0
  * @internal
@@ -35,6 +36,16 @@ class WooPaymentsPersistenceVocabulary implements ProviderPersistenceVocabularyI
 	 * @var string
 	 */
 	public const GATEWAY_ID_PREFIX = 'woocommerce_payments_';
+
+	/**
+	 * Gateway settings option: WC_Settings_API's option for the `woocommerce_payments` gateway, which the WooPayments
+	 * extension and the built-in WooPayments read and write under the same name.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @var string
+	 */
+	public const GATEWAY_SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
 	/**
 	 * Comment-meta key holding the identities of WooPayments payment notes.

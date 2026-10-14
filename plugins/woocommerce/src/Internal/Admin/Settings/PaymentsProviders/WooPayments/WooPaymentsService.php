@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
@@ -3305,7 +3305,7 @@ class WooPaymentsService {
 	 * @param bool $is_live Whether the finalized account is live.
 	 */
 	private function enable_native_gateway_after_kyc_finalization( bool $is_live ): void {
-		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['enabled']   = 'yes';
 		$settings['test_mode'] = $is_live ? 'no' : 'yes';
@@ -3371,7 +3371,7 @@ class WooPaymentsService {
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
 	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
-		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings           = is_array( $settings ) ? $settings : array();
 		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
 		$enabled_ids        = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
@@ -3489,7 +3489,7 @@ class WooPaymentsService {
 	 * Save enabled native test-drive payment methods before deleting the account.
 	 */
 	private function save_native_test_drive_settings_for_live_account(): void {
-		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsSettingsService::SETTINGS_OPTION, array() );
+		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$enabled_payment_methods = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_test_drive_payment_method_ids( $settings['upe_enabled_payment_method_ids'] )
 			: array();
@@ -3974,12 +3974,12 @@ class WooPaymentsService {
 	 * @return void
 	 */
 	private function set_native_gateway_test_mode( bool $test_mode ): void {
-		$settings              = $this->proxy->call_function( 'get_option', 'woocommerce_woocommerce_payments_settings', array() );
+		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['test_mode'] = $test_mode ? 'yes' : 'no';
 
 		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
-		$this->proxy->call_function( 'update_option', 'woocommerce_woocommerce_payments_settings', $settings );
+		$this->proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 	}
 
 	/**
@@ -3999,13 +3999,13 @@ class WooPaymentsService {
 	 * @return void
 	 */
 	private function update_native_gateway_settings_after_test_account_init( array $capabilities, array $response ): void {
-		$settings              = $this->proxy->call_function( 'get_option', 'woocommerce_woocommerce_payments_settings', array() );
+		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['enabled']   = 'yes';
 		$settings['test_mode'] = $this->get_native_response_bool( $response, array( 'is_live', 'isLive' ), false ) ? 'no' : 'yes';
 
 		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
-		$this->proxy->call_function( 'update_option', 'woocommerce_woocommerce_payments_settings', $settings );
+		$this->proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 
 		// Client 11.1.0 init_test_drive_account() applies the picks once the test-drive account exists.
 		if ( ! empty( $capabilities ) ) {

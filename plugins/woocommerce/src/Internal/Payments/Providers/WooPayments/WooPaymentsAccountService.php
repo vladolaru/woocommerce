@@ -68,8 +68,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		'PR',
 	);
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const REPORTS_AREA_FLAG_OPTION = '_wcpay_feature_reports_area';
 
 	private const ONBOARDING_TEST_MODE_OPTION = 'wcpay_onboarding_test_mode';
@@ -490,7 +488,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$settings['test_mode']                      = 'no';
 		$settings['upe_enabled_payment_method_ids'] = array( 'card' );
 
-		$this->legacy_proxy->call_function( 'update_option', self::SETTINGS_OPTION, $settings );
+		$this->legacy_proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_STRIPE_CONNECTED_OPTION, array() );
 		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'no', true );
 		$this->legacy_proxy->call_function( 'delete_option', self::ONBOARDING_CONNECTION_SUCCESS_MODAL_OPTION );
@@ -1471,7 +1469,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	private function get_stored_gateway_settings(): array {
 		try {
-			$settings = $this->legacy_proxy->call_function( 'get_option', self::SETTINGS_OPTION, array() );
+			$settings = $this->legacy_proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		} catch ( \Throwable $e ) {
 			$this->log_read_failure( 'the gateway settings', $e );
 			return array();

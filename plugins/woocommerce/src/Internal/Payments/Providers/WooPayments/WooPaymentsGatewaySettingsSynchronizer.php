@@ -18,8 +18,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInterface {
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const PAYMENT_REQUEST_METHOD_IDS = array( 'apple_pay', 'google_pay' );
 
 	private const PAYMENT_REQUEST_PENDING_OPTION = 'woocommerce_woopayments_payment_request_sync_pending';
@@ -76,7 +74,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 */
 	public function persist( array $settings, ?bool $payment_request_enabled = null ): array {
 		$missing_marker                  = new \stdClass();
-		$stored_canonical_settings       = get_option( self::SETTINGS_OPTION, $missing_marker );
+		$stored_canonical_settings       = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $missing_marker );
 		$pending_payment_request_setting = get_option( self::PAYMENT_REQUEST_PENDING_OPTION, $missing_marker );
 		$has_pending_payment_request     = in_array( $pending_payment_request_setting, array( 'yes', 'no' ), true );
 		if (
@@ -121,13 +119,13 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			);
 		}
 
-		if ( ! $this->write_option_and_verify( self::SETTINGS_OPTION, $settings ) ) {
+		if ( ! $this->write_option_and_verify( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings ) ) {
 			return array(
 				'settings'                        => $settings,
 				'updated_split_options'           => array(),
 				'removed_discontinued_method_ids' => $normalization['removed_discontinued_method_ids'],
 				'persisted'                       => false,
-				'failed_option_names'             => array( self::SETTINGS_OPTION ),
+				'failed_option_names'             => array( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION ),
 			);
 		}
 		$this->sync_setup_tier( $settings );
@@ -172,8 +170,8 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * The classic toggle and the payment gateways REST route write the option directly, without `persist()`.
 	 */
 	public function register(): void {
-		add_action( 'add_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_added' ), 10, 2 );
-		add_action( 'update_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_updated' ), 10, 2 );
+		add_action( 'add_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'handle_settings_added' ), 10, 2 );
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'handle_settings_updated' ), 10, 2 );
 	}
 
 	/**

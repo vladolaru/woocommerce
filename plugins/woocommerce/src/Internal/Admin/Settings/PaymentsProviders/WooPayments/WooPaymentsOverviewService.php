@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -362,7 +363,7 @@ class WooPaymentsOverviewService {
 		wp_prime_option_caches(
 			array(
 				WooPaymentsDatabaseCache::ACCOUNT_KEY,
-				'woocommerce_woocommerce_payments_settings',
+				WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 				'wcpay_onboarding_test_mode',
 				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY,
 				WooPaymentsDatabaseCache::DISPUTE_STATUS_COUNTS_KEY_TEST_MODE,
@@ -439,7 +440,7 @@ class WooPaymentsOverviewService {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_ids(): array {
-		$settings    = get_option( 'woocommerce_woocommerce_payments_settings', array() );
+		$settings    = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$enabled_ids = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $settings['upe_enabled_payment_method_ids']
 			: ( is_array( $settings ) && is_array( $settings['enabled_payment_method_ids'] ?? null ) ? $settings['enabled_payment_method_ids'] : array( 'card' ) );

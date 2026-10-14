@@ -259,8 +259,8 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 		add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule_recurring_actions' ) );
 		add_action( 'updated_option', array( $this, 'handle_site_language_update' ), 10, 3 );
 		add_action( 'update_option_woocommerce_coming_soon', array( $this, 'handle_store_launch' ), 10, 2 );
-		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
-		add_action( 'update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'maybe_add_missing_currencies' ) );
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'maybe_handle_test_mode_toggle' ), 10, 2 );
 		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ), 10, 4 );
 	}
 

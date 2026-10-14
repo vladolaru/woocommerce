@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -27,7 +28,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
@@ -1001,7 +1001,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( $route_suffix ) );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'card', 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Placeholders are never stored as payment methods.' );
@@ -1038,7 +1038,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( $route_suffix ) );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'no', $settings['platform_checkout'] );
@@ -1069,7 +1069,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'yes', $settings['enabled'], 'The card gateway is enabled with the card payment method.' );
@@ -1097,7 +1097,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
+		$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
 		$this->assertFalse( wc_get_container()->get( WooPaymentsAccountService::class )->has_account(), 'The platform created no account yet.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $state->get_effective_tier(), 'Without an account the store stays below the active tier.' );
 	}
@@ -1121,7 +1121,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Card stays out of the enabled methods.' );
@@ -1148,7 +1148,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'no', $settings['platform_checkout'] );
@@ -1197,11 +1197,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 		$this->run_woopayments_controller_admin_init( $controller );
-		$this->assertSame( 'no', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] ?? 'no', 'Neither finalization nor a page without the success flag turns WooPay on.' );
+		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['platform_checkout'] ?? 'no', 'Neither finalization nor a page without the success flag turns WooPay on.' );
 
 		$_GET['wcpay-connection-success'] = '1';
 		$this->run_woopayments_controller_admin_init( $controller );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( $landed_woopay, $settings['platform_checkout'] ?? 'no' );
 		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
@@ -1221,7 +1221,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$controller = new WooPaymentsController();
 		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'no',
 				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
@@ -1231,7 +1231,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$_GET['wcpay-connection-success'] = '1';
 
 		$this->run_woopayments_controller_admin_init( $controller );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 'no', $settings['platform_checkout'] );
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
@@ -1248,7 +1248,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$controller = new WooPaymentsController();
 		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'no',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -1259,7 +1259,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->run_woopayments_controller_admin_init( $controller );
 
-		$this->assertSame( 'no', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] );
+		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['platform_checkout'] );
 		$this->assertTrue( (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
 	}
 
@@ -1366,7 +1366,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 		// The client logs this through its Logger, written only with debug logging on.
 		add_filter(
-			'option_' . WooPaymentsSettingsService::SETTINGS_OPTION,
+			'option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			static fn( $settings ) => array_merge( (array) $settings, array( 'enable_logging' => 'yes' ) )
 		);
 		$logger = RecordingWcLogger::install();
@@ -1379,7 +1379,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
 
 		// With debug logging off, the same exception is not logged, as the client's Logger::error() is gated.
-		remove_all_filters( 'option_' . WooPaymentsSettingsService::SETTINGS_OPTION );
+		remove_all_filters( 'option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 		$logger = RecordingWcLogger::install();
 		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
 		$this->assertSame( array(), $logger->get_errors(), 'An exception reading the notes follows the logging setting.' );
@@ -1540,9 +1540,9 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$first_response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$first_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$first_settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 		$this->sut->finish_onboarding_kyc_session( 'US' );
-		$second_settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$second_settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame(
 			array(
@@ -1599,7 +1599,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->sut->get_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 		$this->assertSame( array( 'card', 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Session creation applies the picks.' );
 
 		// The merchant turns iDEAL off; a settings save ends in this canonical write.
@@ -1607,11 +1607,11 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings )['persisted'] );
 
 		$this->assertTrue( $this->sut->finish_onboarding_kyc_session( 'US' )['success'] );
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'Finalization keeps the change.' );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'Finalization keeps the change.' );
 
 		$fixture['account_service']->refresh_account_data();
 
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'A later account refresh keeps the change.' );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'], 'A later account refresh keeps the change.' );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 	}
 
@@ -1656,7 +1656,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card', 'ideal', 'link' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card', 'ideal', 'link' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
@@ -1787,7 +1787,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$request->set_param( 'source', WooPaymentsService::SESSION_ENTRY_LYS );
 
 		$response = $server->dispatch( $request );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertTrue( $response->get_data()['success'] );
@@ -1835,7 +1835,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param string $refused_write Settings write the store refuses.
 	 */
 	public function test_native_kyc_finalize_logs_settings_writes_that_did_not_persist( string $refused_write ): void {
-		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'enabled' => 'no' ) );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'enabled' => 'no' ) );
 		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
 		set_transient(
 			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
@@ -1847,7 +1847,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 		if ( 'gateway enable' === $refused_write ) {
 			add_filter(
-				'pre_update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION,
+				'pre_update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 				static fn( $value, $old_value ) => is_array( $value ) && 'yes' === ( $value['enabled'] ?? 'no' ) ? $old_value : $value,
 				10,
 				2
@@ -1863,7 +1863,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$messages = array_column( $logger->get_errors(), 1 );
 		if ( 'gateway enable' === $refused_write ) {
 			$this->assertContains( 'Native WooPayments could not enable the gateway after KYC finalization.', $messages );
-			$this->assertStringContainsString( WooPaymentsSettingsService::SETTINGS_OPTION, (string) wp_json_encode( $logger->contexts ) );
+			$this->assertStringContainsString( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, (string) wp_json_encode( $logger->contexts ) );
 		} else {
 			$this->assertSame( array( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' ), $messages );
 			$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ), 'The Test Drive selection is not deleted with the failed write.' );
@@ -1899,7 +1899,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			HOUR_IN_SECONDS
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -1907,7 +1907,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
@@ -1950,7 +1950,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			HOUR_IN_SECONDS
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -1958,7 +1958,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( array( 'card', 'ideal', 'link' ), $settings['upe_enabled_payment_method_ids'] );
@@ -1977,7 +1977,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			array( 'card' => true )
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -1986,7 +1986,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 
-		$this->assertSame( 'yes', get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['platform_checkout'] );
+		$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['platform_checkout'] );
 	}
 
 	/**
@@ -2012,7 +2012,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			HOUR_IN_SECONDS
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -2020,7 +2020,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', $settings['platform_checkout'] );
@@ -2061,7 +2061,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			HOUR_IN_SECONDS
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card' ),
@@ -2069,7 +2069,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsSettingsService::SETTINGS_OPTION );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
@@ -2078,7 +2078,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$fixture['account_service']->refresh_account_data();
 
-		$this->assertSame( array( 'card', 'link' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card', 'link' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 	}
 
 	/**
@@ -2107,7 +2107,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'accs_secret_finalized_native', $session['clientSecret'], 'Session creation does not surface the refused write.' );
 		$this->assertSame( 1, $attempts->count, 'The picks are written once.' );
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_ideal_settings', false ) );
 		$this->assertCount( 1, $logger->get_errors() );
 		$this->assertStringContainsString( 'could not save the payment methods picked in onboarding', $logger->get_errors()[0][1] );
@@ -2129,7 +2129,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card' ), get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( array( 'card' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_ideal_settings', false ) );
 	}
 
@@ -2145,7 +2145,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$attempts        = new \stdClass();
 		$attempts->count = 0;
 		add_filter(
-			'pre_update_option_' . WooPaymentsSettingsService::SETTINGS_OPTION,
+			'pre_update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			static function ( $value, $old_value ) use ( $payment_method_id, $failures, $exception, $attempts ) {
 				if ( ! is_array( $value ) || ! in_array( $payment_method_id, (array) ( $value['upe_enabled_payment_method_ids'] ?? array() ), true ) ) {
 					return $value;
@@ -2744,7 +2744,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option(
-			WooPaymentsSettingsService::SETTINGS_OPTION,
+			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
 				'platform_checkout'              => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card', 'link', 'link', '', array( 'invalid' ) ),
@@ -14407,7 +14407,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
 				unset( $live_account, $site_data, $user_data, $account_data, $referral_code );
 				$this->actioned_notes_by_call['initialize_onboarding_embedded_kyc'] = $actioned_notes;
-				$this->enabled_at_platform_call                                     = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+				$this->enabled_at_platform_call                                     = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
 				return array_merge(
 					array(
@@ -14438,7 +14438,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
 				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $collect_payout_requirements, $referral_code );
 				$this->actioned_notes_by_call['initialize_onboarding'] = $actioned_notes;
-				$this->enabled_at_platform_call                        = get_option( WooPaymentsSettingsService::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
+				$this->enabled_at_platform_call                        = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
 				return array_merge(
 					array(
@@ -14500,7 +14500,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, $settings );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => $wallets_enabled ) );
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => $wallets_enabled ) );
 
@@ -14798,7 +14798,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		update_option( WooPaymentsSettingsService::SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option(
 			'wcpay_account_data',
 			array(

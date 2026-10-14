@@ -20,8 +20,6 @@ use Throwable;
  */
 class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const APPLE_PAY_SETTINGS_OPTION = 'woocommerce_woocommerce_payments_apple_pay_settings';
 
 	private const ERROR_OPTION = 'wcpay_apple_pay_domain_error';
@@ -122,8 +120,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		add_action( 'woocommerce_woocommerce_payments_admin_notices', array( $this, 'display_error_notice' ) );
 		add_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_new_apple_pay_settings' ), 10, 2 );
 		add_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_apple_pay_settings' ), 10, 2 );
-		add_action( 'add_option_' . self::SETTINGS_OPTION, array( $this, 'verify_domain_on_new_gateway_settings' ), 10, 2 );
-		add_action( 'update_option_' . self::SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_gateway_settings' ), 10, 2 );
+		add_action( 'add_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_new_gateway_settings' ), 10, 2 );
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_gateway_settings' ), 10, 2 );
 		add_action( 'update_option_home', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( 'update_option_siteurl', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( self::RETRY_ACTION, array( $this, 'handle_domain_registration_retry' ) );
@@ -584,7 +582,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_gateway_settings(): array {
-		$settings = get_option( self::SETTINGS_OPTION, array() );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 
 		return is_array( $settings ) ? $settings : array();
 	}
@@ -608,7 +606,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @param array<string,mixed> $updates Settings to update.
 	 */
 	private function update_gateway_settings( array $updates ): void {
-		update_option( self::SETTINGS_OPTION, array_merge( $this->get_gateway_settings(), $updates ) );
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array_merge( $this->get_gateway_settings(), $updates ) );
 	}
 
 	/**

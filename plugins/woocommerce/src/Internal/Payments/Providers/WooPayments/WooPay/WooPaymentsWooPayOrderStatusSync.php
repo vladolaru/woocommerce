@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -130,7 +131,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page; native rotates the secret after a refresh instead.
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
 
-		add_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $this, 'handle_settings_update' ), 10, 2 );
+		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'handle_settings_update' ), 10, 2 );
 	}
 
 	/**

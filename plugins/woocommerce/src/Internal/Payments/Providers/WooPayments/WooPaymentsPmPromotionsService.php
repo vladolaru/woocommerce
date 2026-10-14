@@ -23,8 +23,6 @@ class WooPaymentsPmPromotionsService {
 
 	public const PROMOTION_DISMISSALS_OPTION = '_wcpay_pm_promotion_dismissals';
 
-	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const VALID_PROMOTION_TYPES = array(
 		'badge',
 		'spotlight',
@@ -739,7 +737,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return array<string,mixed>
 	 */
 	private function get_gateway_settings(): array {
-		$settings = get_option( self::SETTINGS_OPTION, array() );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 
 		return is_array( $settings ) ? $settings : array();
 	}

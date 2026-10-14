@@ -22,8 +22,6 @@ use WP_Error;
  */
 class WooPaymentsSettingsService {
 
-	public const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
-
 	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
 
 	private const WCPAY_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
