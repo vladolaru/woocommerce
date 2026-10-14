@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Exception;
 use Throwable;
 use WP_Error;
@@ -21,18 +21,13 @@ use WP_REST_Server;
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsWooPaySessionController extends RestApiControllerBase {
+class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
+
+	private const NAMESPACE = 'payments/woopay';
 
 	private const CLASSIC_WOOPAY_SCRIPT_HANDLE = 'wc-woopayments-woopay';
 
 	private const CLASSIC_WOOPAY_STYLE_HANDLE = 'wc-woopayments-woopay';
-
-	/**
-	 * The WooPay session route's namespace.
-	 *
-	 * @var string
-	 */
-	protected string $route_namespace = 'payments/woopay';
 
 	/**
 	 * WooPay session service.
@@ -67,15 +62,6 @@ class WooPaymentsWooPaySessionController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get this controller's key in WooCommerce's list of REST controllers.
-	 *
-	 * @return string
-	 */
-	protected function get_rest_api_namespace(): string {
-		return 'woopayments-woopay-session';
-	}
-
-	/**
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
@@ -98,8 +84,10 @@ class WooPaymentsWooPaySessionController extends RestApiControllerBase {
 		// The session route stays registered whenever native owns the runtime: the plugin
 		// registers it unconditionally and answers ineligible or unsigned callers through the
 		// permission callback (401), so a disabled/ineligible state must not turn into a 404
-		// that makes WooPay's bootstrap fail opaquely.
-		parent::register();
+		// that makes WooPay's bootstrap fail opaquely. It registers on its own rest_api_init
+		// callback, as in client 11.1.0 (class-wc-payments.php:860, :2451-2452), so a plugin that
+		// empties WooCommerce's list of REST controllers does not remove it.
+		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
 		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
 		// owner, so WooPay would read as disabled. Decide on init instead. Client 11.1.0 decides in a setup_theme
@@ -241,7 +229,7 @@ class WooPaymentsWooPaySessionController extends RestApiControllerBase {
 	 */
 	public function register_routes(): void {
 		register_rest_route(
-			$this->route_namespace,
+			self::NAMESPACE,
 			'/session',
 			array(
 				'methods'             => WP_REST_Server::READABLE,

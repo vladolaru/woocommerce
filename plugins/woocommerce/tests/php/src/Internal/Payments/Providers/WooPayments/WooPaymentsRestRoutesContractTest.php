@@ -377,6 +377,49 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin that empties WooCommerce's REST namespaces removes the provider's admin routes but not the webhook or WooPay session route.
+	 *
+	 * Client 11.1.0 registers both routes on its own rest_api_init callback (class-wc-payments.php:860, :2360-2361, :2451-2452),
+	 * so such a plugin does not remove them there either.
+	 */
+	public function test_emptied_rest_namespaces_keep_only_the_webhook_and_woopay_session_routes(): void {
+		global $wp_rest_server;
+
+		$roots       = array_merge( WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots(), array( WooPaymentsWooPaySessionController::class ) );
+		$controllers = array_map( static fn( string $root ) => wc_get_container()->get( $root ), $roots );
+		$previous    = $wp_rest_server;
+
+		try {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh REST server for this comparison; restored below.
+			$wp_rest_server = new WP_REST_Server();
+			$server_routes  = array_keys( $wp_rest_server->get_routes() );
+			foreach ( $controllers as $controller ) {
+				$controller->register_routes();
+			}
+			$index_routes    = array_map( static fn( string $route_namespace ) => '/' . $route_namespace, $wp_rest_server->get_namespaces() );
+			$provider_routes = array_diff( array_keys( $wp_rest_server->get_routes() ), $server_routes, $index_routes );
+
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- A fresh REST server for this comparison; restored below.
+			$wp_rest_server = new WP_REST_Server();
+			foreach ( $controllers as $controller ) {
+				$controller->register();
+			}
+			// Added after the provider's callbacks at the same priority, as by a plugin that loads after WooCommerce.
+			add_filter( 'woocommerce_rest_api_get_rest_namespaces', '__return_empty_array' );
+			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
+			do_action( 'rest_api_init', $wp_rest_server );
+			$kept = array_values( array_intersect( $provider_routes, array_keys( $wp_rest_server->get_routes() ) ) );
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the test's REST server.
+			$wp_rest_server = $previous;
+		}
+
+		sort( $kept );
+		$this->assertGreaterThan( 50, count( $provider_routes ), 'The admin controllers must register their routes when nothing empties the list.' );
+		$this->assertSame( array( '/payments/woopay/session', '/wc/v3/payments/webhook' ), $kept, 'Only the webhook and WooPay session routes may survive an emptied list of WooCommerce REST namespaces.' );
+	}
+
+	/**
 	 * @testdox No ALLOWED_DIFFERENCES route is stale: the built-in WooPayments must not already serve it.
 	 */
 	public function test_allowed_differences_are_not_stale(): void {

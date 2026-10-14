@@ -71,8 +71,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox The controller registers POST /wc/v3/payments/webhook when the built-in WooPayments owns the runtime.
 	 */
 	public function test_registers_wc_v3_payments_webhook_when_builtin_owns_runtime(): void {
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsWebhookRestController::class, $this->sut );
 		$this->sut->register();
 		// The controller registers routes on the REST API initialization hook in production.
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -710,7 +708,7 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Remove the controller REST hook.
 	 */
 	private function remove_rest_hook(): void {
-		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
+		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
 	}
 
 	/**

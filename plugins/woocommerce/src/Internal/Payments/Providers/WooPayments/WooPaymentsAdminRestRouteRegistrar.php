@@ -52,7 +52,8 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	/**
 	 * Resolve and register the route controllers for an internal REST dispatch.
 	 *
-	 * Each controller adds itself to WooCommerce's REST server, which registers its routes later on this hook, at priority 10.
+	 * Each controller registers its routes later on this hook, at priority 10: through WooCommerce's REST server, or on its own
+	 * callback for the webhook and WooPay session controllers.
 	 *
 	 * @since 11.2.0
 	 */

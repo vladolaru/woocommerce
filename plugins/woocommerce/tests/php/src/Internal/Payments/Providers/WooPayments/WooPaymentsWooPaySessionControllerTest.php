@@ -43,7 +43,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		if ( $this->sut instanceof WooPaymentsWooPaySessionController ) {
-			remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
+			remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
 			foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 				remove_action( $hook, array( $this->sut, $method ) );
 			}
@@ -83,7 +83,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$_GET     = array();
 		$_POST    = array();
 		$_REQUEST = array();
-		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
@@ -94,8 +93,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
 
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsWooPaySessionController::class, $this->sut );
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -162,7 +159,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertTrue( $service->is_woopay_enabled() );
-		$this->assertSame( 10, has_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) ) );
+		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -178,7 +175,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
 		// The session route stays registered so an ineligible or disabled state answers with the
 		// permission callback's 401 instead of a 404, mirroring the plugin's unconditional route.
-		$this->assertSame( 10, has_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) ) );
+		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
 		}
