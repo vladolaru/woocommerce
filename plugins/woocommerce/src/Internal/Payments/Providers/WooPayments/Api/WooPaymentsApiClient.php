@@ -2619,7 +2619,7 @@ class WooPaymentsApiClient {
 	}
 
 	/**
-	 * Send a list request through its request-object filter.
+	 * Send a request through its request filter.
 	 *
 	 * @since 11.0.0
 	 *
@@ -2627,7 +2627,7 @@ class WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When the request has no hook or transport fails.
 	 */
-	public function send_list_request( AbstractWooPaymentsApiRequest $request ): array {
+	public function send_request( AbstractWooPaymentsApiRequest $request ): array {
 		$hook = $request->get_hook();
 
 		if ( '' === $hook ) {
