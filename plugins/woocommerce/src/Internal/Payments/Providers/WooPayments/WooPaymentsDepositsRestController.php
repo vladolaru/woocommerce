@@ -306,24 +306,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	private function get_filtered_deposits_list_params( WP_REST_Request $request ): array {
 		$deposits_request = WooPaymentsDepositsListRequest::from_rest_request( $request );
 
-		/**
-		 * Allows the WooPayments deposits list request to be modified before it is sent to the platform.
-		 * Any return value that is not a request object stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsDepositsListRequest $deposits_request Native deposits list request.
-		 */
-		$filtered_request = apply_filters( 'wcpay_list_deposits_request', $deposits_request );
-
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_deposits_request' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
-
-		return $filtered_request->get_params();
+		return $deposits_request->get_filtered_request()->get_params();
 	}
 
 	/**

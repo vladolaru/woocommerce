@@ -356,24 +356,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	private function apply_authorizations_request_filter( array $params ): array {
 		$request = WooPaymentsAuthorizationsListRequest::from_params( $params );
 
-		/**
-		 * Allows the WooPayments authorizations list request to be modified before it is sent to the platform.
-		 * Any return value that is not a request object stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsAuthorizationsListRequest $request Native authorizations list request.
-		 */
-		$filtered_request = apply_filters( 'wcpay_list_authorizations_request', $request );
-
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_authorizations_request' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
-
-		return $filtered_request->get_params();
+		return $request->get_filtered_request()->get_params();
 	}
 
 	/**

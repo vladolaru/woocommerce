@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use WP_REST_Request;
 
 /**
@@ -299,6 +300,38 @@ abstract class WooPaymentsPaginatedListRequest {
 	 */
 	public function assign_hook( string $hook ) {
 		$this->hook = $hook;
+	}
+
+	/**
+	 * Fire this request's filter and return the request the callbacks hand back.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return WooPaymentsPaginatedListRequest
+	 * @throws WooPaymentsApiException When a callback returns something that is not a request.
+	 */
+	final public function get_filtered_request(): WooPaymentsPaginatedListRequest {
+		/**
+		 * Filters a WooPayments API request before it is sent to the platform.
+		 *
+		 * Fires under the WooPayments extension's request hook names, so existing callbacks keep running. Callbacks receive the
+		 * provider's own request object, not the extension's request classes; its class and setters are not a supported API.
+		 * Any return value that is not a `WooPaymentsPaginatedListRequest` stops the request with an error.
+		 *
+		 * @since 11.0.0
+		 *
+		 * @param WooPaymentsPaginatedListRequest $request Request about to be sent.
+		 */
+		$filtered_request = apply_filters( $this->hook, $this );
+
+		if ( ! $filtered_request instanceof self ) {
+			// translators: %s: WooPayments API request filter hook name.
+			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), $this->hook );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
+		}
+
+		return $filtered_request;
 	}
 
 	/**

@@ -311,24 +311,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	private function get_filtered_disputes_list_params( WP_REST_Request $request ): array {
 		$disputes_request = WooPaymentsDisputesListRequest::from_rest_request( $request );
 
-		/**
-		 * Allows the WooPayments disputes list request to be modified before it is sent to the platform.
-		 * Any return value that is not a request object stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsDisputesListRequest $disputes_request Native disputes list request.
-		 */
-		$filtered_request = apply_filters( 'wcpay_list_disputes_request', $disputes_request );
-
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_disputes_request' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
-
-		return $filtered_request->get_params();
+		return $disputes_request->get_filtered_request()->get_params();
 	}
 
 	/**

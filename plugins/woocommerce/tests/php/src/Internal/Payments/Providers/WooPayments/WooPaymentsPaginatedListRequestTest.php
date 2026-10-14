@@ -4,8 +4,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesListRequest;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportingBalanceSummaryRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsListRequest;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
@@ -40,6 +43,53 @@ class WooPaymentsPaginatedListRequestTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $this->original_api_client );
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox The filtered request is what the request's own hook returns: the request itself, a changed request or another request.
+	 */
+	public function test_get_filtered_request_returns_what_the_request_hook_returns(): void {
+		$request = new WooPaymentsTransactionsListRequest();
+		$seen    = null;
+		$filter  = static function ( $filtered ) use ( &$seen ) {
+			$seen = $filtered;
+			$filtered->set_param( 'match', 'any' );
+			return $filtered;
+		};
+		add_filter( 'wcpay_list_transactions_request', $filter );
+
+		$this->assertSame( $request, $request->get_filtered_request() );
+		$this->assertSame( $request, $seen );
+		$this->assertSame( 'any', $request->get_param( 'match' ) );
+
+		remove_filter( 'wcpay_list_transactions_request', $filter );
+		$replacement = new WooPaymentsDisputesListRequest();
+		$replace     = static fn() => $replacement;
+		add_filter( 'wcpay_list_transactions_request', $replace );
+
+		$this->assertSame( $replacement, $request->get_filtered_request() );
+
+		remove_filter( 'wcpay_list_transactions_request', $replace );
+	}
+
+	/**
+	 * @testdox A hook that returns something other than a request stops the request with a 500 that names the hook it was filtered under.
+	 */
+	public function test_get_filtered_request_refuses_a_non_request(): void {
+		$request = new WooPaymentsFraudOutcomeTransactionsListRequest();
+		$request->assign_hook( 'wcpay_list_fraud_outcome_transactions_request' );
+		add_filter( 'wcpay_list_fraud_outcome_transactions_request', '__return_empty_array' );
+
+		try {
+			$request->get_filtered_request();
+			$this->fail( 'A request filter that returns no request must stop the request.' );
+		} catch ( WooPaymentsApiException $exception ) {
+			$this->assertSame( 'wcpay_invalid_filtered_request', $exception->get_error_code() );
+			$this->assertSame( 500, $exception->get_http_code() );
+			$this->assertSame( 'Invalid WooPayments request returned by wcpay_list_fraud_outcome_transactions_request.', $exception->getMessage() );
+		} finally {
+			remove_filter( 'wcpay_list_fraud_outcome_transactions_request', '__return_empty_array' );
+		}
 	}
 
 	/**

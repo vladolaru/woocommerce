@@ -479,21 +479,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			$fees_request->set_param( (string) $key, $value );
 		}
 
-		/**
-		 * Allows the WooPayments transactions list request to be modified before it is sent to the platform.
-		 * Any return value that is not a request object stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsTransactionsListRequest $fees_request Native transactions list request for the Fees report.
-		 */
-		$filtered_request = apply_filters( 'wcpay_list_transactions_request', $fees_request );
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_transactions_request' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
+		$filtered_request = $fees_request->get_filtered_request();
 
 		$params = $this->filter_empty_params( $filtered_request->get_params() );
 
@@ -594,21 +580,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 			$transactions_request->set_param( (string) $key, $value );
 		}
 
-		/**
-		 * Allows the WooPayments transactions report request to be modified before it is sent to the platform.
-		 * Any return value that is not a request object stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsTransactionsListRequest $transactions_request Native transactions list request.
-		 */
-		$filtered_request = apply_filters( 'wcpay_list_transactions_request', $transactions_request );
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_transactions_request' );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
+		$filtered_request = $transactions_request->get_filtered_request();
 
 		return $this->order_service->map_transaction_search_params( $filtered_request->get_params() );
 	}

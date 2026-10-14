@@ -2673,25 +2673,7 @@ class WooPaymentsApiClient {
 	private function request_with_compat_request_filter( WooPaymentsPaginatedListRequest $request, string $hook, bool $include_test_mode_in_query = false, bool $honor_raw_response = false ): array {
 		$request->assign_hook( $hook );
 
-		/**
-		 * Filters a WooPayments API request before it is sent to the platform.
-		 *
-		 * Fires under the WooPayments extension's request hook names, so existing callbacks keep running. Callbacks receive the
-		 * provider's own request object, not the extension's `WCPay\Core\Server\Request` classes; its class and setters are not
-		 * a supported API. Any return value that is not a `WooPaymentsPaginatedListRequest` stops the request with an error.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param WooPaymentsPaginatedListRequest $request Request about to be sent.
-		 */
-		$filtered_request = apply_filters( $hook, $request );
-
-		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
-			// translators: %s: WooPayments API request filter hook name.
-			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), $hook );
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
-			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
-		}
+		$filtered_request = $request->get_filtered_request();
 
 		$filtered_params = $filtered_request->get_params();
 		$filtered_api    = $filtered_request->get_api();
