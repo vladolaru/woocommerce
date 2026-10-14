@@ -638,6 +638,35 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * A list request filter callback that returns something other than the request stops the request with the API client
+	 * path's error, as the extension's request classes end it with a 500 (includes/core/server/class-request.php:528-569, :770-783).
+	 *
+	 * @testdox A $hook callback returning no request on $path answers 500 wcpay_invalid_filtered_request.
+	 * @testWith ["/wc/v3/payments/reports/fees", "wcpay_list_transactions_request", false]
+	 *           ["/wc/v3/payments/reports/transactions", "wcpay_list_transactions_request", false]
+	 *           ["/wc/v3/payments/reports/transactions", "wcpay_list_transactions_request", true]
+	 *
+	 * @param string $path      Route path.
+	 * @param string $hook      Request filter.
+	 * @param bool   $as_object Whether the callback returns an object of another class.
+	 */
+	public function test_list_filter_returning_no_request_fails_the_request( string $path, string $hook, bool $as_object ): void {
+		$this->create_controller( true, true )->register_routes();
+		add_filter(
+			$hook,
+			static function () use ( $as_object ) {
+				return $as_object ? new \stdClass() : null;
+			}
+		);
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $path ) );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_invalid_filtered_request', $response->get_data()['code'] );
+		$this->assertSame( "Invalid WooPayments request returned by {$hook}.", $response->get_data()['message'] );
+	}
+
+	/**
 	 * Create a native Reports REST controller.
 	 *
 	 * @param bool $native_register Whether native should own route registration.

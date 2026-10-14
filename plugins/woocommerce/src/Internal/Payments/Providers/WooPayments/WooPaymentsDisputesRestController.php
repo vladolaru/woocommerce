@@ -321,12 +321,14 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When a filter callback returns no request.
 	 */
 	private function get_filtered_disputes_list_params( WP_REST_Request $request ): array {
 		$disputes_request = WooPaymentsDisputesListRequest::from_rest_request( $request );
 
 		/**
 		 * Allows the WooPayments disputes list request to be modified before it is sent to the platform.
+		 * Any return value that is not a request object stops the request with an error.
 		 *
 		 * @since 11.0.0
 		 *
@@ -334,13 +336,14 @@ class WooPaymentsDisputesRestController implements RegisterHooksInterface {
 		 */
 		$filtered_request = apply_filters( 'wcpay_list_disputes_request', $disputes_request );
 
-		if ( ! is_object( $filtered_request ) || ! method_exists( $filtered_request, 'get_params' ) ) {
-			return $disputes_request->get_params();
+		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
+			// translators: %s: WooPayments API request filter hook name.
+			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_disputes_request' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
 		}
 
-		$params = $filtered_request->get_params();
-
-		return is_array( $params ) ? $params : $disputes_request->get_params();
+		return $filtered_request->get_params();
 	}
 
 	/**

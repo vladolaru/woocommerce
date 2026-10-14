@@ -906,18 +906,38 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox The transactions list still maps order searches when a list request filter returns something that is not a request.
+	 * A list request filter callback that returns something other than the request stops the request with the API client
+	 * path's error, as the extension's request classes end it with a 500 (includes/core/server/class-request.php:528-569, :770-783).
+	 *
+	 * @testdox A $hook callback returning no request on $path answers 500 wcpay_invalid_filtered_request.
+	 * @testWith ["/wc/v3/payments/transactions", "wcpay_list_transactions_request", false]
+	 *           ["/wc/v3/payments/transactions", "wcpay_list_transactions_request", true]
+	 *           ["/wc/v3/payments/transactions/fraud-outcomes?status=block", "wcpay_list_fraud_outcome_transactions_request", false]
+	 *
+	 * @param string $path      Route path.
+	 * @param string $hook      Request filter.
+	 * @param bool   $as_object Whether the callback returns an object of another class.
 	 */
-	public function test_transactions_list_maps_order_search_after_a_broken_list_filter(): void {
-		$order = $this->create_order_with_charge( 'ch_order', 'pi_order' );
+	public function test_list_filter_returning_no_request_fails_the_request( string $path, string $hook, bool $as_object ): void {
 		$this->create_transactions_controller( true )->register_routes();
-		add_filter( 'wcpay_list_transactions_request', '__return_null' );
+		add_filter(
+			$hook,
+			static function () use ( $as_object ) {
+				return $as_object ? new \stdClass() : null;
+			}
+		);
 
-		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
-		$request->set_query_params( array( 'search' => array( __( 'Order #', 'woocommerce' ) . $order->get_id() ) ) );
-		$this->server->dispatch( $request );
+		$parts   = explode( '?', $path );
+		$request = new WP_REST_Request( 'GET', $parts[0] );
+		if ( isset( $parts[1] ) ) {
+			parse_str( $parts[1], $query );
+			$request->set_query_params( $query );
+		}
+		$response = $this->server->dispatch( $request );
 
-		$this->assertSame( array( 'ch_order' ), $this->api_client->last_call['query']['search'] );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'wcpay_invalid_filtered_request', $response->get_data()['code'] );
+		$this->assertSame( "Invalid WooPayments request returned by {$hook}.", $response->get_data()['message'] );
 	}
 
 	/**

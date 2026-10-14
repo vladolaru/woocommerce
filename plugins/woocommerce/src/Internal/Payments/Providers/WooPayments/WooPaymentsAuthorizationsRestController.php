@@ -377,12 +377,14 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When a filter callback returns no request.
 	 */
 	private function apply_authorizations_request_filter( array $params ): array {
 		$request = WooPaymentsAuthorizationsListRequest::from_params( $params );
 
 		/**
 		 * Allows the WooPayments authorizations list request to be modified before it is sent to the platform.
+		 * Any return value that is not a request object stops the request with an error.
 		 *
 		 * @since 11.0.0
 		 *
@@ -390,13 +392,14 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		 */
 		$filtered_request = apply_filters( 'wcpay_list_authorizations_request', $request );
 
-		if ( ! is_object( $filtered_request ) || ! method_exists( $filtered_request, 'get_params' ) ) {
-			return $params;
+		if ( ! $filtered_request instanceof WooPaymentsPaginatedListRequest ) {
+			// translators: %s: WooPayments API request filter hook name.
+			$message = sprintf( __( 'Invalid WooPayments request returned by %s.', 'woocommerce' ), 'wcpay_list_authorizations_request' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are not HTML output.
+			throw new WooPaymentsApiException( $message, 'wcpay_invalid_filtered_request', 500 );
 		}
 
-		$filtered_params = $filtered_request->get_params();
-
-		return is_array( $filtered_params ) ? $filtered_params : $params;
+		return $filtered_request->get_params();
 	}
 
 	/**
