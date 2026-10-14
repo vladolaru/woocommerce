@@ -676,6 +676,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				),
 			),
 		);
+		// Override: a second address line, which the recorded account leaves empty.
+		$this->account_data['business_profile']['support_address']['line2'] = 'Suite 400';
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
 		$request->set_param( 'payment_intent_id', 'pi_receipt' );
@@ -686,7 +688,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertStringContainsString( '<!DOCTYPE html>', $html );
 		$this->assertStringContainsString( 'Generated Receipt Lab', $html );
-		$this->assertStringContainsString( '123 Support St', $html );
+		$this->assertSame( array( '123 Support St', 'Suite 400', 'San Francisco CA 94107 US' ), $this->get_receipt_address_lines( $html ), 'Every address component comes from the account.' );
 		$this->assertStringContainsString( '+1 555 0200 generated@example.com', $html );
 		$this->assertStringNotContainsString( 'Saved Store', $html, 'Business details saved in the settings must not be printed.' );
 		$this->assertStringNotContainsString( '9 Saved Road', $html );
@@ -779,14 +781,18 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Generated receipts print only the business details the account has ($description).
 	 * @dataProvider receipt_account_gaps_provider
 	 *
-	 * @param string              $description  Case.
-	 * @param array<string,mixed> $account      Cached account data.
-	 * @param string[]            $contains     Strings the receipt shows.
-	 * @param string[]            $not_contains Strings the receipt must not show.
+	 * @param string              $description   Case.
+	 * @param array<string,mixed> $account       Cached account data.
+	 * @param string[]            $contains      Strings the receipt shows.
+	 * @param string[]            $not_contains  Strings the receipt must not show.
+	 * @param string[]|null       $address_lines The three printed address lines, or null when no address block prints.
 	 */
-	public function test_generate_print_receipt_prints_only_what_the_account_has( string $description, array $account, array $contains, array $not_contains ): void {
+	public function test_generate_print_receipt_prints_only_what_the_account_has( string $description, array $account, array $contains, array $not_contains, ?array $address_lines = null ): void {
 		unset( $description );
 		update_option( 'woocommerce_store_address', '500 Store Avenue' );
+		update_option( 'woocommerce_store_address_2', 'Unit 8' );
+		update_option( 'woocommerce_store_city', 'Seattle' );
+		update_option( 'woocommerce_store_postcode', '98101' );
 		$order                  = $this->create_order( 12.34, 'USD' );
 		$this->account_data     = $account;
 		$this->gateway_settings = $this->get_saved_business_details();
@@ -803,29 +809,39 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( $not_contains as $unexpected ) {
 			$this->assertStringNotContainsString( $unexpected, $html );
 		}
+		if ( null !== $address_lines ) {
+			$this->assertSame( $address_lines, $this->get_receipt_address_lines( $html ) );
+		}
 	}
 
 	/**
-	 * Provide accounts lacking business details: case, account, shown strings, absent strings.
+	 * Provide accounts lacking business details: case, account, shown strings, absent strings, address lines.
 	 *
 	 * Expected values follow client includes/admin/class-wc-rest-payments-reader-controller.php:304-312 and its template
 	 * (includes/in-person-payments/templates/html-in-person-payment-receipt.php:119-130): no address block for an empty
-	 * address, an empty title and contact line without a profile.
+	 * address, an empty title and contact line without a profile. A partial address prints only the lines it has, as the
+	 * client's template reads each of the six fields (:127-129) and never the store address.
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>,2:string[],3:string[]}>
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string[],3:string[],4?:string[]}>
 	 */
 	public function receipt_account_gaps_provider(): array {
 		$no_address                                        = $this->get_receipt_account();
 		$no_address['business_profile']['support_address'] = array();
+		// Override: an address with only its first line and city, a synthetic gap.
+		$partial_address                                        = $this->get_receipt_account();
+		$partial_address['business_profile']['support_address'] = array(
+			'line1' => '4 Partial Pier',
+			'city'  => 'Portland',
+		);
 
 		return array(
-			'empty support address' => array(
+			'empty support address'   => array(
 				'empty support address',
 				$no_address,
 				array( '<h1 class="title">Generated Receipt Lab</h1>', '+1 555 0200 generated@example.com' ),
 				array( '<div class="store__address">', '500 Store Avenue', '9 Saved Road' ),
 			),
-			'no business profile'   => array(
+			'no business profile'     => array(
 				'no business profile',
 				array(
 					'account_id' => 'acct_receipt',
@@ -833,6 +849,13 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				),
 				array( '<h1 class="title"></h1>' ),
 				array( '<div class="store__address">', 'Saved Store', get_bloginfo( 'name' ) . '</h1>', get_option( 'admin_email' ) ),
+			),
+			'partial support address' => array(
+				'partial support address',
+				$partial_address,
+				array( '<h1 class="title">Generated Receipt Lab</h1>' ),
+				array( '500 Store Avenue', 'Unit 8', 'Seattle', '98101', '9 Saved Road' ),
+				array( '4 Partial Pier', '', 'Portland   ' ),
 			),
 		);
 	}
@@ -843,11 +866,12 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 *
 	 * @param string              $description  Case.
 	 * @param array<string,mixed> $params       Request body.
-	 * @param array<string,mixed> $account      Cached account data.
-	 * @param string[]            $contains     Strings the preview shows.
-	 * @param string[]            $not_contains Strings the preview must not show.
+	 * @param array<string,mixed> $account       Cached account data.
+	 * @param string[]            $contains      Strings the preview shows.
+	 * @param string[]            $not_contains  Strings the preview must not show.
+	 * @param string[]            $address_lines The three printed address lines.
 	 */
-	public function test_preview_print_receipt_reads_the_account_where_the_request_gives_nothing( string $description, array $params, array $account, array $contains, array $not_contains ): void {
+	public function test_preview_print_receipt_reads_the_account_where_the_request_gives_nothing( string $description, array $params, array $account, array $contains, array $not_contains, array $address_lines ): void {
 		unset( $description );
 		update_option( 'woocommerce_store_address', '500 Store Avenue' );
 		$this->account_data     = $account;
@@ -863,33 +887,37 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( $not_contains as $unexpected ) {
 			$this->assertStringNotContainsString( $unexpected, $html );
 		}
+		$this->assertSame( $address_lines, $this->get_receipt_address_lines( $html ) );
 	}
 
 	/**
-	 * Provide preview rows: case, request body, account, shown strings, absent strings.
+	 * Provide preview rows: case, request body, account, shown strings, absent strings, address lines.
 	 *
 	 * Expected values follow client includes/admin/class-wc-rest-payments-reader-controller.php:347-360: each camelCase
-	 * field when not empty, else the account, and always the six address lines.
+	 * field when not empty, else the account, and always the six address lines (:351-357).
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string[],4:string[]}>
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string[],4:string[],5:string[]}>
 	 */
 	public function preview_account_fallback_provider(): array {
-		$account    = $this->get_receipt_account();
-		$no_address = $account;
+		$account = $this->get_receipt_account();
+		// Override: a second address line, which the recorded account leaves empty.
+		$account['business_profile']['support_address']['line2'] = 'Suite 400';
+		$account_lines                                     = array( '123 Support St', 'Suite 400', 'San Francisco CA 94107 US' );
+		$no_address                                        = $account;
 		$no_address['business_profile']['support_address'] = array();
 		$from_account                                      = array( '<h1 class="title">Generated Receipt Lab</h1>', '123 Support St', '+1 555 0200 generated@example.com' );
 		$not_saved = array( 'Saved Store', '9 Saved Road', 'saved@example.test' );
 
 		return array(
-			'nothing in the request'            => array( 'nothing in the request', array(), $account, $from_account, $not_saved ),
-			'empty address in the request'      => array( 'empty address in the request', array( 'accountBusinessSupportAddress' => array() ), $account, $from_account, $not_saved ),
+			'nothing in the request'            => array( 'nothing in the request', array(), $account, $from_account, $not_saved, $account_lines ),
+			'empty address in the request'      => array( 'empty address in the request', array( 'accountBusinessSupportAddress' => array() ), $account, $from_account, $not_saved, $account_lines ),
 			'request fields'                    => array(
 				'request fields',
 				array(
 					'accountBusinessName'           => 'Request Store',
 					'accountBusinessSupportAddress' => array(
 						'line1'       => '1 Request Way',
-						'line2'       => '',
+						'line2'       => 'Floor 2',
 						'city'        => 'Austin',
 						'state'       => 'TX',
 						'postal_code' => '73301',
@@ -901,6 +929,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				$account,
 				array( '<h1 class="title">Request Store</h1>', '1 Request Way', '+1 555 0400 request@example.test' ),
 				array( 'Generated Receipt Lab', '123 Support St', '+1 555 0200', 'generated@example.com' ),
+				array( '1 Request Way', 'Floor 2', 'Austin TX 73301 US' ),
 			),
 			'snake_case fields'                 => array(
 				'snake_case fields',
@@ -913,8 +942,9 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				$account,
 				$from_account,
 				array( 'Alias Store', '7 Alias Lane', '+1 555 0300', 'alias@example.test' ),
+				$account_lines,
 			),
-			'account without a support address' => array( 'account without a support address', array(), $no_address, array( '<div class="store__address">' ), array( '500 Store Avenue', '9 Saved Road' ) ),
+			'account without a support address' => array( 'account without a support address', array(), $no_address, array( '<div class="store__address">' ), array( '500 Store Avenue', '9 Saved Road' ), array( '', '', '   ' ) ),
 		);
 	}
 
@@ -2803,7 +2833,8 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Get an account with a business profile, in the shape recorded in Fixtures/platform-test-drive-account.json
 	 * `account.business_profile` and `account.branding` (:597-609), with varied values: an address in Stripe's
-	 * six-line shape with no second line, and no logo.
+	 * six-line shape with no second line, and no logo. The recording holds an empty support address; the populated one is
+	 * an override with the six fields client includes/admin/class-wc-rest-payments-reader-controller.php:351-357 maps.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -2835,6 +2866,18 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * Get the three lines of a receipt's address block.
+	 *
+	 * @param string $html Receipt HTML.
+	 * @return string[]
+	 */
+	private function get_receipt_address_lines( string $html ): array {
+		$this->assertSame( 1, preg_match( '#<div class="store__address">\s*<p>(.*?)</p>\s*<p>(.*?)</p>\s*<p>(.*?)</p>#s', $html, $matches ), 'The receipt prints an address block.' );
+
+		return array_slice( $matches, 1 );
+	}
+
+	/**
 	 * Get business details saved in the gateway settings with values the account does not have.
 	 *
 	 * @return array<string,mixed>
@@ -2858,6 +2901,11 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * Answer the receipt route's intent and charge reads with a succeeded card-present payment for the order.
+	 *
+	 * The intent's status and first charge, then the charge's order number, as client 11.1.0 reads them in
+	 * includes/admin/class-wc-rest-payments-reader-controller.php:283-295; the charge's amount and card-present receipt
+	 * fields, as client includes/in-person-payments/class-wc-payments-in-person-payments-receipts-service.php:53,138-160
+	 * reads them. The values are synthetic.
 	 *
 	 * @param \WC_Order $order Order the payment is for.
 	 */
