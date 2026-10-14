@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -20,53 +21,6 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsAccountService implements RegisterHooksInterface {
-
-	/**
-	 * Countries where WooPayments platform accounts are supported, in extension order.
-	 *
-	 * @var string[]
-	 */
-	private const SUPPORTED_COUNTRY_CODES = array(
-		'AE',
-		'AT',
-		'AU',
-		'BE',
-		'BG',
-		'CA',
-		'CH',
-		'CY',
-		'CZ',
-		'DE',
-		'DK',
-		'EE',
-		'FI',
-		'ES',
-		'FR',
-		'HR',
-		'JP',
-		'LU',
-		'GB',
-		'GR',
-		'HK',
-		'HU',
-		'IE',
-		'IT',
-		'LT',
-		'LV',
-		'MT',
-		'NL',
-		'NO',
-		'NZ',
-		'PL',
-		'PT',
-		'RO',
-		'SE',
-		'SI',
-		'SK',
-		'SG',
-		'US',
-		'PR',
-	);
 
 	private const REPORTS_AREA_FLAG_OPTION = '_wcpay_feature_reports_area';
 
@@ -1205,7 +1159,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get countries where WooPayments platform accounts are supported.
+	 * Get the countries where WooPayments accounts are supported: core's WooPayments country list, labelled with
+	 * WooCommerce's country names.
 	 *
 	 * @return array<string,string> Country labels keyed by ISO country code.
 	 */
@@ -1213,7 +1168,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$all_countries       = WC()->countries->get_countries();
 		$supported_countries = array();
 
-		foreach ( self::SUPPORTED_COUNTRY_CODES as $country_code ) {
+		foreach ( DefaultPaymentGateways::get_wcpay_countries() as $country_code ) {
 			if ( isset( $all_countries[ $country_code ] ) && is_string( $all_countries[ $country_code ] ) ) {
 				$supported_countries[ $country_code ] = $all_countries[ $country_code ];
 			}

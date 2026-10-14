@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -2461,6 +2462,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		foreach ( $supported as $code => $name ) {
 			$this->assertSame( $labels[ $code ], $name, "The label of {$code} is WooCommerce's." );
 		}
+	}
+
+	/**
+	 * @testdox Supported countries follow the order of core's WooPayments country list.
+	 */
+	public function test_supported_countries_follow_core_list_order(): void {
+		$this->assertSame( DefaultPaymentGateways::get_wcpay_countries(), array_keys( $this->create_service()->get_supported_countries() ) );
 	}
 
 	/**
